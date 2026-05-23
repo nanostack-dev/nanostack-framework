@@ -1,0 +1,17 @@
+# OS files
+.DS_Store
+
+# Editor files
+.idea/
+.vscode/
+*.iml
+
+# Local env
+.env
+.env.*
+!.env.example
+
+# Build output
+dist/
+bin/
+coverage/
