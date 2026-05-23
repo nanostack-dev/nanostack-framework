@@ -44,6 +44,11 @@ func NewBadRequest(code, message string) *Error {
 	return New(code, message, nil, http.StatusBadRequest)
 }
 
+// NewBadRequestWithMetadata creates an Error with HTTP 400 status and metadata.
+func NewBadRequestWithMetadata(code, message string, metadata map[string]any) *Error {
+	return New(code, message, metadata, http.StatusBadRequest)
+}
+
 // NewWithStatus creates an Error with a single detail and explicit HTTP status.
 func NewWithStatus(code, message string, status int) *Error {
 	return New(code, message, nil, status)
