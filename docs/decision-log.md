@@ -65,3 +65,9 @@ Rationale: strict OpenAPI handlers were repeating the same JSON error writing an
 Expose package-level `pkg/validate.ValidateStruct` backed by a framework-owned default validator, while keeping `NewStructValidator()` available for explicit construction.
 
 Rationale: most service-layer validation call sites only need a stable, shared validator instance and an `error` return they can propagate. Providing a package-level helper enables small migration slices away from `toolkit.ValidateStruct` without pulling validator construction into every feature package.
+
+## 2026-05-25: Context Transactor Helper Surface
+
+Expose the shared Jet query helpers on `pkg/db/transactor` and provide the FX binding from `modules/transactor`.
+
+Rationale: Anchor and Echopoint already migrated repository code to the context-carried transaction package, but the published framework tag only exposed the transaction carrier itself. Keeping the query helpers and FX module in the same framework package avoids app-local wrappers and preserves a single transaction context identity across services.
