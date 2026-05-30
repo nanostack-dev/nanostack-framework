@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"strings"
 
 	"github.com/joho/godotenv"
 	"gopkg.in/yaml.v3"
@@ -58,13 +59,22 @@ func (c *LoaderImpl) Init(configPath string, dotEnvPath string) error {
 
 func (c *LoaderImpl) replacePlaceholders(data string, re *regexp.Regexp) (string, error) {
 	var missingVars []string
+	var errs []error
 	result := re.ReplaceAllStringFunc(data, func(match string) string {
 		groups := re.FindStringSubmatch(match)
 		varName := groups[1]
 		defaultValue := groups[2]
 		value, exists := os.LookupEnv(varName)
 		if !exists {
-			if defaultValue != "" {
+			fileVarName := varName + "_FILE"
+			if filePath, fileExists := os.LookupEnv(fileVarName); fileExists {
+				fileData, err := os.ReadFile(filePath)
+				if err != nil {
+					errs = append(errs, fmt.Errorf("failed to read secret file for %s from path %s: %w", varName, filePath, err))
+					return ""
+				}
+				value = strings.TrimSpace(string(fileData))
+			} else if defaultValue != "" {
 				value = defaultValue
 			} else {
 				missingVars = append(missingVars, varName)
@@ -73,6 +83,9 @@ func (c *LoaderImpl) replacePlaceholders(data string, re *regexp.Regexp) (string
 		}
 		return value
 	})
+	if len(errs) > 0 {
+		return "", errors.Join(errs...)
+	}
 	if len(missingVars) > 0 {
 		return "", fmt.Errorf("missing required environment variables: %v", missingVars)
 	}
