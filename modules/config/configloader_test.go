@@ -19,7 +19,7 @@ type TestAppConfig struct {
 func TestConfigLoaderFileFallback(t *testing.T) {
 	tempDir := t.TempDir()
 
-	// 1. Test case: Fallback to _FILE path and trim whitespace/newlines
+	// 1. Test case: Explicit ${file:ENV_VAR} placeholder reading a secret file
 	secretFilePath := filepath.Join(tempDir, "db_password")
 	err := os.WriteFile(secretFilePath, []byte("  my-super-secret-password \n\n"), 0600)
 	require.NoError(t, err)
@@ -28,7 +28,7 @@ func TestConfigLoaderFileFallback(t *testing.T) {
 	configYAML := `
 app:
   database:
-    password: ${DB_PASSWORD}
+    password: ${file:DB_PASSWORD_FILE}
   secret_key: ${SECRET_KEY:default-key}
 `
 	err = os.WriteFile(configPath, []byte(configYAML), 0600)
@@ -46,19 +46,8 @@ app:
 	assert.Equal(t, "my-super-secret-password", appConfig.Database.Password)
 	assert.Equal(t, "default-key", appConfig.SecretKey)
 
-	// 2. Test case: Direct environment variable has higher priority than _FILE
-	t.Setenv("DB_PASSWORD", "direct-env-password")
-	loader2 := NewConfigLoader()
-	err = loader2.Init(configPath, tempDir)
-	require.NoError(t, err)
-
-	var appConfig2 TestAppConfig
-	err = loader2.LoadConfig("app", &appConfig2)
-	require.NoError(t, err)
-	assert.Equal(t, "direct-env-password", appConfig2.Database.Password)
-
-	// Clean direct env variable
-	os.Unsetenv("DB_PASSWORD")
+	// Clean up environment variables
+	os.Unsetenv("DB_PASSWORD_FILE")
 }
 
 func TestConfigLoaderFileFallbackErrors(t *testing.T) {
@@ -68,7 +57,7 @@ func TestConfigLoaderFileFallbackErrors(t *testing.T) {
 	configYAML := `
 app:
   database:
-    password: ${DB_PASSWORD}
+    password: ${file:DB_PASSWORD_FILE}
   secret_key: ${SECRET_KEY}
 `
 	err := os.WriteFile(configPath, []byte(configYAML), 0600)
@@ -86,5 +75,9 @@ app:
 	loader2 := NewConfigLoader()
 	err = loader2.Init(configPath, tempDir)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to read secret file for DB_PASSWORD")
+	assert.Contains(t, err.Error(), "failed to read secret file for DB_PASSWORD_FILE")
+
+	// Clean up environment variables
+	os.Unsetenv("DB_PASSWORD_FILE")
+	os.Unsetenv("SECRET_KEY")
 }
