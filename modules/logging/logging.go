@@ -29,7 +29,8 @@ func NewLoggingConfig() Config {
 }
 
 func NewZerologLogger(config Config) zerolog.Logger {
-	if strings.EqualFold(config.Environment, "production") {
+	production := strings.EqualFold(config.Environment, "production") || strings.EqualFold(config.Environment, "prod")
+	if production {
 		logger := zerolog.New(os.Stdout).Level(config.Level).With().Timestamp().Caller().Logger()
 		logger.Info().Str("environment", config.Environment).Str("level", logger.GetLevel().String()).Str("format", "json").Msg("zerolog logger created")
 		return logger
