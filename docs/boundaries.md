@@ -23,7 +23,6 @@ Examples that belong in `modules/`:
 - postgres connection lifecycle
 - redis cache lifecycle
 - migration startup hooks
-- sentry setup
 - HTTP server lifecycle
 - pprof lifecycle
 - queue worker lifecycle helpers

@@ -13,7 +13,6 @@ Nanostack Framework
 │   ├── cache
 │   ├── migrations
 │   ├── pglock
-│   ├── sentry
 │   ├── httpserver
 │   ├── pprof
 │   ├── pgqueue
