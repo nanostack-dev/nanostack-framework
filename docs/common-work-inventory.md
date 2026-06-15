@@ -12,7 +12,6 @@ Repeated across applications:
 - redis cache wiring with fallback behavior
 - migration startup hooks
 - pglock startup wiring
-- sentry initialization and middleware registration
 - health endpoint registration
 - request logging middleware wrapping
 - server startup/shutdown lifecycle hooks

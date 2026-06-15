@@ -26,7 +26,7 @@ Rationale: request logging is framework-owned HTTP shell behavior, but each serv
 
 ## 2026-05-22: FX Module Adoption Slice
 
-Move `anchor` and `echopoint` off `shared/fxmodules` for config, logging, postgres, cache, migrations, pglock, and sentry imports.
+Move `anchor` and `echopoint` off `shared/fxmodules` for config, logging, postgres, cache, migrations, and pglock imports.
 
 Rationale: these modules share injected types, especially the config loader and cache interface, so adopting them as one slice avoids mixed DI graphs with duplicate package identities.
 

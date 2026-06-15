@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"strings"
 
-	sharedsentry "github.com/nanostack-dev/nanostack-framework/modules/sentry"
 	"github.com/nanostack-dev/nanostack-framework/pkg/apierror"
 	"github.com/rs/zerolog"
 )
@@ -66,7 +65,6 @@ func (h *StrictErrorHandler) HandleResponseError(w http.ResponseWriter, r *http.
 
 	logger := h.requestLogger(r)
 	if status >= internalServerErrorThreshold {
-		sharedsentry.CaptureException(err)
 		logger.Error().Err(err).Int("status", status).Msg("Internal server error")
 	} else {
 		logger.Warn().Err(err).Int("status", status).Msg("Request error")
@@ -138,7 +136,6 @@ func (h *StrictErrorHandler) handleSSEError(w http.ResponseWriter, r *http.Reque
 
 	status := h.statusFromError(err)
 	if status >= internalServerErrorThreshold {
-		sharedsentry.CaptureException(err)
 		logger.Error().Err(err).Int("status", status).Msg("SSE stream error")
 	} else {
 		logger.Warn().Err(err).Int("status", status).Msg("SSE stream warning")
