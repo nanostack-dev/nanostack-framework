@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -16,12 +18,28 @@ const defaultMaxBodySize = 1024 * 4
 type statusRecorder struct {
 	http.ResponseWriter
 
-	statusCode int
+	statusCode   int
+	bytesWritten int
 }
 
 func (rec *statusRecorder) WriteHeader(code int) {
 	rec.statusCode = code
 	rec.ResponseWriter.WriteHeader(code)
+}
+
+func (rec *statusRecorder) Write(b []byte) (int, error) {
+	n, err := rec.ResponseWriter.Write(b)
+	rec.bytesWritten += n
+	return n, err
+}
+
+// Flush propagates flushes (used by SSE / streaming handlers) to the wrapped
+// writer when it supports them, so wrapping for audit logging does not disable
+// streaming.
+func (rec *statusRecorder) Flush() {
+	if flusher, ok := rec.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
 }
 
 // Options controls request logging behavior.
@@ -67,8 +85,7 @@ func New(log zerolog.Logger, opts Options) func(http.Handler) http.Handler {
 				summaryLogger = *ctxLogger
 				withRoute = false
 			}
-			logRequest(summaryLogger, r, recorder.statusCode, start, requestBody, opts.LogRequestBody, withRoute)
-			logServerError(summaryLogger, r, recorder.statusCode, start, withRoute)
+			logRequest(summaryLogger, r, recorder, start, requestBody, opts.LogRequestBody, withRoute)
 		})
 	}
 }
@@ -95,23 +112,42 @@ func requestBodyForLogging(r *http.Request, log zerolog.Logger, opts Options) st
 	return requestBody
 }
 
+// logRequest emits the single request/response audit line for a completed
+// request: one structured entry, written after the handler returns, carrying
+// the request shape (method, path, query, client ip, user agent), the response
+// outcome (status, bytes) and timing (duration). It inherits request_id and any
+// auth fields (org_id, user_id, ...) from the request-scoped logger. 5xx
+// responses are logged at error level; everything else at info.
 func logRequest(
 	log zerolog.Logger,
 	r *http.Request,
-	statusCode int,
+	recorder *statusRecorder,
 	start time.Time,
 	requestBody string,
 	logRequestBody bool,
 	withRoute bool,
 ) {
+	duration := time.Since(start)
+	statusCode := recorder.statusCode
+
 	entry := log.Info()
+	if statusCode >= http.StatusInternalServerError && statusCode <= 599 {
+		entry = log.Error()
+	}
 	if withRoute {
 		entry = entry.Str("method", r.Method).Str("path", r.URL.Path)
 	}
-	duration := time.Since(start)
 	entry = entry.
 		Int("status", statusCode).
-		Dur("duration", duration)
+		Int("bytes_out", recorder.bytesWritten).
+		Dur("duration", duration).
+		Str("client_ip", clientIP(r))
+	if query := r.URL.RawQuery; query != "" {
+		entry = entry.Str("query", query)
+	}
+	if userAgent := r.UserAgent(); userAgent != "" {
+		entry = entry.Str("user_agent", userAgent)
+	}
 	if logRequestBody && requestBody != "" && requestBody != "Error reading request body" {
 		entry = entry.Str("request_body", requestBody)
 	}
@@ -120,22 +156,27 @@ func logRequest(
 
 // requestSummary builds a compact, human-scannable headline such as
 // "GET /flows/123 -> 200 (2.5ms)". The structured fields (request_id, org_id,
-// status, duration, ...) still live on the log entry; this is only the message.
+// status, bytes_out, duration, ...) still live on the log entry; this is only
+// the message.
 func requestSummary(r *http.Request, statusCode int, duration time.Duration) string {
 	return fmt.Sprintf("%s %s -> %d (%s)", r.Method, r.URL.Path, statusCode, duration.Round(time.Microsecond))
 }
 
-func logServerError(log zerolog.Logger, r *http.Request, statusCode int, start time.Time, withRoute bool) {
-	if statusCode < http.StatusInternalServerError || statusCode > 599 {
-		return
+// clientIP returns the originating client address, preferring the first hop in
+// X-Forwarded-For, then X-Real-Ip, then the connection's RemoteAddr (with the
+// port stripped).
+func clientIP(r *http.Request) string {
+	if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
+		if first, _, found := strings.Cut(forwarded, ","); found {
+			return strings.TrimSpace(first)
+		}
+		return strings.TrimSpace(forwarded)
 	}
-	entry := log.Error()
-	if withRoute {
-		entry = entry.Str("method", r.Method).Str("path", r.URL.Path)
+	if realIP := r.Header.Get("X-Real-Ip"); realIP != "" {
+		return realIP
 	}
-	duration := time.Since(start)
-	entry.
-		Int("status", statusCode).
-		Dur("duration", duration).
-		Msg(requestSummary(r, statusCode, duration))
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		return host
+	}
+	return r.RemoteAddr
 }
