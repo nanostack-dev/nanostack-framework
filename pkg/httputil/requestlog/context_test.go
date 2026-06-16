@@ -138,6 +138,45 @@ func TestNewSummaryIncludesMidRequestEnrichment(t *testing.T) {
 	}
 }
 
+func TestNewEmitsRequestResponseAudit(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	base := zerolog.New(&buf)
+
+	handler := requestlog.Contextualize(base)(requestlog.New(base, requestlog.Options{})(
+		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte("hello world"))
+		}),
+	))
+
+	req := httptest.NewRequest(http.MethodPost, "/flows?limit=10", nil)
+	req.Header.Set("User-Agent", "audit-test/1.0")
+	req.Header.Set("X-Forwarded-For", "203.0.113.7, 10.0.0.1")
+	handler.ServeHTTP(httptest.NewRecorder(), req)
+
+	fields := decodeLog(t, buf.String())
+	checks := map[string]any{
+		"status":     float64(http.StatusCreated),
+		"bytes_out":  float64(len("hello world")),
+		"query":      "limit=10",
+		"user_agent": "audit-test/1.0",
+		"client_ip":  "203.0.113.7",
+	}
+	for key, want := range checks {
+		if fields[key] != want {
+			t.Fatalf("audit field %q = %v, want %v", key, fields[key], want)
+		}
+	}
+	if _, ok := fields["duration"]; !ok {
+		t.Fatal("expected duration on audit line")
+	}
+	if msg, _ := fields["message"].(string); !strings.Contains(msg, "POST") || !strings.Contains(msg, "/flows") {
+		t.Fatalf("expected headline with verb/path, got %q", msg)
+	}
+}
+
 func TestFromWithoutContextualizeIsDisabled(t *testing.T) {
 	t.Parallel()
 
