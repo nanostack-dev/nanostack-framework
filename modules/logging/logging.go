@@ -5,8 +5,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nanostack-dev/nanostack-framework/pkg/fxlog"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
+	"go.uber.org/fx/fxevent"
 )
 
 type Config struct {
@@ -75,3 +77,17 @@ var Module = fx.Module( //nolint:gochecknoglobals // Required for fx module defi
 	"logging",
 	fx.Provide(NewLoggingConfig, NewZerologLogger),
 )
+
+// WithFxLogger routes Fx's own lifecycle events through the application's
+// zerolog logger, so startup/shutdown output is structured JSON instead of Fx's
+// default plain-text console writer.
+//
+// It must be passed at the fx.New root (not nested inside an fx.Module) so it
+// governs events from every module. Include it alongside Module:
+//
+//	fx.New(logging.Module, logging.WithFxLogger(), ...)
+func WithFxLogger() fx.Option {
+	return fx.WithLogger(func(log zerolog.Logger) fxevent.Logger {
+		return fxlog.New(log)
+	})
+}
