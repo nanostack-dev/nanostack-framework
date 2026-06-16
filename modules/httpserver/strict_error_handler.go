@@ -3,8 +3,8 @@ package httpserver
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
-	"strings"
 
 	"github.com/nanostack-dev/nanostack-framework/pkg/apierror"
 	"github.com/rs/zerolog"
@@ -23,6 +23,12 @@ type StrictErrorHandlerOptions struct {
 }
 
 // StrictErrorHandler writes default API-safe errors for strict OpenAPI handlers.
+//
+// The status is never inferred from the error message. An error is either a
+// framework API error — directly, or via the app-supplied AdaptError adapter —
+// in which case its carried status, code and message are returned, or it is an
+// unmodelled error, in which case the response is a generic 500 and the error
+// is logged with as much detail as possible for diagnosis.
 type StrictErrorHandler struct {
 	logger        zerolog.Logger
 	adaptError    APIErrorAdapter
@@ -54,23 +60,26 @@ func (h *StrictErrorHandler) HandleResponseError(w http.ResponseWriter, r *http.
 		return
 	}
 
+	logger := h.requestLogger(r)
+
 	if apiErr, ok := h.apiErrorFrom(err); ok {
+		status := apiErr.HTTPStatus()
+		if status >= internalServerErrorThreshold {
+			h.logInternalError(logger, err).Int("status", status).Msg("Internal server error")
+		} else {
+			logger.Warn().Err(err).Int("status", status).Msg("Request error")
+		}
 		apierror.WriteJSON(w, apiErr)
 		return
 	}
 
-	status := h.statusFromError(err)
-	code := codeFromStatus(status)
-	message := messageFromStatus(status)
-
-	logger := h.requestLogger(r)
-	if status >= internalServerErrorThreshold {
-		logger.Error().Err(err).Int("status", status).Msg("Internal server error")
-	} else {
-		logger.Warn().Err(err).Int("status", status).Msg("Request error")
-	}
-
-	apierror.WriteJSON(w, apierror.NewWithStatus(code, message, status))
+	// Unmodelled error: never guess a status from the message. Respond with a
+	// generic, API-safe 500 and log the error with full detail so the
+	// unexpected failure can be diagnosed.
+	h.logInternalError(logger, err).
+		Int("status", http.StatusInternalServerError).
+		Msg("Unhandled error returned by strict handler")
+	apierror.WriteJSON(w, apierror.ErrUnexpected)
 }
 
 func (h *StrictErrorHandler) apiErrorFrom(err error) (*apierror.Error, bool) {
@@ -83,36 +92,14 @@ func (h *StrictErrorHandler) apiErrorFrom(err error) (*apierror.Error, bool) {
 	return nil, false
 }
 
-func (h *StrictErrorHandler) statusFromError(err error) int {
-	if apiErr, ok := h.apiErrorFrom(err); ok {
-		return apiErr.HTTPStatus()
-	}
-	if err == nil {
-		return http.StatusInternalServerError
-	}
-
-	var httpErr interface{ StatusCode() int }
-	if errors.As(err, &httpErr) {
-		if sc := httpErr.StatusCode(); sc >= http.StatusBadRequest && sc <= 599 {
-			return sc
-		}
-	}
-
-	s := strings.ToLower(err.Error())
-	switch {
-	case strings.Contains(s, "not found"):
-		return http.StatusNotFound
-	case strings.Contains(s, "unauthorized"):
-		return http.StatusUnauthorized
-	case strings.Contains(s, "forbidden"):
-		return http.StatusForbidden
-	case strings.Contains(s, "conflict"):
-		return http.StatusConflict
-	case strings.Contains(s, "invalid"), strings.Contains(s, "bad request"), strings.Contains(s, "validation"):
-		return http.StatusBadRequest
-	default:
-		return http.StatusInternalServerError
-	}
+// logInternalError starts an error-level log event carrying every detail we can
+// extract from an unmodelled error: its message, its concrete Go type, and the
+// verbose ("%+v") form, which surfaces the wrapped chain and any stack trace.
+func (h *StrictErrorHandler) logInternalError(logger zerolog.Logger, err error) *zerolog.Event {
+	return logger.Error().
+		Err(err).
+		Str("error_type", fmt.Sprintf("%T", err)).
+		Str("error_detail", fmt.Sprintf("%+v", err))
 }
 
 func (h *StrictErrorHandler) requestLogger(r *http.Request) zerolog.Logger {
@@ -134,9 +121,13 @@ func (h *StrictErrorHandler) handleSSEError(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	status := h.statusFromError(err)
+	status := http.StatusInternalServerError
+	if apiErr, ok := h.apiErrorFrom(err); ok {
+		status = apiErr.HTTPStatus()
+	}
+
 	if status >= internalServerErrorThreshold {
-		logger.Error().Err(err).Int("status", status).Msg("SSE stream error")
+		h.logInternalError(logger, err).Int("status", status).Msg("SSE stream error")
 	} else {
 		logger.Warn().Err(err).Int("status", status).Msg("SSE stream warning")
 	}
@@ -157,23 +148,6 @@ func (h *StrictErrorHandler) handleSSEError(w http.ResponseWriter, r *http.Reque
 	_, _ = w.Write([]byte(`event: error` + "\n" + `data: {"error":"` + messageFromStatus(status) + `"}` + "\n\n"))
 	if flusher, ok := w.(http.Flusher); ok {
 		flusher.Flush()
-	}
-}
-
-func codeFromStatus(status int) string {
-	switch status {
-	case http.StatusBadRequest:
-		return "BAD_REQUEST"
-	case http.StatusUnauthorized:
-		return "UNAUTHORIZED"
-	case http.StatusForbidden:
-		return "FORBIDDEN"
-	case http.StatusNotFound:
-		return "NOT_FOUND"
-	case http.StatusConflict:
-		return "CONFLICT"
-	default:
-		return "INTERNAL_ERROR"
 	}
 }
 
