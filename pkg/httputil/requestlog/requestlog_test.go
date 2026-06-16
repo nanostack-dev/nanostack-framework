@@ -1,4 +1,4 @@
-package requestlog
+package requestlog_test
 
 import (
 	"bytes"
@@ -7,11 +7,12 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/nanostack-dev/nanostack-framework/pkg/httputil/requestlog"
 	"github.com/rs/zerolog"
 )
 
 func TestMiddlewarePreservesBody(t *testing.T) {
-	middleware := New(zerolog.Nop(), Options{LogRequestBody: true})
+	middleware := requestlog.New(zerolog.Nop(), requestlog.Options{LogRequestBody: true})
 	handler := middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {

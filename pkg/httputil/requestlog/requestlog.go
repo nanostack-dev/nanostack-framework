@@ -14,6 +14,7 @@ const defaultMaxBodySize = 1024 * 4
 
 type statusRecorder struct {
 	http.ResponseWriter
+
 	statusCode int
 }
 
@@ -40,12 +41,22 @@ func New(log zerolog.Logger, opts Options) func(http.Handler) http.Handler {
 				next.ServeHTTP(w, r)
 				return
 			}
+			// When Contextualize ran first, reuse the request-scoped logger
+			// (already carrying request_id, method and path) and drop the route
+			// fields here to avoid duplicate keys. Standalone consumers without
+			// Contextualize keep the original behavior via the fallback logger.
+			reqLog := log
+			withRoute := true
+			if hasContextLogger(r) {
+				reqLog = *From(r.Context())
+				withRoute = false
+			}
 			start := time.Now()
-			requestBody := requestBodyForLogging(r, log, opts)
+			requestBody := requestBodyForLogging(r, reqLog, opts)
 			recorder := &statusRecorder{ResponseWriter: w, statusCode: http.StatusOK}
 			next.ServeHTTP(recorder, r)
-			logRequest(log, r, recorder.statusCode, start, requestBody, opts.LogRequestBody)
-			logServerError(log, r, recorder.statusCode, start)
+			logRequest(reqLog, r, recorder.statusCode, start, requestBody, opts.LogRequestBody, withRoute)
+			logServerError(reqLog, r, recorder.statusCode, start, withRoute)
 		})
 	}
 }
@@ -79,10 +90,13 @@ func logRequest(
 	start time.Time,
 	requestBody string,
 	logRequestBody bool,
+	withRoute bool,
 ) {
-	entry := log.Info().
-		Str("method", r.Method).
-		Str("path", r.URL.Path).
+	entry := log.Info()
+	if withRoute {
+		entry = entry.Str("method", r.Method).Str("path", r.URL.Path)
+	}
+	entry = entry.
 		Int("status", statusCode).
 		Dur("duration", time.Since(start))
 	if logRequestBody && requestBody != "" && requestBody != "Error reading request body" {
@@ -91,13 +105,15 @@ func logRequest(
 	entry.Msg("incoming request")
 }
 
-func logServerError(log zerolog.Logger, r *http.Request, statusCode int, start time.Time) {
+func logServerError(log zerolog.Logger, r *http.Request, statusCode int, start time.Time, withRoute bool) {
 	if statusCode < http.StatusInternalServerError || statusCode > 599 {
 		return
 	}
-	log.Error().
-		Str("method", r.Method).
-		Str("path", r.URL.Path).
+	entry := log.Error()
+	if withRoute {
+		entry = entry.Str("method", r.Method).Str("path", r.URL.Path)
+	}
+	entry.
 		Int("status", statusCode).
 		Dur("duration", time.Since(start)).
 		Msgf("server error: %s", http.StatusText(statusCode))
