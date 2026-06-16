@@ -45,18 +45,29 @@ func New(log zerolog.Logger, opts Options) func(http.Handler) http.Handler {
 			// (already carrying request_id, method and path) and drop the route
 			// fields here to avoid duplicate keys. Standalone consumers without
 			// Contextualize keep the original behavior via the fallback logger.
-			reqLog := log
-			withRoute := true
-			if hasContextLogger(r) {
-				reqLog = *From(r.Context())
-				withRoute = false
+			//
+			// The context logger is held as a pointer and only dereferenced when
+			// the summary line is written, after next has run. Inner middleware
+			// (for example auth resolving an org id) enriches the same logger in
+			// place via UpdateContext, so those fields land on the summary line.
+			ctxLogger := From(r.Context())
+			useCtx := hasContextLogger(r)
+			bodyLogger := log
+			if useCtx {
+				bodyLogger = *ctxLogger
 			}
 			start := time.Now()
-			requestBody := requestBodyForLogging(r, reqLog, opts)
+			requestBody := requestBodyForLogging(r, bodyLogger, opts)
 			recorder := &statusRecorder{ResponseWriter: w, statusCode: http.StatusOK}
 			next.ServeHTTP(recorder, r)
-			logRequest(reqLog, r, recorder.statusCode, start, requestBody, opts.LogRequestBody, withRoute)
-			logServerError(reqLog, r, recorder.statusCode, start, withRoute)
+			summaryLogger := log
+			withRoute := true
+			if useCtx {
+				summaryLogger = *ctxLogger
+				withRoute = false
+			}
+			logRequest(summaryLogger, r, recorder.statusCode, start, requestBody, opts.LogRequestBody, withRoute)
+			logServerError(summaryLogger, r, recorder.statusCode, start, withRoute)
 		})
 	}
 }

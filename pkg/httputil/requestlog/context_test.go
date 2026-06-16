@@ -107,6 +107,36 @@ func TestUpdateContextEnrichesDownstreamLogs(t *testing.T) {
 	}
 }
 
+func TestNewSummaryIncludesMidRequestEnrichment(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	base := zerolog.New(&buf)
+
+	// Inner handler stands in for auth middleware: it enriches the request
+	// logger in place after Contextualize ran but before the summary line.
+	enrich := http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		requestlog.From(r.Context()).UpdateContext(func(c zerolog.Context) zerolog.Context {
+			return c.Str("org_id", "org_99")
+		})
+	})
+	handler := requestlog.Contextualize(base)(requestlog.New(base, requestlog.Options{})(enrich))
+
+	req := httptest.NewRequest(http.MethodGet, "/flows", nil)
+	handler.ServeHTTP(httptest.NewRecorder(), req)
+
+	fields := decodeLog(t, buf.String())
+	if fields["message"] != "incoming request" {
+		t.Fatalf("expected summary line, got %v", fields["message"])
+	}
+	if fields["org_id"] != "org_99" {
+		t.Fatalf("expected org_id on summary line, got %v", fields["org_id"])
+	}
+	if fields["request_id"] == nil || fields["request_id"] == "" {
+		t.Fatalf("expected request_id on summary line, got %v", fields["request_id"])
+	}
+}
+
 func TestFromWithoutContextualizeIsDisabled(t *testing.T) {
 	t.Parallel()
 
