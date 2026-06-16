@@ -16,7 +16,7 @@ HTTP request logging plus request-scoped log context for Nanostack Go services.
 
 For each request it:
 
-- reuses an inbound `X-Request-Id` header or mints a KSUID-backed id;
+- reuses an inbound `X-Request-Id` header or mints a UUIDv7 (time-ordered) id;
 - stores the id on the context and echoes it on the `X-Request-Id` response
   header;
 - derives a child logger carrying `request_id`, `method` and `path` and stores

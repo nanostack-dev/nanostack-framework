@@ -4,15 +4,13 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/nanostack-dev/nanostack-framework/pkg/ids"
+	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 )
 
 // RequestIDHeader is the canonical header carrying the per-request correlation
 // id, both inbound and on the response.
 const RequestIDHeader = "X-Request-Id"
-
-const requestIDPrefix = "req"
 
 type contextKey int
 
@@ -23,7 +21,7 @@ const requestIDContextKey contextKey = iota
 //
 // For each request it:
 //   - reuses an inbound X-Request-Id header when present, otherwise mints a
-//     KSUID-backed id;
+//     UUIDv7 (time-ordered) id;
 //   - stores the id on the context (see RequestIDFromContext) and echoes it
 //     back on the X-Request-Id response header;
 //   - derives a child logger from base carrying request_id, method and path and
@@ -39,7 +37,7 @@ func Contextualize(base zerolog.Logger) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			requestID := r.Header.Get(RequestIDHeader)
 			if requestID == "" {
-				requestID = ids.MustNew(requestIDPrefix)
+				requestID = uuid.Must(uuid.NewV7()).String()
 			}
 			w.Header().Set(RequestIDHeader, requestID)
 

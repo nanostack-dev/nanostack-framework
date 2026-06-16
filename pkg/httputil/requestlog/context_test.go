@@ -9,11 +9,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/nanostack-dev/nanostack-framework/pkg/httputil/requestlog"
 	"github.com/rs/zerolog"
 )
-
-const requestIDPrefix = "req"
 
 func TestContextualize(t *testing.T) {
 	t.Parallel()
@@ -57,8 +56,14 @@ func TestContextualize(t *testing.T) {
 			if tt.wantReuseHeader && gotID != tt.inboundID {
 				t.Fatalf("expected inbound id %q reused, got %q", tt.inboundID, gotID)
 			}
-			if !tt.wantReuseHeader && !strings.HasPrefix(gotID, requestIDPrefix+"_") {
-				t.Fatalf("expected minted id with %q prefix, got %q", requestIDPrefix, gotID)
+			if !tt.wantReuseHeader {
+				parsed, err := uuid.Parse(gotID)
+				if err != nil {
+					t.Fatalf("expected minted id to be a UUID, got %q: %v", gotID, err)
+				}
+				if parsed.Version() != 7 {
+					t.Fatalf("expected minted id to be UUIDv7, got version %d", parsed.Version())
+				}
 			}
 			if respID := rec.Header().Get(requestlog.RequestIDHeader); respID != gotID {
 				t.Fatalf("response header %q does not match context id %q", respID, gotID)
