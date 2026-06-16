@@ -126,8 +126,9 @@ func TestNewSummaryIncludesMidRequestEnrichment(t *testing.T) {
 	handler.ServeHTTP(httptest.NewRecorder(), req)
 
 	fields := decodeLog(t, buf.String())
-	if fields["message"] != "incoming request" {
-		t.Fatalf("expected summary line, got %v", fields["message"])
+	msg, _ := fields["message"].(string)
+	if !strings.Contains(msg, "GET") || !strings.Contains(msg, "/flows") || !strings.Contains(msg, "200") {
+		t.Fatalf("expected summary headline with verb/path/status, got %q", msg)
 	}
 	if fields["org_id"] != "org_99" {
 		t.Fatalf("expected org_id on summary line, got %v", fields["org_id"])

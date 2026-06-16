@@ -2,6 +2,7 @@ package requestlog
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -107,13 +108,21 @@ func logRequest(
 	if withRoute {
 		entry = entry.Str("method", r.Method).Str("path", r.URL.Path)
 	}
+	duration := time.Since(start)
 	entry = entry.
 		Int("status", statusCode).
-		Dur("duration", time.Since(start))
+		Dur("duration", duration)
 	if logRequestBody && requestBody != "" && requestBody != "Error reading request body" {
 		entry = entry.Str("request_body", requestBody)
 	}
-	entry.Msg("incoming request")
+	entry.Msg(requestSummary(r, statusCode, duration))
+}
+
+// requestSummary builds a compact, human-scannable headline such as
+// "GET /flows/123 -> 200 (2.5ms)". The structured fields (request_id, org_id,
+// status, duration, ...) still live on the log entry; this is only the message.
+func requestSummary(r *http.Request, statusCode int, duration time.Duration) string {
+	return fmt.Sprintf("%s %s -> %d (%s)", r.Method, r.URL.Path, statusCode, duration.Round(time.Microsecond))
 }
 
 func logServerError(log zerolog.Logger, r *http.Request, statusCode int, start time.Time, withRoute bool) {
@@ -124,8 +133,9 @@ func logServerError(log zerolog.Logger, r *http.Request, statusCode int, start t
 	if withRoute {
 		entry = entry.Str("method", r.Method).Str("path", r.URL.Path)
 	}
+	duration := time.Since(start)
 	entry.
 		Int("status", statusCode).
-		Dur("duration", time.Since(start)).
-		Msgf("server error: %s", http.StatusText(statusCode))
+		Dur("duration", duration).
+		Msg(requestSummary(r, statusCode, duration))
 }
