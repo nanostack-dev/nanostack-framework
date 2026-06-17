@@ -34,6 +34,118 @@ var (
 	ErrNotFound   = NewWithStatus(CodeNotFound, "Not found", http.StatusNotFound)
 )
 
+// ClassificationKind identifies how an error should be handled at API
+// boundaries.
+type ClassificationKind string
+
+const (
+	// KindHandledAPI is a framework API error that is safe to return to the
+	// caller with its own status and details.
+	KindHandledAPI ClassificationKind = "handled_api"
+	// KindReportedUnexpected is an internal failure that was already logged near
+	// the source, so boundary handlers should return a generic 500 without
+	// emitting another error log.
+	KindReportedUnexpected ClassificationKind = "reported_unexpected"
+	// KindUnexpected is an internal failure that has not been source-reported.
+	KindUnexpected ClassificationKind = "unexpected"
+)
+
+// Classification is the framework's boundary decision for an error.
+type Classification struct {
+	Kind     ClassificationKind
+	Err      error
+	APIError *Error
+	Status   int
+}
+
+// Handled reports whether the error is safe to expose through the API.
+func (c Classification) Handled() bool {
+	return c.Kind == KindHandledAPI
+}
+
+// ReportedUnexpected reports whether the error is an internal failure already
+// logged close to its source.
+func (c Classification) ReportedUnexpected() bool {
+	return c.Kind == KindReportedUnexpected
+}
+
+// Unexpected reports whether the error is an internal failure that still needs
+// boundary logging.
+func (c Classification) Unexpected() bool {
+	return c.Kind == KindUnexpected
+}
+
+// ReportedUnexpectedError marks an internal error as already logged close to
+// its source while preserving normal errors.Is/errors.As unwrapping.
+type ReportedUnexpectedError struct {
+	Err error
+}
+
+func (e *ReportedUnexpectedError) Error() string {
+	if e == nil || e.Err == nil {
+		return "reported unexpected error"
+	}
+	return e.Err.Error()
+}
+
+func (e *ReportedUnexpectedError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Err
+}
+
+// MarkReportedUnexpected marks err as an internal failure that has already
+// been logged close to its source. API errors are returned unchanged because
+// they are handled responses, not unexpected failures.
+func MarkReportedUnexpected(err error) error {
+	if err == nil {
+		return nil
+	}
+	if _, ok := As(err); ok {
+		return err
+	}
+	if IsReportedUnexpected(err) {
+		return err
+	}
+	return &ReportedUnexpectedError{Err: err}
+}
+
+// IsReportedUnexpected reports whether err has been marked with
+// MarkReportedUnexpected.
+func IsReportedUnexpected(err error) bool {
+	var reported *ReportedUnexpectedError
+	return errors.As(err, &reported)
+}
+
+// Classify maps err into the framework's API boundary handling model.
+func Classify(err error) Classification {
+	if apiErr, ok := As(err); ok && apiErr != nil {
+		return Classification{
+			Kind:     KindHandledAPI,
+			Err:      err,
+			APIError: apiErr,
+			Status:   apiErr.HTTPStatus(),
+		}
+	}
+
+	if IsReportedUnexpected(err) {
+		return Classification{
+			Kind:     KindReportedUnexpected,
+			Err:      err,
+			APIError: ErrUnexpected,
+			Status:   http.StatusInternalServerError,
+		}
+	}
+
+	return Classification{
+		Kind:     KindUnexpected,
+		Err:      err,
+		APIError: ErrUnexpected,
+		Status:   http.StatusInternalServerError,
+	}
+}
+
 // NewWithDetails creates an Error with explicit details and HTTP status.
 func NewWithDetails(details []Detail, status int) *Error {
 	return &Error{Details: append([]Detail(nil), details...), Status: status}

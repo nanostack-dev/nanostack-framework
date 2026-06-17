@@ -61,15 +61,20 @@ func (h *StrictErrorHandler) HandleResponseError(w http.ResponseWriter, r *http.
 	}
 
 	logger := h.requestLogger(r)
+	classification := h.classify(err)
 
-	if apiErr, ok := h.apiErrorFrom(err); ok {
-		status := apiErr.HTTPStatus()
+	switch classification.Kind {
+	case apierror.KindHandledAPI:
+		status := classification.Status
 		if status >= internalServerErrorThreshold {
 			h.logInternalError(logger, err).Int("status", status).Msg("Internal server error")
 		} else {
-			logger.Warn().Err(err).Int("status", status).Msg("Request error")
+			logger.Debug().Err(err).Int("status", status).Msg("Request error")
 		}
-		apierror.WriteJSON(w, apiErr)
+		apierror.WriteJSON(w, classification.APIError)
+		return
+	case apierror.KindReportedUnexpected:
+		apierror.WriteJSON(w, apierror.ErrUnexpected)
 		return
 	}
 
@@ -82,14 +87,23 @@ func (h *StrictErrorHandler) HandleResponseError(w http.ResponseWriter, r *http.
 	apierror.WriteJSON(w, apierror.ErrUnexpected)
 }
 
-func (h *StrictErrorHandler) apiErrorFrom(err error) (*apierror.Error, bool) {
-	if apiErr, ok := apierror.As(err); ok {
-		return apiErr, true
+func (h *StrictErrorHandler) classify(err error) apierror.Classification {
+	classification := apierror.Classify(err)
+	if classification.Kind != apierror.KindUnexpected || h == nil || h.adaptError == nil {
+		return classification
 	}
-	if h != nil && h.adaptError != nil {
-		return h.adaptError(err)
+
+	apiErr, ok := h.adaptError(err)
+	if !ok || apiErr == nil {
+		return classification
 	}
-	return nil, false
+
+	return apierror.Classification{
+		Kind:     apierror.KindHandledAPI,
+		Err:      err,
+		APIError: apiErr,
+		Status:   apiErr.HTTPStatus(),
+	}
 }
 
 // logInternalError starts an error-level log event carrying every detail we can
@@ -122,14 +136,17 @@ func (h *StrictErrorHandler) handleSSEError(w http.ResponseWriter, r *http.Reque
 	}
 
 	status := http.StatusInternalServerError
-	if apiErr, ok := h.apiErrorFrom(err); ok {
-		status = apiErr.HTTPStatus()
+	classification := h.classify(err)
+	if classification.Kind == apierror.KindHandledAPI {
+		status = classification.Status
 	}
 
-	if status >= internalServerErrorThreshold {
+	if classification.Kind == apierror.KindReportedUnexpected {
+		status = http.StatusInternalServerError
+	} else if status >= internalServerErrorThreshold {
 		h.logInternalError(logger, err).Int("status", status).Msg("SSE stream error")
 	} else {
-		logger.Warn().Err(err).Int("status", status).Msg("SSE stream warning")
+		logger.Debug().Err(err).Int("status", status).Msg("SSE stream warning")
 	}
 
 	contentType := w.Header().Get("Content-Type")

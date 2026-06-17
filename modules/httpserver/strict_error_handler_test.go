@@ -1,6 +1,7 @@
 package httpserver
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -71,6 +72,65 @@ func TestStrictErrorHandlerHandleResponseErrorWithFrameworkError(t *testing.T) {
 	}
 	if body.Errors[0].Message != "conflict" {
 		t.Fatalf("expected conflict message, got %s", body.Errors[0].Message)
+	}
+}
+
+func TestStrictErrorHandlerLogsHandledAPIErrorAtDebug(t *testing.T) {
+	var logs bytes.Buffer
+	logger := zerolog.New(&logs).Level(zerolog.DebugLevel)
+	handler := NewStrictErrorHandler(StrictErrorHandlerOptions{Logger: logger})
+	req := httptest.NewRequest(http.MethodGet, "/flows", nil)
+	resp := httptest.NewRecorder()
+
+	handler.HandleResponseError(resp, req, apierror.NewWithStatus("CONFLICT", "conflict", http.StatusConflict))
+
+	if resp.Code != http.StatusConflict {
+		t.Fatalf("expected status %d, got %d", http.StatusConflict, resp.Code)
+	}
+	logOutput := logs.String()
+	if !strings.Contains(logOutput, `"level":"debug"`) {
+		t.Fatalf("expected debug log for handled API error, got %s", logOutput)
+	}
+	if strings.Contains(logOutput, `"level":"warn"`) || strings.Contains(logOutput, `"level":"error"`) {
+		t.Fatalf("expected no warn/error log for handled API error, got %s", logOutput)
+	}
+}
+
+func TestStrictErrorHandlerDoesNotRelogReportedUnexpectedError(t *testing.T) {
+	var logs bytes.Buffer
+	logger := zerolog.New(&logs).Level(zerolog.DebugLevel)
+	handler := NewStrictErrorHandler(StrictErrorHandlerOptions{Logger: logger})
+	req := httptest.NewRequest(http.MethodGet, "/flows", nil)
+	resp := httptest.NewRecorder()
+
+	handler.HandleResponseError(resp, req, apierror.MarkReportedUnexpected(errors.New("database unavailable")))
+
+	if resp.Code != http.StatusInternalServerError {
+		t.Fatalf("expected status %d, got %d", http.StatusInternalServerError, resp.Code)
+	}
+	if logs.Len() != 0 {
+		t.Fatalf("expected no duplicate log for source-reported unexpected error, got %s", logs.String())
+	}
+}
+
+func TestStrictErrorHandlerLogsUnreportedUnexpectedError(t *testing.T) {
+	var logs bytes.Buffer
+	logger := zerolog.New(&logs).Level(zerolog.DebugLevel)
+	handler := NewStrictErrorHandler(StrictErrorHandlerOptions{Logger: logger})
+	req := httptest.NewRequest(http.MethodGet, "/flows", nil)
+	resp := httptest.NewRecorder()
+
+	handler.HandleResponseError(resp, req, errors.New("database unavailable"))
+
+	if resp.Code != http.StatusInternalServerError {
+		t.Fatalf("expected status %d, got %d", http.StatusInternalServerError, resp.Code)
+	}
+	logOutput := logs.String()
+	if !strings.Contains(logOutput, `"level":"error"`) {
+		t.Fatalf("expected error log for unreported unexpected error, got %s", logOutput)
+	}
+	if !strings.Contains(logOutput, "Unhandled error returned by strict handler") {
+		t.Fatalf("expected strict handler error message, got %s", logOutput)
 	}
 }
 
