@@ -15,9 +15,9 @@ import (
 
 type errorResponse struct {
 	Errors []struct {
-		Code    string         `json:"code"`
-		Details map[string]any `json:"details,omitempty"`
-		Message string         `json:"message"`
+		Code     string         `json:"code"`
+		Metadata map[string]any `json:"metadata,omitempty"`
+		Message  string         `json:"message"`
 	} `json:"errors"`
 }
 
@@ -170,8 +170,8 @@ func TestStrictErrorHandlerHandleResponseErrorWithAdapter(t *testing.T) {
 	if body.Errors[0].Code != "INVALID_INPUT" {
 		t.Fatalf("expected INVALID_INPUT code, got %s", body.Errors[0].Code)
 	}
-	if body.Errors[0].Details["field"] != "name" {
-		t.Fatalf("expected field metadata to be preserved, got %#v", body.Errors[0].Details)
+	if body.Errors[0].Metadata["field"] != "name" {
+		t.Fatalf("expected field metadata to be preserved, got %#v", body.Errors[0].Metadata)
 	}
 }
 

@@ -37,8 +37,8 @@ func TestNewWithDetails(t *testing.T) {
 	if resp.Errors[0].Code != "INVALID_INPUT" {
 		t.Fatalf("expected code INVALID_INPUT, got %s", resp.Errors[0].Code)
 	}
-	if resp.Errors[0].Details["field"] != "name" {
-		t.Fatalf("expected details.field=name, got %#v", resp.Errors[0].Details)
+	if resp.Errors[0].Metadata["field"] != "name" {
+		t.Fatalf("expected metadata.field=name, got %#v", resp.Errors[0].Metadata)
 	}
 }
 
@@ -169,7 +169,7 @@ func TestErrorMarshalsToContractShape(t *testing.T) {
 	}
 	// A direct marshal of Error must equal the API error contract so the type
 	// can back a generated OpenAPI schema via x-go-type with no translation.
-	want := `{"errors":[{"code":"FLOW_RUNNING","message":"flow already running","details":{"flow_id":"abc"}}]}`
+	want := `{"errors":[{"code":"FLOW_RUNNING","message":"flow already running","metadata":{"flow_id":"abc"}}]}`
 	if string(direct) != want {
 		t.Fatalf("unexpected contract JSON:\n got %s\nwant %s", direct, want)
 	}

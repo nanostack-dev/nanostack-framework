@@ -35,15 +35,14 @@ type Error struct {
 }
 
 // Detail is a single machine-readable API error detail. Its JSON shape is the
-// canonical API error contract: a direct json.Marshal of an Error yields the
-// same bytes as ToResponse, so the type can back a generated OpenAPI schema via
-// x-go-type without a translation layer. Metadata serializes as "details" to
-// match that contract.
+// canonical API error contract: a direct json.Marshal of an Error yields exactly
+// that contract, so the type can back a generated OpenAPI schema via x-go-type
+// without a translation layer.
 type Detail struct {
 	Code     string         `json:"code"`
 	Message  string         `json:"message"`
 	Field    string         `json:"field,omitempty"`
-	Metadata map[string]any `json:"details,omitempty"`
+	Metadata map[string]any `json:"metadata,omitempty"`
 }
 
 var (
@@ -308,10 +307,10 @@ type Response struct {
 
 // ResponseError is generated-type neutral so apps can map into their own DTOs.
 type ResponseError struct {
-	Code    string         `json:"code"`
-	Details map[string]any `json:"details,omitempty"`
-	Field   *string        `json:"field,omitempty"`
-	Message string         `json:"message"`
+	Code     string         `json:"code"`
+	Metadata map[string]any `json:"metadata,omitempty"`
+	Field    *string        `json:"field,omitempty"`
+	Message  string         `json:"message"`
 }
 
 // ToResponse maps Error into the default generated-type-neutral response shape.
@@ -322,9 +321,9 @@ func ToResponse(err *Error) Response {
 	items := make([]ResponseError, 0, len(err.Details))
 	for _, detail := range err.Details {
 		item := ResponseError{
-			Code:    detail.Code,
-			Message: detail.Message,
-			Details: detail.Metadata,
+			Code:     detail.Code,
+			Message:  detail.Message,
+			Metadata: detail.Metadata,
 		}
 		if detail.Field != "" {
 			field := detail.Field
