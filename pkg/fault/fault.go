@@ -34,12 +34,16 @@ type Error struct {
 	source error
 }
 
-// Detail is a single machine-readable API error detail.
+// Detail is a single machine-readable API error detail. Its JSON shape is the
+// canonical API error contract: a direct json.Marshal of an Error yields the
+// same bytes as ToResponse, so the type can back a generated OpenAPI schema via
+// x-go-type without a translation layer. Metadata serializes as "details" to
+// match that contract.
 type Detail struct {
 	Code     string         `json:"code"`
 	Message  string         `json:"message"`
 	Field    string         `json:"field,omitempty"`
-	Metadata map[string]any `json:"metadata,omitempty"`
+	Metadata map[string]any `json:"details,omitempty"`
 }
 
 var (
@@ -331,12 +335,14 @@ func ToResponse(err *Error) Response {
 	return Response{Errors: items}
 }
 
-// WriteJSON writes Error using the default generated-type-neutral response shape.
+// WriteJSON writes Error as the canonical API error contract. Error marshals to
+// that contract directly, so the boundary, a direct json.Marshal, and a
+// generated x-go-type'd schema all emit identical bytes.
 func WriteJSON(w http.ResponseWriter, err *Error) {
 	if err == nil {
 		err = ErrUnexpected
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(err.HTTPStatus())
-	_ = json.NewEncoder(w).Encode(ToResponse(err))
+	_ = json.NewEncoder(w).Encode(err)
 }
