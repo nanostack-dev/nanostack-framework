@@ -1,6 +1,6 @@
 package validate
 
-import "github.com/nanostack-dev/nanostack-framework/pkg/apierror"
+import "github.com/nanostack-dev/nanostack-framework/pkg/fault"
 
 var defaultStructValidator = mustNewStructValidator() //nolint:gochecknoglobals // Shared default validator for bounded migration slices.
 
@@ -13,6 +13,6 @@ func mustNewStructValidator() *StructValidator {
 }
 
 // ValidateStruct validates a struct with the package default validator.
-func ValidateStruct(s interface{}) *apierror.Error {
+func ValidateStruct(s interface{}) *fault.Error {
 	return defaultStructValidator.Validate(s)
 }

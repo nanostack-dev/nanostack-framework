@@ -54,7 +54,14 @@ func (o Options) withDefaults() Options {
 		o.Port = defaultPort
 	}
 	if len(o.AllowedMethods) == 0 {
-		o.AllowedMethods = []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodOptions}
+		o.AllowedMethods = []string{
+			http.MethodGet,
+			http.MethodPost,
+			http.MethodPut,
+			http.MethodPatch,
+			http.MethodDelete,
+			http.MethodOptions,
+		}
 	}
 	if len(o.AllowedHeaders) == 0 {
 		o.AllowedHeaders = []string{"Accept", "Authorization", "Content-Type", "X-Request-Id"}
@@ -79,6 +86,7 @@ func (o Options) withDefaults() Options {
 
 type Params struct {
 	fx.In
+
 	Lifecycle fx.Lifecycle
 	Logger    zerolog.Logger
 	Registry  *health.Registry `optional:"true"`

@@ -6,13 +6,13 @@ import (
 	"net/http"
 
 	"github.com/go-playground/validator/v10"
-	"github.com/nanostack-dev/nanostack-framework/pkg/apierror"
+	"github.com/nanostack-dev/nanostack-framework/pkg/fault"
 )
 
-// Validate validates a struct and returns an API-safe apierror.Error on failure.
-func (sv *StructValidator) Validate(s interface{}) *apierror.Error {
+// Validate validates a struct and returns an API-safe fault.Error on failure.
+func (sv *StructValidator) Validate(s interface{}) *fault.Error {
 	if sv == nil || sv.val == nil {
-		return apierror.NewWithStatus("VALIDATION_SETUP_ERROR", "Validator is not initialized", http.StatusInternalServerError)
+		return fault.NewWithStatus("VALIDATION_SETUP_ERROR", "Validator is not initialized", http.StatusInternalServerError)
 	}
 
 	err := sv.val.Struct(s)
@@ -22,10 +22,10 @@ func (sv *StructValidator) Validate(s interface{}) *apierror.Error {
 
 	var validationErrors validator.ValidationErrors
 	if errors.As(err, &validationErrors) {
-		details := make([]apierror.Detail, 0, len(validationErrors))
+		details := make([]fault.Detail, 0, len(validationErrors))
 		for _, fieldError := range validationErrors {
 			fieldName := fieldError.Field()
-			details = append(details, apierror.Detail{
+			details = append(details, fault.Detail{
 				Code:    "VALIDATION_ERROR",
 				Message: fieldError.Translate(sv.translator),
 				Metadata: map[string]any{
@@ -36,7 +36,7 @@ func (sv *StructValidator) Validate(s interface{}) *apierror.Error {
 				},
 			})
 		}
-		return &apierror.Error{
+		return &fault.Error{
 			Details: details,
 			Status:  http.StatusBadRequest,
 		}
@@ -44,8 +44,8 @@ func (sv *StructValidator) Validate(s interface{}) *apierror.Error {
 
 	var invalidValidationError *validator.InvalidValidationError
 	if errors.As(err, &invalidValidationError) {
-		return apierror.NewWithStatus("VALIDATION_SETUP_ERROR", "Invalid input provided for validation", http.StatusInternalServerError)
+		return fault.NewWithStatus("VALIDATION_SETUP_ERROR", "Invalid input provided for validation", http.StatusInternalServerError)
 	}
 
-	return apierror.NewWithStatus("UNEXPECTED_VALIDATION_ERROR", fmt.Sprintf("An unexpected error occurred during validation: %s", err.Error()), http.StatusInternalServerError)
+	return fault.NewWithStatus("UNEXPECTED_VALIDATION_ERROR", fmt.Sprintf("An unexpected error occurred during validation: %s", err.Error()), http.StatusInternalServerError)
 }
