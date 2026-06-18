@@ -75,45 +75,51 @@ func TestStrictErrorHandlerHandleResponseErrorWithFrameworkError(t *testing.T) {
 	}
 }
 
-func TestStrictErrorHandlerLogsHandledAPIErrorAtDebug(t *testing.T) {
+func TestStrictErrorHandlerLogsHandledClientErrorAtInfo(t *testing.T) {
 	var logs bytes.Buffer
 	logger := zerolog.New(&logs).Level(zerolog.DebugLevel)
 	handler := NewStrictErrorHandler(StrictErrorHandlerOptions{Logger: logger})
 	req := httptest.NewRequest(http.MethodGet, "/flows", nil)
 	resp := httptest.NewRecorder()
 
-	handler.HandleResponseError(resp, req, apierror.NewWithStatus("CONFLICT", "conflict", http.StatusConflict))
+	handler.HandleResponseError(resp, req, apierror.Conflict("CONFLICT", "conflict"))
 
 	if resp.Code != http.StatusConflict {
 		t.Fatalf("expected status %d, got %d", http.StatusConflict, resp.Code)
 	}
 	logOutput := logs.String()
-	if !strings.Contains(logOutput, `"level":"debug"`) {
-		t.Fatalf("expected debug log for handled API error, got %s", logOutput)
+	if !strings.Contains(logOutput, `"level":"info"`) {
+		t.Fatalf("expected info log for handled client error, got %s", logOutput)
 	}
-	if strings.Contains(logOutput, `"level":"warn"`) || strings.Contains(logOutput, `"level":"error"`) {
-		t.Fatalf("expected no warn/error log for handled API error, got %s", logOutput)
+	if strings.Contains(logOutput, `"level":"error"`) {
+		t.Fatalf("expected no error log for handled client error, got %s", logOutput)
 	}
 }
 
-func TestStrictErrorHandlerDoesNotRelogReportedUnexpectedError(t *testing.T) {
-	var logs bytes.Buffer
-	logger := zerolog.New(&logs).Level(zerolog.DebugLevel)
-	handler := NewStrictErrorHandler(StrictErrorHandlerOptions{Logger: logger})
+func TestStrictErrorHandlerReturnsWrappedAPIErrorStatus(t *testing.T) {
+	handler := NewStrictErrorHandler(StrictErrorHandlerOptions{Logger: zerolog.Nop()})
 	req := httptest.NewRequest(http.MethodGet, "/flows", nil)
 	resp := httptest.NewRecorder()
 
-	handler.HandleResponseError(resp, req, apierror.MarkReportedUnexpected(errors.New("database unavailable")))
+	wrapped := apierror.NotFound("FLOW_NOT_FOUND", "flow not found").Wrap(errors.New("no rows"))
+	handler.HandleResponseError(resp, req, wrapped)
 
-	if resp.Code != http.StatusInternalServerError {
-		t.Fatalf("expected status %d, got %d", http.StatusInternalServerError, resp.Code)
+	var body errorResponse
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
 	}
-	if logs.Len() != 0 {
-		t.Fatalf("expected no duplicate log for source-reported unexpected error, got %s", logs.String())
+	if resp.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d, got %d", http.StatusNotFound, resp.Code)
+	}
+	if len(body.Errors) != 1 || body.Errors[0].Code != "FLOW_NOT_FOUND" {
+		t.Fatalf("expected FLOW_NOT_FOUND, got %#v", body.Errors)
+	}
+	if strings.Contains(resp.Body.String(), "no rows") {
+		t.Fatalf("wrapped cause leaked into response: %s", resp.Body.String())
 	}
 }
 
-func TestStrictErrorHandlerLogsUnreportedUnexpectedError(t *testing.T) {
+func TestStrictErrorHandlerLogsUnexpectedErrorAtError(t *testing.T) {
 	var logs bytes.Buffer
 	logger := zerolog.New(&logs).Level(zerolog.DebugLevel)
 	handler := NewStrictErrorHandler(StrictErrorHandlerOptions{Logger: logger})
@@ -127,7 +133,7 @@ func TestStrictErrorHandlerLogsUnreportedUnexpectedError(t *testing.T) {
 	}
 	logOutput := logs.String()
 	if !strings.Contains(logOutput, `"level":"error"`) {
-		t.Fatalf("expected error log for unreported unexpected error, got %s", logOutput)
+		t.Fatalf("expected error log for unexpected error, got %s", logOutput)
 	}
 	if !strings.Contains(logOutput, "Unhandled error returned by strict handler") {
 		t.Fatalf("expected strict handler error message, got %s", logOutput)
@@ -142,12 +148,8 @@ func TestStrictErrorHandlerHandleResponseErrorWithAdapter(t *testing.T) {
 			if !errors.As(err, &target) {
 				return nil, false
 			}
-			return apierror.New(
-				"INVALID_INPUT",
-				"invalid input",
-				map[string]any{"field": "name"},
-				http.StatusBadRequest,
-			), true
+			return apierror.BadRequest("INVALID_INPUT", "invalid input").
+				Metadata(map[string]any{"field": "name"}), true
 		},
 	})
 	req := httptest.NewRequest(http.MethodGet, "/flows", nil)

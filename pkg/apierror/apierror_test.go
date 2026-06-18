@@ -1,13 +1,14 @@
 package apierror
 
 import (
+	"database/sql"
 	"errors"
 	"net/http"
 	"testing"
 )
 
 func TestAs(t *testing.T) {
-	err := errors.Join(NewBadRequest("BAD", "bad"))
+	err := errors.Join(BadRequest("BAD", "bad"))
 	apiErr, ok := As(err)
 	if !ok {
 		t.Fatal("expected api error")
@@ -40,80 +41,140 @@ func TestNewWithDetails(t *testing.T) {
 	}
 }
 
-func TestClassifyHandledAPIError(t *testing.T) {
-	err := NewWithStatus("CONFLICT", "conflict", http.StatusConflict)
-
-	classification := Classify(err)
-
-	if !classification.Handled() {
-		t.Fatalf("expected handled classification, got %s", classification.Kind)
+func TestSemanticConstructors(t *testing.T) {
+	cases := []struct {
+		name   string
+		err    *Error
+		status int
+	}{
+		{"BadRequest", BadRequest("X", "x"), http.StatusBadRequest},
+		{"Unauthorized", Unauthorized("X", "x"), http.StatusUnauthorized},
+		{"Forbidden", Forbidden("X", "x"), http.StatusForbidden},
+		{"NotFound", NotFound("X", "x"), http.StatusNotFound},
+		{"Conflict", Conflict("X", "x"), http.StatusConflict},
+		{"Unprocessable", Unprocessable("X", "x"), http.StatusUnprocessableEntity},
+		{"TooManyRequests", TooManyRequests("X", "x"), http.StatusTooManyRequests},
+		{"Internal", Internal("X", "x"), http.StatusInternalServerError},
 	}
-	if classification.ReportedUnexpected() || classification.Unexpected() {
-		t.Fatalf("expected only handled classification, got %s", classification.Kind)
-	}
-	if classification.APIError != err {
-		t.Fatal("expected original API error")
-	}
-	if classification.Status != http.StatusConflict {
-		t.Fatalf("expected status %d, got %d", http.StatusConflict, classification.Status)
-	}
-}
-
-func TestClassifyReportedUnexpected(t *testing.T) {
-	sourceErr := errors.New("database unavailable")
-	err := MarkReportedUnexpected(sourceErr)
-
-	classification := Classify(err)
-
-	if !classification.ReportedUnexpected() {
-		t.Fatalf("expected reported unexpected classification, got %s", classification.Kind)
-	}
-	if classification.Handled() || classification.Unexpected() {
-		t.Fatalf("expected only reported unexpected classification, got %s", classification.Kind)
-	}
-	if classification.APIError != ErrUnexpected {
-		t.Fatal("expected generic unexpected API error")
-	}
-	if classification.Status != http.StatusInternalServerError {
-		t.Fatalf("expected status %d, got %d", http.StatusInternalServerError, classification.Status)
-	}
-	if !errors.Is(err, sourceErr) {
-		t.Fatal("expected marked error to unwrap source error")
-	}
-	if !IsReportedUnexpected(err) {
-		t.Fatal("expected error to be marked reported unexpected")
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.err.HTTPStatus() != tc.status {
+				t.Fatalf("expected status %d, got %d", tc.status, tc.err.HTTPStatus())
+			}
+			if tc.err.Details[0].Code != "X" || tc.err.Details[0].Message != "x" {
+				t.Fatalf("unexpected detail %#v", tc.err.Details[0])
+			}
+		})
 	}
 }
 
-func TestClassifyUnexpected(t *testing.T) {
-	err := errors.New("boom")
+func TestMetaDoesNotMutateSentinel(t *testing.T) {
+	decorated := ErrNotFound.Meta("flow_id", "abc")
 
-	classification := Classify(err)
-
-	if !classification.Unexpected() {
-		t.Fatalf("expected unexpected classification, got %s", classification.Kind)
+	if decorated == ErrNotFound {
+		t.Fatal("expected a copy, got the sentinel itself")
 	}
-	if classification.Handled() || classification.ReportedUnexpected() {
-		t.Fatalf("expected only unexpected classification, got %s", classification.Kind)
+	if len(ErrNotFound.Details[0].Metadata) != 0 {
+		t.Fatalf("sentinel was mutated: %#v", ErrNotFound.Details[0].Metadata)
 	}
-	if classification.APIError != ErrUnexpected {
-		t.Fatal("expected generic unexpected API error")
+	if decorated.Details[0].Metadata["flow_id"] != "abc" {
+		t.Fatalf("expected flow_id metadata, got %#v", decorated.Details[0].Metadata)
+	}
+	if decorated.HTTPStatus() != http.StatusNotFound {
+		t.Fatalf("expected status preserved, got %d", decorated.HTTPStatus())
 	}
 }
 
-func TestMarkReportedUnexpectedLeavesAPIErrorHandled(t *testing.T) {
-	err := NewBadRequest("BAD", "bad")
+func TestMetadataMerge(t *testing.T) {
+	err := Conflict("LOCKED", "locked").
+		Meta("a", 1).
+		Metadata(map[string]any{"b": 2, "c": 3})
 
-	marked := MarkReportedUnexpected(err)
-	classification := Classify(marked)
+	meta := err.Details[0].Metadata
+	if meta["a"] != 1 || meta["b"] != 2 || meta["c"] != 3 {
+		t.Fatalf("expected merged metadata, got %#v", meta)
+	}
+}
 
-	if marked != err {
-		t.Fatal("expected API error to be returned unchanged")
+func TestMsgf(t *testing.T) {
+	err := Conflict("FLOW_RUNNING", "").Msgf("flow %s is locked", "abc")
+	if err.Details[0].Message != "flow abc is locked" {
+		t.Fatalf("unexpected message %q", err.Details[0].Message)
 	}
-	if !classification.Handled() {
-		t.Fatalf("expected handled classification, got %s", classification.Kind)
+}
+
+func TestWrapPreservesUnwrap(t *testing.T) {
+	err := NotFound("FLOW_NOT_FOUND", "flow not found").Wrap(sql.ErrNoRows)
+
+	if !errors.Is(err, sql.ErrNoRows) {
+		t.Fatal("expected wrapped error to unwrap to sql.ErrNoRows")
 	}
-	if IsReportedUnexpected(marked) {
-		t.Fatal("expected API error not to be marked reported unexpected")
+	apiErr, ok := As(err)
+	if !ok || apiErr.HTTPStatus() != http.StatusNotFound {
+		t.Fatalf("expected wrapped error to remain a 404 api error, got %#v", apiErr)
+	}
+	if got := apiErr.Details[0].Code; got != "FLOW_NOT_FOUND" {
+		t.Fatalf("expected code FLOW_NOT_FOUND, got %s", got)
+	}
+}
+
+func TestWrapDoesNotLeakSourceInJSON(t *testing.T) {
+	err := NotFound("FLOW_NOT_FOUND", "flow not found").Wrap(errors.New("secret db dsn leaked"))
+	resp := ToResponse(err)
+	if len(resp.Errors) != 1 {
+		t.Fatalf("expected one error, got %d", len(resp.Errors))
+	}
+	if resp.Errors[0].Message != "flow not found" {
+		t.Fatalf("expected only the safe message, got %q", resp.Errors[0].Message)
+	}
+}
+
+func TestIsMatchesByStatusClass(t *testing.T) {
+	err := NotFound("FLOW_NOT_FOUND", "flow not found")
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatal("expected a 404 error to match the ErrNotFound sentinel")
+	}
+	if errors.Is(err, ErrConflict) {
+		t.Fatal("did not expect a 404 to match a 409 sentinel")
+	}
+}
+
+func TestFieldPopulatesResponseField(t *testing.T) {
+	err := Invalid().
+		Field("name", "REQUIRED", "name is required").
+		Field("age", "RANGE", "must be positive")
+
+	if err.HTTPStatus() != http.StatusUnprocessableEntity {
+		t.Fatalf("expected 422, got %d", err.HTTPStatus())
+	}
+	resp := ToResponse(err)
+	if len(resp.Errors) != 2 {
+		t.Fatalf("expected 2 field errors, got %d", len(resp.Errors))
+	}
+	if resp.Errors[0].Field == nil || *resp.Errors[0].Field != "name" {
+		t.Fatalf("expected field name, got %#v", resp.Errors[0].Field)
+	}
+	if resp.Errors[1].Field == nil || *resp.Errors[1].Field != "age" {
+		t.Fatalf("expected field age, got %#v", resp.Errors[1].Field)
+	}
+}
+
+func TestDetailAppends(t *testing.T) {
+	err := BadRequest("PRIMARY", "primary").Detail("SECOND", "second")
+	if len(err.Details) != 2 {
+		t.Fatalf("expected 2 details, got %d", len(err.Details))
+	}
+	if err.Details[1].Code != "SECOND" {
+		t.Fatalf("expected appended detail SECOND, got %s", err.Details[1].Code)
+	}
+}
+
+func TestDeprecatedConstructorsStillWork(t *testing.T) {
+	if NewBadRequest("BAD", "bad").HTTPStatus() != http.StatusBadRequest {
+		t.Fatal("NewBadRequest should map to 400")
+	}
+	withMeta := NewBadRequestWithMetadata("BAD", "bad", map[string]any{"k": "v"})
+	if withMeta.Details[0].Metadata["k"] != "v" {
+		t.Fatalf("expected metadata preserved, got %#v", withMeta.Details[0].Metadata)
 	}
 }

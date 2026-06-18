@@ -50,7 +50,7 @@ func (h *StrictErrorHandler) HandleRequestError(w http.ResponseWriter, _ *http.R
 	if err != nil {
 		message = err.Error()
 	}
-	apierror.WriteJSON(w, apierror.NewBadRequest("BAD_REQUEST", message))
+	apierror.WriteJSON(w, apierror.BadRequest("BAD_REQUEST", message))
 }
 
 // HandleResponseError writes handler errors using the framework default response shape.
@@ -61,49 +61,40 @@ func (h *StrictErrorHandler) HandleResponseError(w http.ResponseWriter, r *http.
 	}
 
 	logger := h.requestLogger(r)
-	classification := h.classify(err)
 
-	switch classification.Kind {
-	case apierror.KindHandledAPI:
-		status := classification.Status
+	if apiErr, ok := h.apiErrorFrom(err); ok {
+		status := apiErr.HTTPStatus()
 		if status >= internalServerErrorThreshold {
 			h.logInternalError(logger, err).Int("status", status).Msg("Internal server error")
 		} else {
-			logger.Debug().Err(err).Int("status", status).Msg("Request error")
+			// Modelled client error: expected, low-severity. Logged at info so
+			// it stays visible without the noise of warn/error.
+			logger.Info().Err(err).Int("status", status).Msg("Request error")
 		}
-		apierror.WriteJSON(w, classification.APIError)
-		return
-	case apierror.KindReportedUnexpected:
-		apierror.WriteJSON(w, apierror.ErrUnexpected)
+		apierror.WriteJSON(w, apiErr)
 		return
 	}
 
 	// Unmodelled error: never guess a status from the message. Respond with a
 	// generic, API-safe 500 and log the error with full detail so the
-	// unexpected failure can be diagnosed.
+	// unexpected failure can be diagnosed. This boundary log is the safety net
+	// that catches failures a source layer forgot to log.
 	h.logInternalError(logger, err).
 		Int("status", http.StatusInternalServerError).
 		Msg("Unhandled error returned by strict handler")
 	apierror.WriteJSON(w, apierror.ErrUnexpected)
 }
 
-func (h *StrictErrorHandler) classify(err error) apierror.Classification {
-	classification := apierror.Classify(err)
-	if classification.Kind != apierror.KindUnexpected || h == nil || h.adaptError == nil {
-		return classification
+// apiErrorFrom resolves err to a framework API error, either directly or via the
+// app-supplied adapter for legacy error types.
+func (h *StrictErrorHandler) apiErrorFrom(err error) (*apierror.Error, bool) {
+	if apiErr, ok := apierror.As(err); ok {
+		return apiErr, true
 	}
-
-	apiErr, ok := h.adaptError(err)
-	if !ok || apiErr == nil {
-		return classification
+	if h != nil && h.adaptError != nil {
+		return h.adaptError(err)
 	}
-
-	return apierror.Classification{
-		Kind:     apierror.KindHandledAPI,
-		Err:      err,
-		APIError: apiErr,
-		Status:   apiErr.HTTPStatus(),
-	}
+	return nil, false
 }
 
 // logInternalError starts an error-level log event carrying every detail we can
@@ -136,17 +127,14 @@ func (h *StrictErrorHandler) handleSSEError(w http.ResponseWriter, r *http.Reque
 	}
 
 	status := http.StatusInternalServerError
-	classification := h.classify(err)
-	if classification.Kind == apierror.KindHandledAPI {
-		status = classification.Status
+	if apiErr, ok := h.apiErrorFrom(err); ok {
+		status = apiErr.HTTPStatus()
 	}
 
-	if classification.Kind == apierror.KindReportedUnexpected {
-		status = http.StatusInternalServerError
-	} else if status >= internalServerErrorThreshold {
+	if status >= internalServerErrorThreshold {
 		h.logInternalError(logger, err).Int("status", status).Msg("SSE stream error")
 	} else {
-		logger.Debug().Err(err).Int("status", status).Msg("SSE stream warning")
+		logger.Info().Err(err).Int("status", status).Msg("SSE stream warning")
 	}
 
 	contentType := w.Header().Get("Content-Type")
