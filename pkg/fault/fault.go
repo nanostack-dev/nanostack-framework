@@ -1,4 +1,4 @@
-package apierror
+package fault
 
 import (
 	"encoding/json"
@@ -106,7 +106,7 @@ func Internal(code, message string) *Error {
 // Invalid starts an empty 422 validation error. Attach field-level details with
 // Field:
 //
-//	apierror.Invalid().
+//	fault.Invalid().
 //		Field("name", "REQUIRED", "name is required").
 //		Field("age", "RANGE", "must be positive")
 func Invalid() *Error {
@@ -126,7 +126,7 @@ func NewWithDetails(details []Detail, status int) *Error {
 // New creates an Error with a single detail.
 //
 // Deprecated: use a semantic constructor with fluent decorators, e.g.
-// apierror.BadRequest(code, message).Metadata(metadata).
+// fault.BadRequest(code, message).Metadata(metadata).
 func New(code, message string, metadata map[string]any, status int) *Error {
 	return &Error{
 		Details: []Detail{{Code: code, Message: message, Metadata: metadata}},
@@ -136,14 +136,14 @@ func New(code, message string, metadata map[string]any, status int) *Error {
 
 // NewBadRequest creates an Error with HTTP 400 status.
 //
-// Deprecated: use apierror.BadRequest(code, message).
+// Deprecated: use fault.BadRequest(code, message).
 func NewBadRequest(code, message string) *Error {
 	return BadRequest(code, message)
 }
 
 // NewBadRequestWithMetadata creates an Error with HTTP 400 status and metadata.
 //
-// Deprecated: use apierror.BadRequest(code, message).Metadata(metadata).
+// Deprecated: use fault.BadRequest(code, message).Metadata(metadata).
 func NewBadRequestWithMetadata(code, message string, metadata map[string]any) *Error {
 	return BadRequest(code, message).Metadata(metadata)
 }
@@ -237,7 +237,7 @@ func (e *Error) Unwrap() error {
 	return e.source
 }
 
-// Is matches by HTTP status so errors.Is(err, apierror.ErrNotFound) reports
+// Is matches by HTTP status so errors.Is(err, fault.ErrNotFound) reports
 // whether err is a 404-class API error regardless of its specific code.
 func (e *Error) Is(target error) bool {
 	other, ok := target.(*Error)

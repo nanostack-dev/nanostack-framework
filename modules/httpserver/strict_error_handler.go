@@ -6,14 +6,14 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/nanostack-dev/nanostack-framework/pkg/apierror"
+	"github.com/nanostack-dev/nanostack-framework/pkg/fault"
 	"github.com/rs/zerolog"
 )
 
 const internalServerErrorThreshold = 500
 
 // APIErrorAdapter converts app-owned legacy errors into framework API errors.
-type APIErrorAdapter func(error) (*apierror.Error, bool)
+type APIErrorAdapter func(error) (*fault.Error, bool)
 
 // StrictErrorHandlerOptions configures strict-handler request and response errors.
 type StrictErrorHandlerOptions struct {
@@ -50,7 +50,7 @@ func (h *StrictErrorHandler) HandleRequestError(w http.ResponseWriter, _ *http.R
 	if err != nil {
 		message = err.Error()
 	}
-	apierror.WriteJSON(w, apierror.BadRequest("BAD_REQUEST", message))
+	fault.WriteJSON(w, fault.BadRequest("BAD_REQUEST", message))
 }
 
 // HandleResponseError writes handler errors using the framework default response shape.
@@ -71,7 +71,7 @@ func (h *StrictErrorHandler) HandleResponseError(w http.ResponseWriter, r *http.
 			// it stays visible without the noise of warn/error.
 			logger.Info().Err(err).Int("status", status).Msg("Request error")
 		}
-		apierror.WriteJSON(w, apiErr)
+		fault.WriteJSON(w, apiErr)
 		return
 	}
 
@@ -82,13 +82,13 @@ func (h *StrictErrorHandler) HandleResponseError(w http.ResponseWriter, r *http.
 	h.logInternalError(logger, err).
 		Int("status", http.StatusInternalServerError).
 		Msg("Unhandled error returned by strict handler")
-	apierror.WriteJSON(w, apierror.ErrUnexpected)
+	fault.WriteJSON(w, fault.ErrUnexpected)
 }
 
 // apiErrorFrom resolves err to a framework API error, either directly or via the
 // app-supplied adapter for legacy error types.
-func (h *StrictErrorHandler) apiErrorFrom(err error) (*apierror.Error, bool) {
-	if apiErr, ok := apierror.As(err); ok {
+func (h *StrictErrorHandler) apiErrorFrom(err error) (*fault.Error, bool) {
+	if apiErr, ok := fault.As(err); ok {
 		return apiErr, true
 	}
 	if h != nil && h.adaptError != nil {

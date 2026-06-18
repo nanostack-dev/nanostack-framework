@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nanostack-dev/nanostack-framework/pkg/apierror"
+	"github.com/nanostack-dev/nanostack-framework/pkg/fault"
 	"github.com/rs/zerolog"
 )
 
@@ -55,7 +55,7 @@ func TestStrictErrorHandlerHandleResponseErrorWithFrameworkError(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/flows", nil)
 	resp := httptest.NewRecorder()
 
-	handler.HandleResponseError(resp, req, apierror.NewWithStatus("CONFLICT", "conflict", http.StatusConflict))
+	handler.HandleResponseError(resp, req, fault.NewWithStatus("CONFLICT", "conflict", http.StatusConflict))
 
 	var body errorResponse
 	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
@@ -82,7 +82,7 @@ func TestStrictErrorHandlerLogsHandledClientErrorAtInfo(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/flows", nil)
 	resp := httptest.NewRecorder()
 
-	handler.HandleResponseError(resp, req, apierror.Conflict("CONFLICT", "conflict"))
+	handler.HandleResponseError(resp, req, fault.Conflict("CONFLICT", "conflict"))
 
 	if resp.Code != http.StatusConflict {
 		t.Fatalf("expected status %d, got %d", http.StatusConflict, resp.Code)
@@ -101,7 +101,7 @@ func TestStrictErrorHandlerReturnsWrappedAPIErrorStatus(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/flows", nil)
 	resp := httptest.NewRecorder()
 
-	wrapped := apierror.NotFound("FLOW_NOT_FOUND", "flow not found").Wrap(errors.New("no rows"))
+	wrapped := fault.NotFound("FLOW_NOT_FOUND", "flow not found").Wrap(errors.New("no rows"))
 	handler.HandleResponseError(resp, req, wrapped)
 
 	var body errorResponse
@@ -143,12 +143,12 @@ func TestStrictErrorHandlerLogsUnexpectedErrorAtError(t *testing.T) {
 func TestStrictErrorHandlerHandleResponseErrorWithAdapter(t *testing.T) {
 	handler := NewStrictErrorHandler(StrictErrorHandlerOptions{
 		Logger: zerolog.Nop(),
-		AdaptError: func(err error) (*apierror.Error, bool) {
+		AdaptError: func(err error) (*fault.Error, bool) {
 			var target *legacyError
 			if !errors.As(err, &target) {
 				return nil, false
 			}
-			return apierror.BadRequest("INVALID_INPUT", "invalid input").
+			return fault.BadRequest("INVALID_INPUT", "invalid input").
 				Metadata(map[string]any{"field": "name"}), true
 		},
 	})
@@ -178,12 +178,12 @@ func TestStrictErrorHandlerHandleResponseErrorWithAdapter(t *testing.T) {
 func TestStrictErrorHandlerHandleResponseErrorWithSSEEndpoint(t *testing.T) {
 	handler := NewStrictErrorHandler(StrictErrorHandlerOptions{
 		Logger: zerolog.Nop(),
-		AdaptError: func(err error) (*apierror.Error, bool) {
+		AdaptError: func(err error) (*fault.Error, bool) {
 			var target *legacyError
 			if !errors.As(err, &target) {
 				return nil, false
 			}
-			return apierror.NewWithStatus("CONFLICT", "conflict", http.StatusConflict), true
+			return fault.NewWithStatus("CONFLICT", "conflict", http.StatusConflict), true
 		},
 		IsSSEEndpoint: func(*http.Request) bool { return true },
 	})
