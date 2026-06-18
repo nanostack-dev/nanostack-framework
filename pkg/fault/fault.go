@@ -265,6 +265,16 @@ func (e *Error) Error() string {
 	return msg
 }
 
+// Message returns the primary client-safe message. Unlike Error it never
+// includes the wrapped cause, so it is safe to expose at transport boundaries
+// (e.g. an SSE error frame).
+func (e *Error) Message() string {
+	if e == nil || len(e.Details) == 0 {
+		return ErrUnexpected.Details[0].Message
+	}
+	return e.Details[0].Message
+}
+
 // HTTPStatus returns the HTTP status carried by the error.
 func (e *Error) HTTPStatus() int {
 	if e == nil || e.Status == 0 {

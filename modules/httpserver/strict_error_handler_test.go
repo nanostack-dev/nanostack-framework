@@ -201,7 +201,30 @@ func TestStrictErrorHandlerHandleResponseErrorWithSSEEndpoint(t *testing.T) {
 	if !strings.Contains(resp.Body.String(), `event: error`) {
 		t.Fatalf("expected SSE error event, got %s", resp.Body.String())
 	}
-	if !strings.Contains(resp.Body.String(), `{"error":"Conflict"}`) {
+	if !strings.Contains(resp.Body.String(), `{"error":"conflict"}`) {
 		t.Fatalf("expected SSE conflict payload, got %s", resp.Body.String())
+	}
+}
+
+func TestStrictErrorHandlerSSEUsesFaultMessageWithoutLeakingCause(t *testing.T) {
+	handler := NewStrictErrorHandler(StrictErrorHandlerOptions{
+		Logger:        zerolog.Nop(),
+		IsSSEEndpoint: func(*http.Request) bool { return true },
+	})
+	req := httptest.NewRequest(http.MethodGet, "/events/stream", nil)
+	resp := httptest.NewRecorder()
+
+	err := fault.NotFound("FLOW_NOT_FOUND", "flow not found").Wrap(errors.New("pq: connection refused"))
+	handler.HandleResponseError(resp, req, err)
+
+	body := resp.Body.String()
+	if resp.Code != http.StatusNotFound {
+		t.Fatalf("expected status %d, got %d", http.StatusNotFound, resp.Code)
+	}
+	if !strings.Contains(body, `{"error":"flow not found"}`) {
+		t.Fatalf("expected SSE frame to carry the fault message, got %s", body)
+	}
+	if strings.Contains(body, "pq: connection refused") {
+		t.Fatalf("wrapped cause leaked into SSE frame: %s", body)
 	}
 }

@@ -159,6 +159,18 @@ func TestFieldPopulatesResponseField(t *testing.T) {
 	}
 }
 
+func TestMessageIsClientSafe(t *testing.T) {
+	err := NotFound("FLOW_NOT_FOUND", "flow not found").Wrap(errors.New("pq: connection refused"))
+
+	if got := err.Message(); got != "flow not found" {
+		t.Fatalf("expected safe message without cause, got %q", got)
+	}
+	// Error keeps the cause for diagnostics; Message must not.
+	if err.Error() == err.Message() {
+		t.Fatal("expected Error to include the wrapped cause, Message to omit it")
+	}
+}
+
 func TestDetailAppends(t *testing.T) {
 	err := BadRequest("PRIMARY", "primary").Detail("SECOND", "second")
 	if len(err.Details) != 2 {

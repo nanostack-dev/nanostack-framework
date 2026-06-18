@@ -160,7 +160,7 @@ func (h *StrictErrorHandler) handleSSEError(w http.ResponseWriter, r *http.Reque
 	}
 
 	w.WriteHeader(status)
-	writeSSEError(w, messageFromStatus(status))
+	writeSSEError(w, apiErr.Message())
 	if flusher, ok := w.(http.Flusher); ok {
 		flusher.Flush()
 	}
@@ -173,24 +173,7 @@ func writeSSEError(w http.ResponseWriter, message string) {
 		Error string `json:"error"`
 	}{Error: message})
 	if err != nil {
-		payload = []byte(`{"error":"Internal server error"}`)
+		payload = []byte(`{"error":"Unexpected error"}`)
 	}
 	_, _ = fmt.Fprintf(w, "event: error\ndata: %s\n\n", payload)
-}
-
-func messageFromStatus(status int) string {
-	switch status {
-	case http.StatusBadRequest:
-		return "Bad request"
-	case http.StatusUnauthorized:
-		return "Unauthorized"
-	case http.StatusForbidden:
-		return "Forbidden"
-	case http.StatusNotFound:
-		return "Resource not found"
-	case http.StatusConflict:
-		return "Conflict"
-	default:
-		return "Internal server error"
-	}
 }
