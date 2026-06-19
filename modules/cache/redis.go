@@ -3,23 +3,35 @@ package cache
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog"
 )
 
+// redisPingTimeout bounds the startup connectivity probe so an unreachable Redis
+// fails fast (and the caller can fall back to a no-op cache) instead of hanging.
+const redisPingTimeout = 5 * time.Second
+
 type RedisCache struct {
 	client *redis.Client
 }
 
-func NewRedisCache(config Config, logger zerolog.Logger) *RedisCache {
+// NewRedisCache connects to Redis and verifies the connection with a bounded
+// ping. It returns an error (rather than panicking) when Redis is unreachable so
+// callers can degrade to a no-op cache: caching is only active on a live Redis.
+func NewRedisCache(config Config, logger zerolog.Logger) (*RedisCache, error) {
 	rdb := redis.NewClient(&redis.Options{Addr: config.Address, Password: config.Password, DB: config.DB})
-	if err := rdb.Ping(context.Background()).Err(); err != nil {
-		logger.Error().Err(err).Msg("failed to connect to redis cache")
-		panic("failed to connect to redis cache: " + err.Error())
+
+	ctx, cancel := context.WithTimeout(context.Background(), redisPingTimeout)
+	defer cancel()
+	if err := rdb.Ping(ctx).Err(); err != nil {
+		logger.Warn().Err(err).Str("address", config.Address).Msg("redis cache not reachable")
+		_ = rdb.Close()
+		return nil, fmt.Errorf("connect to redis cache at %q: %w", config.Address, err)
 	}
-	return &RedisCache{client: rdb}
+	return &RedisCache{client: rdb}, nil
 }
 
 func (r *RedisCache) Get(ctx context.Context, key string) (string, error) {
