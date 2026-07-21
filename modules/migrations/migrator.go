@@ -101,6 +101,16 @@ func (m *MigrationProvider) executeMigrations(migrator *migrate.Migrate) error {
 		}
 		return fmt.Errorf("migration failed: %w", err)
 	}
+	// Log the applied outcome and resulting schema version at info level. The
+	// per-step golang-migrate logs only go to MigrateLogger at debug, so without
+	// this line a successful run is silent and the schema version each
+	// environment landed on is invisible in production logs.
+	version, dirty, err := migrator.Version()
+	if err != nil {
+		m.log.Info().Err(err).Msg("database migrations applied; failed to read resulting version")
+		return nil
+	}
+	m.log.Info().Uint("version", version).Bool("dirty", dirty).Msg("database migrations applied")
 	return nil
 }
 
