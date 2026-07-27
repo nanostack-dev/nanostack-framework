@@ -71,3 +71,9 @@ Rationale: most service-layer validation call sites only need a stable, shared v
 Expose the shared Jet query helpers on `pkg/db/transactor` and provide the FX binding from `modules/transactor`.
 
 Rationale: Anchor and Echopoint already migrated repository code to the context-carried transaction package, but the published framework tag only exposed the transaction carrier itself. Keeping the query helpers and FX module in the same framework package avoids app-local wrappers and preserves a single transaction context identity across services.
+
+## 2026-07-27: Unique-Violation Classification
+
+Expose `pkg/db/pgerr.IsUniqueViolation` for SQLSTATE 23505 classification, with constraint names supplied by the caller.
+
+Rationale: five repository and service call sites across Anchor and Echopoint had each hand-rolled the same `errors.As` unwrap to `*pq.Error` plus SQLSTATE and constraint comparison, pulling a driver import into service packages that otherwise have none. The unwrap is driver knowledge and belongs in the framework; the constraint names are application schema and stay in the apps. The classification is needed because a pre-insert existence check is not race-free at any isolation level, so the constraint violation is the only correct answer to "does this already exist".
