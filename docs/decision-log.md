@@ -71,3 +71,17 @@ Rationale: most service-layer validation call sites only need a stable, shared v
 Expose the shared Jet query helpers on `pkg/db/transactor` and provide the FX binding from `modules/transactor`.
 
 Rationale: Anchor and Echopoint already migrated repository code to the context-carried transaction package, but the published framework tag only exposed the transaction carrier itself. Keeping the query helpers and FX module in the same framework package avoids app-local wrappers and preserves a single transaction context identity across services.
+
+## 2026-07-27: Constraint-Violation Classification
+
+Expose `pkg/db/pgerr` for SQLSTATE classification, with constraint names supplied by the caller.
+
+Rationale: five repository and service call sites across Anchor and Echopoint had each hand-rolled the same `errors.As` unwrap to `*pq.Error` plus SQLSTATE and constraint comparison, pulling a driver import into service packages that otherwise have none. The unwrap is driver knowledge and belongs in the framework; the constraint names are application schema and stay in the apps. The classification is needed because a pre-insert existence check is not race-free at any isolation level, so the constraint violation is the only correct answer to "does this already exist".
+
+## 2026-07-27: Query Helpers Return `Result[T]`
+
+Change the `pkg/db/transactor` query helpers from `(T, error)` to `Result[T]`, unwrapped with `Value()` or `Err()`, and hang `OnUnique`/`OnForeignKey`/`OnSQLState` off it.
+
+Rationale: constraint translation is only useful at the call site that issued the statement, and a free-function form (`pgerr.Map(err, ...)`) needs a second statement plus a temporary. Methods cannot declare their own type parameters, so a reusable mapper cannot wrap a `(value, error)` pair generically — but methods on a generic type can, which makes `Result[T]` the only shape that expresses the rule inline. Type inference already resolves the helpers' type arguments from `mapFunc`, so the fluent call site is no longer than the tuple form it replaces.
+
+Cost accepted: this is a breaking change for every caller, which must add `Value()` or `Err()`, and the error is unobserved by `errcheck` until the terminal call. `pgerr` remains usable directly for code that does not go through these helpers.
