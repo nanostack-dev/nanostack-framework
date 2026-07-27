@@ -4,6 +4,11 @@ SQLSTATE classification for PostgreSQL driver errors, so service code can map a
 constraint violation to a domain error without importing `lib/pq` or matching on
 message text.
 
+For statements issued through `pkg/db/transactor`, prefer the fluent form —
+`.OnUnique(...)` / `.OnForeignKey(...)` on the returned `Result`, which is built
+on this package. Use `pgerr` directly for code that does not go through those
+helpers.
+
 Use it where uniqueness cannot be settled by a pre-check. A `SELECT` before an
 `INSERT` is not race-free at any isolation level — a concurrent inserter's row
 stays invisible until it commits, so both callers pass the check and the loser

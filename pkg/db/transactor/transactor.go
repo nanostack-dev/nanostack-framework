@@ -70,81 +70,82 @@ func Executor(ctx context.Context, db qrm.DB) qrm.DB {
 }
 
 // Query executes a query and returns the results.
-func Query[T any](ctx context.Context, db qrm.DB, stmt jet.Statement) (T, error) {
+func Query[T any](ctx context.Context, db qrm.DB, stmt jet.Statement) Result[T] {
 	var result T
 	err := stmt.QueryContext(ctx, Executor(ctx, db), &result)
-	return result, err
+	return newResult(result, err)
 }
 
-// QueryOptional executes a query that may return 0 rows.
-func QueryOptional[T any](ctx context.Context, db qrm.DB, stmt jet.Statement) (*T, error) {
+// QueryOptional executes a query that may return 0 rows, in which case the
+// result value is nil and the error is nil.
+func QueryOptional[T any](ctx context.Context, db qrm.DB, stmt jet.Statement) Result[*T] {
 	var result T
 	err := stmt.QueryContext(ctx, Executor(ctx, db), &result)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) || errors.Is(err, qrm.ErrNoRows) {
-			return nil, nil
+			return newResult[*T](nil, nil)
 		}
-		return nil, err
+		return newResult[*T](nil, err)
 	}
-	return &result, nil
+	return newResult(&result, nil)
 }
 
 // QueryMap executes a query and maps the result.
-func QueryMap[T any, R any](ctx context.Context, db qrm.DB, stmt jet.Statement, mapFunc func(T) R) (R, error) {
-	result, err := Query[T](ctx, db, stmt)
+func QueryMap[T any, R any](ctx context.Context, db qrm.DB, stmt jet.Statement, mapFunc func(T) R) Result[R] {
+	result, err := Query[T](ctx, db, stmt).Value()
 	if err != nil {
 		var zero R
-		return zero, err
+		return newResult(zero, err)
 	}
-	return mapFunc(result), nil
+	return newResult(mapFunc(result), nil)
 }
 
 // QueryOptionalMap executes a query that may return 0 rows and maps the result when present.
-func QueryOptionalMap[T any, R any](ctx context.Context, db qrm.DB, stmt jet.Statement, mapFunc func(T) R) (*R, error) {
-	result, err := QueryOptional[T](ctx, db, stmt)
+func QueryOptionalMap[T any, R any](ctx context.Context, db qrm.DB, stmt jet.Statement, mapFunc func(T) R) Result[*R] {
+	result, err := QueryOptional[T](ctx, db, stmt).Value()
 	if err != nil || result == nil {
-		return nil, err
+		return newResult[*R](nil, err)
 	}
 	mapped := mapFunc(*result)
-	return &mapped, nil
+	return newResult(&mapped, nil)
 }
 
 // QueryMapSlice executes a query and maps a slice of results.
-func QueryMapSlice[T any, R any](ctx context.Context, db qrm.DB, stmt jet.Statement, mapFunc func(T) R) ([]R, error) {
+func QueryMapSlice[T any, R any](ctx context.Context, db qrm.DB, stmt jet.Statement, mapFunc func(T) R) Result[[]R] {
 	var results []T
 	if err := stmt.QueryContext(ctx, Executor(ctx, db), &results); err != nil {
-		return nil, err
+		return newResult[[]R](nil, err)
 	}
 	mapped := make([]R, len(results))
 	for i, result := range results {
 		mapped[i] = mapFunc(result)
 	}
-	return mapped, nil
+	return newResult(mapped, nil)
 }
 
-// Exec executes a statement.
-func Exec(ctx context.Context, db qrm.DB, stmt jet.Statement) error {
+// Exec executes a statement. It carries no value, so callers unwrap it with Err.
+func Exec(ctx context.Context, db qrm.DB, stmt jet.Statement) Result[struct{}] {
 	_, err := stmt.ExecContext(ctx, Executor(ctx, db))
-	return err
+	return newResult(struct{}{}, err)
 }
 
 // QueryCount executes a query count statement.
-func QueryCount(ctx context.Context, db qrm.DB, statement jet.Statement) (int64, error) {
+func QueryCount(ctx context.Context, db qrm.DB, statement jet.Statement) Result[int64] {
 	query, args := statement.Sql()
 	rows, err := Executor(ctx, db).QueryContext(ctx, query, args...)
 	if err != nil {
-		return 0, err
+		return newResult[int64](0, err)
 	}
 	defer rows.Close()
 	if !rows.Next() {
-		if err := rows.Err(); err != nil {
-			return 0, err
+		if rowsErr := rows.Err(); rowsErr != nil {
+			return newResult[int64](0, rowsErr)
 		}
-		return 0, sql.ErrNoRows
+		return newResult[int64](0, sql.ErrNoRows)
 	}
 	var count int64
-	if err := rows.Scan(&count); err != nil {
-		return 0, err
+	if scanErr := rows.Scan(&count); scanErr != nil {
+		return newResult[int64](0, scanErr)
 	}
-	return count, nil
+	return newResult(count, nil)
 }
