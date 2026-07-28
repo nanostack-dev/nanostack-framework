@@ -85,3 +85,9 @@ Change the `pkg/db/transactor` query helpers from `(T, error)` to `Result[T]`, u
 Rationale: constraint translation is only useful at the call site that issued the statement, and a free-function form (`pgerr.Map(err, ...)`) needs a second statement plus a temporary. Methods cannot declare their own type parameters, so a reusable mapper cannot wrap a `(value, error)` pair generically — but methods on a generic type can, which makes `Result[T]` the only shape that expresses the rule inline. Type inference already resolves the helpers' type arguments from `mapFunc`, so the fluent call site is no longer than the tuple form it replaces.
 
 Cost accepted: this is a breaking change for every caller, which must add `Value()` or `Err()`, and the error is unobserved by `errcheck` until the terminal call. `pgerr` remains usable directly for code that does not go through these helpers.
+
+## 2026-07-27: Single Query Entry Point
+
+Remove the `jetx` query helpers (`Query`, `QueryOptional`, `QueryMap`, `QueryOptionalMap`, `QueryMapSlice`, `Exec`, `QueryCount*`, `WithTx`, `WithTxReturn`, `Executor`, `DBOptions`, `CountResult`). `pkg/db/transactor` is the only way to run a statement; `jetx` keeps ordering, expression conversion, and filter composition.
+
+Rationale: the two sets were near-identical, differing only in how a transaction was supplied — `jetx` took an explicit `*DBOptions{Tx}`, `transactor` carries it in context. The 2026-05-25 decision already made `transactor` the shared surface, but the `jetx` twin stayed exported and unused. Once query results became `Result[T]`, keeping it meant one of the two ways to query silently bypassed constraint translation, so a repository could reintroduce an unhandled 23505 by picking the wrong helper. Nothing referenced the removed symbols — in the framework, Anchor, Echopoint, echopoint-runner, or pgkit — so the removal has no migration. Dropping them also breaks `jetx`'s dependency on `transactor`.
