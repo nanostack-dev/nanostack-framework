@@ -27,6 +27,7 @@ type fakeStore struct {
 	evicted     []string
 	patterns    []string
 	setFailsFor string
+	getFailsFor string
 }
 
 func newFakeStore() *fakeStore {
@@ -38,6 +39,9 @@ func newFakeStore() *fakeStore {
 }
 
 func (f *fakeStore) Get(_ context.Context, key string) (string, error) {
+	if key == f.getFailsFor {
+		return "", errors.New("redis down")
+	}
 	raw, ok := f.data[key]
 	if !ok {
 		return "", cache.ErrCacheKeyNotFound
@@ -208,18 +212,66 @@ func TestCacheGetOrElse(t *testing.T) {
 		}
 	})
 
-	t.Run("cache write failure surfaces rather than being swallowed", func(t *testing.T) {
+	t.Run("write failure still returns the loaded value", func(t *testing.T) {
 		store := newFakeStore()
 		store.setFailsFor = "product:tenant1:prod9"
 		entry := newProductCache(store).Key("tenant1", "prod9")
 
-		_, err := entry.GetOrElse(context.Background(), func() (*product, error) {
-			return &product{ID: "prod9"}, nil
+		got, err := entry.GetOrElse(context.Background(), func() (*product, error) {
+			return &product{ID: "prod9", Name: "Anchor"}, nil
 		})
-		if err == nil {
-			t.Fatal("GetOrElse() err = nil, want the cache write failure")
+		if err != nil {
+			t.Fatalf("GetOrElse() err = %v, want nil — a failed write must not fail the read", err)
+		}
+		if got == nil || got.Name != "Anchor" {
+			t.Fatalf("GetOrElse() = %+v, want the loaded product", got)
 		}
 	})
+
+	t.Run("read failure falls through to load rather than failing", func(t *testing.T) {
+		store := newFakeStore()
+		store.getFailsFor = "product:tenant1:prod9"
+		entry := newProductCache(store).Key("tenant1", "prod9")
+		called := false
+
+		got, err := entry.GetOrElse(context.Background(), func() (*product, error) {
+			called = true
+			return &product{ID: "prod9", Name: "Anchor"}, nil
+		})
+		if err != nil {
+			t.Fatalf("GetOrElse() err = %v, want nil — an unreadable cache must degrade, not fail", err)
+		}
+		if !called {
+			t.Fatal("load was not called; a cache read failure must fall through to the loader")
+		}
+		if got == nil || got.Name != "Anchor" {
+			t.Fatalf("GetOrElse() = %+v, want the loaded product", got)
+		}
+	})
+
+	t.Run("corrupt cached payload surfaces as an error", func(t *testing.T) {
+		store := newFakeStore()
+		store.data["product:tenant1:prod9"] = "{not json"
+		entry := newProductCache(store).Key("tenant1", "prod9")
+
+		if _, err := entry.GetOrElse(context.Background(), func() (*product, error) {
+			return &product{ID: "prod9"}, nil
+		}); err == nil {
+			t.Fatal("GetOrElse() err = nil, want a decode failure")
+		}
+	})
+}
+
+func TestCacheSetRejectsNil(t *testing.T) {
+	store := newFakeStore()
+	entry := newProductCache(store).Key("tenant1", "prod9")
+
+	if err := entry.Set(context.Background(), nil); !errors.Is(err, cache.ErrNilValue) {
+		t.Fatalf("Set(nil) err = %v, want ErrNilValue", err)
+	}
+	if len(store.data) != 0 {
+		t.Fatalf("cache holds %v, want nothing — a nil must not be stored as JSON null", store.data)
+	}
 }
 
 func TestCacheEviction(t *testing.T) {
@@ -272,5 +324,15 @@ func TestCacheNamespacesAreIndependent(t *testing.T) {
 	got, err := apiKeys.Key("same").Get(context.Background())
 	if !errors.Is(err, cache.ErrCacheKeyNotFound) {
 		t.Fatalf("apiKeys Get() = (%v, %v), want ErrCacheKeyNotFound — namespaces must not collide", got, err)
+	}
+
+	// A non-struct T must round-trip too, not merely miss.
+	hashed := "sha256:abc"
+	if setErr := apiKeys.Key("same").Set(context.Background(), &hashed); setErr != nil {
+		t.Fatalf("Set() err = %v", setErr)
+	}
+	back, backErr := apiKeys.Key("same").Get(context.Background())
+	if backErr != nil || back == nil || *back != hashed {
+		t.Fatalf("apiKeys Get() = (%v, %v), want %q", back, backErr, hashed)
 	}
 }

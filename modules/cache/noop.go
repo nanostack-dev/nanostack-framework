@@ -15,11 +15,15 @@ func (n *NoOpCache) Get(_ context.Context, _ string) (string, error) { return ""
 
 func (n *NoOpCache) Set(_ context.Context, _ string, _ string, _ time.Duration) error { return nil }
 
-func (n *NoOpCache) GetOrElse(_ context.Context, _ string, fallback func() (string, error), _ time.Duration) (string, error) {
+func (n *NoOpCache) GetOrElse(
+	_ context.Context, _ string, fallback func() (string, error), _ time.Duration,
+) (string, error) {
 	return fallback()
 }
 
-func (n *NoOpCache) GetOrElseWithExpiry(_ context.Context, _ string, fallback func() (string, time.Duration, error)) (string, error) {
+func (n *NoOpCache) GetOrElseWithExpiry(
+	_ context.Context, _ string, fallback func() (string, time.Duration, error),
+) (string, error) {
 	value, _, err := fallback()
 	return value, err
 }

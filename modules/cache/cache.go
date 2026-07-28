@@ -51,9 +51,12 @@ func (c Cache[T]) Key(parts ...string) Entry[T] {
 	return Entry[T]{cache: c, key: c.buildKey(parts...)}
 }
 
-// EvictPrefix drops every entry under the given key parts — pass none to clear
-// the whole namespace. Use it to invalidate a scope, such as all values for one
-// tenant, without listing individual keys.
+// EvictPrefix drops every entry nested under the given key parts — pass none
+// for the whole namespace. Use it to invalidate a scope, such as all values for
+// one tenant, without listing individual keys.
+//
+// It matches keys with at least one further part, so an entry addressed by the
+// bare prefix (Key() with no parts) is not covered.
 func (c Cache[T]) EvictPrefix(ctx context.Context, parts ...string) error {
 	pattern := c.buildKey(parts...) + ":*"
 	if err := c.store.EvictPattern(ctx, pattern); err != nil {
@@ -90,8 +93,18 @@ func (e Entry[T]) Get(ctx context.Context) (*T, error) {
 	return e.decode(raw)
 }
 
+// ErrNilValue is returned when a nil value is written. Storing it would encode
+// JSON null, which reads back as a zero-valued T rather than as an absent key.
+var ErrNilValue = errors.New("cache: refusing to store a nil value")
+
 // Set writes value under this key with the namespace's TTL.
+//
+// A nil value is rejected: absence is expressed by not caching, matching
+// GetOrElse's contract, not by storing a null.
 func (e Entry[T]) Set(ctx context.Context, value *T) error {
+	if value == nil {
+		return ErrNilValue
+	}
 	raw, err := SerializeStruct(value)
 	if err != nil {
 		e.warn(err, "failed to encode value for cache")
@@ -107,30 +120,61 @@ func (e Entry[T]) Set(ctx context.Context, value *T) error {
 // GetOrElse returns the cached value, calling load on a miss and caching what
 // it returns.
 //
+// It degrades rather than fails. If the cache cannot be read, load is called
+// anyway and its value returned; if the cache cannot be written, the loaded
+// value is still returned. Either way the failure is logged at warn. A cache
+// that is down should slow a request, not break it.
+//
 // A nil value from load means "does not exist": nothing is cached and
 // GetOrElse returns (nil, nil), so an absent record stays distinguishable from
 // a failure without forcing every caller to compare against
 // ErrCacheKeyNotFound.
+//
+// load should not return ErrCacheKeyNotFound to mean anything other than
+// absence — signal absence with a nil value instead.
 func (e Entry[T]) GetOrElse(ctx context.Context, load func() (*T, error)) (*T, error) {
-	raw, err := e.cache.store.GetOrElse(ctx, e.key, func() (string, error) {
-		loaded, loadErr := load()
-		if loadErr != nil {
-			return "", loadErr
-		}
-		if loaded == nil {
-			return "", ErrCacheKeyNotFound
-		}
-		return SerializeStruct(loaded)
-	}, e.cache.ttl)
+	raw, err := e.cache.store.Get(ctx, e.key)
+	switch {
+	case err == nil:
+		return e.decode(raw)
+	case !errors.Is(err, ErrCacheKeyNotFound):
+		// Read failure, not a miss. Fall through to load so the cache being
+		// unavailable costs latency rather than the whole request.
+		e.warn(err, "failed to read from cache, loading directly")
+	}
+
+	loaded, err := load()
 	if err != nil {
-		if errors.Is(err, ErrCacheKeyNotFound) {
-			//nolint:nilnil // absence is not a failure; see the doc comment above
-			return nil, nil
-		}
-		e.warn(err, "failed to resolve cache entry, including via load")
 		return nil, err
 	}
-	return e.decode(raw)
+	if loaded == nil {
+		//nolint:nilnil // absence is not a failure; see the doc comment above
+		return nil, nil
+	}
+	return e.store(ctx, loaded), nil
+}
+
+// store writes value to the cache and returns what callers should see. A write
+// failure is logged, never returned: the value was loaded successfully, so the
+// read succeeds regardless.
+//
+// The stored encoding is decoded back so a miss and a hit return the same
+// representation; if that round trip fails, the loaded value is returned as-is.
+func (e Entry[T]) store(ctx context.Context, value *T) *T {
+	raw, err := SerializeStruct(value)
+	if err != nil {
+		e.warn(err, "failed to encode value for cache")
+		return value
+	}
+	if setErr := e.cache.store.Set(ctx, e.key, raw, e.cache.ttl); setErr != nil {
+		e.warn(setErr, "failed to write to cache")
+		return value
+	}
+	decoded, decodeErr := e.decode(raw)
+	if decodeErr != nil {
+		return value
+	}
+	return decoded
 }
 
 // Evict drops this key.

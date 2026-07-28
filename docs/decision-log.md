@@ -92,14 +92,6 @@ Remove the `jetx` query helpers (`Query`, `QueryOptional`, `QueryMap`, `QueryOpt
 
 Rationale: the two sets were near-identical, differing only in how a transaction was supplied — `jetx` took an explicit `*DBOptions{Tx}`, `transactor` carries it in context. The 2026-05-25 decision already made `transactor` the shared surface, but the `jetx` twin stayed exported and unused. Once query results became `Result[T]`, keeping it meant one of the two ways to query silently bypassed constraint translation, so a repository could reintroduce an unhandled 23505 by picking the wrong helper. Nothing referenced the removed symbols — in the framework, Anchor, Echopoint, echopoint-runner, or pgkit — so the removal has no migration. Dropping them also breaks `jetx`'s dependency on `transactor`.
 
-## 2026-07-27: Typed Cache View
-
-Add `modules/cache.Typed[T]` and its `Entry[T]` handle, a generic view over `Cache` for one kind of value.
-
-Rationale: `Cache` predates generics — `GetStruct`/`SetStruct`/`GetOrElseStruct` take `interface{}` plus a caller-supplied destination pointer. Applications compensated by hand-writing a typed service per cached value: Anchor had two (`product_cache_service.go`, `product_api_key_cache_service.go`, 262 lines together) that differed only in entity type and key format, each re-implementing the same get/set/get-or-else/evict/evict-pattern set with the same warn-and-continue logging. `Typed[T]` owns a key namespace and hands out `Entry[T]` values, so those services collapse to a constructor call. It is a wrapper type rather than generic methods on `Cache`, because Go methods cannot declare their own type parameters.
-
-`Typed` stays in `modules/cache` next to the interface it wraps. `docs/boundaries.md` would put an FX-free primitive in `pkg/`, but only `module.go` in this package needs FX, and moving the interface would rewrite imports in ten application files for no behavioural gain.
-
 ## 2026-07-27: Typed Cache Is The Cache
 
 Make the generic `cache.Cache[T]` the API applications use, rename the untyped backend interface to `cache.Store`, and delete the `interface{}`-based struct methods (`GetStruct`, `SetStruct`, `GetOrElseStruct`, `GetOrElseStructWithExpiry`).
