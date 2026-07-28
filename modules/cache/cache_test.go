@@ -249,15 +249,27 @@ func TestCacheGetOrElse(t *testing.T) {
 		}
 	})
 
-	t.Run("corrupt cached payload surfaces as an error", func(t *testing.T) {
+	t.Run("corrupt cached payload reloads and overwrites rather than poisoning the key", func(t *testing.T) {
 		store := newFakeStore()
 		store.data["product:tenant1:prod9"] = "{not json"
 		entry := newProductCache(store).Key("tenant1", "prod9")
+		called := false
 
-		if _, err := entry.GetOrElse(context.Background(), func() (*product, error) {
-			return &product{ID: "prod9"}, nil
-		}); err == nil {
-			t.Fatal("GetOrElse() err = nil, want a decode failure")
+		got, err := entry.GetOrElse(context.Background(), func() (*product, error) {
+			called = true
+			return &product{ID: "prod9", Name: "Anchor"}, nil
+		})
+		if err != nil {
+			t.Fatalf("GetOrElse() err = %v, want nil — an undecodable entry must not be fatal", err)
+		}
+		if !called {
+			t.Fatal("load was not called; an undecodable entry must fall through to the loader")
+		}
+		if got == nil || got.Name != "Anchor" {
+			t.Fatalf("GetOrElse() = %+v, want the reloaded product", got)
+		}
+		if store.data["product:tenant1:prod9"] == "{not json" {
+			t.Fatal("corrupt entry was not overwritten; the key stays poisoned until TTL")
 		}
 	})
 }

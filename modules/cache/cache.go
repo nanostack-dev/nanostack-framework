@@ -130,13 +130,18 @@ func (e Entry[T]) Set(ctx context.Context, value *T) error {
 // a failure without forcing every caller to compare against
 // ErrCacheKeyNotFound.
 //
-// load should not return ErrCacheKeyNotFound to mean anything other than
-// absence — signal absence with a nil value instead.
+// Signal absence only with a nil value: every error from load propagates,
+// including ErrCacheKeyNotFound.
 func (e Entry[T]) GetOrElse(ctx context.Context, load func() (*T, error)) (*T, error) {
 	raw, err := e.cache.store.Get(ctx, e.key)
 	switch {
 	case err == nil:
-		return e.decode(raw)
+		// A cached entry that will not decode is treated as unreadable rather
+		// than fatal — a T whose shape changed between deploys would otherwise
+		// poison the key until its TTL expired. Reloading overwrites it.
+		if decoded, decodeErr := e.decode(raw); decodeErr == nil {
+			return decoded, nil
+		}
 	case !errors.Is(err, ErrCacheKeyNotFound):
 		// Read failure, not a miss. Fall through to load so the cache being
 		// unavailable costs latency rather than the whole request.

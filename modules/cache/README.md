@@ -21,10 +21,14 @@ runs anyway; if the cache cannot be written, the loaded value is still returned.
 Either way the failure is logged at warn. A cache that is down should slow a
 request, not break it.
 
+An entry that will not decode counts as unreadable: the loader runs and
+overwrites it, so a `T` whose shape changed between deploys cannot poison a key
+until its TTL expires.
+
 It treats a nil from the loader as "does not exist" — nothing is cached, and
 `(nil, nil)` comes back — so an absent record stays distinguishable from a
-failure. Do not return `ErrCacheKeyNotFound` from a loader to mean anything
-else; signal absence with a nil value.
+failure. Signal absence only with a nil value; every error from a loader
+propagates, `ErrCacheKeyNotFound` included.
 
 `Get` and `Set` report cache errors directly, for callers that need to know.
 `Set` rejects a nil value with `ErrNilValue`: storing it would encode JSON
