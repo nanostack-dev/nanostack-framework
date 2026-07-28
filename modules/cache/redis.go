@@ -46,7 +46,9 @@ func (r *RedisCache) Set(ctx context.Context, key string, value string, expirati
 	return r.client.Set(ctx, key, value, expiration).Err()
 }
 
-func (r *RedisCache) GetOrElse(ctx context.Context, key string, fallback func() (string, error), expiration time.Duration) (string, error) {
+func (r *RedisCache) GetOrElse(
+	ctx context.Context, key string, fallback func() (string, error), expiration time.Duration,
+) (string, error) {
 	value, err := r.client.Get(ctx, key).Result()
 	if err == nil {
 		return value, nil
@@ -64,7 +66,9 @@ func (r *RedisCache) GetOrElse(ctx context.Context, key string, fallback func() 
 	return value, nil
 }
 
-func (r *RedisCache) GetOrElseWithExpiry(ctx context.Context, key string, fallback func() (string, time.Duration, error)) (string, error) {
+func (r *RedisCache) GetOrElseWithExpiry(
+	ctx context.Context, key string, fallback func() (string, time.Duration, error),
+) (string, error) {
 	value, err := r.client.Get(ctx, key).Result()
 	if err == nil {
 		return value, nil
@@ -99,65 +103,6 @@ func (r *RedisCache) EvictPattern(ctx context.Context, pattern string) error {
 		return err
 	}
 	return r.client.Del(ctx, keys...).Err()
-}
-
-func (r *RedisCache) GetStruct(ctx context.Context, key string, dest interface{}) error {
-	value, err := r.client.Get(ctx, key).Result()
-	if err != nil {
-		if errors.Is(err, redis.Nil) {
-			return ErrCacheKeyNotFound
-		}
-		return err
-	}
-	return DeserializeStruct(value, dest)
-}
-
-func (r *RedisCache) SetStruct(ctx context.Context, key string, value interface{}, expiration time.Duration) error {
-	serialized, err := SerializeStruct(value)
-	if err != nil {
-		return err
-	}
-	return r.client.Set(ctx, key, serialized, expiration).Err()
-}
-
-func (r *RedisCache) GetOrElseStruct(ctx context.Context, key string, dest interface{}, fallback func() (interface{}, error), expiration time.Duration) error {
-	if err := r.GetStruct(ctx, key, dest); err == nil {
-		return nil
-	} else if !errors.Is(err, ErrCacheKeyNotFound) {
-		return err
-	}
-	value, err := fallback()
-	if err != nil || value == nil {
-		return err
-	}
-	if err := r.SetStruct(ctx, key, value, expiration); err != nil {
-		return err
-	}
-	serialized, err := SerializeStruct(value)
-	if err != nil {
-		return err
-	}
-	return DeserializeStruct(serialized, dest)
-}
-
-func (r *RedisCache) GetOrElseStructWithExpiry(ctx context.Context, key string, dest interface{}, fallback func() (interface{}, time.Duration, error)) error {
-	if err := r.GetStruct(ctx, key, dest); err == nil {
-		return nil
-	} else if !errors.Is(err, ErrCacheKeyNotFound) {
-		return err
-	}
-	value, expiration, err := fallback()
-	if err != nil {
-		return err
-	}
-	if err := r.SetStruct(ctx, key, value, expiration); err != nil {
-		return err
-	}
-	serialized, err := SerializeStruct(value)
-	if err != nil {
-		return err
-	}
-	return DeserializeStruct(serialized, dest)
 }
 
 func (r *RedisCache) Close() error { return r.client.Close() }
