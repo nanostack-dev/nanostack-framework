@@ -9,7 +9,7 @@ import (
 
 var Module = fx.Module( //nolint:gochecknoglobals // Required for fx module definition.
 	"cache",
-	fx.Provide(func(configLoader config.Loader, logger zerolog.Logger) Cache {
+	fx.Provide(func(configLoader config.Loader, logger zerolog.Logger) Store {
 		var cacheConfig Config
 		logger.Info().Msg("loading cache configuration")
 		if err := configLoader.LoadConfig("cache", &cacheConfig); err != nil {

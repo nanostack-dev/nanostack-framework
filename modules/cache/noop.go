@@ -32,47 +32,4 @@ func (n *NoOpCache) Exists(_ context.Context, _ string) (bool, error) { return f
 
 func (n *NoOpCache) RedisClient() *redis.Client { return nil }
 
-func (n *NoOpCache) GetStruct(_ context.Context, _ string, _ interface{}) error {
-	return ErrCacheKeyNotFound
-}
-
-func (n *NoOpCache) SetStruct(_ context.Context, _ string, _ interface{}, _ time.Duration) error {
-	return nil
-}
-
-func (n *NoOpCache) GetOrElseStruct(
-	_ context.Context,
-	_ string,
-	dest interface{},
-	fallback func() (interface{}, error),
-	_ time.Duration,
-) error {
-	value, err := fallback()
-	if err != nil {
-		return err
-	}
-	serialized, err := SerializeStruct(value)
-	if err != nil {
-		return err
-	}
-	return DeserializeStruct(serialized, dest)
-}
-
-func (n *NoOpCache) GetOrElseStructWithExpiry(
-	_ context.Context,
-	_ string,
-	dest interface{},
-	fallback func() (interface{}, time.Duration, error),
-) error {
-	value, _, err := fallback()
-	if err != nil {
-		return err
-	}
-	serialized, err := SerializeStruct(value)
-	if err != nil {
-		return err
-	}
-	return DeserializeStruct(serialized, dest)
-}
-
 func (n *NoOpCache) Close() error { return nil }

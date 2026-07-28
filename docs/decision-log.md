@@ -91,3 +91,17 @@ Cost accepted: this is a breaking change for every caller, which must add `Value
 Remove the `jetx` query helpers (`Query`, `QueryOptional`, `QueryMap`, `QueryOptionalMap`, `QueryMapSlice`, `Exec`, `QueryCount*`, `WithTx`, `WithTxReturn`, `Executor`, `DBOptions`, `CountResult`). `pkg/db/transactor` is the only way to run a statement; `jetx` keeps ordering, expression conversion, and filter composition.
 
 Rationale: the two sets were near-identical, differing only in how a transaction was supplied — `jetx` took an explicit `*DBOptions{Tx}`, `transactor` carries it in context. The 2026-05-25 decision already made `transactor` the shared surface, but the `jetx` twin stayed exported and unused. Once query results became `Result[T]`, keeping it meant one of the two ways to query silently bypassed constraint translation, so a repository could reintroduce an unhandled 23505 by picking the wrong helper. Nothing referenced the removed symbols — in the framework, Anchor, Echopoint, echopoint-runner, or pgkit — so the removal has no migration. Dropping them also breaks `jetx`'s dependency on `transactor`.
+
+## 2026-07-27: Typed Cache View
+
+Add `modules/cache.Typed[T]` and its `Entry[T]` handle, a generic view over `Cache` for one kind of value.
+
+Rationale: `Cache` predates generics — `GetStruct`/`SetStruct`/`GetOrElseStruct` take `interface{}` plus a caller-supplied destination pointer. Applications compensated by hand-writing a typed service per cached value: Anchor had two (`product_cache_service.go`, `product_api_key_cache_service.go`, 262 lines together) that differed only in entity type and key format, each re-implementing the same get/set/get-or-else/evict/evict-pattern set with the same warn-and-continue logging. `Typed[T]` owns a key namespace and hands out `Entry[T]` values, so those services collapse to a constructor call. It is a wrapper type rather than generic methods on `Cache`, because Go methods cannot declare their own type parameters.
+
+`Typed` stays in `modules/cache` next to the interface it wraps. `docs/boundaries.md` would put an FX-free primitive in `pkg/`, but only `module.go` in this package needs FX, and moving the interface would rewrite imports in ten application files for no behavioural gain.
+
+## 2026-07-27: Typed Cache Is The Cache
+
+Make the generic `cache.Cache[T]` the API applications use, rename the untyped backend interface to `cache.Store`, and delete the `interface{}`-based struct methods (`GetStruct`, `SetStruct`, `GetOrElseStruct`, `GetOrElseStructWithExpiry`).
+
+Rationale: the untyped surface predated generics, and applications never wanted it — each wrapped it in a hand-written typed service to get real types back. Anchor had two such services (262 lines) differing only in entity type and key format; Echopoint had a third inline. Keeping both surfaces would leave the typed one looking like an optional extra layered on the "real" API, when the dependency runs the other way: `Cache[T]` is what callers want, and `Store` is the string-valued backend it happens to sit on. `Cache[T]` now owns serialization directly over `Store`'s string methods, so there is one way to cache a value and it is type-safe. It is a generic type rather than methods on `Store`, because Go methods cannot declare their own type parameters.
