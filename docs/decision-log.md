@@ -97,3 +97,13 @@ Rationale: the two sets were near-identical, differing only in how a transaction
 Make the generic `cache.Cache[T]` the API applications use, rename the untyped backend interface to `cache.Store`, and delete the `interface{}`-based struct methods (`GetStruct`, `SetStruct`, `GetOrElseStruct`, `GetOrElseStructWithExpiry`).
 
 Rationale: the untyped surface predated generics, and applications never wanted it — each wrapped it in a hand-written typed service to get real types back. Anchor had two such services (262 lines) differing only in entity type and key format; Echopoint had a third inline. Keeping both surfaces would leave the typed one looking like an optional extra layered on the "real" API, when the dependency runs the other way: `Cache[T]` is what callers want, and `Store` is the string-valued backend it happens to sit on. `Cache[T]` now owns serialization directly over `Store`'s string methods, so there is one way to cache a value and it is type-safe. It is a generic type rather than methods on `Store`, because Go methods cannot declare their own type parameters.
+
+## 2026-07-28: Paginated Search Execution
+
+Add `pkg/db/transactor.Page` and `SortColumns` for the count-then-page pair behind a `search.Result`.
+
+Rationale: fifteen repository searches across Anchor and Echopoint hand-wrote the same skeleton — count, select a page, order, limit/offset, map, assemble — for about 1175 lines, of which only the filter predicates and the sortable columns are per-entity. `Page` owns the rest and returns a `Result`, so it terminates with `Value()` and the `On*` translations compose. `SortColumns` replaces the `switch sort.Field` block nine of them carried; a field-to-column mapping is data, and as a map a missing case cannot fall through unnoticed.
+
+Both type parameters bind at construction, inferred from `mapFunc`, so no call site spells one. That is also why `mapFunc` precedes the columns: a method cannot introduce a type parameter, so anything the builder needs must arrive before the chain starts. `SortColumns` is a free function for the same reason — it introduces the sort-field type.
+
+It does not cover every search. `product_role_repository.SearchByProductID` pages over role IDs and then fetches permissions separately, because paginating the joined rows would truncate a role's permissions; that stays hand-written. Searches doing per-item work after the fetch keep their loop after `Value()`.

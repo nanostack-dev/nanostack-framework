@@ -37,11 +37,11 @@ func (t *sqlTransactor) InTx(ctx context.Context, fn func(ctx context.Context) e
 		}
 	}()
 	ctxWithTx := WithTx(ctx, tx)
-	if err := fn(ctxWithTx); err != nil {
-		return err
+	if fnErr := fn(ctxWithTx); fnErr != nil {
+		return fnErr
 	}
-	if err := tx.Commit(); err != nil {
-		return err
+	if commitErr := tx.Commit(); commitErr != nil {
+		return commitErr
 	}
 	committed = true
 	return nil
