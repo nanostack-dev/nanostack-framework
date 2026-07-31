@@ -121,57 +121,112 @@ func (reqs Requirements) Schemes() []string {
 	return out
 }
 
-// Authenticator verifies one security scheme against the request. Returning nil
-// means the scheme is satisfied with the scopes demanded; any error means it is
-// not, and Evaluate moves on to the next alternative.
+// Authenticator verifies one security scheme against the request.
 //
-// Evaluate may call an Authenticator more than once for a single request, once
-// per alternative naming the scheme, so implementations should be cheap when the
-// credential the scheme reads is absent — return early rather than calling out
-// to a remote verifier.
-type Authenticator func(ctx context.Context, r *http.Request, scheme SchemeRequirement) error
+// A nil error means the scheme is satisfied with the scopes demanded, and the
+// returned context is carried forward — so an authenticator can attach the
+// principal it resolved, the tenant it belongs to, or anything else the
+// handlers need. That is the difference from openapi3filter's AuthenticationFunc,
+// which returns only an error and therefore cannot hand anything downstream.
+//
+// Any error means the scheme is not satisfied and Evaluate moves on to the next
+// alternative. Return ErrSchemeNotAttempted when the credential this scheme
+// reads is simply absent: Evaluate then treats the alternative as inapplicable
+// rather than rejected, and reports a real rejection from another alternative in
+// preference to it.
+//
+// Evaluate may call an Authenticator more than once for one request, once per
+// alternative naming the scheme, so implementations must be cheap when the
+// credential is absent — return ErrSchemeNotAttempted before calling any remote
+// verifier.
+type Authenticator func(ctx context.Context, r *http.Request, scheme SchemeRequirement) (context.Context, error)
 
 // ErrUnauthorized is returned by Evaluate when no alternative is satisfied. It
-// wraps the failure of each alternative that was tried.
+// wraps the failure of each alternative that was tried, so a caller can pull its
+// own error type back out with errors.As and render the response it wants.
 var ErrUnauthorized = errors.New("no security requirement satisfied")
 
-// Evaluate applies the requirements to a request.
+// ErrSchemeNotAttempted reports that the credential a scheme reads is not
+// present on the request, so the scheme was never really tried. Evaluate
+// prefers any other failure when deciding what to report, which keeps the
+// rejection a caller surfaces tied to the credential the client actually sent.
+var ErrSchemeNotAttempted = errors.New("credential not present for scheme")
+
+// Evaluate applies the requirements to a request and returns the context the
+// satisfied alternative produced.
 //
 // Alternatives are tried in the order the document declares them and the first
 // one that holds wins, so a document listing its cheapest or most common scheme
-// first keeps the common path short. A nil error means the request is
-// authorised; otherwise the error wraps ErrUnauthorized and reports why each
-// alternative failed.
-func (reqs Requirements) Evaluate(ctx context.Context, r *http.Request, auth Authenticator) error {
+// first keeps the common path short. A partially-applied alternative's context
+// is discarded when that alternative fails, so a rejected scheme cannot leave
+// anything behind for the next one.
+//
+// A nil error means the request is authorised and the returned context should
+// replace the request's. Otherwise the original context is returned unchanged
+// with an error wrapping ErrUnauthorized. Failures that are only
+// ErrSchemeNotAttempted are reported last, so a caller inspecting the error sees
+// the rejection belonging to the credential the client actually sent.
+func (reqs Requirements) Evaluate(
+	ctx context.Context, r *http.Request, auth Authenticator,
+) (context.Context, error) {
 	if len(reqs) == 0 {
-		return nil
+		return ctx, nil
 	}
 
-	failures := make([]error, 0, len(reqs))
+	var attempted, absent []error
 	for _, req := range reqs {
 		if req.Anonymous() {
-			return nil
+			return ctx, nil
 		}
-		if err := satisfy(ctx, r, req, auth); err != nil {
-			failures = append(failures, err)
+		authorized, err := satisfy(ctx, r, req, auth)
+		if err == nil {
+			return authorized, nil
+		}
+		if errors.Is(err, ErrSchemeNotAttempted) {
+			absent = append(absent, err)
 			continue
 		}
-		return nil
+		attempted = append(attempted, err)
 	}
-	return fmt.Errorf("%w: %w", ErrUnauthorized, errors.Join(failures...))
+	return ctx, fmt.Errorf("%w: %w", ErrUnauthorized, errors.Join(append(attempted, absent...)...))
 }
 
-// satisfy requires every scheme in the alternative to pass. Schemes are visited
-// in sorted order so a multi-scheme alternative fails deterministically.
-func satisfy(ctx context.Context, r *http.Request, req Requirement, auth Authenticator) error {
+// satisfy requires every scheme in the alternative to pass, threading the
+// context through them so a later scheme sees what an earlier one attached.
+// Schemes are visited in sorted order so a multi-scheme alternative fails
+// deterministically.
+func satisfy(
+	ctx context.Context, r *http.Request, req Requirement, auth Authenticator,
+) (context.Context, error) {
 	schemes := append([]SchemeRequirement(nil), req.Schemes...)
 	sort.Slice(schemes, func(i, j int) bool { return schemes[i].Name < schemes[j].Name })
-	for _, scheme := range schemes {
-		if err := auth(ctx, r, scheme); err != nil {
-			return fmt.Errorf("scheme %q: %w", scheme.Name, err)
-		}
+
+	return satisfyEach(ctx, ctx, r, schemes, auth)
+}
+
+// satisfyEach walks the schemes of one alternative, handing each the context the
+// previous one produced. It recurses rather than looping because the context
+// genuinely accumulates across schemes, and an alternative holds a handful of
+// schemes at most. base is the context to hand back on failure, so a rejected
+// alternative contributes nothing.
+func satisfyEach(
+	base, authorized context.Context,
+	r *http.Request,
+	schemes []SchemeRequirement,
+	auth Authenticator,
+) (context.Context, error) {
+	if len(schemes) == 0 {
+		return authorized, nil
 	}
-	return nil
+
+	next, err := auth(authorized, r, schemes[0])
+	if err != nil {
+		return base, fmt.Errorf("scheme %q: %w", schemes[0].Name, err)
+	}
+	if next == nil {
+		next = authorized
+	}
+	return satisfyEach(base, next, r, schemes[1:], auth)
 }
 
 // Resolver maps an incoming request to the security requirements of the
@@ -179,6 +234,18 @@ func satisfy(ctx context.Context, r *http.Request, req Requirement, auth Authent
 type Resolver struct {
 	router routers.Router
 	global Requirements
+}
+
+// NewResolverFromDocument builds a Resolver from a raw OpenAPI document, which
+// is how applications with an embedded contract construct one. Loading here
+// keeps every consumer from repeating the loader boilerplate, and a malformed
+// document fails at construction rather than leaving routes unresolvable.
+func NewResolverFromDocument(raw []byte) (*Resolver, error) {
+	doc, err := openapi3.NewLoader().LoadFromData(raw)
+	if err != nil {
+		return nil, fmt.Errorf("apisec: load OpenAPI document: %w", err)
+	}
+	return NewResolver(doc)
 }
 
 // NewResolver builds a Resolver over an already-loaded OpenAPI document. The

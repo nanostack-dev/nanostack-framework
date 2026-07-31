@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/getkin/kin-openapi/openapi3"
@@ -137,15 +138,15 @@ func TestEvaluateOr(t *testing.T) {
 
 	t.Run("second alternative rescues the first", func(t *testing.T) {
 		var tried []string
-		err := reqs.Evaluate(
+		_, err := reqs.Evaluate(
 			context.Background(),
 			req(),
-			func(_ context.Context, _ *http.Request, s apisec.SchemeRequirement) error {
+			func(ctx context.Context, _ *http.Request, s apisec.SchemeRequirement) (context.Context, error) {
 				tried = append(tried, s.Name)
 				if s.Name == "Bearer" {
-					return errors.New("no bearer token")
+					return nil, errors.New("no bearer token")
 				}
-				return nil
+				return ctx, nil
 			},
 		)
 		if err != nil {
@@ -158,12 +159,12 @@ func TestEvaluateOr(t *testing.T) {
 
 	t.Run("first alternative short-circuits", func(t *testing.T) {
 		var tried []string
-		err := reqs.Evaluate(
+		_, err := reqs.Evaluate(
 			context.Background(),
 			req(),
-			func(_ context.Context, _ *http.Request, s apisec.SchemeRequirement) error {
+			func(ctx context.Context, _ *http.Request, s apisec.SchemeRequirement) (context.Context, error) {
 				tried = append(tried, s.Name)
-				return nil
+				return ctx, nil
 			},
 		)
 		if err != nil {
@@ -175,11 +176,11 @@ func TestEvaluateOr(t *testing.T) {
 	})
 
 	t.Run("all alternatives failing is unauthorized", func(t *testing.T) {
-		err := reqs.Evaluate(
+		_, err := reqs.Evaluate(
 			context.Background(),
 			req(),
-			func(context.Context, *http.Request, apisec.SchemeRequirement) error {
-				return errors.New("nope")
+			func(context.Context, *http.Request, apisec.SchemeRequirement) (context.Context, error) {
+				return nil, errors.New("nope")
 			},
 		)
 		if !errors.Is(err, apisec.ErrUnauthorized) {
@@ -194,11 +195,11 @@ func TestEvaluateScopesArePerAlternative(t *testing.T) {
 	reqs := requirementsFor(t, resolver(t), "/either-different-scopes")
 
 	seen := map[string][]string{}
-	reject := func(_ context.Context, _ *http.Request, s apisec.SchemeRequirement) error {
+	reject := func(_ context.Context, _ *http.Request, s apisec.SchemeRequirement) (context.Context, error) {
 		seen[s.Name] = s.Scopes
-		return errors.New("reject everything so both alternatives are visited")
+		return nil, errors.New("reject everything so both alternatives are visited")
 	}
-	err := reqs.Evaluate(context.Background(), req(), reject)
+	_, err := reqs.Evaluate(context.Background(), req(), reject)
 	if !errors.Is(err, apisec.ErrUnauthorized) {
 		t.Fatalf("Evaluate = %v, want ErrUnauthorized", err)
 	}
@@ -215,14 +216,14 @@ func TestEvaluateAnd(t *testing.T) {
 	reqs := requirementsFor(t, resolver(t), "/both")
 
 	t.Run("one scheme is not enough", func(t *testing.T) {
-		err := reqs.Evaluate(
+		_, err := reqs.Evaluate(
 			context.Background(),
 			req(),
-			func(_ context.Context, _ *http.Request, s apisec.SchemeRequirement) error {
+			func(ctx context.Context, _ *http.Request, s apisec.SchemeRequirement) (context.Context, error) {
 				if s.Name == "Signature" {
-					return errors.New("missing signature")
+					return nil, errors.New("missing signature")
 				}
-				return nil
+				return ctx, nil
 			},
 		)
 		if !errors.Is(err, apisec.ErrUnauthorized) {
@@ -232,12 +233,12 @@ func TestEvaluateAnd(t *testing.T) {
 
 	t.Run("both schemes pass", func(t *testing.T) {
 		var count int
-		err := reqs.Evaluate(
+		_, err := reqs.Evaluate(
 			context.Background(),
 			req(),
-			func(context.Context, *http.Request, apisec.SchemeRequirement) error {
+			func(ctx context.Context, _ *http.Request, _ apisec.SchemeRequirement) (context.Context, error) {
 				count++
-				return nil
+				return ctx, nil
 			},
 		)
 		if err != nil {
@@ -256,12 +257,12 @@ func TestEvaluateAnonymous(t *testing.T) {
 		t.Run(path, func(t *testing.T) {
 			reqs := requirementsFor(t, resolver(t), path)
 			called := false
-			err := reqs.Evaluate(
+			_, err := reqs.Evaluate(
 				context.Background(),
 				req(),
-				func(context.Context, *http.Request, apisec.SchemeRequirement) error {
+				func(context.Context, *http.Request, apisec.SchemeRequirement) (context.Context, error) {
 					called = true
-					return errors.New("should not be reached")
+					return nil, errors.New("should not be reached")
 				},
 			)
 			if err != nil {
@@ -307,4 +308,81 @@ func equal(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+type principalKey struct{}
+
+// TestEvaluateCarriesContextForward covers what openapi3filter's
+// AuthenticationFunc cannot do: hand the verified principal downstream.
+func TestEvaluateCarriesContextForward(t *testing.T) {
+	reqs := requirementsFor(t, resolver(t), "/either")
+
+	authorized, err := reqs.Evaluate(
+		context.Background(),
+		req(),
+		func(ctx context.Context, _ *http.Request, s apisec.SchemeRequirement) (context.Context, error) {
+			if s.Name == "Bearer" {
+				return nil, errors.New("no bearer token")
+			}
+			return context.WithValue(ctx, principalKey{}, "user-42"), nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("Evaluate = %v, want nil", err)
+	}
+	if got := authorized.Value(principalKey{}); got != "user-42" {
+		t.Errorf("principal = %v, want user-42 carried out of the satisfied alternative", got)
+	}
+}
+
+// TestEvaluateDiscardsFailedAlternativeContext ensures a rejected scheme cannot
+// leave anything behind for the alternative tried after it.
+func TestEvaluateDiscardsFailedAlternativeContext(t *testing.T) {
+	reqs := requirementsFor(t, resolver(t), "/both")
+
+	_, err := reqs.Evaluate(
+		context.Background(),
+		req(),
+		func(ctx context.Context, _ *http.Request, s apisec.SchemeRequirement) (context.Context, error) {
+			if s.Name == "Signature" {
+				return nil, errors.New("missing signature")
+			}
+			return context.WithValue(ctx, principalKey{}, "leaked"), nil
+		},
+	)
+	if !errors.Is(err, apisec.ErrUnauthorized) {
+		t.Fatalf("Evaluate = %v, want ErrUnauthorized", err)
+	}
+}
+
+// TestEvaluateReportsAttemptedFailureFirst pins the error ordering a caller
+// relies on to render the right rejection: the scheme whose credential the
+// client actually sent, not the one that was never present.
+func TestEvaluateReportsAttemptedFailureFirst(t *testing.T) {
+	reqs := requirementsFor(t, resolver(t), "/either")
+
+	badKey := errors.New("api key rejected")
+	_, err := reqs.Evaluate(
+		context.Background(),
+		req(),
+		func(_ context.Context, _ *http.Request, s apisec.SchemeRequirement) (context.Context, error) {
+			if s.Name == "Bearer" {
+				return nil, apisec.ErrSchemeNotAttempted
+			}
+			return nil, badKey
+		},
+	)
+	if !errors.Is(err, apisec.ErrUnauthorized) {
+		t.Fatalf("Evaluate = %v, want ErrUnauthorized", err)
+	}
+	if !errors.Is(err, badKey) {
+		t.Errorf("error %v does not carry the real rejection", err)
+	}
+
+	joined := err.Error()
+	realAt := strings.Index(joined, badKey.Error())
+	absentAt := strings.Index(joined, apisec.ErrSchemeNotAttempted.Error())
+	if realAt < 0 || absentAt < 0 || realAt > absentAt {
+		t.Errorf("wanted the real rejection reported before the absent credential, got %q", joined)
+	}
 }
