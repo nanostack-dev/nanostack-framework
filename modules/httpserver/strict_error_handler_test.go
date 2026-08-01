@@ -240,7 +240,14 @@ func TestStrictErrorHandlerUsesRequestScopedLogger(t *testing.T) {
 
 	handler := NewStrictErrorHandler(StrictErrorHandlerOptions{Logger: base})
 
-	bound := base.With().Str("request_id", "req_fixed").Str("org_id", "org_1").Logger()
+	// A real request-scoped logger already carries path and method; the fixture
+	// must too, or it cannot catch the handler adding them a second time.
+	bound := base.With().
+		Str("request_id", "req_fixed").
+		Str("org_id", "org_1").
+		Str("path", "/flows").
+		Str("method", http.MethodGet).
+		Logger()
 	request := httptest.NewRequest(http.MethodGet, "/flows", nil).WithContext(
 		bound.WithContext(context.Background()),
 	)
@@ -272,5 +279,29 @@ func TestStrictErrorHandlerFallsBackToInjectedLogger(t *testing.T) {
 
 	if out := buf.String(); !strings.Contains(out, `"service":"anchor"`) {
 		t.Fatalf("expected the injected logger to be used, got %s", out)
+	}
+}
+
+// zerolog does not deduplicate keys and json.Unmarshal silently keeps the last,
+// so a duplicate is invisible to any test that decodes the line. This asserts
+// against the raw output.
+func TestStrictErrorHandlerDoesNotDuplicateRouteKeys(t *testing.T) {
+	var buf bytes.Buffer
+	base := zerolog.New(&buf).Level(zerolog.DebugLevel)
+
+	handler := NewStrictErrorHandler(StrictErrorHandlerOptions{Logger: base})
+
+	bound := base.With().Str("path", "/flows").Str("method", http.MethodGet).Logger()
+	request := httptest.NewRequest(http.MethodGet, "/flows", nil).WithContext(
+		bound.WithContext(context.Background()),
+	)
+
+	handler.HandleResponseError(httptest.NewRecorder(), request, errors.New("boom"))
+
+	out := buf.String()
+	for _, key := range []string{`"path"`, `"method"`} {
+		if count := strings.Count(out, key); count != 1 {
+			t.Fatalf("%s appeared %d times in %s, want exactly 1", key, count, out)
+		}
 	}
 }
