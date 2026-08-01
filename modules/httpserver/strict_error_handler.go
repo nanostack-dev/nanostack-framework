@@ -131,6 +131,11 @@ func (h *StrictErrorHandler) logInternalError(logger zerolog.Logger, err error) 
 //
 // Falls back to the injected logger where no request-scoped one exists, so the
 // handler still works without requestlog.Contextualize.
+//
+// path and method are added only on that fallback. A request-scoped logger
+// already carries both — Contextualize sets them and every Bind republishes
+// them — and zerolog does not deduplicate, so adding them again would emit each
+// key twice on every error line.
 func (h *StrictErrorHandler) requestLogger(r *http.Request) zerolog.Logger {
 	logger := zerolog.Nop()
 	if h != nil {
@@ -139,7 +144,7 @@ func (h *StrictErrorHandler) requestLogger(r *http.Request) zerolog.Logger {
 
 	if r != nil {
 		if bound := zerolog.Ctx(r.Context()); bound.GetLevel() != zerolog.Disabled {
-			logger = *bound
+			return *bound
 		}
 	}
 
