@@ -2,6 +2,7 @@ package httpserver
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -226,5 +227,50 @@ func TestStrictErrorHandlerSSEUsesFaultMessageWithoutLeakingCause(t *testing.T) 
 	}
 	if strings.Contains(body, "pq: connection refused") {
 		t.Fatalf("wrapped cause leaked into SSE frame: %s", body)
+	}
+}
+
+// The 5xx cause line is the only place err/error_type/error_detail appear, so
+// it has to be joinable to the request id the caller was given. Before this,
+// requestLogger built solely from the injected process logger and the line
+// carried no correlation at all.
+func TestStrictErrorHandlerUsesRequestScopedLogger(t *testing.T) {
+	var buf bytes.Buffer
+	base := zerolog.New(&buf).Level(zerolog.DebugLevel)
+
+	handler := NewStrictErrorHandler(StrictErrorHandlerOptions{Logger: base})
+
+	bound := base.With().Str("request_id", "req_fixed").Str("org_id", "org_1").Logger()
+	request := httptest.NewRequest(http.MethodGet, "/flows", nil).WithContext(
+		bound.WithContext(context.Background()),
+	)
+
+	handler.HandleResponseError(httptest.NewRecorder(), request, errors.New("boom"))
+
+	out := buf.String()
+	if !strings.Contains(out, `"request_id":"req_fixed"`) {
+		t.Fatalf("error line lost the request id, got %s", out)
+	}
+	if !strings.Contains(out, `"org_id":"org_1"`) {
+		t.Fatalf("error line lost the bound org, got %s", out)
+	}
+	if !strings.Contains(out, `"path":"/flows"`) {
+		t.Fatalf("error line lost the path, got %s", out)
+	}
+}
+
+// Without Contextualize there is no request-scoped logger; the handler must
+// still write the line rather than silently discarding it.
+func TestStrictErrorHandlerFallsBackToInjectedLogger(t *testing.T) {
+	var buf bytes.Buffer
+	base := zerolog.New(&buf).Level(zerolog.DebugLevel).With().Str("service", "anchor").Logger()
+
+	handler := NewStrictErrorHandler(StrictErrorHandlerOptions{Logger: base})
+	handler.HandleResponseError(
+		httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/flows", nil), errors.New("boom"),
+	)
+
+	if out := buf.String(); !strings.Contains(out, `"service":"anchor"`) {
+		t.Fatalf("expected the injected logger to be used, got %s", out)
 	}
 }

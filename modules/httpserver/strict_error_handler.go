@@ -119,11 +119,30 @@ func (h *StrictErrorHandler) logInternalError(logger zerolog.Logger, err error) 
 		Str("error_detail", fmt.Sprintf("%+v", err))
 }
 
+// requestLogger returns the logger the error line should be written to.
+//
+// It prefers the request-scoped logger on the context, because this handler
+// emits the only line carrying the cause of a 5xx — err, error_type,
+// error_detail — and that line is useless for support if it cannot be joined to
+// the request id the caller was given. Building solely from the injected
+// process logger, as this once did, meant a customer reporting a 500 with an
+// X-Request-Id could match the access-log line but had to join the cause by
+// timestamp.
+//
+// Falls back to the injected logger where no request-scoped one exists, so the
+// handler still works without requestlog.Contextualize.
 func (h *StrictErrorHandler) requestLogger(r *http.Request) zerolog.Logger {
 	logger := zerolog.Nop()
 	if h != nil {
 		logger = h.logger
 	}
+
+	if r != nil {
+		if bound := zerolog.Ctx(r.Context()); bound.GetLevel() != zerolog.Disabled {
+			logger = *bound
+		}
+	}
+
 	ctx := logger.With()
 	if r != nil {
 		ctx = ctx.Str("path", r.URL.Path).Str("method", r.Method)
