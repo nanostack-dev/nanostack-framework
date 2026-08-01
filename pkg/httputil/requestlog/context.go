@@ -14,7 +14,11 @@ const RequestIDHeader = "X-Request-Id"
 
 type contextKey int
 
-const requestIDContextKey contextKey = iota
+const (
+	requestIDContextKey contextKey = iota
+	methodContextKey
+	pathContextKey
+)
 
 // Contextualize returns middleware that establishes a per-request correlation
 // id and a request-scoped zerolog logger on the context.
@@ -47,7 +51,13 @@ func Contextualize(base zerolog.Logger) func(http.Handler) http.Handler {
 				Str("path", r.URL.Path).
 				Logger()
 
+			// The three fields are stored on the context as well as on the
+			// logger. Anything that rebuilds a logger from a base — see
+			// pkg/log.Binder — can then recover them, instead of silently
+			// dropping the request identity when it derives a child.
 			ctx := context.WithValue(r.Context(), requestIDContextKey, requestID)
+			ctx = context.WithValue(ctx, methodContextKey, r.Method)
+			ctx = context.WithValue(ctx, pathContextKey, r.URL.Path)
 			ctx = logger.WithContext(ctx)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
@@ -64,8 +74,24 @@ func From(ctx context.Context) *zerolog.Logger {
 // RequestIDFromContext returns the correlation id stored by Contextualize, or an
 // empty string when Contextualize did not run for this request.
 func RequestIDFromContext(ctx context.Context) string {
-	if id, ok := ctx.Value(requestIDContextKey).(string); ok {
-		return id
+	return stringValue(ctx, requestIDContextKey)
+}
+
+// MethodFromContext returns the HTTP method stored by Contextualize, or an
+// empty string off the HTTP path.
+func MethodFromContext(ctx context.Context) string {
+	return stringValue(ctx, methodContextKey)
+}
+
+// PathFromContext returns the request path stored by Contextualize, or an empty
+// string off the HTTP path.
+func PathFromContext(ctx context.Context) string {
+	return stringValue(ctx, pathContextKey)
+}
+
+func stringValue(ctx context.Context, key contextKey) string {
+	if value, ok := ctx.Value(key).(string); ok {
+		return value
 	}
 	return ""
 }

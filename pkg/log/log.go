@@ -65,9 +65,22 @@ func NewBinder(base zerolog.Logger, enrichers ...Enricher) *Binder {
 // Bind returns a context carrying a logger derived from the Binder's base and
 // enriched with everything the Enrichers can read from ctx.
 //
-// Bind is eager: it snapshots ctx at call time. When a value lands after the
-// bind — a cron resolving each row's tenant mid-tick — call Bind again once the
-// value is in context. Re-binding is cheap; it builds one child logger.
+// Bind always derives from the base logger, never from a logger already on the
+// context. That is deliberate, and it imposes one invariant:
+//
+//	every ambient field must be readable from the context by some Enricher.
+//
+// Deriving from the context logger instead would let fields accumulate, so
+// binding twice would emit duplicate JSON keys — zerolog does not deduplicate.
+// Deriving from base makes Bind idempotent, at the cost that a field written
+// straight onto a context logger by something other than an Enricher is not
+// carried over. requestlog.NewLogEnricher exists for exactly this reason: it
+// republishes the request identity that Contextualize established.
+//
+// Bind is eager: it snapshots ctx at call time. When a value lands afterwards —
+// a cron resolving each row's tenant mid-tick — call Bind again once the value
+// is in context. Re-binding is cheap and, because of the invariant above,
+// lossless.
 func (b *Binder) Bind(ctx context.Context) context.Context {
 	if b == nil {
 		return ctx
