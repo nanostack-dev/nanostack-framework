@@ -28,7 +28,7 @@ func LevelFor(err error) zerolog.Level {
 	if err == nil {
 		return zerolog.ErrorLevel
 	}
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+	if IsContextError(err) {
 		return zerolog.WarnLevel
 	}
 	if apiErr, ok := fault.As(err); ok && apiErr != nil {
@@ -37,6 +37,16 @@ func LevelFor(err error) zerolog.Level {
 		}
 	}
 	return zerolog.ErrorLevel
+}
+
+// IsContextError reports whether err is a cancellation or deadline expiry.
+//
+// These mean the caller went away — a client disconnected, an upstream gave up
+// — rather than the service failing, which is why LevelFor treats them as Warn.
+// It is exported because callers need the same distinction for control flow:
+// abandoning work because the caller left is not a failure to retry or report.
+func IsContextError(err error) bool {
+	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
 }
 
 // Event returns an event for err at the severity LevelFor picks, with err and,

@@ -159,3 +159,26 @@ func (c *capture) decode(t *testing.T) map[string]any {
 	}
 	return line
 }
+
+func TestIsContextError(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"nil", nil, false},
+		{"cancelled", context.Canceled, true},
+		{"deadline", context.DeadlineExceeded, true},
+		{"wrapped cancelled", fmt.Errorf("send email: %w", context.Canceled), true},
+		{"plain error", errors.New("connection refused"), false},
+		{"api error", fault.NotFound("GONE", "gone"), false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := log.IsContextError(test.err); got != test.want {
+				t.Fatalf("IsContextError(%v) = %v, want %v", test.err, got, test.want)
+			}
+		})
+	}
+}
