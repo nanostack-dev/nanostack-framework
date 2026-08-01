@@ -52,8 +52,12 @@ type Binder struct {
 
 // NewBinder returns a Binder that derives loggers from base and applies
 // enrichers, in order, on every Bind.
+//
+// ComponentEnricher is always applied first, so any entry point can name its
+// subsystem with WithComponent without the application wiring anything.
 func NewBinder(base zerolog.Logger, enrichers ...Enricher) *Binder {
-	owned := make([]Enricher, 0, len(enrichers))
+	owned := make([]Enricher, 0, len(enrichers)+1)
+	owned = append(owned, ComponentEnricher())
 	for _, enricher := range enrichers {
 		if enricher != nil {
 			owned = append(owned, enricher)
