@@ -14,6 +14,12 @@ import (
 type Config struct {
 	Environment string
 	Level       zerolog.Level
+	// Service names the emitting service, from SERVICE_NAME. It lands on every
+	// log line so a collector aggregating several services can partition them.
+	Service string
+	// Version is the running build, from SERVICE_VERSION. Empty is normal in
+	// local development and the field is then omitted.
+	Version string
 }
 
 func NewLoggingConfig() Config {
@@ -27,7 +33,12 @@ func NewLoggingConfig() Config {
 			level = parsedLevel
 		}
 	}
-	return Config{Environment: environment, Level: level}
+	return Config{
+		Environment: environment,
+		Level:       level,
+		Service:     strings.TrimSpace(os.Getenv("SERVICE_NAME")),
+		Version:     strings.TrimSpace(os.Getenv("SERVICE_VERSION")),
+	}
 }
 
 func NewZerologLogger(config Config) zerolog.Logger {
@@ -75,7 +86,11 @@ func isTerminal(f *os.File) bool {
 
 var Module = fx.Module( //nolint:gochecknoglobals // Required for fx module definition.
 	"logging",
-	fx.Provide(NewLoggingConfig, NewZerologLogger),
+	fx.Provide(NewLoggingConfig, NewZerologLogger, NewBinder),
+	// Publishes the Binder as the process-wide default so package-level
+	// log.Ctx works from any call site. Runs during construction, before any
+	// OnStart hook.
+	fx.Invoke(InstallBinder),
 )
 
 // WithFxLogger routes Fx's own lifecycle events through the application's
