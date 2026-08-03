@@ -15,6 +15,7 @@ package pgerr
 
 import (
 	"errors"
+	"strings"
 
 	"github.com/lib/pq"
 )
@@ -29,6 +30,18 @@ const (
 	// ForeignKeyViolation is raised when a write references a missing parent
 	// row, or when a delete is blocked by ON DELETE RESTRICT / NO ACTION.
 	ForeignKeyViolation = "23503"
+)
+
+const (
+	// QueryCanceled is raised when Postgres aborts a statement already in
+	// flight. It covers two unrelated causes — a cancel request sent by the
+	// client, and the server enforcing statement_timeout — and only the message
+	// text tells them apart. Match it through IsQueryCanceled rather than Is, so
+	// a timeout is not read as a cancellation.
+	QueryCanceled = "57014"
+	// canceledByUser is the message fragment Postgres uses for the client-driven
+	// half of QueryCanceled: "canceling statement due to user request".
+	canceledByUser = "due to user request"
 )
 
 // Is reports whether err is a PostgreSQL error carrying the given SQLSTATE.
@@ -82,4 +95,30 @@ func IsUniqueViolation(err error, constraints ...string) bool {
 // mistakes rather than server faults, so they belong on a 4xx path.
 func IsForeignKeyViolation(err error, constraints ...string) bool {
 	return Is(err, ForeignKeyViolation, constraints...)
+}
+
+// IsQueryCanceled reports whether err is a statement Postgres aborted because
+// the client asked it to (SQLSTATE 57014, "canceling statement due to user
+// request").
+//
+// lib/pq sends that cancel request when the context driving a query is canceled
+// — a client that hung up, or a parent deadline — and reports the abort as a
+// fresh *pq.Error rather than one wrapping context.Canceled. So errors.Is
+// against the context sentinels misses it even though the caller going away is
+// the whole cause, and code choosing a log severity or a retry has to ask here
+// instead.
+//
+// The match is deliberately narrower than the SQLSTATE. A statement_timeout kill
+// carries the same 57014 but is a server-side fault worth an error-level log and
+// an investigation, and nothing but the message separates the two.
+//
+// The error is unwrapped with errors.As on the same terms as Is. A nil error
+// never matches, and neither does an error that merely quotes the message text
+// without carrying the SQLSTATE.
+func IsQueryCanceled(err error) bool {
+	var pqErr *pq.Error
+	if !errors.As(err, &pqErr) || string(pqErr.Code) != QueryCanceled {
+		return false
+	}
+	return strings.Contains(pqErr.Message, canceledByUser)
 }

@@ -30,3 +30,22 @@ for uniqueness declared with `CREATE UNIQUE INDEX`.
 
 Errors are matched with `errors.As`, so go-jet's `jet: ` wrapping and any
 `fmt.Errorf("%w")` chain are unwrapped.
+
+## Canceled queries
+
+`IsQueryCanceled` covers a different need: telling a client-driven abort from a
+server-side fault. When the context driving a query is canceled, `lib/pq` asks
+Postgres to cancel the statement and reports the result as a fresh `*pq.Error`
+carrying SQLSTATE `57014` — one that does not wrap `context.Canceled`, so
+`errors.Is` against the context sentinels misses it.
+
+```go
+if pgerr.IsQueryCanceled(err) {
+    // the caller went away; not a server fault
+}
+```
+
+`57014` also covers a `statement_timeout` kill, which *is* a fault worth an
+error-level log, and only the message text separates the two. `IsQueryCanceled`
+matches the client-request half alone — deliberately narrower than
+`Is(err, pgerr.QueryCanceled)`.
