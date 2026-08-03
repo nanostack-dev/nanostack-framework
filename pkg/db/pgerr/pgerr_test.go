@@ -97,3 +97,76 @@ func TestIsUniqueViolation(t *testing.T) {
 		})
 	}
 }
+
+func TestIsQueryCanceled(t *testing.T) {
+	const (
+		userRequest      = "canceling statement due to user request"
+		statementTimeout = "canceling statement due to statement timeout"
+	)
+
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{
+			name: "statement canceled at the client's request",
+			err:  &pq.Error{Code: pgerr.QueryCanceled, Message: userRequest},
+			want: true,
+		},
+		{
+			// The shape repositories actually see: go-jet wraps the driver error.
+			name: "jet-wrapped cancellation is unwrapped",
+			err:  fmt.Errorf("jet: %w", &pq.Error{Code: pgerr.QueryCanceled, Message: userRequest}),
+			want: true,
+		},
+		{
+			name: "cancellation nested several wraps deep",
+			err: fmt.Errorf("count tenants: %w",
+				fmt.Errorf("jet: %w", &pq.Error{Code: pgerr.QueryCanceled, Message: userRequest})),
+			want: true,
+		},
+		{
+			// statement_timeout shares the SQLSTATE but is a server-side fault:
+			// matching it here would hide a slow query behind a benign severity.
+			name: "statement timeout shares the SQLSTATE",
+			err:  &pq.Error{Code: pgerr.QueryCanceled, Message: statementTimeout},
+			want: false,
+		},
+		{
+			name: "different SQLSTATE carrying the same message",
+			err:  &pq.Error{Code: pgerr.UniqueViolation, Message: userRequest},
+			want: false,
+		},
+		{
+			// No string fallback: an error that only quotes the message — a pool
+			// fault echoing a prior failure — is not itself a cancellation.
+			name: "non-pq error quoting the message",
+			err:  errors.New("pq: " + userRequest),
+			want: false,
+		},
+		{
+			name: "unrelated pq error",
+			err:  &pq.Error{Code: "3D000", Message: "database does not exist"},
+			want: false,
+		},
+		{
+			name: "plain error",
+			err:  errors.New("connection refused"),
+			want: false,
+		},
+		{
+			name: "nil error",
+			err:  nil,
+			want: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := pgerr.IsQueryCanceled(tc.err); got != tc.want {
+				t.Fatalf("IsQueryCanceled(%v) = %v, want %v", tc.err, got, tc.want)
+			}
+		})
+	}
+}
