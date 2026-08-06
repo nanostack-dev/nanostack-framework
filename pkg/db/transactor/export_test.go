@@ -13,14 +13,6 @@ func NewResultForTest[T any](v T, err error) Result[T] {
 	return newResult(v, err)
 }
 
-// NewOptionalForTest builds an Optional in each of its three states, so the
-// external test package can assert IsPresent/Err/Value without a database.
-// present is ignored when err is non-nil, mirroring IsPresent's own rule that
-// an error always means "not present.".
-func NewOptionalForTest[T any](v T, present bool, err error) Optional[T] {
-	return Optional[T]{v: v, present: present, err: err}
-}
-
 // Test-only re-exports so the external test package can assert the SQL a
 // PageBuilder produces without needing a database.
 func (b *PageBuilder[T, R]) CountStatementForTest() jet.Statement {
