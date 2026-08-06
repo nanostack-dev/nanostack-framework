@@ -1,16 +1,15 @@
 package transactor
 
+import "github.com/nanostack-dev/nanostack-framework/pkg/functional"
+
 // Optional carries the outcome of a query that may legitimately find no
 // matching row — a SELECT that turns up nothing, or an UPDATE/DELETE ...
 // RETURNING whose WHERE clause matches nothing.
 //
-// It exists as an alternative to QueryOptional's (*T, error) shape for
-// callers who don't want "nil pointer" doing double duty as the signal for
-// absence. IsPresent answers "was there a row" and Err answers "did anything
-// actually go wrong" — two separate questions that a nilable pointer folds
-// into one, and that a redundant isError bool next to err would only restate.
-// Value returns the row itself, so the caller checking IsPresent never
-// touches a pointer at all:
+// It exists as an alternative to a (*T, error) shape for callers who don't
+// want "nil pointer" doing double duty as the signal for absence. IsPresent
+// answers "was there a row" and Err answers "did anything actually go
+// wrong" — two separate questions that a nilable pointer folds into one:
 //
 //	result := repo.UpdateOptional(ctx, tenantID, instance)
 //	if err := result.Err(); err != nil {
@@ -21,41 +20,14 @@ package transactor
 //	}
 //	updated := result.Value()
 //
-// Optional has no On* translation methods the way Result does. Absence here
-// is not a driver error to translate — it is success carrying no row — so
-// there is nothing for OnUnique/OnForeignKey/OnNoRows to match against.
-type Optional[T any] struct {
-	v       T
-	present bool
-	err     error
-}
-
-// IsPresent reports whether the query found a row. It is false both when the
-// query matched nothing (Err is nil) and when the query failed (Err is
-// non-nil) — check Err first to tell those apart.
-func (o Optional[T]) IsPresent() bool {
-	return o.err == nil && o.present
-}
-
-// Err returns the error, if the query failed. Finding no row is not a
-// failure and does not set this.
-func (o Optional[T]) Err() error {
-	return o.err
-}
-
-// Value returns the row. Its result is meaningful only when IsPresent is
-// true; otherwise it is T's zero value.
-func (o Optional[T]) Value() T {
-	return o.v
-}
-
-// Map transforms the row when present, leaving absence and failure untouched.
-// It is a generic method (go.dev/issue/77273, Go 1.27) so f can map to a
-// different type R than the receiver's T — the mapping QueryOptionalResultMap
-// used to need a package-level helper function for.
-func (o Optional[T]) Map[R any](f func(T) R) Optional[R] {
-	if !o.IsPresent() {
-		return Optional[R]{err: o.err}
-	}
-	return Optional[R]{v: f(o.v), present: true}
-}
+// Optional is a type alias for functional.Option[T] — the SQL layer has no
+// translation rules of its own to add (see Result, which does), so there is
+// nothing here beyond the alias, and Map/FlatMap/Filter/OrElse come from
+// functional as-is. Chain a second Optional-producing lookup keyed by this
+// one's value with FlatMap:
+//
+//	config := transactor.QueryOptional[Run](ctx, db, runStmt).
+//		FlatMap(func(run Run) transactor.Optional[Config] {
+//			return transactor.QueryOptional[Config](ctx, db, configStmtFor(run))
+//		})
+type Optional[T any] = functional.Option[T]
