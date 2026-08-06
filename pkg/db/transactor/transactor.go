@@ -90,6 +90,29 @@ func QueryOptional[T any](ctx context.Context, db qrm.DB, stmt jet.Statement) Re
 	return newResult(&result, nil)
 }
 
+// QueryOptionalResult is QueryOptional's Optional-based counterpart: the same
+// "0 rows is not an error" semantics, but through IsPresent/Err/Value instead
+// of a pointer the caller must remember to nil-check.
+func QueryOptionalResult[T any](ctx context.Context, db qrm.DB, stmt jet.Statement) Optional[T] {
+	result, err := QueryOptional[T](ctx, db, stmt).Value()
+	if err != nil {
+		return Optional[T]{err: err}
+	}
+	if result == nil {
+		return Optional[T]{}
+	}
+	return Optional[T]{v: *result, present: true}
+}
+
+// QueryOptionalResultMap is QueryOptionalResult with a value mapper, mirroring
+// QueryOptionalMap. It is QueryOptionalResult().Map(mapFunc) — Optional.Map
+// does the actual present/absent/error handling exactly once.
+func QueryOptionalResultMap[T any, R any](
+	ctx context.Context, db qrm.DB, stmt jet.Statement, mapFunc func(T) R,
+) Optional[R] {
+	return QueryOptionalResult[T](ctx, db, stmt).Map(mapFunc)
+}
+
 // isNoRows reports whether err is the "statement matched zero rows" sentinel,
 // in either form a caller can see it: sql.ErrNoRows from database/sql, or
 // qrm.ErrNoRows from go-jet's row-mapping layer. QueryOptional and Result's
