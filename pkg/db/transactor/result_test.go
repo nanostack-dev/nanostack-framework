@@ -1,10 +1,12 @@
 package transactor_test
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"testing"
 
+	"github.com/go-jet/jet/v2/qrm"
 	"github.com/lib/pq"
 
 	"github.com/nanostack-dev/nanostack-framework/pkg/db/pgerr"
@@ -143,6 +145,43 @@ func TestResultOnSQLState(t *testing.T) {
 		got := resultWith(err).OnSQLState("23505", errDomain).Err()
 		if !errors.Is(got, err) {
 			t.Fatalf("OnSQLState(...).Err() = %v, want the original error", got)
+		}
+	})
+}
+
+func TestResultOnNoRows(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want error // nil sentinel: expect the original error back
+	}{
+		{name: "translates sql.ErrNoRows", err: sql.ErrNoRows, want: errDomain},
+		{name: "translates qrm.ErrNoRows", err: qrm.ErrNoRows, want: errDomain},
+		{name: "translates through wrapping", err: fmt.Errorf("jet: %w", qrm.ErrNoRows), want: errDomain},
+		{name: "leaves a unique violation alone", err: &pq.Error{Code: pgerr.UniqueViolation}, want: nil},
+		{name: "leaves a non-driver error alone", err: errors.New("connection refused"), want: nil},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := resultWith(tc.err).OnNoRows(errDomain).Err()
+			want := tc.want
+			if want == nil {
+				want = tc.err
+			}
+			if !errors.Is(got, want) {
+				t.Fatalf("OnNoRows(...).Err() = %v, want %v", got, want)
+			}
+		})
+	}
+
+	t.Run("is a no-op on success", func(t *testing.T) {
+		v, err := resultWith(nil).OnNoRows(errDomain).Value()
+		if err != nil {
+			t.Fatalf("Err() = %v, want nil", err)
+		}
+		if v != "value" {
+			t.Fatalf("Value() = %q, want the value preserved", v)
 		}
 	})
 }
