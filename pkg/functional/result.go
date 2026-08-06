@@ -74,3 +74,26 @@ func (r Result[T]) MapErr(f func(error) error) Result[T] {
 	}
 	return Result[T]{v: r.v, err: f(r.err)}
 }
+
+// OrElse returns the value on success, otherwise fallback — for a caller that
+// wants a usable value and has no interest in why the computation failed.
+func (r Result[T]) OrElse(fallback T) T {
+	if r.err != nil {
+		return fallback
+	}
+	return r.v
+}
+
+// ToOption converts a failure into an Option carrying that same failure, and a
+// success into a present one. It is the inverse direction of Option.ToResult,
+// for feeding a Result into a chain that continues in Option's shape.
+//
+// It never produces legitimate absence: a Result has no third state to map
+// onto None, so only Option.Filter or an Option-returning FlatMap can
+// introduce absence downstream.
+func (r Result[T]) ToOption() Option[T] {
+	if r.err != nil {
+		return Failed[T](r.err)
+	}
+	return Some(r.v)
+}

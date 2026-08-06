@@ -1,8 +1,14 @@
 // Package functional provides small, generic value types for chaining
 // computations that may be absent or may fail — Option[T] (a value that may
 // legitimately be absent), Result[T] (a value that may have failed), and
-// Tuple2/Tuple3 (fixed-arity value grouping, for a step that needs to pass
+// Tuple2..Tuple9 (fixed-arity value grouping, for a step that needs to pass
 // more than one value to the next).
+//
+// The distinction the package exists for is that absent is not failed: a
+// SELECT matching zero rows is success carrying no row. Every method here
+// preserves that ordering — a failure outranks absence and is never quietly
+// turned into it — so a caller that checks Err before IsPresent can always
+// tell an outage from a missing value.
 //
 // Go has no higher-kinded types, so there is no shared Functor/Monad
 // interface to implement once — Option and Result each get their own
@@ -12,6 +18,10 @@
 // Java-Stream-style fluent chaining (opt.Map(f).Filter(pred).OrElse(v))
 // instead of the package-level helper functions older Go required — the
 // shape samber/mo (predating generic methods) still uses.
+//
+// Go also has no variadic generics, so the fixed-arity members — Tuple2..
+// Tuple9 and the ZipOption/ZipResult families that build them — are generated
+// from internal/gen rather than hand-copied eight times. See README.md.
 package functional
 
 // Option carries a value that may legitimately be absent — as opposed to a
@@ -100,4 +110,45 @@ func (o Option[T]) OrElse(fallback T) T {
 		return o.v
 	}
 	return fallback
+}
+
+// OrElseGet is OrElse with the fallback computed only when it is needed, for
+// a default that costs something to produce.
+func (o Option[T]) OrElseGet(fallback func() T) T {
+	if o.IsPresent() {
+		return o.v
+	}
+	return fallback()
+}
+
+// Get returns the value and whether it was present, in Go's comma-ok shape.
+// It is the idiomatic way out of an Option for code that is done chaining:
+//
+//	if v, ok := opt.Get(); ok {
+//		use(v)
+//	}
+//
+// Like IsPresent it reports false for a failure as well as for absence, so a
+// caller that must tell those apart checks Err first.
+func (o Option[T]) Get() (T, bool) {
+	return o.v, o.IsPresent()
+}
+
+// ToResult converts absence into an error, collapsing an Option's three states
+// into a Result's two. Pass the error that absence means *here* — a repository
+// returning "no such row" as an Option leaves it to the service layer to decide
+// whether that is a domain NotFound or something benign:
+//
+//	cfg, err := repo.FindConfig(ctx, id).ToResult(ErrConfigNotFound).Value()
+//
+// An existing failure outranks absent: a real error is never replaced by the
+// caller's not-found sentinel.
+func (o Option[T]) ToResult(absent error) Result[T] {
+	if o.err != nil {
+		return Failure[T](o.err)
+	}
+	if !o.present {
+		return Failure[T](absent)
+	}
+	return Ok(o.v)
 }

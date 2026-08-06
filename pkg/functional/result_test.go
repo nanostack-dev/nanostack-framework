@@ -129,3 +129,53 @@ func TestResultMapErr(t *testing.T) {
 		}
 	})
 }
+
+func TestResultOrElse(t *testing.T) {
+	t.Run("returns the value on success", func(t *testing.T) {
+		if got := functional.Ok(5).OrElse(9); got != 5 {
+			t.Fatalf("OrElse(9) = %d, want 5", got)
+		}
+	})
+
+	t.Run("returns the fallback on failure", func(t *testing.T) {
+		if got := functional.Failure[int](errors.New("boom")).OrElse(9); got != 9 {
+			t.Fatalf("OrElse(9) = %d, want 9", got)
+		}
+	})
+}
+
+func TestResultToOption(t *testing.T) {
+	t.Run("success becomes a present Option", func(t *testing.T) {
+		got := functional.Ok(5).ToOption()
+		if !got.IsPresent() || got.Value() != 5 {
+			t.Fatalf("ToOption() = %+v, want present 5", got)
+		}
+	})
+
+	t.Run("failure carries the error into the Option", func(t *testing.T) {
+		sentinel := errors.New("boom")
+		got := functional.Failure[int](sentinel).ToOption()
+		if got.IsPresent() {
+			t.Fatalf("IsPresent() = true, want false")
+		}
+		if !errors.Is(got.Err(), sentinel) {
+			t.Fatalf("Err() = %v, want %v", got.Err(), sentinel)
+		}
+	})
+
+	t.Run("round-trips back through ToResult", func(t *testing.T) {
+		// The two bridges are inverses on the states they share: a success
+		// survives the trip, and so does a real failure.
+		errAbsent := errors.New("not found")
+		v, err := functional.Ok(5).ToOption().ToResult(errAbsent).Value()
+		if err != nil || v != 5 {
+			t.Fatalf("round trip = (%d, %v), want (5, nil)", v, err)
+		}
+
+		sentinel := errors.New("boom")
+		err = functional.Failure[int](sentinel).ToOption().ToResult(errAbsent).Err()
+		if !errors.Is(err, sentinel) {
+			t.Fatalf("round trip err = %v, want %v", err, sentinel)
+		}
+	})
+}

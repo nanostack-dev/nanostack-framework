@@ -194,3 +194,75 @@ func TestOptionOrElse(t *testing.T) {
 		}
 	})
 }
+
+func TestOptionOrElseGet(t *testing.T) {
+	t.Run("does not call the fallback when present", func(t *testing.T) {
+		called := false
+		got := functional.Some(5).OrElseGet(func() int {
+			called = true
+			return 9
+		})
+		if called {
+			t.Fatalf("fallback was called on a present Option")
+		}
+		if got != 5 {
+			t.Fatalf("OrElseGet(...) = %d, want 5", got)
+		}
+	})
+
+	t.Run("calls the fallback when absent", func(t *testing.T) {
+		if got := functional.None[int]().OrElseGet(func() int { return 9 }); got != 9 {
+			t.Fatalf("OrElseGet(...) = %d, want 9", got)
+		}
+	})
+}
+
+func TestOptionGet(t *testing.T) {
+	t.Run("reports ok when present", func(t *testing.T) {
+		v, ok := functional.Some("value").Get()
+		if !ok || v != "value" {
+			t.Fatalf("Get() = (%q, %t), want (\"value\", true)", v, ok)
+		}
+	})
+
+	t.Run("reports not-ok when absent", func(t *testing.T) {
+		v, ok := functional.None[string]().Get()
+		if ok || v != "" {
+			t.Fatalf("Get() = (%q, %t), want (\"\", false)", v, ok)
+		}
+	})
+
+	t.Run("reports not-ok on failure", func(t *testing.T) {
+		if _, ok := functional.Failed[string](errors.New("boom")).Get(); ok {
+			t.Fatalf("Get() ok = true, want false")
+		}
+	})
+}
+
+func TestOptionToResult(t *testing.T) {
+	errAbsent := errors.New("not found")
+
+	t.Run("a present value becomes a successful Result", func(t *testing.T) {
+		v, err := functional.Some(5).ToResult(errAbsent).Value()
+		if err != nil || v != 5 {
+			t.Fatalf("ToResult(...).Value() = (%d, %v), want (5, nil)", v, err)
+		}
+	})
+
+	t.Run("absence becomes the supplied error", func(t *testing.T) {
+		err := functional.None[int]().ToResult(errAbsent).Err()
+		if !errors.Is(err, errAbsent) {
+			t.Fatalf("Err() = %v, want %v", err, errAbsent)
+		}
+	})
+
+	t.Run("an existing failure outranks the absent error", func(t *testing.T) {
+		// The lookup genuinely failed; reporting that as the caller's
+		// not-found sentinel would turn an outage into a 404.
+		sentinel := errors.New("connection refused")
+		err := functional.Failed[int](sentinel).ToResult(errAbsent).Err()
+		if !errors.Is(err, sentinel) {
+			t.Fatalf("Err() = %v, want the original failure %v", err, sentinel)
+		}
+	})
+}
