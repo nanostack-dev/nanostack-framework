@@ -84,3 +84,19 @@ func (r Result[T]) OnUnique(target error, constraints ...string) Result[T] {
 func (r Result[T]) OnForeignKey(target error, constraints ...string) Result[T] {
 	return r.OnSQLState(pgerr.ForeignKeyViolation, target, constraints...)
 }
+
+// OnNoRows replaces the error with target when the statement matched no rows —
+// sql.ErrNoRows (database/sql) or qrm.ErrNoRows (go-jet), the two forms an
+// UPDATE/DELETE ... RETURNING reports when its WHERE clause matches nothing.
+//
+// Unlike OnUnique and OnForeignKey this has no SQLSTATE behind it — the row is
+// simply not there — so the caller must judge whether that is benign here (a
+// concurrent delete beat the statement to it) or a bug (updating an ID that
+// should exist). Naming target keeps that judgment at the call site instead of
+// baking a blanket answer into transactor.
+func (r Result[T]) OnNoRows(target error) Result[T] {
+	if isNoRows(r.err) {
+		return Result[T]{v: r.v, err: target}
+	}
+	return r
+}

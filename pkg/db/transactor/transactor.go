@@ -82,12 +82,20 @@ func QueryOptional[T any](ctx context.Context, db qrm.DB, stmt jet.Statement) Re
 	var result T
 	err := stmt.QueryContext(ctx, Executor(ctx, db), &result)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) || errors.Is(err, qrm.ErrNoRows) {
+		if isNoRows(err) {
 			return newResult[*T](nil, nil)
 		}
 		return newResult[*T](nil, err)
 	}
 	return newResult(&result, nil)
+}
+
+// isNoRows reports whether err is the "statement matched zero rows" sentinel,
+// in either form a caller can see it: sql.ErrNoRows from database/sql, or
+// qrm.ErrNoRows from go-jet's row-mapping layer. QueryOptional and Result's
+// OnNoRows both treat these as the same condition.
+func isNoRows(err error) bool {
+	return errors.Is(err, sql.ErrNoRows) || errors.Is(err, qrm.ErrNoRows)
 }
 
 // QueryMap executes a query and maps the result.
