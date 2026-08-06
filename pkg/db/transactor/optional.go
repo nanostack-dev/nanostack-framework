@@ -48,3 +48,14 @@ func (o Optional[T]) Err() error {
 func (o Optional[T]) Value() T {
 	return o.v
 }
+
+// Map transforms the row when present, leaving absence and failure untouched.
+// It is a generic method (go.dev/issue/77273, Go 1.27) so f can map to a
+// different type R than the receiver's T — the mapping QueryOptionalResultMap
+// used to need a package-level helper function for.
+func (o Optional[T]) Map[R any](f func(T) R) Optional[R] {
+	if !o.IsPresent() {
+		return Optional[R]{err: o.err}
+	}
+	return Optional[R]{v: f(o.v), present: true}
+}

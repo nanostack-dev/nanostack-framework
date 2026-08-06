@@ -105,18 +105,12 @@ func QueryOptionalResult[T any](ctx context.Context, db qrm.DB, stmt jet.Stateme
 }
 
 // QueryOptionalResultMap is QueryOptionalResult with a value mapper, mirroring
-// QueryOptionalMap.
+// QueryOptionalMap. It is QueryOptionalResult().Map(mapFunc) — Optional.Map
+// does the actual present/absent/error handling exactly once.
 func QueryOptionalResultMap[T any, R any](
 	ctx context.Context, db qrm.DB, stmt jet.Statement, mapFunc func(T) R,
 ) Optional[R] {
-	result, err := QueryOptional[T](ctx, db, stmt).Value()
-	if err != nil {
-		return Optional[R]{err: err}
-	}
-	if result == nil {
-		return Optional[R]{}
-	}
-	return Optional[R]{v: mapFunc(*result), present: true}
+	return QueryOptionalResult[T](ctx, db, stmt).Map(mapFunc)
 }
 
 // isNoRows reports whether err is the "statement matched zero rows" sentinel,
