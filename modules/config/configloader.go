@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
-	"strings"
 
 	"github.com/joho/godotenv"
 	"gopkg.in/yaml.v3"
@@ -57,62 +56,28 @@ func (c *LoaderImpl) Init(configPath string, dotEnvPath string) error {
 	return nil
 }
 
+// replacePlaceholders substitutes every ${...} reference in data. It resolves
+// the whole document before failing so that one run reports every unresolved
+// variable, rather than sending the operator back for one name at a time.
 func (c *LoaderImpl) replacePlaceholders(data string, re *regexp.Regexp) (string, error) {
-	var missingVars []string
+	var unresolved []string
 	var errs []error
 	result := re.ReplaceAllStringFunc(data, func(match string) string {
-		groups := re.FindStringSubmatch(match)
-		inner := groups[1]
-
-		var isFile bool
-		var varName string
-		var defaultValue string
-
-		if strings.HasPrefix(inner, "file:") {
-			isFile = true
-			remaining := strings.TrimPrefix(inner, "file:")
-			if idx := strings.Index(remaining, ":"); idx != -1 {
-				varName = remaining[:idx]
-				defaultValue = remaining[idx+1:]
-			} else {
-				varName = remaining
-			}
-		} else {
-			if idx := strings.Index(inner, ":"); idx != -1 {
-				varName = inner[:idx]
-				defaultValue = inner[idx+1:]
-			} else {
-				varName = inner
-			}
-		}
-
-		varName = strings.TrimSpace(varName)
-
-		value, exists := os.LookupEnv(varName)
-		if exists {
-			if isFile {
-				fileData, err := os.ReadFile(value)
-				if err != nil {
-					errs = append(errs, fmt.Errorf("failed to read secret file for %s from path %s: %w", varName, value, err))
-					return ""
-				}
-				value = strings.TrimSpace(string(fileData))
-			}
-		} else {
-			if defaultValue != "" {
-				value = defaultValue
-			} else {
-				missingVars = append(missingVars, varName)
-				value = ""
-			}
+		p := parsePlaceholder(re.FindStringSubmatch(match)[1])
+		value, err := p.resolve()
+		switch {
+		case errors.Is(err, errPlaceholderUnresolved):
+			unresolved = append(unresolved, p.varName)
+		case err != nil:
+			errs = append(errs, err)
 		}
 		return value
 	})
 	if len(errs) > 0 {
 		return "", errors.Join(errs...)
 	}
-	if len(missingVars) > 0 {
-		return "", fmt.Errorf("missing required environment variables: %v", missingVars)
+	if len(unresolved) > 0 {
+		return "", fmt.Errorf("missing required environment variables: %v", unresolved)
 	}
 	return result, nil
 }
