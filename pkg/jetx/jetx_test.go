@@ -28,7 +28,7 @@ func renderWhere(t *testing.T, filter jet.BoolExpression) string {
 	if filter == nil {
 		return ""
 	}
-	query, _ := jet.SELECT(jet.Int(1)).WHERE(filter).Sql()
+	query, _ := jet.SELECT(colA).WHERE(filter).Sql()
 	return query
 }
 
@@ -37,8 +37,20 @@ func renderArgs(t *testing.T, filter jet.BoolExpression) []any {
 	if filter == nil {
 		return nil
 	}
-	_, args := jet.SELECT(jet.Int(1)).WHERE(filter).Sql()
-	return args[1:] // drop the SELECT $1 placeholder
+	_, args := jet.SELECT(colA).WHERE(filter).Sql()
+	return args
+}
+
+func TestToStringExpressionsEmptyInputIsNonNil(t *testing.T) {
+	for _, values := range [][]string{nil, {}} {
+		expressions := jetx.ToStringExpressions(values)
+		if expressions == nil {
+			t.Fatal("expected a non-nil slice even when empty")
+		}
+		if len(expressions) != 0 {
+			t.Fatalf("expected no expressions, got %d", len(expressions))
+		}
+	}
 }
 
 func TestToStringExpressions(t *testing.T) {
@@ -47,17 +59,15 @@ func TestToStringExpressions(t *testing.T) {
 		values []string
 		want   string
 	}{
-		{name: "nil slice", values: nil, want: ""},
-		{name: "empty slice", values: []string{}, want: ""},
 		{
 			name:   "single value",
 			values: []string{"one"},
-			want:   "\nSELECT $1\nWHERE a IN ($2::text);\n",
+			want:   "\nSELECT a AS \"a\"\nWHERE a IN ($1::text);\n",
 		},
 		{
 			name:   "several values keep their order",
 			values: []string{"one", "two", "three"},
-			want:   "\nSELECT $1\nWHERE a IN ($2::text, $3::text, $4::text);\n",
+			want:   "\nSELECT a AS \"a\"\nWHERE a IN ($1::text, $2::text, $3::text);\n",
 		},
 	}
 
@@ -66,12 +76,6 @@ func TestToStringExpressions(t *testing.T) {
 			expressions := jetx.ToStringExpressions(test.values)
 			if len(expressions) != len(test.values) {
 				t.Fatalf("expected %d expressions, got %d", len(test.values), len(expressions))
-			}
-			if expressions == nil {
-				t.Fatal("expected a non-nil slice even when empty")
-			}
-			if len(expressions) == 0 {
-				return
 			}
 			if got := renderWhere(t, colA.IN(expressions...)); got != test.want {
 				t.Fatalf("expected %q, got %q", test.want, got)
@@ -88,53 +92,43 @@ func TestToStringExpressionsFormatsNonStrings(t *testing.T) {
 	}
 }
 
-func TestToStringExpressionSliceMap(t *testing.T) {
-	type user struct{ email string }
-
-	tests := []struct {
-		name  string
-		users []user
-		want  []any
-	}{
-		{name: "nil slice", users: nil, want: nil},
-		{
-			name:  "projects each item",
-			users: []user{{email: "a@example.com"}, {email: "b@example.com"}},
-			want:  []any{"a@example.com", "b@example.com"},
-		},
+func TestToStringExpressionsFuncEmptyInputIsNonNil(t *testing.T) {
+	expressions := jetx.ToStringExpressionsFunc(nil, func(v string) string { return v })
+	if expressions == nil {
+		t.Fatal("expected a non-nil slice even when empty")
 	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			expressions := jetx.ToStringExpressionSliceMap(test.users, func(u user) string { return u.email })
-			if expressions == nil {
-				t.Fatal("expected a non-nil slice even when empty")
-			}
-			if len(expressions) != len(test.want) {
-				t.Fatalf("expected %d expressions, got %d", len(test.want), len(expressions))
-			}
-			if len(expressions) == 0 {
-				return
-			}
-			args := renderArgs(t, colA.IN(expressions...))
-			for i, want := range test.want {
-				if args[i] != want {
-					t.Fatalf("argument %d: expected %v, got %v", i, want, args[i])
-				}
-			}
-		})
+	if len(expressions) != 0 {
+		t.Fatalf("expected no expressions, got %d", len(expressions))
 	}
 }
 
-// ToStringExpressions is ToStringExpressionSliceMap with a default projection,
-// so the two must render identically for a slice of strings.
-func TestToStringExpressionsMatchesSliceMap(t *testing.T) {
+func TestToStringExpressionsFunc(t *testing.T) {
+	type user struct{ email string }
+
+	users := []user{{email: "a@example.com"}, {email: "b@example.com"}}
+	want := []any{"a@example.com", "b@example.com"}
+
+	expressions := jetx.ToStringExpressionsFunc(users, func(u user) string { return u.email })
+	args := renderArgs(t, colA.IN(expressions...))
+	if len(args) != len(want) {
+		t.Fatalf("expected %d arguments, got %#v", len(want), args)
+	}
+	for i, wantArg := range want {
+		if args[i] != wantArg {
+			t.Fatalf("argument %d: expected %v, got %v", i, wantArg, args[i])
+		}
+	}
+}
+
+// ToStringExpressions is ToStringExpressionsFunc with a default projection, so
+// the two must render identically for a slice of strings.
+func TestToStringExpressionsMatchesFunc(t *testing.T) {
 	values := []string{"one", "two"}
 
 	direct := renderWhere(t, colA.IN(jetx.ToStringExpressions(values)...))
 	projected := renderWhere(
 		t,
-		colA.IN(jetx.ToStringExpressionSliceMap(values, func(v string) string { return v })...),
+		colA.IN(jetx.ToStringExpressionsFunc(values, func(v string) string { return v })...),
 	)
 	if direct != projected {
 		t.Fatalf("expected identical SQL, got %q and %q", direct, projected)
@@ -147,15 +141,15 @@ func TestOrderBy(t *testing.T) {
 		direction search.SortDirection
 		want      string
 	}{
-		{name: "ascending", direction: search.SortAscending, want: "\nSELECT $1\nORDER BY a ASC;\n"},
-		{name: "descending", direction: search.SortDescending, want: "\nSELECT $1\nORDER BY a DESC;\n"},
-		{name: "unknown direction falls back to ascending", direction: "sideways", want: "\nSELECT $1\nORDER BY a ASC;\n"},
-		{name: "empty direction falls back to ascending", direction: "", want: "\nSELECT $1\nORDER BY a ASC;\n"},
+		{name: "ascending", direction: search.SortAscending, want: "\nSELECT a AS \"a\"\nORDER BY a ASC;\n"},
+		{name: "descending", direction: search.SortDescending, want: "\nSELECT a AS \"a\"\nORDER BY a DESC;\n"},
+		{name: "unknown direction falls back to ascending", direction: "sideways", want: "\nSELECT a AS \"a\"\nORDER BY a ASC;\n"},
+		{name: "empty direction falls back to ascending", direction: "", want: "\nSELECT a AS \"a\"\nORDER BY a ASC;\n"},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			query, _ := jet.SELECT(jet.Int(1)).ORDER_BY(jetx.OrderBy(colA, test.direction)).Sql()
+			query, _ := jet.SELECT(colA).ORDER_BY(jetx.OrderBy(colA, test.direction)).Sql()
 			if query != test.want {
 				t.Fatalf("expected %q, got %q", test.want, query)
 			}
@@ -174,30 +168,29 @@ func TestBuildStringArrayFilter(t *testing.T) {
 		{
 			name:   "a single value compares directly",
 			values: []string{"one"},
-			want:   "\nSELECT $1\nWHERE a = $2::text;\n",
+			want:   "\nSELECT a AS \"a\"\nWHERE a = $1::text;\n",
 		},
 		{
 			name:   "several values use IN",
 			values: []string{"one", "two"},
-			want:   "\nSELECT $1\nWHERE a IN ($2::text, $3::text);\n",
+			want:   "\nSELECT a AS \"a\"\nWHERE a IN ($1::text, $2::text);\n",
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			builder := jetx.NewFilterBuilder()
-			if got := renderWhere(t, builder.BuildStringArrayFilter(colA, test.values)); got != test.want {
+			if got := renderWhere(t, jetx.BuildStringArrayFilter(colA, test.values)); got != test.want {
 				t.Fatalf("expected %q, got %q", test.want, got)
 			}
 			// BuildIDFilter is BuildStringArrayFilter under another name.
-			if got := renderWhere(t, builder.BuildIDFilter(colA, test.values)); got != test.want {
+			if got := renderWhere(t, jetx.BuildIDFilter(colA, test.values)); got != test.want {
 				t.Fatalf("BuildIDFilter: expected %q, got %q", test.want, got)
 			}
 		})
 	}
 }
 
-func TestBuildFullTextSearchFilter(t *testing.T) {
+func TestBuildSubstringFilter(t *testing.T) {
 	tests := []struct {
 		name     string
 		columns  []jet.ColumnString
@@ -211,21 +204,21 @@ func TestBuildFullTextSearchFilter(t *testing.T) {
 			name:     "one column",
 			columns:  []jet.ColumnString{colA},
 			term:     "term",
-			want:     "\nSELECT $1\nWHERE a LIKE $2::text;\n",
+			want:     "\nSELECT a AS \"a\"\nWHERE a LIKE $1::text;\n",
 			wantArgs: []any{"%term%"},
 		},
 		{
 			name:     "several columns are ORed",
 			columns:  []jet.ColumnString{colA, colB},
 			term:     "term",
-			want:     "\nSELECT $1\nWHERE (a LIKE $2::text) OR (b LIKE $3::text);\n",
+			want:     "\nSELECT a AS \"a\"\nWHERE (a LIKE $1::text) OR (b LIKE $2::text);\n",
 			wantArgs: []any{"%term%", "%term%"},
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			filter := jetx.NewFilterBuilder().BuildFullTextSearchFilter(test.columns, test.term)
+			filter := jetx.BuildSubstringFilter(test.columns, test.term)
 			if got := renderWhere(t, filter); got != test.want {
 				t.Fatalf("expected %q, got %q", test.want, got)
 			}
@@ -253,26 +246,26 @@ func TestBuildDateRangeFilter(t *testing.T) {
 	}{
 		{name: "no bounds is no filter", want: ""},
 		{
-			name: "lower bound only",
+			name: "lower bound is inclusive",
 			from: &from,
-			want: "\nSELECT $1\nWHERE ts >= $2::timestamp with time zone;\n",
+			want: "\nSELECT a AS \"a\"\nWHERE ts >= $1::timestamp with time zone;\n",
 		},
 		{
-			name: "upper bound only",
+			name: "upper bound is inclusive",
 			to:   &to,
-			want: "\nSELECT $1\nWHERE ts <= $2::timestamp with time zone;\n",
+			want: "\nSELECT a AS \"a\"\nWHERE ts <= $1::timestamp with time zone;\n",
 		},
 		{
 			name: "both bounds are ANDed",
 			from: &from,
 			to:   &to,
-			want: "\nSELECT $1\nWHERE (ts >= $2::timestamp with time zone) AND (ts <= $3::timestamp with time zone);\n",
+			want: "\nSELECT a AS \"a\"\nWHERE (ts >= $1::timestamp with time zone) AND (ts <= $2::timestamp with time zone);\n",
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			filter := jetx.NewFilterBuilder().BuildDateRangeFilter(colTS, test.from, test.to)
+			filter := jetx.BuildDateRangeFilter(colTS, test.from, test.to)
 			if got := renderWhere(t, filter); got != test.want {
 				t.Fatalf("expected %q, got %q", test.want, got)
 			}
@@ -292,14 +285,14 @@ func TestCombineFilters(t *testing.T) {
 		{
 			name:    "a single filter is returned as-is",
 			filters: []jet.BoolExpression{colA.EQ(jet.String("x"))},
-			wantAnd: "\nSELECT $1\nWHERE a = $2::text;\n",
-			wantOr:  "\nSELECT $1\nWHERE a = $2::text;\n",
+			wantAnd: "\nSELECT a AS \"a\"\nWHERE a = $1::text;\n",
+			wantOr:  "\nSELECT a AS \"a\"\nWHERE a = $1::text;\n",
 		},
 		{
 			name:    "absent filters are skipped",
 			filters: []jet.BoolExpression{nil, colA.EQ(jet.String("x")), nil},
-			wantAnd: "\nSELECT $1\nWHERE a = $2::text;\n",
-			wantOr:  "\nSELECT $1\nWHERE a = $2::text;\n",
+			wantAnd: "\nSELECT a AS \"a\"\nWHERE a = $1::text;\n",
+			wantOr:  "\nSELECT a AS \"a\"\nWHERE a = $1::text;\n",
 		},
 		{
 			name: "several filters fold left to right",
@@ -308,18 +301,17 @@ func TestCombineFilters(t *testing.T) {
 				colB.EQ(jet.String("y")),
 				colA.EQ(jet.String("z")),
 			},
-			wantAnd: "\nSELECT $1\nWHERE ((a = $2::text) AND (b = $3::text)) AND (a = $4::text);\n",
-			wantOr:  "\nSELECT $1\nWHERE ((a = $2::text) OR (b = $3::text)) OR (a = $4::text);\n",
+			wantAnd: "\nSELECT a AS \"a\"\nWHERE ((a = $1::text) AND (b = $2::text)) AND (a = $3::text);\n",
+			wantOr:  "\nSELECT a AS \"a\"\nWHERE ((a = $1::text) OR (b = $2::text)) OR (a = $3::text);\n",
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			builder := jetx.NewFilterBuilder()
-			if got := renderWhere(t, builder.CombineFilters(test.filters...)); got != test.wantAnd {
+			if got := renderWhere(t, jetx.CombineFilters(test.filters...)); got != test.wantAnd {
 				t.Fatalf("CombineFilters: expected %q, got %q", test.wantAnd, got)
 			}
-			if got := renderWhere(t, builder.CombineFiltersWithOr(test.filters...)); got != test.wantOr {
+			if got := renderWhere(t, jetx.CombineFiltersWithOr(test.filters...)); got != test.wantOr {
 				t.Fatalf("CombineFiltersWithOr: expected %q, got %q", test.wantOr, got)
 			}
 		})

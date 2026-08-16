@@ -7,6 +7,7 @@ import (
 	jet "github.com/go-jet/jet/v2/postgres"
 	"github.com/go-jet/jet/v2/qrm"
 
+	"github.com/nanostack-dev/nanostack-framework/pkg/jetx"
 	"github.com/nanostack-dev/nanostack-framework/pkg/search"
 )
 
@@ -128,17 +129,8 @@ func SortColumns[S ~string](sorts []search.Sort[S], columns map[S]jet.Column) []
 	clauses := make([]jet.OrderByClause, 0, len(sorts))
 	for _, sort := range sorts {
 		if column, ok := columns[sort.Field]; ok {
-			clauses = append(clauses, orderBy(column, sort.Direction))
+			clauses = append(clauses, jetx.OrderBy(column, sort.Direction))
 		}
 	}
 	return clauses
-}
-
-// orderBy is deliberately unexported: pkg/jetx.OrderBy is the exported helper
-// for one-off ordering, and duplicating it here would give the framework two.
-func orderBy(column jet.Column, direction search.SortDirection) jet.OrderByClause {
-	if direction == search.SortDescending {
-		return column.DESC()
-	}
-	return column.ASC()
 }
