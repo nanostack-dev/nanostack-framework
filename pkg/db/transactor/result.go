@@ -2,6 +2,7 @@ package transactor
 
 import (
 	"github.com/nanostack-dev/nanostack-framework/pkg/db/pgerr"
+	"github.com/nanostack-dev/nanostack-framework/pkg/functional"
 )
 
 // Result carries the outcome of a statement so driver errors can be translated
@@ -26,26 +27,35 @@ import (
 // Translation targets belong to the layer that owns the rule. Repositories
 // should map to repository or domain sentinels, not to HTTP faults — keeping
 // transport concerns out of the data layer.
+//
+// Result wraps a functional.Result[T] rather than aliasing it: On* is a SQL
+// translation concern this package owns, not a generic one functional.Result
+// has any business knowing about, so it needs a real type of its own to hang
+// those methods on. Value/Err are thin forwards to the wrapped
+// functional.Result[T]; Map/FlatMap are deliberately not exposed here — no
+// repository chains two Results the way GetRunByIDInternal-style code chains
+// two Optionals, so functional.Result's generic transforms would be surface
+// area without a caller. Reach into the wrapped value (rarely needed) only
+// from within this package.
 type Result[T any] struct {
-	v   T
-	err error
+	inner functional.Result[T]
 }
 
 // newResult pairs a value with its error. Helpers construct results this way so
 // the zero value of T is preserved on failure.
 func newResult[T any](v T, err error) Result[T] {
-	return Result[T]{v: v, err: err}
+	return Result[T]{inner: functional.New(v, err)}
 }
 
 // Value returns the value and the error, after any translation.
 func (r Result[T]) Value() (T, error) {
-	return r.v, r.err
+	return r.inner.Value()
 }
 
 // Err returns only the error, for statements whose value carries no
 // information — Exec, and queries whose result the caller discards.
 func (r Result[T]) Err() error {
-	return r.err
+	return r.inner.Err()
 }
 
 // OnSQLState replaces the error with target when it is a PostgreSQL error
@@ -53,8 +63,8 @@ func (r Result[T]) Err() error {
 // constraints. It is the general form behind OnUnique and OnForeignKey, and the
 // escape hatch for codes this package does not name.
 func (r Result[T]) OnSQLState(code string, target error, constraints ...string) Result[T] {
-	if pgerr.Is(r.err, code, constraints...) {
-		return Result[T]{v: r.v, err: target}
+	if pgerr.Is(r.Err(), code, constraints...) {
+		return Result[T]{inner: r.inner.MapErr(func(error) error { return target })}
 	}
 	return r
 }
@@ -95,8 +105,8 @@ func (r Result[T]) OnForeignKey(target error, constraints ...string) Result[T] {
 // should exist). Naming target keeps that judgment at the call site instead of
 // baking a blanket answer into transactor.
 func (r Result[T]) OnNoRows(target error) Result[T] {
-	if isNoRows(r.err) {
-		return Result[T]{v: r.v, err: target}
+	if isNoRows(r.Err()) {
+		return Result[T]{inner: r.inner.MapErr(func(error) error { return target })}
 	}
 	return r
 }

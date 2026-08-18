@@ -4,6 +4,8 @@ Context-carried SQL transaction helper for code paths that need transaction prop
 
 Prefer explicit transaction parameters where they keep repository boundaries clearer. Use this package when the application already relies on context propagation for transactional work.
 
+Its two result types are built on [`pkg/functional`](../../functional): `Result[T]` wraps `functional.Result[T]` and adds SQL-specific error translation; `Optional[T]` is a type alias for `functional.Option[T]` outright, since absence has no SQL-specific behavior to add on top.
+
 ## Composing transactions
 
 `InTx` runs the callback in the transaction the context already carries, and begins one otherwise. A service composing another service's write into a larger unit calls the same method as a service that owns the transaction, and the outermost call owns the commit and the rollback:
@@ -32,6 +34,30 @@ err := transactor.Exec(ctx, db, stmt).Err()
 ```
 
 Type arguments are inferred from `mapFunc` — spelling them out is unnecessary.
+
+## Queries that may find nothing
+
+`QueryOptional`/`QueryOptionalMap` return `Optional[T]` for a SELECT that may legitimately match zero rows, or an `UPDATE`/`DELETE ... RETURNING` whose `WHERE` clause matches nothing. `IsPresent`/`Err`/`Value` answer "was there a row" and "did anything go wrong" as two separate questions, instead of folding both into a nilable pointer:
+
+```go
+result := transactor.QueryOptional[Invitation](ctx, db, stmt)
+if err := result.Err(); err != nil {
+    return err // a real failure
+}
+if !result.IsPresent() {
+    return nil // no row — benign
+}
+inv := result.Value()
+```
+
+Chain a second Optional-producing lookup keyed by the first one's value with `FlatMap` — absence or failure from either step ends the chain the same way, without a nil-check in between:
+
+```go
+config := transactor.QueryOptional[Run](ctx, db, runStmt).
+    FlatMap(func(run Run) transactor.Optional[Config] {
+        return transactor.QueryOptional[Config](ctx, db, configStmtFor(run))
+    })
+```
 
 ## Translating constraint violations
 
