@@ -36,7 +36,7 @@ func TestResultMap(t *testing.T) {
 	double := func(n int) int { return n * 2 }
 
 	t.Run("maps the value on success", func(t *testing.T) {
-		got := functional.Ok(21).Map(double)
+		got := functional.MapResult(functional.Ok(21), double)
 		v, err := got.Value()
 		if err != nil || v != 42 {
 			t.Fatalf("Map(double).Value() = (%d, %v), want (42, nil)", v, err)
@@ -45,7 +45,7 @@ func TestResultMap(t *testing.T) {
 
 	t.Run("leaves a failure untouched", func(t *testing.T) {
 		sentinel := errors.New("boom")
-		got := functional.Failure[int](sentinel).Map(double)
+		got := functional.MapResult(functional.Failure[int](sentinel), double)
 		if !errors.Is(got.Err(), sentinel) {
 			t.Fatalf("Err() = %v, want %v", got.Err(), sentinel)
 		}
@@ -53,7 +53,7 @@ func TestResultMap(t *testing.T) {
 
 	t.Run("changes type, not just value", func(t *testing.T) {
 		toLabel := func(n int) string { return fmt.Sprintf("n=%d", n) }
-		got := functional.Ok(7).Map(toLabel)
+		got := functional.MapResult(functional.Ok(7), toLabel)
 		v, _ := got.Value()
 		if v != "n=7" {
 			t.Fatalf("Value() = %q, want %q", v, "n=7")
@@ -67,7 +67,7 @@ func TestResultFlatMap(t *testing.T) {
 	}
 
 	t.Run("chains into a second successful step", func(t *testing.T) {
-		got := functional.Ok(42).FlatMap(step2)
+		got := functional.FlatMapResult(functional.Ok(42), step2)
 		v, err := got.Value()
 		if err != nil || v != "n=42" {
 			t.Fatalf("FlatMap(step2).Value() = (%q, %v), want (\"n=42\", nil)", v, err)
@@ -77,7 +77,7 @@ func TestResultFlatMap(t *testing.T) {
 	t.Run("first failure short-circuits before f runs", func(t *testing.T) {
 		sentinel := errors.New("boom")
 		called := false
-		got := functional.Failure[int](sentinel).FlatMap(func(n int) functional.Result[string] {
+		got := functional.FlatMapResult(functional.Failure[int](sentinel), func(n int) functional.Result[string] {
 			called = true
 			return functional.Ok("unused")
 		})
@@ -91,7 +91,7 @@ func TestResultFlatMap(t *testing.T) {
 
 	t.Run("second step's failure propagates", func(t *testing.T) {
 		sentinel := errors.New("second boom")
-		got := functional.Ok(1).FlatMap(func(n int) functional.Result[string] {
+		got := functional.FlatMapResult(functional.Ok(1), func(n int) functional.Result[string] {
 			return functional.Failure[string](sentinel)
 		})
 		if !errors.Is(got.Err(), sentinel) {

@@ -45,14 +45,14 @@ func TestOptionalFlatMapChainsTwoLookups(t *testing.T) {
 	}
 
 	t.Run("both present chains through", func(t *testing.T) {
-		got := lookupA(true).FlatMap(lookupB)
+		got := functional.FlatMapOption(lookupA(true), lookupB)
 		if !got.IsPresent() || got.Value() != 1 {
 			t.Fatalf("FlatMap chain = %+v, want present 1", got)
 		}
 	})
 
 	t.Run("first absence short-circuits", func(t *testing.T) {
-		got := lookupA(false).FlatMap(lookupB)
+		got := functional.FlatMapOption(lookupA(false), lookupB)
 		if got.IsPresent() {
 			t.Fatalf("IsPresent() = true, want false")
 		}
@@ -60,7 +60,7 @@ func TestOptionalFlatMapChainsTwoLookups(t *testing.T) {
 
 	t.Run("failure propagates through the chain", func(t *testing.T) {
 		sentinel := errors.New("boom")
-		got := functional.Failed[string](sentinel).FlatMap(lookupB)
+		got := functional.FlatMapOption(functional.Failed[string](sentinel), lookupB)
 		if !errors.Is(got.Err(), sentinel) {
 			t.Fatalf("Err() = %v, want %v", got.Err(), sentinel)
 		}

@@ -50,14 +50,18 @@ if !result.IsPresent() {
 inv := result.Value()
 ```
 
-Chain a second Optional-producing lookup keyed by the first one's value with `FlatMap` — absence or failure from either step ends the chain the same way, without a nil-check in between:
+Chain a second Optional-producing lookup keyed by the first one's value with `functional.FlatMapOption` — absence or failure from either step ends the chain the same way, without a nil-check in between:
 
 ```go
-config := transactor.QueryOptional[Run](ctx, db, runStmt).
-    FlatMap(func(run Run) transactor.Optional[Config] {
+config := functional.FlatMapOption(
+    transactor.QueryOptional[Run](ctx, db, runStmt),
+    func(run Run) transactor.Optional[Config] {
         return transactor.QueryOptional[Config](ctx, db, configStmtFor(run))
-    })
+    },
+)
 ```
+
+It is a function rather than a method because a method carrying its own type parameter needs Go 1.27; see [`pkg/functional`](../../functional).
 
 ## Translating constraint violations
 

@@ -51,14 +51,14 @@ func TestOptionMap(t *testing.T) {
 	double := func(n int) int { return n * 2 }
 
 	t.Run("maps the value when present", func(t *testing.T) {
-		got := functional.Some(21).Map(double)
+		got := functional.MapOption(functional.Some(21), double)
 		if !got.IsPresent() || got.Value() != 42 {
 			t.Fatalf("Map(double) = %+v, want present 42", got)
 		}
 	})
 
 	t.Run("leaves absence untouched", func(t *testing.T) {
-		got := functional.None[int]().Map(double)
+		got := functional.MapOption(functional.None[int](), double)
 		if got.IsPresent() {
 			t.Fatalf("IsPresent() = true, want false — mapping absence stays absent")
 		}
@@ -66,7 +66,7 @@ func TestOptionMap(t *testing.T) {
 
 	t.Run("leaves a failure untouched", func(t *testing.T) {
 		sentinel := errors.New("boom")
-		got := functional.Failed[int](sentinel).Map(double)
+		got := functional.MapOption(functional.Failed[int](sentinel), double)
 		if got.IsPresent() {
 			t.Fatalf("IsPresent() = true, want false")
 		}
@@ -77,7 +77,7 @@ func TestOptionMap(t *testing.T) {
 
 	t.Run("changes type, not just value", func(t *testing.T) {
 		toLabel := func(n int) string { return fmt.Sprintf("n=%d", n) }
-		got := functional.Some(7).Map(toLabel)
+		got := functional.MapOption(functional.Some(7), toLabel)
 		if got.Value() != "n=7" {
 			t.Fatalf("Value() = %q, want %q", got.Value(), "n=7")
 		}
@@ -93,7 +93,7 @@ func TestOptionFlatMap(t *testing.T) {
 	}
 
 	t.Run("chains into a second present lookup", func(t *testing.T) {
-		got := functional.Some("found").FlatMap(lookupB)
+		got := functional.FlatMapOption(functional.Some("found"), lookupB)
 		if !got.IsPresent() || got.Value() != 42 {
 			t.Fatalf("FlatMap = %+v, want present 42", got)
 		}
@@ -101,7 +101,7 @@ func TestOptionFlatMap(t *testing.T) {
 
 	t.Run("first absence short-circuits before f runs", func(t *testing.T) {
 		called := false
-		got := functional.None[string]().FlatMap(func(a string) functional.Option[int] {
+		got := functional.FlatMapOption(functional.None[string](), func(a string) functional.Option[int] {
 			called = true
 			return functional.Some(1)
 		})
@@ -115,14 +115,14 @@ func TestOptionFlatMap(t *testing.T) {
 
 	t.Run("first failure short-circuits and propagates the error", func(t *testing.T) {
 		sentinel := errors.New("boom")
-		got := functional.Failed[string](sentinel).FlatMap(lookupB)
+		got := functional.FlatMapOption(functional.Failed[string](sentinel), lookupB)
 		if !errors.Is(got.Err(), sentinel) {
 			t.Fatalf("Err() = %v, want %v", got.Err(), sentinel)
 		}
 	})
 
 	t.Run("second lookup's absence propagates", func(t *testing.T) {
-		got := functional.Some("missing").FlatMap(lookupB)
+		got := functional.FlatMapOption(functional.Some("missing"), lookupB)
 		if got.IsPresent() {
 			t.Fatalf("IsPresent() = true, want false")
 		}
@@ -133,7 +133,7 @@ func TestOptionFlatMap(t *testing.T) {
 
 	t.Run("second lookup's failure propagates", func(t *testing.T) {
 		sentinel := errors.New("second boom")
-		got := functional.Some("found").FlatMap(func(a string) functional.Option[int] {
+		got := functional.FlatMapOption(functional.Some("found"), func(a string) functional.Option[int] {
 			return functional.Failed[int](sentinel)
 		})
 		if !errors.Is(got.Err(), sentinel) {

@@ -46,19 +46,21 @@ func (r Result[T]) Err() error {
 	return r.err
 }
 
-// Map transforms the value on success, leaving a failure untouched. It is a
-// generic method (Go 1.27) so f can map to a different type R than the
-// receiver's T.
-func (r Result[T]) Map[R any](f func(T) R) Result[R] {
+// MapResult transforms the value on success, leaving a failure untouched.
+//
+// It is a package-level function rather than a method because a method
+// carrying its own type parameter needs Go 1.27, and this module still
+// targets 1.26. Make it a method once the toolchain moves.
+func MapResult[T any, R any](r Result[T], f func(T) R) Result[R] {
 	if r.err != nil {
 		return Result[R]{err: r.err}
 	}
 	return Ok(f(r.v))
 }
 
-// FlatMap chains a second Result-producing computation, letting a failure
-// from either step propagate without an intermediate error check.
-func (r Result[T]) FlatMap[R any](f func(T) Result[R]) Result[R] {
+// FlatMapResult chains a second Result-producing computation, letting a
+// failure from either step propagate without an intermediate error check.
+func FlatMapResult[T any, R any](r Result[T], f func(T) Result[R]) Result[R] {
 	if r.err != nil {
 		return Result[R]{err: r.err}
 	}

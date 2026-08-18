@@ -12,12 +12,12 @@
 //
 // Go has no higher-kinded types, so there is no shared Functor/Monad
 // interface to implement once — Option and Result each get their own
-// hand-written Map/FlatMap. What Go 1.27 does add is generic methods
-// (go.dev/issue/77273): Map/FlatMap can be real methods on Option[T] and
-// Result[T] with their own type parameter for the target type, giving
-// Java-Stream-style fluent chaining (opt.Map(f).Filter(pred).OrElse(v))
-// instead of the package-level helper functions older Go required — the
-// shape samber/mo (predating generic methods) still uses.
+// hand-written Map/FlatMap. They are package-level functions
+// (MapOption/FlatMapOption, MapResult/FlatMapResult) because a method
+// carrying its own type parameter needs generic methods, added in Go 1.27
+// (go.dev/issue/77273), and this module targets 1.26 for the applications
+// consuming it. Fluent chaining — opt.Map(f).Filter(pred).OrElse(v) — is
+// what the move to 1.27 buys; until then a cross-type step reads as a call.
 //
 // Go also has no variadic generics, so the fixed-arity members — Tuple2..
 // Tuple9 and the ZipOption/ZipResult families that build them — are generated
@@ -72,21 +72,24 @@ func (o Option[T]) Value() T {
 	return o.v
 }
 
-// Map transforms the value when present, leaving absence and failure
-// untouched. It is a generic method (Go 1.27) so f can map to a different
-// type R than the receiver's T.
-func (o Option[T]) Map[R any](f func(T) R) Option[R] {
+// MapOption transforms the value when present, leaving absence and failure
+// untouched.
+//
+// It is a package-level function rather than a method because a method
+// carrying its own type parameter needs Go 1.27, and this module still
+// targets 1.26. Make it a method once the toolchain moves.
+func MapOption[T any, R any](o Option[T], f func(T) R) Option[R] {
 	if !o.IsPresent() {
 		return Option[R]{err: o.err}
 	}
 	return Some(f(o.v))
 }
 
-// FlatMap chains a second Option-producing computation keyed by the present
-// value, letting absence or failure from either step propagate without an
-// intermediate presence check. Use this to look up A, then look up B keyed
+// FlatMapOption chains a second Option-producing computation keyed by the
+// present value, letting absence or failure from either step propagate without
+// an intermediate presence check. Use this to look up A, then look up B keyed
 // by A, where absence from either lookup should end the chain the same way.
-func (o Option[T]) FlatMap[R any](f func(T) Option[R]) Option[R] {
+func FlatMapOption[T any, R any](o Option[T], f func(T) Option[R]) Option[R] {
 	if !o.IsPresent() {
 		return Option[R]{err: o.err}
 	}

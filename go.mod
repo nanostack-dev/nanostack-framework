@@ -1,6 +1,6 @@
 module github.com/nanostack-dev/nanostack-framework
 
-go 1.27
+go 1.26.5
 
 toolchain go1.27rc1
 

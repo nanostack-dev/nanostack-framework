@@ -109,13 +109,13 @@ func QueryOptional[T any](ctx context.Context, db qrm.DB, stmt jet.Statement) Op
 	return functional.Some(result)
 }
 
-// QueryOptionalMap executes a query that may return 0 rows and maps the
-// result when present. It is QueryOptional(...).Map(mapFunc) — Optional.Map
-// does the actual present/absent/error handling exactly once.
+// QueryOptionalMap executes a query that may return 0 rows and maps the result
+// when present. functional.MapOption does the present/absent/error handling
+// exactly once.
 func QueryOptionalMap[T any, R any](
 	ctx context.Context, db qrm.DB, stmt jet.Statement, mapFunc func(T) R,
 ) Optional[R] {
-	return QueryOptional[T](ctx, db, stmt).Map(mapFunc)
+	return functional.MapOption(QueryOptional[T](ctx, db, stmt), mapFunc)
 }
 
 // isNoRows reports whether err is the "statement matched zero rows" sentinel,

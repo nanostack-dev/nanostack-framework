@@ -63,7 +63,11 @@ if v, ok := opt.Get(); ok { ... }
 
 ## Why each type hand-rolls its own Map/FlatMap
 
-Go has no higher-kinded types, so there is no `Functor`/`Monad` interface to implement once and share — `Option` and `Result` each need their own. What Go 1.27 *does* add is generic methods ([go.dev/issue/77273](https://go.dev/issue/77273)), so `Map`/`FlatMap` can be real methods carrying their own type parameter for the target type. That is what makes `opt.Map(f).Filter(pred).OrElse(v)` read left-to-right, instead of the nested package-level helper calls (`mo.Map(mo.Filter(opt, pred), f)`) that libraries predating generic methods still require.
+Go has no higher-kinded types, so there is no `Functor`/`Monad` interface to implement once and share — `Option` and `Result` each need their own.
+
+A step that maps to a *different* type is a package-level function — `MapOption`, `FlatMapOption`, `MapResult`, `FlatMapResult` — not a method. A method carrying its own type parameter needs generic methods ([go.dev/issue/77273](https://go.dev/issue/77273)), added in Go 1.27, and this module targets 1.26 so the applications consuming it can build on a released toolchain. Everything that stays in `T` — `Filter`, `OrElse`, `MapErr` — is a method already.
+
+Fluent left-to-right chaining, `opt.Map(f).Filter(pred).OrElse(v)`, is what moving to 1.27 buys. Until then a cross-type step reads as `functional.MapOption(opt, f)`, the shape libraries predating generic methods still use.
 
 ## Generated code
 
