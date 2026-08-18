@@ -13,8 +13,18 @@ import (
 
 type txContextKey struct{}
 
-// Transactor runs work inside a SQL transaction and propagates that transaction via context.
+// Transactor runs work inside a SQL transaction and propagates that transaction
+// via context.
 type Transactor interface {
+	// InTx runs fn in the transaction ctx already carries, and in a new one
+	// otherwise. A service composing another service's write into a larger unit
+	// therefore calls the same method as a service that owns the transaction,
+	// and the outermost call owns the commit and the rollback.
+	//
+	// There is no way to ask for a transaction independent of the one in ctx.
+	// Postgres has no such thing at this level anyway: a second connection
+	// cannot see the first one's uncommitted rows, and blocks on the locks it
+	// holds.
 	InTx(ctx context.Context, fn func(ctx context.Context) error) error
 }
 
@@ -28,6 +38,10 @@ func New(db *sql.DB) Transactor {
 }
 
 func (t *sqlTransactor) InTx(ctx context.Context, fn func(ctx context.Context) error) error {
+	if CurrentTx(ctx) != nil {
+		return fn(ctx)
+	}
+
 	tx, err := t.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err

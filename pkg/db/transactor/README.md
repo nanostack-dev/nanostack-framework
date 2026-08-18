@@ -6,6 +6,24 @@ Prefer explicit transaction parameters where they keep repository boundaries cle
 
 Its two result types are built on [`pkg/functional`](../../functional): `Result[T]` wraps `functional.Result[T]` and adds SQL-specific error translation; `Optional[T]` is a type alias for `functional.Option[T]` outright, since absence has no SQL-specific behavior to add on top.
 
+## Composing transactions
+
+`InTx` runs the callback in the transaction the context already carries, and begins one otherwise. A service composing another service's write into a larger unit calls the same method as a service that owns the transaction, and the outermost call owns the commit and the rollback:
+
+```go
+// The organization and its license are one unit; Instantiate joins rather than
+// beginning a second transaction its caller's row would be invisible to.
+err := tx.InTx(ctx, func(txCtx context.Context) error {
+    org, err := repo.Create(txCtx, org)
+    if err != nil {
+        return err
+    }
+    return licenses.Instantiate(txCtx, licenseFor(org))
+})
+```
+
+There is no way to ask for a transaction independent of the one in the context. Postgres has no such thing at this level: a second connection cannot see the first one's uncommitted rows, and blocks on the locks it holds.
+
 ## Query results
 
 The query helpers return `Result[T]` rather than `(T, error)`. Unwrap it with `Value()`, or with `Err()` for statements that carry no value:
