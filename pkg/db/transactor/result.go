@@ -34,7 +34,7 @@ import (
 // those methods on. Value/Err are thin forwards to the wrapped
 // functional.Result[T]; Map/FlatMap are deliberately not exposed here — no
 // repository chains two Results the way GetRunByIDInternal-style code chains
-// two Optionals, so functional.Result's generic transforms would be surface
+// two Options, so functional.Result's generic transforms would be surface
 // area without a caller. Reach into the wrapped value (rarely needed) only
 // from within this package.
 type Result[T any] struct {

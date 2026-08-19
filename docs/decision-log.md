@@ -143,3 +143,13 @@ Rationale: `Result` short-circuits, which is correct for a pipeline whose second
 Not ported, and the reason: persistent collections and `Stream` (`pkg/slicex`, `slices`, `maps`, and `iter.Seq` own that ground), `Future`/`Promise` (goroutines, channels, `errgroup`), pattern matching, and `Function0..8` currying. Those exist in Vavr because Java lacks first-class function types and cheap concurrency. Porting them would produce a package this codebase would not import.
 
 Cost accepted: hand-written statement coverage is complete, but the generated mid-arity combinators (4 through 8) are exercised only by construction — the tests cover arities 2, 3 and 9, so package coverage reads 74.1%. The lint blocker recorded in the entry above is unchanged and now covers more code.
+
+## 2026-08-19: One Name For The Absent Value
+
+Remove `transactor.Optional[T]`, the type alias for `functional.Option[T]`. `QueryOptional` and `QueryOptionalMap` now return `functional.Option[T]` directly, and `pkg/db/transactor/optional.go` is deleted.
+
+Rationale: the alias added a second name for one type and nothing else. It was introduced when `pkg/functional` was new and the SQL layer wanted a local vocabulary, but the parallel case does not hold — `transactor.Result[T]` is a distinct type that wraps `functional.Result[T]` to add SQL error translation, whereas `Optional` had no rules of its own to add. Two names for one type make a reader ask what the difference is, and the honest answer was "none".
+
+Removing it rather than deprecating it is deliberate. The alias is transparent, so both spellings compile against either version and a deprecation period would leave the ambiguity in place for as long as anyone tolerated the warning. Consumers adopt `functional.Option[T]` when they take the version bump, which is the moment they are already reading the diff.
+
+Cost accepted: this is a breaking change. Anchor has two call sites, both in `integration_instance_repository.go`; Echopoint, echopoint-runner and pgkit have none. The fix is mechanical — `transactor.Optional[T]` becomes `functional.Option[T]` with the import that implies.

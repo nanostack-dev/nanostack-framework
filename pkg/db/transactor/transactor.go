@@ -94,10 +94,26 @@ func Query[T any](ctx context.Context, db qrm.DB, stmt jet.Statement) Result[T] 
 
 // QueryOptional executes a query that may return 0 rows, in which case the
 // result is absent — IsPresent is false and Err is nil — rather than an
-// error. Use FlatMap to chain a second Optional-producing lookup keyed by
-// this one's value; absence or failure from either step ends the chain the
-// same way.
-func QueryOptional[T any](ctx context.Context, db qrm.DB, stmt jet.Statement) Optional[T] {
+// error. That is the point: "was there a row" and "did anything go wrong"
+// are two questions, and a nilable pointer folds them into one.
+//
+//	result := repo.UpdateOptional(ctx, tenantID, instance)
+//	if err := result.Err(); err != nil {
+//		return err // a real failure
+//	}
+//	if !result.IsPresent() {
+//		return nil // the row is gone — benign, nothing to do
+//	}
+//	updated := result.Value()
+//
+// Use FlatMap to chain a second lookup keyed by this one's value; absence or
+// failure from either step ends the chain the same way.
+//
+//	config := transactor.QueryOptional[Run](ctx, db, runStmt).
+//		FlatMap(func(run Run) functional.Option[Config] {
+//			return transactor.QueryOptional[Config](ctx, db, configStmtFor(run))
+//		})
+func QueryOptional[T any](ctx context.Context, db qrm.DB, stmt jet.Statement) functional.Option[T] {
 	var result T
 	err := stmt.QueryContext(ctx, Executor(ctx, db), &result)
 	if err != nil {
@@ -110,11 +126,11 @@ func QueryOptional[T any](ctx context.Context, db qrm.DB, stmt jet.Statement) Op
 }
 
 // QueryOptionalMap executes a query that may return 0 rows and maps the
-// result when present. It is QueryOptional(...).Map(mapFunc) — Optional.Map
+// result when present. It is QueryOptional(...).Map(mapFunc) — Option.Map
 // does the actual present/absent/error handling exactly once.
 func QueryOptionalMap[T any, R any](
 	ctx context.Context, db qrm.DB, stmt jet.Statement, mapFunc func(T) R,
-) Optional[R] {
+) functional.Option[R] {
 	return QueryOptional[T](ctx, db, stmt).Map(mapFunc)
 }
 
