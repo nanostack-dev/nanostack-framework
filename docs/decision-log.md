@@ -129,3 +129,17 @@ Design choices made under the old constraint are not automatically wrong now —
 Cost accepted: `golangci-lint` cannot analyse this package yet. The whole-program IR and SSA builders that several linters sit on do not terminate on a generic method whose result type re-instantiates its own receiver. `honnef.co/go/tools@v0.7.0` overflows the stack in `ir.(*Program).needMethods`, and with `honnef.co/go/tools@v0.8.0-rc.1` swapped in, `gosec` then panics in `x/tools`' `typesinternal.ForEachElement` with the type-parameter name. Both are upstream bugs, not findings about this code. Lint stays disabled for the affected repositories until a fixed release exists; no staticcheck-family linter is disabled and no suppression is added in the meantime.
 
 Rationale for recording this here rather than relying on model training data: this is a language change newer than most models' training cutoff, so it will not be "known" context without an explicit note — this entry is that note.
+
+## 2026-08-19: Validation Accumulates, Either Is Not The Error Type
+
+Expand `pkg/functional` with `Validation[T]` (accumulating), `Either[L, R]` (right-biased), `Lazy[T]` (memoized), and the combinators the existing `Option`/`Result` were missing — `Fold`, `Or`, `Peek`, `Recover`, `RecoverWith`, `Try`, `Filter`, and the pointer bridges `FromPtr`/`ToPtr`/`OptionOf`. `ZipValidation2`..`ZipValidation9` join the generated families.
+
+Rationale: `Result` short-circuits, which is correct for a pipeline whose second step needs the first step's value and wrong for a request with four bad fields. `Validation` is the accumulating twin, and it deliberately omits `FlatMap` — a sequential combinator can only ever report the first failure, which is the single reason to reach for the type. This is narrower than Vavr, which carries both a short-circuiting `flatMap` and an accumulating `ap`/`combine` on one type; offering both makes the accumulating behaviour opt-out by accident.
+
+`Either` is deliberately not the error type. `Result[T]` already is `Either[error, T]` with the left side fixed, which is what Go call sites want — Scala reached the same place when it right-biased `Either` in 2.12 and deprecated the projections. `Either` here is for a genuine two-outcome branch where neither side is a failure, and `ToOption` maps a Left to `None` rather than `Failed` to keep that honest.
+
+`Lazy` is not `sync.OnceValue` restated. `OnceValue` memoizes one call and returns a `func() T`, which composes only by wrapping, so a derived value is recomputed on every read. `Lazy.Map` returns a `Lazy` that memoizes its own result, so a chain costs one evaluation per link. Where nothing derives from the value, `sync.OnceValue` remains the right tool.
+
+Not ported, and the reason: persistent collections and `Stream` (`pkg/slicex`, `slices`, `maps`, and `iter.Seq` own that ground), `Future`/`Promise` (goroutines, channels, `errgroup`), pattern matching, and `Function0..8` currying. Those exist in Vavr because Java lacks first-class function types and cheap concurrency. Porting them would produce a package this codebase would not import.
+
+Cost accepted: hand-written statement coverage is complete, but the generated mid-arity combinators (4 through 8) are exercised only by construction — the tests cover arities 2, 3 and 9, so package coverage reads 74.1%. The lint blocker recorded in the entry above is unchanged and now covers more code.
