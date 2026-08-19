@@ -2,7 +2,7 @@ module github.com/nanostack-dev/nanostack-framework
 
 go 1.27
 
-toolchain go1.27rc1
+toolchain go1.27.0
 
 require (
 	cirello.io/pglock v1.16.2

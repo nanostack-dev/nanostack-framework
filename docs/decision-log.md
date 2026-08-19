@@ -119,3 +119,13 @@ Rationale: the generated mechanism flattens the requirement list. It records whi
 `ErrSchemeNotAttempted` separates "this credential is absent" from "this credential was rejected". Under a disjunction every alternative is tried, so without the distinction the error surfaced to a client could belong to a scheme it never used. Failures carrying it are reported after real rejections for that reason.
 
 The resolver reports an unmatched route as unmatched rather than as an empty requirement set. The two are not the same: an empty set means the operation declares no security and is public, so collapsing them would make an unroutable request look unrestricted.
+
+## 2026-08-19: Generic Methods Are Legal On Go 1.27
+
+Go 1.27 lifts the restriction cited in the 2026-07-27 "Query Helpers Return `Result[T]`", 2026-07-27 "Typed Cache Is The Cache", and 2026-07-28 "Paginated Search Execution" entries: methods can now declare their own additional type parameters. That is what `pkg/functional`'s `Option[T].Map[R]` and `FlatMap[R]` needed to exist as real methods instead of package-level functions, and why the package was pulled from main until the toolchain shipped (see the revert commit this change reverses). `go.mod` now declares `go 1.27` with `toolchain go1.27.0`, replacing the `go1.27rc1` pin the branch carried while the release was still a candidate.
+
+Design choices made under the old constraint are not automatically wrong now — `Result[T]` as a generic type rather than methods on a non-generic `Store`, for instance, still stands on its own reasoning — but the constraint itself is gone and no longer needs working around in new code.
+
+Cost accepted: `golangci-lint` cannot analyse this package yet. The whole-program IR and SSA builders that several linters sit on do not terminate on a generic method whose result type re-instantiates its own receiver. `honnef.co/go/tools@v0.7.0` overflows the stack in `ir.(*Program).needMethods`, and with `honnef.co/go/tools@v0.8.0-rc.1` swapped in, `gosec` then panics in `x/tools`' `typesinternal.ForEachElement` with the type-parameter name. Both are upstream bugs, not findings about this code. Lint stays disabled for the affected repositories until a fixed release exists; no staticcheck-family linter is disabled and no suppression is added in the meantime.
+
+Rationale for recording this here rather than relying on model training data: this is a language change newer than most models' training cutoff, so it will not be "known" context without an explicit note — this entry is that note.
