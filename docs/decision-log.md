@@ -119,3 +119,37 @@ Rationale: the generated mechanism flattens the requirement list. It records whi
 `ErrSchemeNotAttempted` separates "this credential is absent" from "this credential was rejected". Under a disjunction every alternative is tried, so without the distinction the error surfaced to a client could belong to a scheme it never used. Failures carrying it are reported after real rejections for that reason.
 
 The resolver reports an unmatched route as unmatched rather than as an empty requirement set. The two are not the same: an empty set means the operation declares no security and is public, so collapsing them would make an unroutable request look unrestricted.
+
+## 2026-08-19: Generic Methods Are Legal On Go 1.27
+
+Go 1.27 lifts the restriction cited in the 2026-07-27 "Query Helpers Return `Result[T]`", 2026-07-27 "Typed Cache Is The Cache", and 2026-07-28 "Paginated Search Execution" entries: methods can now declare their own additional type parameters. That is what `pkg/functional`'s `Option[T].Map[R]` and `FlatMap[R]` needed to exist as real methods instead of package-level functions, and why the package was pulled from main until the toolchain shipped (see the revert commit this change reverses). `go.mod` now declares `go 1.27` with `toolchain go1.27.0`, replacing the `go1.27rc1` pin the branch carried while the release was still a candidate.
+
+Design choices made under the old constraint are not automatically wrong now — `Result[T]` as a generic type rather than methods on a non-generic `Store`, for instance, still stands on its own reasoning — but the constraint itself is gone and no longer needs working around in new code.
+
+Cost accepted: `golangci-lint` cannot analyse this package yet. The whole-program IR and SSA builders that several linters sit on do not terminate on a generic method whose result type re-instantiates its own receiver. `honnef.co/go/tools@v0.7.0` overflows the stack in `ir.(*Program).needMethods`, and with `honnef.co/go/tools@v0.8.0-rc.1` swapped in, `gosec` then panics in `x/tools`' `typesinternal.ForEachElement` with the type-parameter name. Both are upstream bugs, not findings about this code. Lint stays disabled for the affected repositories until a fixed release exists; no staticcheck-family linter is disabled and no suppression is added in the meantime.
+
+Rationale for recording this here rather than relying on model training data: this is a language change newer than most models' training cutoff, so it will not be "known" context without an explicit note — this entry is that note.
+
+## 2026-08-19: Validation Accumulates, Either Is Not The Error Type
+
+Expand `pkg/functional` with `Validation[T]` (accumulating), `Either[L, R]` (right-biased), `Lazy[T]` (memoized), and the combinators the existing `Option`/`Result` were missing — `Fold`, `Or`, `Peek`, `Recover`, `RecoverWith`, `Try`, `Filter`, and the pointer bridges `FromPtr`/`ToPtr`/`OptionOf`. `ZipValidation2`..`ZipValidation9` join the generated families.
+
+Rationale: `Result` short-circuits, which is correct for a pipeline whose second step needs the first step's value and wrong for a request with four bad fields. `Validation` is the accumulating twin, and it deliberately omits `FlatMap` — a sequential combinator can only ever report the first failure, which is the single reason to reach for the type. This is narrower than Vavr, which carries both a short-circuiting `flatMap` and an accumulating `ap`/`combine` on one type; offering both makes the accumulating behaviour opt-out by accident.
+
+`Either` is deliberately not the error type. `Result[T]` already is `Either[error, T]` with the left side fixed, which is what Go call sites want — Scala reached the same place when it right-biased `Either` in 2.12 and deprecated the projections. `Either` here is for a genuine two-outcome branch where neither side is a failure, and `ToOption` maps a Left to `None` rather than `Failed` to keep that honest.
+
+`Lazy` is not `sync.OnceValue` restated. `OnceValue` memoizes one call and returns a `func() T`, which composes only by wrapping, so a derived value is recomputed on every read. `Lazy.Map` returns a `Lazy` that memoizes its own result, so a chain costs one evaluation per link. Where nothing derives from the value, `sync.OnceValue` remains the right tool.
+
+Not ported, and the reason: persistent collections and `Stream` (`pkg/slicex`, `slices`, `maps`, and `iter.Seq` own that ground), `Future`/`Promise` (goroutines, channels, `errgroup`), pattern matching, and `Function0..8` currying. Those exist in Vavr because Java lacks first-class function types and cheap concurrency. Porting them would produce a package this codebase would not import.
+
+Cost accepted: hand-written statement coverage is complete, but the generated mid-arity combinators (4 through 8) are exercised only by construction — the tests cover arities 2, 3 and 9, so package coverage reads 74.1%. The lint blocker recorded in the entry above is unchanged and now covers more code.
+
+## 2026-08-19: One Name For The Absent Value
+
+Remove `transactor.Optional[T]`, the type alias for `functional.Option[T]`. `QueryOptional` and `QueryOptionalMap` now return `functional.Option[T]` directly, and `pkg/db/transactor/optional.go` is deleted.
+
+Rationale: the alias added a second name for one type and nothing else. It was introduced when `pkg/functional` was new and the SQL layer wanted a local vocabulary, but the parallel case does not hold — `transactor.Result[T]` is a distinct type that wraps `functional.Result[T]` to add SQL error translation, whereas `Optional` had no rules of its own to add. Two names for one type make a reader ask what the difference is, and the honest answer was "none".
+
+Removing it rather than deprecating it is deliberate. The alias is transparent, so both spellings compile against either version and a deprecation period would leave the ambiguity in place for as long as anyone tolerated the warning. Consumers adopt `functional.Option[T]` when they take the version bump, which is the moment they are already reading the diff.
+
+Cost accepted: this is a breaking change. Anchor has two call sites, both in `integration_instance_repository.go`; Echopoint, echopoint-runner and pgkit have none. The fix is mechanical — `transactor.Optional[T]` becomes `functional.Option[T]` with the import that implies.

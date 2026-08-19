@@ -7,6 +7,8 @@ import (
 
 	jet "github.com/go-jet/jet/v2/postgres"
 	"github.com/go-jet/jet/v2/qrm"
+
+	"github.com/nanostack-dev/nanostack-framework/pkg/functional"
 )
 
 type txContextKey struct{}
@@ -91,46 +93,45 @@ func Query[T any](ctx context.Context, db qrm.DB, stmt jet.Statement) Result[T] 
 }
 
 // QueryOptional executes a query that may return 0 rows, in which case the
-// result value is nil and the error is nil.
-func QueryOptional[T any](ctx context.Context, db qrm.DB, stmt jet.Statement) Result[*T] {
+// result is absent — IsPresent is false and Err is nil — rather than an
+// error. That is the point: "was there a row" and "did anything go wrong"
+// are two questions, and a nilable pointer folds them into one.
+//
+//	result := repo.UpdateOptional(ctx, tenantID, instance)
+//	if err := result.Err(); err != nil {
+//		return err // a real failure
+//	}
+//	if !result.IsPresent() {
+//		return nil // the row is gone — benign, nothing to do
+//	}
+//	updated := result.Value()
+//
+// Use FlatMap to chain a second lookup keyed by this one's value; absence or
+// failure from either step ends the chain the same way.
+//
+//	config := transactor.QueryOptional[Run](ctx, db, runStmt).
+//		FlatMap(func(run Run) functional.Option[Config] {
+//			return transactor.QueryOptional[Config](ctx, db, configStmtFor(run))
+//		})
+func QueryOptional[T any](ctx context.Context, db qrm.DB, stmt jet.Statement) functional.Option[T] {
 	var result T
 	err := stmt.QueryContext(ctx, Executor(ctx, db), &result)
 	if err != nil {
 		if isNoRows(err) {
-			return newResult[*T](nil, nil)
+			return functional.None[T]()
 		}
-		return newResult[*T](nil, err)
+		return functional.Failed[T](err)
 	}
-	return newResult(&result, nil)
+	return functional.Some(result)
 }
 
-// QueryOptionalResult is QueryOptional's Optional-based counterpart: the same
-// "0 rows is not an error" semantics, but through IsPresent/Err/Value instead
-// of a pointer the caller must remember to nil-check.
-func QueryOptionalResult[T any](ctx context.Context, db qrm.DB, stmt jet.Statement) Optional[T] {
-	result, err := QueryOptional[T](ctx, db, stmt).Value()
-	if err != nil {
-		return Optional[T]{err: err}
-	}
-	if result == nil {
-		return Optional[T]{}
-	}
-	return Optional[T]{v: *result, present: true}
-}
-
-// QueryOptionalResultMap is QueryOptionalResult with a value mapper, mirroring
-// QueryOptionalMap.
-func QueryOptionalResultMap[T any, R any](
+// QueryOptionalMap executes a query that may return 0 rows and maps the
+// result when present. It is QueryOptional(...).Map(mapFunc) — Option.Map
+// does the actual present/absent/error handling exactly once.
+func QueryOptionalMap[T any, R any](
 	ctx context.Context, db qrm.DB, stmt jet.Statement, mapFunc func(T) R,
-) Optional[R] {
-	result, err := QueryOptional[T](ctx, db, stmt).Value()
-	if err != nil {
-		return Optional[R]{err: err}
-	}
-	if result == nil {
-		return Optional[R]{}
-	}
-	return Optional[R]{v: mapFunc(*result), present: true}
+) functional.Option[R] {
+	return QueryOptional[T](ctx, db, stmt).Map(mapFunc)
 }
 
 // isNoRows reports whether err is the "statement matched zero rows" sentinel,
@@ -149,16 +150,6 @@ func QueryMap[T any, R any](ctx context.Context, db qrm.DB, stmt jet.Statement, 
 		return newResult(zero, err)
 	}
 	return newResult(mapFunc(result), nil)
-}
-
-// QueryOptionalMap executes a query that may return 0 rows and maps the result when present.
-func QueryOptionalMap[T any, R any](ctx context.Context, db qrm.DB, stmt jet.Statement, mapFunc func(T) R) Result[*R] {
-	result, err := QueryOptional[T](ctx, db, stmt).Value()
-	if err != nil || result == nil {
-		return newResult[*R](nil, err)
-	}
-	mapped := mapFunc(*result)
-	return newResult(&mapped, nil)
 }
 
 // QueryMapSlice executes a query and maps a slice of results.
