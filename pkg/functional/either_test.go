@@ -18,7 +18,7 @@ func TestEither(t *testing.T) {
 		if !ok || l != "cached" {
 			t.Fatalf("Left() = (%q, %t), want (\"cached\", true)", l, ok)
 		}
-		if r, ok := e.Right(); ok {
+		if r, rightOK := e.Right(); rightOK {
 			t.Fatalf("Right() = (%d, true), want ok false", r)
 		}
 	})
@@ -32,7 +32,7 @@ func TestEither(t *testing.T) {
 		if !ok || r != 42 {
 			t.Fatalf("Right() = (%d, %t), want (42, true)", r, ok)
 		}
-		if l, ok := e.Left(); ok {
+		if l, leftOK := e.Left(); leftOK {
 			t.Fatalf("Left() = (%q, true), want ok false", l)
 		}
 	})
@@ -135,9 +135,7 @@ func TestEitherFlatMap(t *testing.T) {
 
 func TestEitherMapLeft(t *testing.T) {
 	t.Run("maps the left value to a new type", func(t *testing.T) {
-		got := functional.Left[string, int]("nope").MapLeft(func(s string) error {
-			return errors.New(s)
-		})
+		got := functional.Left[string, int]("nope").MapLeft(errors.New)
 		l, ok := got.Left()
 		if !ok || l.Error() != "nope" {
 			t.Fatalf("Left() = (%v, %t), want an error \"nope\" and true", l, ok)
@@ -305,9 +303,7 @@ func TestEitherToOption(t *testing.T) {
 
 func TestEitherToResult(t *testing.T) {
 	t.Run("a right becomes a successful Result", func(t *testing.T) {
-		v, err := functional.Right[string](5).ToResult(func(s string) error {
-			return errors.New(s)
-		}).Value()
+		v, err := functional.Right[string](5).ToResult(errors.New).Value()
 		if err != nil || v != 5 {
 			t.Fatalf("ToResult(...).Value() = (%d, %v), want (5, nil)", v, err)
 		}

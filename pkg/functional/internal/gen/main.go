@@ -30,17 +30,6 @@ const (
 	maxArity = 9
 )
 
-var (
-	typeParamNames = []string{"A", "B", "C", "D", "E", "F", "G", "H", "I"}
-	fieldNames     = []string{
-		"First", "Second", "Third", "Fourth", "Fifth", "Sixth", "Seventh", "Eighth", "Ninth",
-	}
-	valueNames = []string{
-		"first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth",
-	}
-	numberWords = []string{"two", "three", "four", "five", "six", "seven", "eight", "nine"}
-)
-
 // arity carries every fragment the templates need for one N, precomputed here
 // so the templates stay free of loops and index arithmetic.
 type arity struct {
@@ -62,6 +51,15 @@ type arity struct {
 }
 
 func newArity(n int) arity {
+	typeParamNames := []string{"A", "B", "C", "D", "E", "F", "G", "H", "I"}
+	fieldNames := []string{
+		"First", "Second", "Third", "Fourth", "Fifth", "Sixth", "Seventh", "Eighth", "Ninth",
+	}
+	valueNames := []string{
+		"first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth",
+	}
+	numberWords := []string{"two", "three", "four", "five", "six", "seven", "eight", "nine"}
+
 	types := typeParamNames[:n]
 	fields := fieldNames[:n]
 	values := valueNames[:n]
@@ -205,8 +203,8 @@ func main() {
 		{name: "validation_gen.go", tmpl: validationTemplate},
 	}
 
-	// go:generate runs with the working directory of the file carrying the
-	// directive, which is the package root — the destination for both files.
+	// The generate directive runs with the working directory of the file that
+	// carries it, which is the package root — the destination for every file.
 	for _, f := range files {
 		if err := render(f.name, f.tmpl, arities); err != nil {
 			fmt.Fprintf(os.Stderr, "gen: %s: %v\n", f.name, err)
@@ -233,7 +231,7 @@ func render(name, tmpl string, arities []arity) error {
 		return fmt.Errorf("format generated source: %w", err)
 	}
 
-	if writeErr := os.WriteFile(filepath.Clean(name), formatted, 0o644); writeErr != nil {
+	if writeErr := os.WriteFile(filepath.Clean(name), formatted, 0o600); writeErr != nil {
 		return fmt.Errorf("write file: %w", writeErr)
 	}
 	return nil

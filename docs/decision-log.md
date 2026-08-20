@@ -126,7 +126,7 @@ Go 1.27 lifts the restriction cited in the 2026-07-27 "Query Helpers Return `Res
 
 Design choices made under the old constraint are not automatically wrong now — `Result[T]` as a generic type rather than methods on a non-generic `Store`, for instance, still stands on its own reasoning — but the constraint itself is gone and no longer needs working around in new code.
 
-Cost accepted: `golangci-lint` cannot analyse this package yet. The whole-program IR and SSA builders that several linters sit on do not terminate on a generic method whose result type re-instantiates its own receiver. `honnef.co/go/tools@v0.7.0` overflows the stack in `ir.(*Program).needMethods`, and with `honnef.co/go/tools@v0.8.0-rc.1` swapped in, `gosec` then panics in `x/tools`' `typesinternal.ForEachElement` with the type-parameter name. Both are upstream bugs, not findings about this code. Lint stays disabled for the affected repositories until a fixed release exists; no staticcheck-family linter is disabled and no suppression is added in the meantime.
+Cost accepted (superseded by the 2026-08-19 "The Lint Blocker Was A Stale Dependency" entry): `golangci-lint` cannot analyse this package yet. The whole-program IR and SSA builders that several linters sit on do not terminate on a generic method whose result type re-instantiates its own receiver. `honnef.co/go/tools@v0.7.0` overflows the stack in `ir.(*Program).needMethods`, and with `honnef.co/go/tools@v0.8.0-rc.1` swapped in, `gosec` then panics in `x/tools`' `typesinternal.ForEachElement` with the type-parameter name. Both are upstream bugs, not findings about this code. Lint stays disabled for the affected repositories until a fixed release exists; no staticcheck-family linter is disabled and no suppression is added in the meantime.
 
 Rationale for recording this here rather than relying on model training data: this is a language change newer than most models' training cutoff, so it will not be "known" context without an explicit note — this entry is that note.
 
@@ -142,7 +142,7 @@ Rationale: `Result` short-circuits, which is correct for a pipeline whose second
 
 Not ported, and the reason: persistent collections and `Stream` (`pkg/slicex`, `slices`, `maps`, and `iter.Seq` own that ground), `Future`/`Promise` (goroutines, channels, `errgroup`), pattern matching, and `Function0..8` currying. Those exist in Vavr because Java lacks first-class function types and cheap concurrency. Porting them would produce a package this codebase would not import.
 
-Cost accepted: hand-written statement coverage is complete, but the generated mid-arity combinators (4 through 8) are exercised only by construction — the tests cover arities 2, 3 and 9, so package coverage reads 74.1%. The lint blocker recorded in the entry above is unchanged and now covers more code.
+Cost accepted: hand-written statement coverage is complete, but the generated mid-arity combinators (4 through 8) are exercised only by construction — the tests cover arities 2, 3 and 9, so package coverage reads 74.1%. The claim here that the lint blocker is unfixable is superseded by the 2026-08-19 "The Lint Blocker Was A Stale Dependency" entry.
 
 ## 2026-08-19: One Name For The Absent Value
 
@@ -153,3 +153,21 @@ Rationale: the alias added a second name for one type and nothing else. It was i
 Removing it rather than deprecating it is deliberate. The alias is transparent, so both spellings compile against either version and a deprecation period would leave the ambiguity in place for as long as anyone tolerated the warning. Consumers adopt `functional.Option[T]` when they take the version bump, which is the moment they are already reading the diff.
 
 Cost accepted: this is a breaking change. Anchor has two call sites, both in `integration_instance_repository.go`; Echopoint, echopoint-runner and pgkit have none. The fix is mechanical — `transactor.Optional[T]` becomes `functional.Option[T]` with the import that implies.
+
+## 2026-08-19: The Lint Blocker Was A Stale Dependency
+
+Correction. The two entries above record that `golangci-lint` cannot analyse `pkg/functional`, and that nothing could be done but wait for upstream. The first half is true of a stock `golangci-lint`. The second half is wrong: the fix already existed and had done for weeks.
+
+`golangci-lint` v2.12.2 pins `golang.org/x/tools` at a pseudo-version dated 2026-04-20. The Go team repaired the underlying defect after that date, in [golang/go#80055](https://github.com/golang/go/issues/80055) (CL 786280, CL 792260), which surfaced publicly when govulncheck hit the same panic in [golang/go#80139](https://github.com/golang/go/issues/80139). Latest `x/tools` is v0.49.0.
+
+The defect itself is one broken assumption. `x/tools/internal/typesinternal/element.go` asserts `panic(T)` on a `*types.TypeParam`, guarded by the comment "forEachReachable must not be called on parameterized types". Before Go 1.27 that held: the method set of an instantiated type could not contain an uninstantiated type parameter. Generic methods break it — `Option[int]`'s method set contains `Map[R]`, whose signature names an uninstantiated `R`. Hence the panic value is literally `R`. honnef's IR fails on the same premise by a different route: `needMethods` sees `Map[R] -> Option[R]`, enumerates that, finds `Map[R2] -> Option[R2]`, and recurses without bound because every instantiation is a distinct `*types.Named`.
+
+The compiler is unaffected because it instantiates on demand, from actual call sites, which is a finite set. Whole-program linters enumerate every reachable runtime type to build a call graph, and with generic methods that set is infinite.
+
+Three linters are affected across two independent toolchains: `gosec` and `unparam` through `x/tools` SSA, and the staticcheck family through honnef's IR. Disabling the staticcheck family alone does not help — `unparam` panics identically.
+
+Both dependencies must move. Verified against this repository: `x/tools` v0.49.0 alone still hangs, honnef v0.8.0-rc.1 alone still panics, and the two together complete in 80 seconds with real findings. `pkg/functional` is now clean; the repository-wide count is 85, all pre-existing and outside this package.
+
+No linter is disabled and no suppression is added. Every finding in `pkg/functional` was repaired by changing the code — including `TryRecover`, which lost its named return to an inner closure, and the generator's package-level lookup tables, which moved into `newArity`.
+
+Rationale for recording a correction rather than editing the entries above: the log is a dated record of what was decided and believed at the time. Rewriting it would hide that the wrong conclusion was drawn and acted on. The two entries are marked as superseded and left standing.

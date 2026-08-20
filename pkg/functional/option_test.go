@@ -101,7 +101,7 @@ func TestOptionFlatMap(t *testing.T) {
 
 	t.Run("first absence short-circuits before f runs", func(t *testing.T) {
 		called := false
-		got := functional.None[string]().FlatMap(func(a string) functional.Option[int] {
+		got := functional.None[string]().FlatMap(func(_ string) functional.Option[int] {
 			called = true
 			return functional.Some(1)
 		})
@@ -133,7 +133,7 @@ func TestOptionFlatMap(t *testing.T) {
 
 	t.Run("second lookup's failure propagates", func(t *testing.T) {
 		sentinel := errors.New("second boom")
-		got := functional.Some("found").FlatMap(func(a string) functional.Option[int] {
+		got := functional.Some("found").FlatMap(func(_ string) functional.Option[int] {
 			return functional.Failed[int](sentinel)
 		})
 		if !errors.Is(got.Err(), sentinel) {

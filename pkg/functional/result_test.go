@@ -79,7 +79,7 @@ func TestResultFlatMap(t *testing.T) {
 	t.Run("first failure short-circuits before f runs", func(t *testing.T) {
 		sentinel := errors.New("boom")
 		called := false
-		got := functional.Failure[int](sentinel).FlatMap(func(n int) functional.Result[string] {
+		got := functional.Failure[int](sentinel).FlatMap(func(_ int) functional.Result[string] {
 			called = true
 			return functional.Ok("unused")
 		})
@@ -93,7 +93,7 @@ func TestResultFlatMap(t *testing.T) {
 
 	t.Run("second step's failure propagates", func(t *testing.T) {
 		sentinel := errors.New("second boom")
-		got := functional.Ok(1).FlatMap(func(n int) functional.Result[string] {
+		got := functional.Ok(1).FlatMap(func(_ int) functional.Result[string] {
 			return functional.Failure[string](sentinel)
 		})
 		if !errors.Is(got.Err(), sentinel) {
@@ -253,7 +253,7 @@ func TestResultTryRecover(t *testing.T) {
 
 	t.Run("a nil-map-write runtime panic becomes a runtime.Error failure", func(t *testing.T) {
 		got := functional.TryRecover(func() (int, error) {
-			var m map[string]int
+			m := nilMap()
 			m["k"] = 1
 			return m["k"], nil
 		})
@@ -490,4 +490,11 @@ func TestResultMust(t *testing.T) {
 		}()
 		functional.Failure[int](sentinel).Must()
 	})
+}
+
+// nilMap returns a nil map through a call boundary. Writing to it panics at
+// run time, which is what the TryRecover test needs, but govet's nilness pass
+// cannot prove the nil across the call and so does not report the write.
+func nilMap() map[string]int {
+	return nil
 }

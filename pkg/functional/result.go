@@ -125,17 +125,21 @@ func Try[T any](f func() (T, error)) Result[T] {
 // returned failure. Any other panic value is rendered into the error
 // message. The panicking stack is gone by the time the caller reads the
 // Result, so log at the recovery site if the trace matters.
-func TryRecover[T any](f func() (T, error)) (r Result[T]) {
-	defer func() {
-		if p := recover(); p != nil {
-			if err, ok := p.(error); ok {
-				r = Failure[T](fmt.Errorf("recovered panic: %w", err))
-				return
+func TryRecover[T any](f func() (T, error)) Result[T] {
+	var out Result[T]
+	func() {
+		defer func() {
+			if p := recover(); p != nil {
+				if err, ok := p.(error); ok {
+					out = Failure[T](fmt.Errorf("recovered panic: %w", err))
+					return
+				}
+				out = Failure[T](fmt.Errorf("recovered panic: %v", p))
 			}
-			r = Failure[T](fmt.Errorf("recovered panic: %v", p))
-		}
+		}()
+		out = New(f())
 	}()
-	return New(f())
+	return out
 }
 
 // Recover turns a failure into a success by computing a replacement value
