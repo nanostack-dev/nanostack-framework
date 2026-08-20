@@ -146,42 +146,6 @@ func TestResultOrElse(t *testing.T) {
 	})
 }
 
-func TestResultToOption(t *testing.T) {
-	t.Run("success becomes a present Option", func(t *testing.T) {
-		got := functional.Ok(5).ToOption()
-		if !got.IsPresent() || got.Value() != 5 {
-			t.Fatalf("ToOption() = %+v, want present 5", got)
-		}
-	})
-
-	t.Run("failure carries the error into the Option", func(t *testing.T) {
-		sentinel := errors.New("boom")
-		got := functional.Failure[int](sentinel).ToOption()
-		if got.IsPresent() {
-			t.Fatalf("IsPresent() = true, want false")
-		}
-		if !errors.Is(got.Err(), sentinel) {
-			t.Fatalf("Err() = %v, want %v", got.Err(), sentinel)
-		}
-	})
-
-	t.Run("round-trips back through ToResult", func(t *testing.T) {
-		// The two bridges are inverses on the states they share: a success
-		// survives the trip, and so does a real failure.
-		errAbsent := errors.New("not found")
-		v, err := functional.Ok(5).ToOption().ToResult(errAbsent).Value()
-		if err != nil || v != 5 {
-			t.Fatalf("round trip = (%d, %v), want (5, nil)", v, err)
-		}
-
-		sentinel := errors.New("boom")
-		err = functional.Failure[int](sentinel).ToOption().ToResult(errAbsent).Err()
-		if !errors.Is(err, sentinel) {
-			t.Fatalf("round trip err = %v, want %v", err, sentinel)
-		}
-	})
-}
-
 func TestResultTry(t *testing.T) {
 	t.Run("lifts a successful call", func(t *testing.T) {
 		got := functional.Try(func() (int, error) { return 42, nil })

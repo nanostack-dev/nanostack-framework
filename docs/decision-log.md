@@ -171,3 +171,15 @@ Both dependencies must move. Verified against this repository: `x/tools` v0.49.0
 No linter is disabled and no suppression is added. Every finding in `pkg/functional` was repaired by changing the code — including `TryRecover`, which lost its named return to an inner closure, and the generator's package-level lookup tables, which moved into `newArity`.
 
 Rationale for recording a correction rather than editing the entries above: the log is a dated record of what was decided and believed at the time. Rewriting it would hide that the wrong conclusion was drawn and acted on. The two entries are marked as superseded and left standing.
+
+## 2026-08-20: Option Drops The Error State
+
+`Option[T]` goes from three states to two: present and absent. `Failed[T]` and `(Option[T]).Err()` are removed, along with `(Result[T]).ToOption()` and `(Validation[T]).ToOption()` — both existed only to fold an error into the state a two-state `Option` no longer has, and both could do nothing but discard it. `transactor.QueryOptional` and `QueryOptionalMap` now return `(functional.Option[T], error)` instead of `functional.Option[T]`, and `ZipOption2`..`ZipOption9` lose their error branch.
+
+This supersedes the 2026-08-19 "Generic Methods Are Legal On Go 1.27" entry only in its framing: that entry describes `Option[T].Map[R]`/`FlatMap[R]` against a three-state `Option` carrying `present`/`absent`/`failed`. The generic-methods finding stands; the three-state shape it was demonstrated on does not.
+
+Rationale: an error stored inside an `Option` value is invisible to `errcheck`, to `go vet`, and to the compiler — nothing marks a caller who reads `Value()` and never notices the `failed` case. Go already has a place errors go, and tooling already knows to look there. Returning `(Option[T], error)` puts a lookup's failure in that position, so a caller who drops the `error` return is flagged exactly as they would be for dropping any other error. `Result[T]` keeps its `Err()` — it remains the type that carries a failure — and `Option[T]` narrows to the one question it should have only ever answered: is a value here.
+
+This also brings the shape in line with prior art that keeps absence and failure apart by type rather than by convention: Rust's `Option<T>`/`Result<T, E>` are two separate types, and Vavr's `Option`/`Try` are likewise separate rather than one type wearing three hats. The three-state design was the outlier, not the destination.
+
+Cost accepted: this is breaking for `anchor` and `echopoint`, whose repositories call `transactor.QueryOptional`/`QueryOptionalMap` and must move to handling the second `error` return at each call site; any caller of the removed `Failed`, `Err()`, or the two `ToOption` methods must also update. Worth noting honestly: the three-state design this replaces lasted one day, shipped in v0.11.0 and patched in v0.11.1 before this entry reverses it.

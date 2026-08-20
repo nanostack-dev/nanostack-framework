@@ -2,8 +2,8 @@
 
 Small generic value types for chaining computations that may be absent or may fail.
 
-- `Option[T]` — a value that may legitimately be **absent**, distinct from failed.
-- `Result[T]` — a value that may have **failed**. No third state.
+- `Option[T]` — a value that may legitimately be **absent**. No error state: a lookup that can also fail returns `(Option[T], error)`.
+- `Result[T]` — a value that may have **failed**. This is the type that carries an error.
 - `Validation[T]` — a value or **every** reason it could not be produced. Accumulates instead of short-circuiting.
 - `Either[L,R]` — exactly one of two outcomes, where **neither side is an error**.
 - `Lazy[T]` — a value computed at most once, on first access.
@@ -11,35 +11,48 @@ Small generic value types for chaining computations that may be absent or may fa
 
 `pkg/db/transactor` builds on these: its `Optional[T]` is a type alias for `Option[T]`, and its `Result[T]` wraps `Result[T]` to add SQL error translation.
 
-## Absent is not failed
+## Absence is not failure
 
 This is the distinction the whole package exists for. A `SELECT` matching zero rows is not an error, and folding it into one (or into a nilable pointer) forces every caller to re-derive which case it is looking at.
 
+`Option[T]` has exactly two states — present or absent — and carries no error of its own. A computation that can also fail returns `(Option[T], error)`, the shape Go already uses for exactly this:
+
 ```go
-result := repo.FindConfig(ctx, id)   // Option[Config]
-if err := result.Err(); err != nil {
-    return err                        // a real failure
+result, err := repo.FindConfig(ctx, id)   // (Option[Config], error)
+if err != nil {
+    return err                            // a real failure
 }
 if !result.IsPresent() {
-    return nil                        // no row — benign
+    return nil                            // no row — benign
 }
 config := result.Value()
 ```
 
-`IsPresent` reports false for a failure too, so **check `Err` first** whenever the two need different handling. Every method here preserves that ordering: a failure always outranks absence and is never silently converted into it.
+Putting the error in Go's own return position, rather than inside the `Option` struct, is not a style preference. An error stored in a struct field is invisible to `errcheck`, invisible to `go vet`, and invisible to the compiler — nothing stops a caller from reading `result.Value()` and never noticing the field was set. Returning `(Option[T], error)` puts the failure where Go's tooling already knows to look for it: a caller who drops the `error` return gets flagged by errcheck exactly as if they had dropped any other error. `Option` answers one question — is a value here — and answers it honestly every time, because there is nowhere else for a failure to hide.
 
 ## Chaining
 
-`Map` transforms a value. `FlatMap` chains a second computation that itself returns an `Option`/`Result`, so absence or failure from either step ends the chain the same way:
+`Map` transforms a value. `FlatMap` chains a second computation that itself returns an `Option`, so absence from either step ends the chain the same way:
 
 ```go
-config := transactor.QueryOptional[Run](ctx, db, runStmt).
-    FlatMap(func(run Run) transactor.Optional[Config] {
-        return transactor.QueryOptional[Config](ctx, db, configStmtFor(run))
-    })
+config := someOption.FlatMap(func(run Run) functional.Option[Config] {
+    return lookupConfig(run) // a lookup that cannot fail
+})
 ```
 
-Use `FlatMap` when the later lookup is **keyed by** the earlier one's value. When the lookups are **independent**, use `ZipOptionN` instead — it combines N of them into one `Option` of a `TupleN`:
+But `FlatMap`'s `f` must return `Option[R]`, not `(Option[R], error)`, so it cannot express a second step that can itself fail — which most repository lookups can. Chain those sequentially instead, resolving the error between the two calls:
+
+```go
+run, err := transactor.QueryOptional[Run](ctx, db, runStmt)
+if err != nil || !run.IsPresent() {
+    return functional.None[Config](), err
+}
+return transactor.QueryOptional[Config](ctx, db, configStmtFor(run.Value()))
+```
+
+That is more lines than a single chained call, and that is the point: the error a three-state `Option` used to carry invisibly inside itself is now sitting in plain sight at both call sites, exactly where `errcheck` and a reviewer both know to look for it.
+
+Reach for `FlatMap` only when the second Option-producing step genuinely cannot fail. When two lookups are independent — neither is keyed by the other's value — use `ZipOptionN` instead — it combines N of them into one `Option` of a `TupleN`:
 
 ```go
 pair := functional.ZipOption2(findUser(ctx, id), findTenant(ctx, tid))
@@ -50,13 +63,13 @@ if pair.IsPresent() {
 
 ## Bridging Option and Result
 
-Repositories return `Option` (absence is ordinary); services usually want an error. `ToResult` collapses the three states into two, and takes the error that absence means *here* — the repository does not get to decide that:
+Repositories return `Option` (absence is ordinary); services usually want an error. `ToResult` converts absence into the error that absence means *here* — the repository does not get to decide that:
 
 ```go
 cfg, err := repo.FindConfig(ctx, id).ToResult(ErrConfigNotFound).Value()
 ```
 
-`Result.ToOption` goes the other way. Neither bridge ever replaces a real failure with the caller's sentinel.
+There is no bridge the other way, from `Result` to `Option`. With only two states, an `Option` has nowhere to put a `Result`'s error except by discarding it, and a conversion whose only job is throwing information away is not one this package offers. If a failure should be treated as absence, that is a decision for the call site to make explicitly — not a method that makes it silently for every caller.
 
 `Get()` is the way out into ordinary Go when you are done chaining:
 
@@ -88,7 +101,7 @@ This is narrower than Vavr's `Validation`, which carries both a short-circuiting
 
 Reach for it only when **neither side is a failure**: a cache hit versus a fresh fetch, a discriminated union off a webhook payload. When one side *is* an error, `Result[T]` is the type — it is `Either[error, T]` with the Left already fixed, which is why Scala right-biased `Either` and deprecated its projections in the first place.
 
-`ToOption` maps a Left to `None`, not `Failed`, for exactly that reason. Use `Fold` or `ToResult(func(L) error)` when the Left payload must survive.
+`ToOption` maps a Left to `None`, for exactly that reason — a Left is not a failure, so there is nothing to carry forward but absence. Use `Fold` or `ToResult(func(L) error)` when the Left payload must survive.
 
 ## Lazy, and when to prefer sync.OnceValue
 
@@ -111,7 +124,7 @@ req.Description = opt.ToPtr()                   // Option[string] → *string
 v, ok := m[key]; o := functional.OptionOf(v, ok)
 ```
 
-`ToPtr` flattens a failure to `nil` — a `*T` has no error channel, so this is the one bridge where failure and absence become indistinguishable. Check `Err` before crossing it.
+`ToPtr` turns absence into `nil` — the same shape a generated OpenAPI struct already expects for an optional field. `Option` carries no error, so there is nothing this bridge could lose: the two states on either side of it line up exactly.
 
 ## Why each type hand-rolls its own Map/FlatMap
 

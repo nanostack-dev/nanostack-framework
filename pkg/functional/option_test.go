@@ -17,32 +17,15 @@ func TestOption(t *testing.T) {
 		if got := o.Value(); got != "value" {
 			t.Fatalf("Value() = %q, want %q", got, "value")
 		}
-		if err := o.Err(); err != nil {
-			t.Fatalf("Err() = %v, want nil", err)
-		}
 	})
 
-	t.Run("None is absent with no error", func(t *testing.T) {
+	t.Run("None is absent", func(t *testing.T) {
 		o := functional.None[string]()
 		if o.IsPresent() {
 			t.Fatalf("IsPresent() = true, want false")
 		}
-		if err := o.Err(); err != nil {
-			t.Fatalf("Err() = %v, want nil", err)
-		}
 		if got := o.Value(); got != "" {
 			t.Fatalf("Value() = %q, want the zero value", got)
-		}
-	})
-
-	t.Run("Failed is not present and carries the error", func(t *testing.T) {
-		sentinel := errors.New("boom")
-		o := functional.Failed[string](sentinel)
-		if o.IsPresent() {
-			t.Fatalf("IsPresent() = true, want false — Err is non-nil")
-		}
-		if !errors.Is(o.Err(), sentinel) {
-			t.Fatalf("Err() = %v, want %v", o.Err(), sentinel)
 		}
 	})
 }
@@ -61,17 +44,6 @@ func TestOptionMap(t *testing.T) {
 		got := functional.None[int]().Map(double)
 		if got.IsPresent() {
 			t.Fatalf("IsPresent() = true, want false — mapping absence stays absent")
-		}
-	})
-
-	t.Run("leaves a failure untouched", func(t *testing.T) {
-		sentinel := errors.New("boom")
-		got := functional.Failed[int](sentinel).Map(double)
-		if got.IsPresent() {
-			t.Fatalf("IsPresent() = true, want false")
-		}
-		if !errors.Is(got.Err(), sentinel) {
-			t.Fatalf("Err() = %v, want %v", got.Err(), sentinel)
 		}
 	})
 
@@ -113,31 +85,10 @@ func TestOptionFlatMap(t *testing.T) {
 		}
 	})
 
-	t.Run("first failure short-circuits and propagates the error", func(t *testing.T) {
-		sentinel := errors.New("boom")
-		got := functional.Failed[string](sentinel).FlatMap(lookupB)
-		if !errors.Is(got.Err(), sentinel) {
-			t.Fatalf("Err() = %v, want %v", got.Err(), sentinel)
-		}
-	})
-
 	t.Run("second lookup's absence propagates", func(t *testing.T) {
 		got := functional.Some("missing").FlatMap(lookupB)
 		if got.IsPresent() {
 			t.Fatalf("IsPresent() = true, want false")
-		}
-		if err := got.Err(); err != nil {
-			t.Fatalf("Err() = %v, want nil", err)
-		}
-	})
-
-	t.Run("second lookup's failure propagates", func(t *testing.T) {
-		sentinel := errors.New("second boom")
-		got := functional.Some("found").FlatMap(func(_ string) functional.Option[int] {
-			return functional.Failed[int](sentinel)
-		})
-		if !errors.Is(got.Err(), sentinel) {
-			t.Fatalf("Err() = %v, want %v", got.Err(), sentinel)
 		}
 	})
 }
@@ -165,14 +116,6 @@ func TestOptionFilter(t *testing.T) {
 			t.Fatalf("IsPresent() = true, want false")
 		}
 	})
-
-	t.Run("leaves a failure untouched", func(t *testing.T) {
-		sentinel := errors.New("boom")
-		got := functional.Failed[int](sentinel).Filter(isEven)
-		if !errors.Is(got.Err(), sentinel) {
-			t.Fatalf("Err() = %v, want %v", got.Err(), sentinel)
-		}
-	})
 }
 
 func TestOptionOrElse(t *testing.T) {
@@ -184,12 +127,6 @@ func TestOptionOrElse(t *testing.T) {
 
 	t.Run("returns the fallback when absent", func(t *testing.T) {
 		if got := functional.None[int]().OrElse(9); got != 9 {
-			t.Fatalf("OrElse(9) = %d, want 9", got)
-		}
-	})
-
-	t.Run("returns the fallback on failure", func(t *testing.T) {
-		if got := functional.Failed[int](errors.New("boom")).OrElse(9); got != 9 {
 			t.Fatalf("OrElse(9) = %d, want 9", got)
 		}
 	})
@@ -231,12 +168,6 @@ func TestOptionGet(t *testing.T) {
 			t.Fatalf("Get() = (%q, %t), want (\"\", false)", v, ok)
 		}
 	})
-
-	t.Run("reports not-ok on failure", func(t *testing.T) {
-		if _, ok := functional.Failed[string](errors.New("boom")).Get(); ok {
-			t.Fatalf("Get() ok = true, want false")
-		}
-	})
 }
 
 func TestOptionToResult(t *testing.T) {
@@ -253,16 +184,6 @@ func TestOptionToResult(t *testing.T) {
 		err := functional.None[int]().ToResult(errAbsent).Err()
 		if !errors.Is(err, errAbsent) {
 			t.Fatalf("Err() = %v, want %v", err, errAbsent)
-		}
-	})
-
-	t.Run("an existing failure outranks the absent error", func(t *testing.T) {
-		// The lookup genuinely failed; reporting that as the caller's
-		// not-found sentinel would turn an outage into a 404.
-		sentinel := errors.New("connection refused")
-		err := functional.Failed[int](sentinel).ToResult(errAbsent).Err()
-		if !errors.Is(err, sentinel) {
-			t.Fatalf("Err() = %v, want the original failure %v", err, sentinel)
 		}
 	})
 }
@@ -296,37 +217,6 @@ func TestOptionOr(t *testing.T) {
 		if got.IsPresent() {
 			t.Fatalf("IsPresent() = true, want false")
 		}
-		if err := got.Err(); err != nil {
-			t.Fatalf("Err() = %v, want nil", err)
-		}
-	})
-
-	t.Run("the alternative's failure propagates", func(t *testing.T) {
-		sentinel := errors.New("fallback boom")
-		got := functional.None[int]().Or(func() functional.Option[int] {
-			return functional.Failed[int](sentinel)
-		})
-		if !errors.Is(got.Err(), sentinel) {
-			t.Fatalf("Err() = %v, want %v", got.Err(), sentinel)
-		}
-	})
-
-	t.Run("a failure passes through untouched and f never runs", func(t *testing.T) {
-		sentinel := errors.New("boom")
-		called := false
-		got := functional.Failed[int](sentinel).Or(func() functional.Option[int] {
-			called = true
-			return functional.Some(9)
-		})
-		if called {
-			t.Fatalf("f was called on a failed Option — the fallback must not replace an outage")
-		}
-		if got.IsPresent() {
-			t.Fatalf("IsPresent() = true, want false")
-		}
-		if !errors.Is(got.Err(), sentinel) {
-			t.Fatalf("Err() = %v, want %v", got.Err(), sentinel)
-		}
 	})
 }
 
@@ -352,18 +242,6 @@ func TestOptionPeek(t *testing.T) {
 			t.Fatalf("IsPresent() = true, want false")
 		}
 	})
-
-	t.Run("skips the side effect and keeps the error on failure", func(t *testing.T) {
-		sentinel := errors.New("boom")
-		called := false
-		got := functional.Failed[int](sentinel).Peek(func(int) { called = true })
-		if called {
-			t.Fatalf("f was called on a failed Option")
-		}
-		if !errors.Is(got.Err(), sentinel) {
-			t.Fatalf("Err() = %v, want %v", got.Err(), sentinel)
-		}
-	})
 }
 
 func TestOptionForEach(t *testing.T) {
@@ -382,14 +260,6 @@ func TestOptionForEach(t *testing.T) {
 			t.Fatalf("f was called on an absent Option")
 		}
 	})
-
-	t.Run("skips f on failure", func(t *testing.T) {
-		called := false
-		functional.Failed[string](errors.New("boom")).ForEach(func(string) { called = true })
-		if called {
-			t.Fatalf("f was called on a failed Option")
-		}
-	})
 }
 
 func TestOptionFold(t *testing.T) {
@@ -405,26 +275,6 @@ func TestOptionFold(t *testing.T) {
 	t.Run("folds absence through onEmpty", func(t *testing.T) {
 		if got := functional.None[int]().Fold(onEmpty, label); got != "empty" {
 			t.Fatalf("Fold(...) = %q, want %q", got, "empty")
-		}
-	})
-
-	t.Run("folds a failure through onEmpty without calling onPresent", func(t *testing.T) {
-		o := functional.Failed[int](errors.New("boom"))
-		presentCalled := false
-		got := o.Fold(onEmpty, func(n int) string {
-			presentCalled = true
-			return label(n)
-		})
-		if presentCalled {
-			t.Fatalf("onPresent was called on a failed Option")
-		}
-		if got != "empty" {
-			t.Fatalf("Fold(...) = %q, want %q", got, "empty")
-		}
-		// Fold cannot report the error, but it must not consume it either —
-		// the receiver still carries it for a caller that checks Err first.
-		if o.Err() == nil {
-			t.Fatalf("Err() = nil, want the original failure to survive")
 		}
 	})
 }
@@ -453,20 +303,6 @@ func TestOptionExists(t *testing.T) {
 			t.Fatalf("pred was called on an absent Option")
 		}
 	})
-
-	t.Run("false on failure, without calling pred", func(t *testing.T) {
-		called := false
-		o := functional.Failed[int](errors.New("boom"))
-		if o.Exists(func(int) bool { called = true; return true }) {
-			t.Fatalf("Exists(...) = true, want false")
-		}
-		if called {
-			t.Fatalf("pred was called on a failed Option")
-		}
-		if o.Err() == nil {
-			t.Fatalf("Err() = nil, want the original failure to survive")
-		}
-	})
 }
 
 func TestOptionContains(t *testing.T) {
@@ -487,14 +323,6 @@ func TestOptionContains(t *testing.T) {
 			t.Fatalf("Contains(None, 0) = true, want false")
 		}
 	})
-
-	t.Run("false on failure, even against the zero value it carries", func(t *testing.T) {
-		// A failed Option stores T's zero value internally; matching it here
-		// would let an outage masquerade as "contains 0".
-		if functional.Contains(functional.Failed[int](errors.New("boom")), 0) {
-			t.Fatalf("Contains(Failed, 0) = true, want false")
-		}
-	})
 }
 
 func TestOptionFromPtr(t *testing.T) {
@@ -506,13 +334,10 @@ func TestOptionFromPtr(t *testing.T) {
 		}
 	})
 
-	t.Run("a nil pointer becomes absence, not failure", func(t *testing.T) {
+	t.Run("a nil pointer becomes absence", func(t *testing.T) {
 		got := functional.FromPtr[int](nil)
 		if got.IsPresent() {
 			t.Fatalf("IsPresent() = true, want false")
-		}
-		if err := got.Err(); err != nil {
-			t.Fatalf("Err() = %v, want nil — a nil pointer is absence, not an error", err)
 		}
 	})
 
@@ -544,17 +369,6 @@ func TestOptionToPtr(t *testing.T) {
 			t.Fatalf("ToPtr() = %v, want nil", p)
 		}
 	})
-
-	t.Run("failure becomes nil and keeps its error", func(t *testing.T) {
-		sentinel := errors.New("boom")
-		o := functional.Failed[int](sentinel)
-		if p := o.ToPtr(); p != nil {
-			t.Fatalf("ToPtr() = %v, want nil", p)
-		}
-		if !errors.Is(o.Err(), sentinel) {
-			t.Fatalf("Err() = %v, want %v", o.Err(), sentinel)
-		}
-	})
 }
 
 func TestOptionOf(t *testing.T) {
@@ -569,9 +383,6 @@ func TestOptionOf(t *testing.T) {
 		got := functional.OptionOf(5, false)
 		if got.IsPresent() {
 			t.Fatalf("IsPresent() = true, want false")
-		}
-		if err := got.Err(); err != nil {
-			t.Fatalf("Err() = %v, want nil — ok=false is absence, not an error", err)
 		}
 		if got.Value() != 0 {
 			t.Fatalf("Value() = %d, want the zero value", got.Value())

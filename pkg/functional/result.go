@@ -86,20 +86,6 @@ func (r Result[T]) OrElse(fallback T) T {
 	return r.v
 }
 
-// ToOption converts a failure into an Option carrying that same failure, and a
-// success into a present one. It is the inverse direction of Option.ToResult,
-// for feeding a Result into a chain that continues in Option's shape.
-//
-// It never produces legitimate absence: a Result has no third state to map
-// onto None, so only Option.Filter or an Option-returning FlatMap can
-// introduce absence downstream.
-func (r Result[T]) ToOption() Option[T] {
-	if r.err != nil {
-		return Failed[T](r.err)
-	}
-	return Some(r.v)
-}
-
 // Try lifts a (T, error)-returning call into a Result — Vavr's Try.of, in
 // the shape Go functions already have. It is New for a call site rather than
 // a pair the caller already holds, so a chain can start directly from the

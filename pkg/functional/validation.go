@@ -126,17 +126,6 @@ func (v Validation[T]) ToResult() Result[T] {
 	return Ok(v.v)
 }
 
-// ToOption converts to an Option, carrying the joined errors as a failure.
-// It never produces legitimate absence — invalid is a failure, not a missing
-// value, so IsPresent-only callers do not mistake a rejected input for an
-// empty lookup.
-func (v Validation[T]) ToOption() Option[T] {
-	if len(v.errs) > 0 {
-		return Failed[T](v.Err())
-	}
-	return Some(v.v)
-}
-
 // normalizeErrs is the single gate through which an invalid Validation's
 // error slice is built: nil errors dropped, a fresh slice always allocated,
 // and never empty — an empty result would let an "invalid" value claim to be
