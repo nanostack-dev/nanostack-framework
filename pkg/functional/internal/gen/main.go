@@ -144,13 +144,10 @@ package functional
 // other; when a later lookup is keyed by an earlier one's value, chain with
 // FlatMap instead.
 //
-// The result is present only when every input is present. A failure outranks
-// absence — the leftmost error is propagated — so a caller checking Err first
-// never mistakes a real failure for a missing value.
+// The result is present only when every input is present. Options carry no
+// error, so a lookup that can fail returns its error alongside the Option and
+// the caller resolves that before it zips.
 func ZipOption{{.N}}[{{.TypeParams}} any]({{.OptionParams}}) Option[Tuple{{.N}}[{{.TypeArgs}}]] {
-	if err := firstErr({{.ErrArgs}}); err != nil {
-		return Failed[Tuple{{.N}}[{{.TypeArgs}}]](err)
-	}
 	if {{.NotPresentCond}} {
 		return None[Tuple{{.N}}[{{.TypeArgs}}]]()
 	}

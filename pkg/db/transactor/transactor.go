@@ -93,45 +93,55 @@ func Query[T any](ctx context.Context, db qrm.DB, stmt jet.Statement) Result[T] 
 }
 
 // QueryOptional executes a query that may return 0 rows, in which case the
-// result is absent — IsPresent is false and Err is nil — rather than an
-// error. That is the point: "was there a row" and "did anything go wrong"
-// are two questions, and a nilable pointer folds them into one.
+// Option is absent and the error is nil. "Was there a row" and "did anything
+// go wrong" are two questions, and a nilable pointer folds them into one.
 //
-//	result := repo.UpdateOptional(ctx, tenantID, instance)
-//	if err := result.Err(); err != nil {
+//	found, err := repo.FindInstance(ctx, tenantID, id)
+//	if err != nil {
 //		return err // a real failure
 //	}
-//	if !result.IsPresent() {
+//	if !found.IsPresent() {
 //		return nil // the row is gone — benign, nothing to do
 //	}
-//	updated := result.Value()
+//	instance := found.Value()
 //
-// Use FlatMap to chain a second lookup keyed by this one's value; absence or
-// failure from either step ends the chain the same way.
+// The error is returned rather than carried inside the Option so that it sits
+// where Go puts errors and errcheck can require a caller to look at it. An
+// error stored in a struct field is invisible to every linter.
 //
-//	config := transactor.QueryOptional[Run](ctx, db, runStmt).
-//		FlatMap(func(run Run) functional.Option[Config] {
-//			return transactor.QueryOptional[Config](ctx, db, configStmtFor(run))
-//		})
-func QueryOptional[T any](ctx context.Context, db qrm.DB, stmt jet.Statement) functional.Option[T] {
+// Chaining a second lookup keyed by this one's value is an ordinary sequence
+// of statements, because the error has to be resolved between the two:
+//
+//	run, err := transactor.QueryOptional[Run](ctx, db, runStmt)
+//	if err != nil || !run.IsPresent() {
+//		return functional.None[Config](), err
+//	}
+//	return transactor.QueryOptional[Config](ctx, db, configStmtFor(run.Value()))
+func QueryOptional[T any](
+	ctx context.Context, db qrm.DB, stmt jet.Statement,
+) (functional.Option[T], error) {
 	var result T
 	err := stmt.QueryContext(ctx, Executor(ctx, db), &result)
 	if err != nil {
 		if isNoRows(err) {
-			return functional.None[T]()
+			return functional.None[T](), nil
 		}
-		return functional.Failed[T](err)
+		return functional.None[T](), err
 	}
-	return functional.Some(result)
+	return functional.Some(result), nil
 }
 
-// QueryOptionalMap executes a query that may return 0 rows and maps the
-// result when present. It is QueryOptional(...).Map(mapFunc) — Option.Map
-// does the actual present/absent/error handling exactly once.
+// QueryOptionalMap executes a query that may return 0 rows and maps the row
+// when present. It is QueryOptional followed by Option.Map, with the error
+// passed straight through.
 func QueryOptionalMap[T any, R any](
 	ctx context.Context, db qrm.DB, stmt jet.Statement, mapFunc func(T) R,
-) functional.Option[R] {
-	return QueryOptional[T](ctx, db, stmt).Map(mapFunc)
+) (functional.Option[R], error) {
+	found, err := QueryOptional[T](ctx, db, stmt)
+	if err != nil {
+		return functional.None[R](), err
+	}
+	return found.Map(mapFunc), nil
 }
 
 // isNoRows reports whether err is the "statement matched zero rows" sentinel,

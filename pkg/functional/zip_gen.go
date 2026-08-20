@@ -7,13 +7,10 @@ package functional
 // other; when a later lookup is keyed by an earlier one's value, chain with
 // FlatMap instead.
 //
-// The result is present only when every input is present. A failure outranks
-// absence — the leftmost error is propagated — so a caller checking Err first
-// never mistakes a real failure for a missing value.
+// The result is present only when every input is present. Options carry no
+// error, so a lookup that can fail returns its error alongside the Option and
+// the caller resolves that before it zips.
 func ZipOption2[A, B any](a Option[A], b Option[B]) Option[Tuple2[A, B]] {
-	if err := firstErr(a.err, b.err); err != nil {
-		return Failed[Tuple2[A, B]](err)
-	}
 	if !a.IsPresent() || !b.IsPresent() {
 		return None[Tuple2[A, B]]()
 	}
@@ -35,13 +32,10 @@ func ZipResult2[A, B any](a Result[A], b Result[B]) Result[Tuple2[A, B]] {
 // other; when a later lookup is keyed by an earlier one's value, chain with
 // FlatMap instead.
 //
-// The result is present only when every input is present. A failure outranks
-// absence — the leftmost error is propagated — so a caller checking Err first
-// never mistakes a real failure for a missing value.
+// The result is present only when every input is present. Options carry no
+// error, so a lookup that can fail returns its error alongside the Option and
+// the caller resolves that before it zips.
 func ZipOption3[A, B, C any](a Option[A], b Option[B], c Option[C]) Option[Tuple3[A, B, C]] {
-	if err := firstErr(a.err, b.err, c.err); err != nil {
-		return Failed[Tuple3[A, B, C]](err)
-	}
 	if !a.IsPresent() || !b.IsPresent() || !c.IsPresent() {
 		return None[Tuple3[A, B, C]]()
 	}
@@ -63,13 +57,10 @@ func ZipResult3[A, B, C any](a Result[A], b Result[B], c Result[C]) Result[Tuple
 // other; when a later lookup is keyed by an earlier one's value, chain with
 // FlatMap instead.
 //
-// The result is present only when every input is present. A failure outranks
-// absence — the leftmost error is propagated — so a caller checking Err first
-// never mistakes a real failure for a missing value.
+// The result is present only when every input is present. Options carry no
+// error, so a lookup that can fail returns its error alongside the Option and
+// the caller resolves that before it zips.
 func ZipOption4[A, B, C, D any](a Option[A], b Option[B], c Option[C], d Option[D]) Option[Tuple4[A, B, C, D]] {
-	if err := firstErr(a.err, b.err, c.err, d.err); err != nil {
-		return Failed[Tuple4[A, B, C, D]](err)
-	}
 	if !a.IsPresent() || !b.IsPresent() || !c.IsPresent() || !d.IsPresent() {
 		return None[Tuple4[A, B, C, D]]()
 	}
@@ -91,13 +82,10 @@ func ZipResult4[A, B, C, D any](a Result[A], b Result[B], c Result[C], d Result[
 // other; when a later lookup is keyed by an earlier one's value, chain with
 // FlatMap instead.
 //
-// The result is present only when every input is present. A failure outranks
-// absence — the leftmost error is propagated — so a caller checking Err first
-// never mistakes a real failure for a missing value.
+// The result is present only when every input is present. Options carry no
+// error, so a lookup that can fail returns its error alongside the Option and
+// the caller resolves that before it zips.
 func ZipOption5[A, B, C, D, E any](a Option[A], b Option[B], c Option[C], d Option[D], e Option[E]) Option[Tuple5[A, B, C, D, E]] {
-	if err := firstErr(a.err, b.err, c.err, d.err, e.err); err != nil {
-		return Failed[Tuple5[A, B, C, D, E]](err)
-	}
 	if !a.IsPresent() || !b.IsPresent() || !c.IsPresent() || !d.IsPresent() || !e.IsPresent() {
 		return None[Tuple5[A, B, C, D, E]]()
 	}
@@ -119,13 +107,10 @@ func ZipResult5[A, B, C, D, E any](a Result[A], b Result[B], c Result[C], d Resu
 // other; when a later lookup is keyed by an earlier one's value, chain with
 // FlatMap instead.
 //
-// The result is present only when every input is present. A failure outranks
-// absence — the leftmost error is propagated — so a caller checking Err first
-// never mistakes a real failure for a missing value.
+// The result is present only when every input is present. Options carry no
+// error, so a lookup that can fail returns its error alongside the Option and
+// the caller resolves that before it zips.
 func ZipOption6[A, B, C, D, E, F any](a Option[A], b Option[B], c Option[C], d Option[D], e Option[E], f Option[F]) Option[Tuple6[A, B, C, D, E, F]] {
-	if err := firstErr(a.err, b.err, c.err, d.err, e.err, f.err); err != nil {
-		return Failed[Tuple6[A, B, C, D, E, F]](err)
-	}
 	if !a.IsPresent() || !b.IsPresent() || !c.IsPresent() || !d.IsPresent() || !e.IsPresent() || !f.IsPresent() {
 		return None[Tuple6[A, B, C, D, E, F]]()
 	}
@@ -147,13 +132,10 @@ func ZipResult6[A, B, C, D, E, F any](a Result[A], b Result[B], c Result[C], d R
 // other; when a later lookup is keyed by an earlier one's value, chain with
 // FlatMap instead.
 //
-// The result is present only when every input is present. A failure outranks
-// absence — the leftmost error is propagated — so a caller checking Err first
-// never mistakes a real failure for a missing value.
+// The result is present only when every input is present. Options carry no
+// error, so a lookup that can fail returns its error alongside the Option and
+// the caller resolves that before it zips.
 func ZipOption7[A, B, C, D, E, F, G any](a Option[A], b Option[B], c Option[C], d Option[D], e Option[E], f Option[F], g Option[G]) Option[Tuple7[A, B, C, D, E, F, G]] {
-	if err := firstErr(a.err, b.err, c.err, d.err, e.err, f.err, g.err); err != nil {
-		return Failed[Tuple7[A, B, C, D, E, F, G]](err)
-	}
 	if !a.IsPresent() || !b.IsPresent() || !c.IsPresent() || !d.IsPresent() || !e.IsPresent() || !f.IsPresent() || !g.IsPresent() {
 		return None[Tuple7[A, B, C, D, E, F, G]]()
 	}
@@ -175,13 +157,10 @@ func ZipResult7[A, B, C, D, E, F, G any](a Result[A], b Result[B], c Result[C], 
 // other; when a later lookup is keyed by an earlier one's value, chain with
 // FlatMap instead.
 //
-// The result is present only when every input is present. A failure outranks
-// absence — the leftmost error is propagated — so a caller checking Err first
-// never mistakes a real failure for a missing value.
+// The result is present only when every input is present. Options carry no
+// error, so a lookup that can fail returns its error alongside the Option and
+// the caller resolves that before it zips.
 func ZipOption8[A, B, C, D, E, F, G, H any](a Option[A], b Option[B], c Option[C], d Option[D], e Option[E], f Option[F], g Option[G], h Option[H]) Option[Tuple8[A, B, C, D, E, F, G, H]] {
-	if err := firstErr(a.err, b.err, c.err, d.err, e.err, f.err, g.err, h.err); err != nil {
-		return Failed[Tuple8[A, B, C, D, E, F, G, H]](err)
-	}
 	if !a.IsPresent() || !b.IsPresent() || !c.IsPresent() || !d.IsPresent() || !e.IsPresent() || !f.IsPresent() || !g.IsPresent() || !h.IsPresent() {
 		return None[Tuple8[A, B, C, D, E, F, G, H]]()
 	}
@@ -203,13 +182,10 @@ func ZipResult8[A, B, C, D, E, F, G, H any](a Result[A], b Result[B], c Result[C
 // other; when a later lookup is keyed by an earlier one's value, chain with
 // FlatMap instead.
 //
-// The result is present only when every input is present. A failure outranks
-// absence — the leftmost error is propagated — so a caller checking Err first
-// never mistakes a real failure for a missing value.
+// The result is present only when every input is present. Options carry no
+// error, so a lookup that can fail returns its error alongside the Option and
+// the caller resolves that before it zips.
 func ZipOption9[A, B, C, D, E, F, G, H, I any](a Option[A], b Option[B], c Option[C], d Option[D], e Option[E], f Option[F], g Option[G], h Option[H], i Option[I]) Option[Tuple9[A, B, C, D, E, F, G, H, I]] {
-	if err := firstErr(a.err, b.err, c.err, d.err, e.err, f.err, g.err, h.err, i.err); err != nil {
-		return Failed[Tuple9[A, B, C, D, E, F, G, H, I]](err)
-	}
 	if !a.IsPresent() || !b.IsPresent() || !c.IsPresent() || !d.IsPresent() || !e.IsPresent() || !f.IsPresent() || !g.IsPresent() || !h.IsPresent() || !i.IsPresent() {
 		return None[Tuple9[A, B, C, D, E, F, G, H, I]]()
 	}

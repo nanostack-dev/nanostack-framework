@@ -193,23 +193,6 @@ func TestValidationBridges(t *testing.T) {
 			t.Fatalf("Err() = %v, want a join of both errors", got.Err())
 		}
 	})
-
-	t.Run("ToOption is present when valid", func(t *testing.T) {
-		got := functional.Valid("value").ToOption()
-		if v, ok := got.Get(); !ok || v != "value" {
-			t.Fatalf("Get() = (%q, %t), want (\"value\", true)", v, ok)
-		}
-	})
-
-	t.Run("ToOption is a failure, never absence, when invalid", func(t *testing.T) {
-		got := functional.Invalid[string](errFirst, errSecond).ToOption()
-		if got.IsPresent() {
-			t.Fatalf("IsPresent() = true, want false")
-		}
-		if !errors.Is(got.Err(), errFirst) || !errors.Is(got.Err(), errSecond) {
-			t.Fatalf("Err() = %v, want a join of both errors", got.Err())
-		}
-	})
 }
 
 func TestZipValidation2(t *testing.T) {

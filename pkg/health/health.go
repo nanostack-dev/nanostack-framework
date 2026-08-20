@@ -25,7 +25,7 @@ type DependencyChecker struct {
 	fn   func(context.Context) error
 }
 
-func (d DependencyChecker) Name() string { return d.name }
+func (d DependencyChecker) Name() string                    { return d.name }
 func (d DependencyChecker) Check(ctx context.Context) error { return d.fn(ctx) }
 
 // NewChecker wraps a check function into a Checker interface.

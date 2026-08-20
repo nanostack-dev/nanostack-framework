@@ -12,9 +12,6 @@ import (
 // arity wires its inputs through in the right order.
 
 func TestZipOption2(t *testing.T) {
-	errFirst := errors.New("first boom")
-	errSecond := errors.New("second boom")
-
 	t.Run("both present yields a present tuple", func(t *testing.T) {
 		got := functional.ZipOption2(functional.Some("a"), functional.Some(1))
 		if !got.IsPresent() {
@@ -37,37 +34,7 @@ func TestZipOption2(t *testing.T) {
 				if got.IsPresent() {
 					t.Fatalf("IsPresent() = true, want false")
 				}
-				if err := got.Err(); err != nil {
-					t.Fatalf("Err() = %v, want nil — absence is not a failure", err)
-				}
 			})
-		}
-	})
-
-	t.Run("a failure outranks absence", func(t *testing.T) {
-		// The first input failed, the second is merely absent. Reporting this
-		// as plain absence would hide a real error from a caller who checks
-		// IsPresent without checking Err.
-		got := functional.ZipOption2(functional.Failed[string](errFirst), functional.None[int]())
-		if !errors.Is(got.Err(), errFirst) {
-			t.Fatalf("Err() = %v, want %v", got.Err(), errFirst)
-		}
-	})
-
-	t.Run("the leftmost error wins", func(t *testing.T) {
-		got := functional.ZipOption2(
-			functional.Failed[string](errFirst),
-			functional.Failed[int](errSecond),
-		)
-		if !errors.Is(got.Err(), errFirst) {
-			t.Fatalf("Err() = %v, want the leftmost error %v", got.Err(), errFirst)
-		}
-	})
-
-	t.Run("a later failure is still reported", func(t *testing.T) {
-		got := functional.ZipOption2(functional.Some("a"), functional.Failed[int](errSecond))
-		if !errors.Is(got.Err(), errSecond) {
-			t.Fatalf("Err() = %v, want %v", got.Err(), errSecond)
 		}
 	})
 }

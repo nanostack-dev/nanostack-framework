@@ -290,13 +290,10 @@ func TestEitherToOption(t *testing.T) {
 		}
 	})
 
-	t.Run("a left becomes absence, not failure", func(t *testing.T) {
+	t.Run("a left becomes absence", func(t *testing.T) {
 		o := functional.Left[string, int]("x").ToOption()
 		if o.IsPresent() {
 			t.Fatalf("IsPresent() = true, want false")
-		}
-		if err := o.Err(); err != nil {
-			t.Fatalf("Err() = %v, want nil — a left is not an error", err)
 		}
 	})
 }
