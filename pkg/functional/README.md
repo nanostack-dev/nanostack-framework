@@ -22,11 +22,18 @@ result, err := repo.FindConfig(ctx, id)   // (Option[Config], error)
 if err != nil {
     return err                            // a real failure
 }
-if !result.IsPresent() {
+if result.IsAbsent() {
     return nil                            // no row — benign
 }
 config := result.Value()
 ```
+
+`IsAbsent` is `!IsPresent`, spelled out. Both are correct; the point is that a
+guard reads better stated positively — `!found.IsPresent()` puts the negation
+at the far end of the expression from the word it negates, and a reader
+scanning several guards has to carry it across each one. Use whichever says
+what the guard means.
+
 
 Putting the error in Go's own return position, rather than inside the `Option` struct, is not a style preference. An error stored in a struct field is invisible to `errcheck`, invisible to `go vet`, and invisible to the compiler — nothing stops a caller from reading `result.Value()` and never noticing the field was set. Returning `(Option[T], error)` puts the failure where Go's tooling already knows to look for it: a caller who drops the `error` return gets flagged by errcheck exactly as if they had dropped any other error. `Option` answers one question — is a value here — and answers it honestly every time, because there is nowhere else for a failure to hide.
 

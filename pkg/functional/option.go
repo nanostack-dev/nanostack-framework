@@ -91,6 +91,20 @@ func (o Option[T]) IsPresent() bool {
 	return o.present
 }
 
+// IsAbsent reports whether no value is here — the negation of IsPresent,
+// spelled out. It exists because `!found.IsPresent()` puts the negation far
+// from the word it negates, and a reader scanning a chain of guards has to
+// carry it across the whole expression; `found.IsAbsent()` reads as one
+// thought. Both are correct, so use whichever states the guard's intent
+// positively.
+//
+// It is IsAbsent rather than IsEmpty because this package calls the state
+// absence everywhere else, and one word for one meaning is worth more than
+// matching another language's spelling.
+func (o Option[T]) IsAbsent() bool {
+	return !o.present
+}
+
 // Value returns the value. Its result is meaningful only when IsPresent is
 // true; otherwise it is T's zero value.
 func (o Option[T]) Value() T {
