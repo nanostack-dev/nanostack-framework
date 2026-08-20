@@ -403,3 +403,39 @@ func TestOptionOf(t *testing.T) {
 		}
 	})
 }
+
+func TestOptionIsAbsent(t *testing.T) {
+	t.Run("absent reports true and mirrors IsPresent", func(t *testing.T) {
+		o := functional.None[string]()
+		if !o.IsAbsent() {
+			t.Fatalf("IsAbsent() = false, want true")
+		}
+		if o.IsAbsent() == o.IsPresent() {
+			t.Fatalf("IsAbsent() and IsPresent() both = %t, want opposites", o.IsAbsent())
+		}
+	})
+
+	t.Run("present reports false and mirrors IsPresent", func(t *testing.T) {
+		o := functional.Some("value")
+		if o.IsAbsent() {
+			t.Fatalf("IsAbsent() = true, want false")
+		}
+		if o.IsAbsent() == o.IsPresent() {
+			t.Fatalf("IsAbsent() and IsPresent() both = %t, want opposites", o.IsAbsent())
+		}
+	})
+
+	t.Run("the zero Option is absent", func(t *testing.T) {
+		var o functional.Option[int]
+		if !o.IsAbsent() {
+			t.Fatalf("IsAbsent() = false on the zero value, want true")
+		}
+	})
+
+	t.Run("a filtered-out value becomes absent", func(t *testing.T) {
+		o := functional.Some(3).Filter(func(n int) bool { return n > 10 })
+		if !o.IsAbsent() {
+			t.Fatalf("IsAbsent() = false after Filter rejected the value, want true")
+		}
+	})
+}
