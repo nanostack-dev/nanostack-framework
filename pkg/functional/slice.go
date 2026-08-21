@@ -125,6 +125,24 @@ func (s Seq[T]) FilterNot(pred func(T) bool) Seq[T] {
 	return s.Filter(func(item T) bool { return !pred(item) })
 }
 
+// FilterMap keeps the items that match pred and applies f to them, in one pass.
+// It is the fused form of Filter followed by Map: one loop, one allocation,
+// no intermediate slice. Prefer it on a hot path over a large slice.
+func (s Seq[T]) FilterMap[R any](pred func(T) bool, f func(T) R) Seq[R] {
+	if s == nil {
+		return nil
+	}
+
+	result := make(Seq[R], 0, len(s))
+	for _, item := range s {
+		if pred(item) {
+			result = append(result, f(item))
+		}
+	}
+
+	return result
+}
+
 // Peek runs f on every item and returns the Seq unchanged.
 func (s Seq[T]) Peek(f func(T)) Seq[T] {
 	for _, item := range s {

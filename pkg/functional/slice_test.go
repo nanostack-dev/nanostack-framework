@@ -177,6 +177,40 @@ func TestSliceFilter(t *testing.T) {
 	})
 }
 
+func TestSliceFilterMap(t *testing.T) {
+	isEven := func(i int) bool { return i%2 == 0 }
+
+	t.Run("filters then maps in one pass", func(t *testing.T) {
+		got := functional.Slice([]int{1, 2, 3, 4}).FilterMap(isEven, strconv.Itoa)
+		equal(t, got, []string{"2", "4"})
+	})
+
+	t.Run("matches the unfused chain", func(t *testing.T) {
+		source := []int{1, 2, 3, 4, 5, 6}
+		fused := functional.Slice(source).FilterMap(isEven, strconv.Itoa)
+		chained := functional.Slice(source).Filter(isEven).Map(strconv.Itoa)
+		equal(t, fused, chained)
+	})
+
+	t.Run("applies f only to the items that match", func(t *testing.T) {
+		calls := 0
+		functional.Slice([]int{1, 2, 3, 4}).FilterMap(isEven, func(i int) int {
+			calls++
+			return i
+		})
+		if calls != 2 {
+			t.Fatalf("calls = %d, want 2", calls)
+		}
+	})
+
+	t.Run("nil maps to nil", func(t *testing.T) {
+		var source []int
+		if got := functional.Slice(source).FilterMap(isEven, strconv.Itoa); got != nil {
+			t.Fatalf("FilterMap() = %v, want nil", got)
+		}
+	})
+}
+
 func TestSlicePeekAndForEach(t *testing.T) {
 	seen := make([]int, 0)
 	got := functional.Slice([]int{1, 2}).

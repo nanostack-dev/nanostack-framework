@@ -158,7 +158,32 @@ That reads better than a bare `Distinct()` at most call sites anyway, because do
 
 Every step allocates its own result slice, exactly like the package-level helpers it replaces. `Filter(...).Map(...)` therefore materializes one intermediate slice.
 
-Benchmarked against the equivalent nested helper calls, `Seq` is identical on time, bytes and allocations — the methods run the same loops. Against a single hand-fused loop, a two-step chain costs one extra allocation and roughly 2x the time; that cost belongs to eager chaining, not to `Seq`. Fuse the loop by hand on a hot path with a large slice, and chain everywhere else.
+Against the equivalent nested helper calls, `Seq` is identical on time, bytes and allocations — the methods run the same loops. Against a single hand-written loop, a one-step chain is identical too, and a two-step chain costs one extra allocation and roughly 1.5x the time. Two idioms remove that cost where it matters.
+
+**Fuse the pair.** `FilterMap` is `Filter` followed by `Map` in one pass, one allocation, no intermediate slice:
+
+```go
+functional.Slice(users).FilterMap(User.IsActive, toDTO)   // instead of .Filter(...).Map(...)
+```
+
+Measured on a 1000-item slice, against the hand-written loop it replaces (25 interleaved repetitions, A/A control within noise):
+
+| | ns/op | B/op | allocs/op |
+|---|---|---|---|
+| hand-written loop | 2.173µ | 16.00Ki | 1 |
+| `FilterMap` | 2.083µ (-4%) | 16.00Ki | 1 |
+| `Filter().Map()` | 3.342µ (+54%) | 32.00Ki | 2 |
+
+**Short-circuit before mapping, not after.** `FindFirst` scans, but `Filter(...).Map(...).FindFirst(...)` builds both slices in full before the scan begins. Search the source and map the `Option` instead:
+
+```go
+functional.Slice(users).FindFirst(pred).Map(toDTO)        // 69.7 ns, 0 allocs
+functional.Slice(users).Filter(...).Map(...).FindFirst(…) // 3374 ns, 32 KiB, 2 allocs
+```
+
+The gap grows with the slice: the first form stops at the match, the second is O(n) in both time and memory no matter where the match sits.
+
+A lazy pipeline was measured as the alternative to both and rejected. Streaming through `iter.Seq` costs 1.6x to 2.5x on every workload that materializes a result, and adds 8 to 10 fixed allocations for the closure frames, in exchange for a short-circuit path the second idiom above already provides for free.
 
 ## Bridging to ordinary Go
 

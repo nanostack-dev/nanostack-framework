@@ -1,75 +1,135 @@
 package functional_test
 
 import (
-	"strconv"
 	"testing"
 
 	"github.com/nanostack-dev/nanostack-framework/pkg/functional"
 )
 
+// The benchmarks below compare a chained Seq against the hand-written loop it
+// replaces. Run one implementation per process and interleave the repetitions:
+// several implementations in one process contaminate each other through the
+// heap, and blocked repetitions let background drift land on one implementation
+// alone. BenchmarkLoopFilterMapControl is a copy of BenchmarkLoopFilterMap and
+// exists only to report the noise floor of a run.
+
 const benchSize = 1000
 
+type benchItem struct {
+	ID     int
+	Score  int
+	Active bool
+}
+
+type benchResult struct {
+	ID      int
+	Doubled int
+}
+
 var (
-	benchSinkStrings []string
-	benchSinkInt     int
+	benchSinkResult []benchResult
+	benchSinkInt    int
 )
 
-func benchInts() []int {
-	out := make([]int, benchSize)
+func benchItems() []benchItem {
+	out := make([]benchItem, benchSize)
 	for i := range out {
-		out[i] = i
+		out[i] = benchItem{ID: i, Score: i % 97, Active: i%2 == 0}
 	}
 	return out
 }
 
-func BenchmarkSeqMap(b *testing.B) {
-	source := benchInts()
+func benchActive(item benchItem) bool { return item.Active }
+
+func benchMap(item benchItem) benchResult {
+	return benchResult{ID: item.ID, Doubled: item.Score * 2}
+}
+
+func BenchmarkLoopFilterMap(b *testing.B) {
+	source := benchItems()
 	b.ReportAllocs()
 	for b.Loop() {
-		benchSinkStrings = functional.Slice(source).Map(strconv.Itoa)
+		out := make([]benchResult, 0, len(source))
+		for _, item := range source {
+			if benchActive(item) {
+				out = append(out, benchMap(item))
+			}
+		}
+		benchSinkResult = out
+	}
+}
+
+func BenchmarkLoopFilterMapControl(b *testing.B) {
+	source := benchItems()
+	b.ReportAllocs()
+	for b.Loop() {
+		out := make([]benchResult, 0, len(source))
+		for _, item := range source {
+			if benchActive(item) {
+				out = append(out, benchMap(item))
+			}
+		}
+		benchSinkResult = out
+	}
+}
+
+func BenchmarkSeqFilterMapFused(b *testing.B) {
+	source := benchItems()
+	b.ReportAllocs()
+	for b.Loop() {
+		benchSinkResult = functional.Slice(source).FilterMap(benchActive, benchMap)
+	}
+}
+
+func BenchmarkSeqFilterMapChained(b *testing.B) {
+	source := benchItems()
+	b.ReportAllocs()
+	for b.Loop() {
+		benchSinkResult = functional.Slice(source).Filter(benchActive).Map(benchMap)
 	}
 }
 
 func BenchmarkLoopMap(b *testing.B) {
-	source := benchInts()
+	source := benchItems()
 	b.ReportAllocs()
 	for b.Loop() {
-		out := make([]string, len(source))
+		out := make([]benchResult, len(source))
 		for i, item := range source {
-			out[i] = strconv.Itoa(item)
+			out[i] = benchMap(item)
 		}
-		benchSinkStrings = out
+		benchSinkResult = out
 	}
 }
 
-func BenchmarkSeqFilterMap(b *testing.B) {
-	source := benchInts()
+func BenchmarkSeqMap(b *testing.B) {
+	source := benchItems()
 	b.ReportAllocs()
 	for b.Loop() {
-		benchSinkStrings = functional.Slice(source).
-			Filter(func(i int) bool { return i%2 == 0 }).
-			Map(strconv.Itoa)
+		benchSinkResult = functional.Slice(source).Map(benchMap)
 	}
 }
 
-func BenchmarkLoopFilterMap(b *testing.B) {
-	source := benchInts()
+// BenchmarkSeqFindFirstOnSource short-circuits over the source. The chained
+// form below materializes the whole slice first, which is what makes it slow.
+func BenchmarkSeqFindFirstOnSource(b *testing.B) {
+	source := benchItems()
 	b.ReportAllocs()
 	for b.Loop() {
-		out := make([]string, 0, len(source))
-		for _, item := range source {
-			if item%2 == 0 {
-				out = append(out, strconv.Itoa(item))
-			}
-		}
-		benchSinkStrings = out
+		benchSinkInt = functional.Slice(source).
+			FindFirst(func(item benchItem) bool { return item.Active && item.Score == 7 }).
+			Map(benchMap).
+			Fold(func() int { return -1 }, func(r benchResult) int { return r.Doubled })
 	}
 }
 
-func BenchmarkSeqFindFirst(b *testing.B) {
-	source := benchInts()
+func BenchmarkSeqFindFirstAfterChain(b *testing.B) {
+	source := benchItems()
 	b.ReportAllocs()
 	for b.Loop() {
-		benchSinkInt = functional.Slice(source).FindFirst(func(i int) bool { return i == benchSize-1 }).OrElse(0)
+		benchSinkInt = functional.Slice(source).
+			Filter(benchActive).
+			Map(benchMap).
+			FindFirst(func(r benchResult) bool { return r.Doubled == 14 }).
+			Fold(func() int { return -1 }, func(r benchResult) int { return r.Doubled })
 	}
 }
