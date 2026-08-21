@@ -185,6 +185,24 @@ The gap grows with the slice: the first form stops at the match, the second is O
 
 A lazy pipeline was measured as the alternative to both and rejected. Streaming through `iter.Seq` costs 1.6x to 2.5x on every workload that materializes a result, and adds 8 to 10 fixed allocations for the closure frames, in exchange for a short-circuit path the second idiom above already provides for free.
 
+### A lint rule enforces both idioms
+
+`gorules/functional.go` holds two ruleguard rules that golangci-lint runs through gocritic. One reports `Filter().Map()` and points at `FilterMap`; the other reports `FindFirst` after a mapping chain and points at the source-first form. Both stay silent on the fixed code.
+
+To turn them on in a repository that consumes this module, copy `gorules/functional.go` into it, add `github.com/quasilyte/go-ruleguard/dsl` to its `go.mod`, and merge this into its `.golangci.yml`:
+
+```yaml
+linters:
+  settings:
+    gocritic:
+      enabled-checks: [ruleguard]
+      settings:
+        ruleguard:
+          rules: "gorules/functional.go"
+```
+
+The rules guard on "the receiver is a slice type, in a file that imports this package". They cannot guard on `Seq[T]` itself: ruleguard fails to parse an instantiated generic type. So a different slice type with its own `Filter` and `Map`, in a file that also imports this package, is a false positive. Silence that one case with `//nolint:gocritic`.
+
 ## Bridging to ordinary Go
 
 Generated OpenAPI structs use pointers for optional fields, so the pointer bridges matter most in practice:
