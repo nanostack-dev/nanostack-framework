@@ -7,6 +7,7 @@ Small generic value types for chaining computations that may be absent or may fa
 - `Validation[T]` — a value or **every** reason it could not be produced. Accumulates instead of short-circuiting.
 - `Either[L,R]` — exactly one of two outcomes, where **neither side is an error**.
 - `Lazy[T]` — a value computed at most once, on first access.
+- `Seq[T]` — a slice with chainable operations. Plain `[]T` underneath, so it crosses any API boundary unchanged.
 - `Tuple2[A,B]` … `Tuple9[…]` — fixed-arity grouping, for a chain step that needs to hand more than one value to the next.
 
 `pkg/db/transactor` builds on these: its `Optional[T]` is a type alias for `Option[T]`, and its `Result[T]` wraps `Result[T]` to add SQL error translation.
@@ -120,6 +121,69 @@ label := cfg.Map(func(c Config) string { return c.Name })   // neither forced ye
 ```
 
 `Map` stays lazy in both directions and memoizes its own result. That is the difference from `sync.OnceValue`, which memoizes one call and hands back a `func() T`: composing those re-runs the outer function on every read. Use `sync.OnceValue` when nothing derives from the value, and `Lazy` when something does.
+
+## Seq replaces the package-level slice helpers
+
+`Seq[T]` is `[]T` with methods. `Slice(xs)` starts a chain, every step returns a new `Seq`, and the terminal steps hand back an `Option`, a `Result`, a map, or a count:
+
+```go
+names := functional.Slice(users).
+    Filter(func(u User) bool { return u.Active }).
+    SortedBy(func(u User) string { return u.LastName }).
+    Map(func(u User) string { return u.Email })   // Seq[string]
+
+owner := functional.Slice(members).
+    FindFirst(func(m Member) bool { return m.Role == RoleOwner }).
+    Map(func(m Member) string { return m.Email }).
+    OrElse("")                                    // Option[string] → string
+```
+
+The type is a defined slice type, not a wrapper struct, so `Seq[T]` and `[]T` assign to each other in both directions. A function that returns `[]Item` can return a `Seq[Item]`, and a `Seq[Item]` passes to anything expecting `[]Item`. No adapter call, no copy.
+
+`Map`, `Filter` and `FlatMap` preserve nil: nil in, nil out. That invariant is load-bearing at the API edge — a nil slice marshals to JSON `null` and an empty slice to `[]`, and a mapping step must not silently change which one a handler returns.
+
+### Why some operations take a key function
+
+`Seq[T]` is declared over `any`, and Go cannot narrow `T` to `comparable` or `cmp.Ordered` on a single method. Everything that needs a comparison therefore takes a key function, which puts the constraint on the *method's* own type parameter instead:
+
+```go
+functional.Slice(users).UniqueBy(func(u User) string { return u.ID })
+functional.Slice(users).SortedBy(func(u User) int { return u.Age })
+functional.Slice(users).GroupBy(func(u User) string { return u.TeamID })
+```
+
+That reads better than a bare `Distinct()` at most call sites anyway, because domain types are rarely deduplicated by whole-value equality. For the cases where the element type really is the key, `Distinct`, `Sorted`, `Sum`, `SeqContains` and `Diff` exist as package-level functions and still return a `Seq`, so a chain can continue after them.
+
+### Eager, not lazy
+
+Every step allocates its own result slice, exactly like the package-level helpers it replaces. `Filter(...).Map(...)` therefore materializes one intermediate slice.
+
+Against the equivalent nested helper calls, `Seq` is identical on time, bytes and allocations — the methods run the same loops. Against a single hand-written loop, a one-step chain is identical too, and a two-step chain costs one extra allocation and roughly 1.5x the time. Two idioms remove that cost where it matters.
+
+**Fuse the pair.** `FilterMap` is `Filter` followed by `Map` in one pass, one allocation, no intermediate slice:
+
+```go
+functional.Slice(users).FilterMap(User.IsActive, toDTO)   // instead of .Filter(...).Map(...)
+```
+
+Measured on a 1000-item slice, against the hand-written loop it replaces (25 interleaved repetitions, A/A control within noise):
+
+| | ns/op | B/op | allocs/op |
+|---|---|---|---|
+| hand-written loop | 2.173µ | 16.00Ki | 1 |
+| `FilterMap` | 2.083µ (-4%) | 16.00Ki | 1 |
+| `Filter().Map()` | 3.342µ (+54%) | 32.00Ki | 2 |
+
+**Short-circuit before mapping, not after.** `FindFirst` scans, but `Filter(...).Map(...).FindFirst(...)` builds both slices in full before the scan begins. Search the source and map the `Option` instead:
+
+```go
+functional.Slice(users).FindFirst(pred).Map(toDTO)        // 69.7 ns, 0 allocs
+functional.Slice(users).Filter(...).Map(...).FindFirst(…) // 3374 ns, 32 KiB, 2 allocs
+```
+
+The gap grows with the slice: the first form stops at the match, the second is O(n) in both time and memory no matter where the match sits.
+
+A lazy pipeline was measured as the alternative to both and rejected. Streaming through `iter.Seq` costs 1.6x to 2.5x on every workload that materializes a result, and adds 8 to 10 fixed allocations for the closure frames, in exchange for a short-circuit path the second idiom above already provides for free.
 
 ## Bridging to ordinary Go
 
