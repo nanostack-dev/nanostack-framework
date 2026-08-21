@@ -42,6 +42,8 @@ Keep language-level pointer and slice helpers in narrow framework packages: `pkg
 
 Rationale: `Ptr`, `DerefOr`, slice mapping, and string-diff helpers are broadly reused, but they do not justify another unbounded `toolkit`-style bucket. `CastToStringPtr` stays app-local where it is only needed by a single feature mapper.
 
+Superseded by the 2026-08-21 entry below: `pkg/slicex` is deleted and `functional.Seq` owns slice transformation. `pkg/ptr` stands.
+
 ## 2026-05-22: ID Prefix Compatibility
 
 Allow underscores in `pkg/ids` prefixes.
@@ -140,7 +142,7 @@ Rationale: `Result` short-circuits, which is correct for a pipeline whose second
 
 `Lazy` is not `sync.OnceValue` restated. `OnceValue` memoizes one call and returns a `func() T`, which composes only by wrapping, so a derived value is recomputed on every read. `Lazy.Map` returns a `Lazy` that memoizes its own result, so a chain costs one evaluation per link. Where nothing derives from the value, `sync.OnceValue` remains the right tool.
 
-Not ported, and the reason: persistent collections and `Stream` (`pkg/slicex`, `slices`, `maps`, and `iter.Seq` own that ground), `Future`/`Promise` (goroutines, channels, `errgroup`), pattern matching, and `Function0..8` currying. Those exist in Vavr because Java lacks first-class function types and cheap concurrency. Porting them would produce a package this codebase would not import.
+Not ported, and the reason: persistent collections and a lazy `Stream` (`functional.Seq`, `slices`, `maps`, and `iter.Seq` own that ground), `Future`/`Promise` (goroutines, channels, `errgroup`), pattern matching, and `Function0..8` currying. Those exist in Vavr because Java lacks first-class function types and cheap concurrency. Porting them would produce a package this codebase would not import.
 
 Cost accepted: hand-written statement coverage is complete, but the generated mid-arity combinators (4 through 8) are exercised only by construction — the tests cover arities 2, 3 and 9, so package coverage reads 74.1%. The claim here that the lint blocker is unfixable is superseded by the 2026-08-19 "The Lint Blocker Was A Stale Dependency" entry.
 
@@ -183,3 +185,15 @@ Rationale: an error stored inside an `Option` value is invisible to `errcheck`, 
 This also brings the shape in line with prior art that keeps absence and failure apart by type rather than by convention: Rust's `Option<T>`/`Result<T, E>` are two separate types, and Vavr's `Option`/`Try` are likewise separate rather than one type wearing three hats. The three-state design was the outlier, not the destination.
 
 Cost accepted: this is breaking for `anchor` and `echopoint`, whose repositories call `transactor.QueryOptional`/`QueryOptionalMap` and must move to handling the second `error` return at each call site; any caller of the removed `Failed`, `Err()`, or the two `ToOption` methods must also update. Worth noting honestly: the three-state design this replaces lasted one day, shipped in v0.11.0 and patched in v0.11.1 before this entry reverses it.
+
+## 2026-08-21: Seq Replaces slicex
+
+Delete `pkg/slicex`. `functional.Seq[T]` owns slice transformation.
+
+`slicex` exported 8 helpers. A workspace-wide census found exactly one in use — `Map`, at 98 call sites across anchor and echopoint. The other seven were dead. Nested helper calls also read inside-out, the problem generic methods already solved for `Option` and `Result`.
+
+`Seq[T]` is a defined slice type, so it and `[]T` assign to each other in both directions and nothing changes at an API boundary. `Map`, `Filter` and `FlatMap` keep the nil-preservation invariant `slicex` documented, which decides whether a handler emits JSON `null` or `[]`.
+
+Measured, not assumed: `Seq` is identical to the `slicex` calls it replaces on time, bytes and allocations. Against a hand-written loop, `Map` and `FilterMap` are also identical, while a `Filter().Map()` chain costs +54% time and 2x memory for the intermediate slice, and `FindFirst` after a mapping chain is 48x slower than searching the source. Two ruleguard rules enforce the two idioms that avoid those costs.
+
+A lazy `iter.Seq` pipeline was built and benchmarked as the alternative and rejected: 1.6x to 2.5x slower on every workload that materializes a result, plus 8 to 10 fixed closure allocations, buying a short-circuit path that `FindFirst` on the source already provides for free.
