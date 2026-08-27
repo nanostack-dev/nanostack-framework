@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"errors"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/go-jet/jet/v2/postgres"
@@ -200,4 +201,56 @@ func TestIntegrationQueryPathWrapping(t *testing.T) {
 	if !errors.Is(err, errInvitationExists) {
 		t.Fatalf("Value() err = %v, want %v — jet wrapping must unwrap", err, errInvitationExists)
 	}
+}
+
+// TestIntegrationQueryMapSlice covers QueryMapSlice directly. It had no test
+// of its own before this: PageBuilder exercised it only for the case where at
+// least one row comes back, and short-circuits QueryMapSlice entirely once
+// the count query already reports zero total.
+func TestIntegrationQueryMapSlice(t *testing.T) {
+	db := openDB(t)
+	setupSchema(t, db)
+	ctx := context.Background()
+
+	// A type alias, not a defined type: go-jet's qrm keys an unqualified SELECT
+	// column ("id") to the destination's *type name*, so a defined struct type
+	// (`type row struct{...}`) demands a qualified alias ("row.id") the query
+	// never produces, and every field comes back zero. An alias to an anonymous
+	// struct carries no name for qrm to require.
+	type row = struct{ ID string }
+	toID := func(r row) string { return r.ID }
+
+	t.Run("maps every row", func(t *testing.T) {
+		if _, err := db.Exec(
+			`INSERT INTO it_invitations (id, tenant_id, email) VALUES ('inv_e', 't1', 'e@x')`,
+		); err != nil {
+			t.Fatalf("insert: %v", err)
+		}
+		stmt := postgres.RawStatement(`SELECT id FROM it_invitations WHERE tenant_id = 't1' ORDER BY id`)
+
+		ids, err := transactor.QueryMapSlice(ctx, db, stmt, toID).Value()
+		if err != nil {
+			t.Fatalf("Value() err = %v, want nil", err)
+		}
+		if want := []string{"inv_a", "inv_e"}; !slices.Equal(ids, want) {
+			t.Fatalf("ids = %v, want %v", ids, want)
+		}
+	})
+
+	t.Run("zero rows still maps to a non-nil empty slice", func(t *testing.T) {
+		// A repository handing this straight to json.Marshal must render `[]`,
+		// not `null`.
+		stmt := postgres.RawStatement(`SELECT id FROM it_invitations WHERE tenant_id = 'no-such-tenant'`)
+
+		ids, err := transactor.QueryMapSlice(ctx, db, stmt, toID).Value()
+		if err != nil {
+			t.Fatalf("Value() err = %v, want nil", err)
+		}
+		if ids == nil {
+			t.Fatal("QueryMapSlice returned a nil slice for zero rows, want a non-nil empty one")
+		}
+		if len(ids) != 0 {
+			t.Fatalf("ids = %v, want empty", ids)
+		}
+	})
 }
