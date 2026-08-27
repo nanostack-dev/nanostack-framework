@@ -15,3 +15,6 @@
 dist/
 bin/
 coverage/
+
+# Agent worktrees, created by git worktree add
+worktrees/
