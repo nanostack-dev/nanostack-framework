@@ -164,8 +164,8 @@ func QueryMap[T any, R any](ctx context.Context, db qrm.DB, stmt jet.Statement, 
 
 // QueryMapSlice executes a query and maps a slice of results.
 func QueryMapSlice[T any, R any](ctx context.Context, db qrm.DB, stmt jet.Statement, mapFunc func(T) R) Result[[]R] {
-	var results []T
-	if err := stmt.QueryContext(ctx, Executor(ctx, db), &results); err != nil {
+	results, err := Query[[]T](ctx, db, stmt).Value()
+	if err != nil {
 		return newResult[[]R](nil, err)
 	}
 	mapped := make([]R, len(results))
