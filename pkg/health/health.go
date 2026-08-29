@@ -2,10 +2,11 @@ package health
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"os"
 	"time"
+
+	"github.com/nanostack-dev/nanostack-framework/pkg/httputil"
 )
 
 const (
@@ -180,9 +181,7 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		payload[key] = value
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(payload)
+	_ = httputil.WriteJSON(w, status, payload)
 }
 
 func stringPtr(value string) *string {
