@@ -1,11 +1,12 @@
 package fault
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"strings"
+
+	"github.com/nanostack-dev/nanostack-framework/pkg/httputil"
 )
 
 const (
@@ -341,7 +342,5 @@ func WriteJSON(w http.ResponseWriter, err *Error) {
 	if err == nil {
 		err = ErrUnexpected
 	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(err.HTTPStatus())
-	_ = json.NewEncoder(w).Encode(err)
+	_ = httputil.WriteJSON(w, err.HTTPStatus(), err)
 }
