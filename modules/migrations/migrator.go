@@ -7,9 +7,13 @@ import (
 	"io/fs"
 	"math"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync/atomic"
+	"syscall"
+	"time"
 
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/postgres"
@@ -93,8 +97,33 @@ func (m *MigrationProvider) handleDirtyState(migrator *migrate.Migrate, version 
 	return migrator.Force(int(version))
 }
 
+// executeMigrations applies pending migrations. A SIGTERM or SIGINT during the
+// run asks golang-migrate to stop after the migration in progress, so a stopped
+// container records a clean version instead of exiting with it dirty, and the
+// app then refuses to start on a half-migrated schema.
 func (m *MigrationProvider) executeMigrations(migrator *migrate.Migrate) error {
-	if err := migrator.Up(); err != nil {
+	stopSignals := make(chan os.Signal, 1)
+	signal.Notify(stopSignals, syscall.SIGTERM, syscall.SIGINT)
+	defer signal.Stop(stopSignals)
+	runDone := make(chan struct{})
+	defer close(runDone)
+	var stopRequested atomic.Bool
+	go func() {
+		select {
+		case received := <-stopSignals:
+			m.log.Warn().Str("signal", received.String()).Msg("stopping after the migration in progress")
+			stopRequested.Store(true)
+			migrator.GracefulStop <- true
+		case <-runDone:
+		}
+	}()
+
+	startedAt := time.Now()
+	err := migrator.Up()
+	if stopRequested.Load() {
+		return errors.New("migrations stopped by a shutdown signal before the last one ran")
+	}
+	if err != nil {
 		if errors.Is(err, migrate.ErrNoChange) {
 			m.log.Info().Msg("no migration changes needed")
 			return nil
@@ -110,7 +139,8 @@ func (m *MigrationProvider) executeMigrations(migrator *migrate.Migrate) error {
 		m.log.Info().Err(err).Msg("database migrations applied; failed to read resulting version")
 		return nil
 	}
-	m.log.Info().Uint("version", version).Bool("dirty", dirty).Msg("database migrations applied")
+	m.log.Info().Uint("version", version).Bool("dirty", dirty).Dur("took", time.Since(startedAt)).
+		Msg("database migrations applied")
 	return nil
 }
 
