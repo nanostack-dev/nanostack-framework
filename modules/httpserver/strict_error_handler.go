@@ -11,6 +11,10 @@ import (
 	"github.com/rs/zerolog"
 )
 
+// StatusClientClosedRequest is the nginx convention for a request the client
+// abandoned before the response was written. net/http has no constant for it.
+const StatusClientClosedRequest = 499
+
 // isServerError reports whether status is a 5xx the boundary should log with
 // full diagnostic detail.
 func isServerError(status int) bool {
@@ -66,6 +70,18 @@ func (h *StrictErrorHandler) HandleResponseError(w http.ResponseWriter, r *http.
 	}
 
 	logger := h.requestLogger(r)
+
+	// Checked before resolve: a cancelled request often also carries a fault
+	// wrapper from the layer that gave up, and the cancellation is the truer
+	// story. The client is gone, so nothing reads the response; the 499 exists
+	// so the access log records an abandoned request instead of a 500.
+	if clientAbandoned(r, err) {
+		logger.Warn().Err(err).Int("status", StatusClientClosedRequest).
+			Msg("Request abandoned by client")
+		w.WriteHeader(StatusClientClosedRequest)
+		return
+	}
+
 	apiErr, modelled := h.resolve(err)
 
 	switch {
@@ -85,6 +101,19 @@ func (h *StrictErrorHandler) HandleResponseError(w http.ResponseWriter, r *http.
 	}
 
 	fault.WriteJSON(w, apiErr)
+}
+
+// clientAbandoned reports whether the request failed because its context was
+// cancelled, which net/http does when the client disconnects.
+//
+// DeadlineExceeded is deliberately excluded. The framework puts no deadline on
+// the request context, so an expired deadline is a timeout the service set on
+// its own work — a real failure that stays on the unmodelled 500 path.
+func clientAbandoned(r *http.Request, err error) bool {
+	if errors.Is(err, context.Canceled) {
+		return true
+	}
+	return r != nil && errors.Is(r.Context().Err(), context.Canceled)
 }
 
 // resolve maps err to the fault.Error to write and reports whether err was a

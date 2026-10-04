@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -303,5 +304,70 @@ func TestStrictErrorHandlerDoesNotDuplicateRouteKeys(t *testing.T) {
 		if count := strings.Count(out, key); count != 1 {
 			t.Fatalf("%s appeared %d times in %s, want exactly 1", key, count, out)
 		}
+	}
+}
+
+func TestStrictErrorHandlerClientCancelReturns499AtWarn(t *testing.T) {
+	var logs bytes.Buffer
+	logger := zerolog.New(&logs).Level(zerolog.DebugLevel)
+	handler := NewStrictErrorHandler(StrictErrorHandlerOptions{Logger: logger})
+	req := httptest.NewRequest(http.MethodGet, "/flow-schedules/1/runs", nil)
+	resp := httptest.NewRecorder()
+
+	err := fmt.Errorf("list executions by schedule run ids: jet: %w", context.Canceled)
+	handler.HandleResponseError(resp, req, err)
+
+	if resp.Code != StatusClientClosedRequest {
+		t.Fatalf("expected status %d, got %d", StatusClientClosedRequest, resp.Code)
+	}
+	logOutput := logs.String()
+	if !strings.Contains(logOutput, `"level":"warn"`) || !strings.Contains(logOutput, "Request abandoned by client") {
+		t.Fatalf("expected warn abandoned-request log, got %s", logOutput)
+	}
+	if strings.Contains(logOutput, `"level":"error"`) {
+		t.Fatalf("expected no error log for client cancel, got %s", logOutput)
+	}
+}
+
+func TestStrictErrorHandlerCancelledRequestContextReturns499(t *testing.T) {
+	handler := NewStrictErrorHandler(StrictErrorHandlerOptions{Logger: zerolog.Nop()})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	req := httptest.NewRequest(http.MethodGet, "/flows", nil).WithContext(ctx)
+	resp := httptest.NewRecorder()
+
+	handler.HandleResponseError(resp, req, errors.New("conn closed"))
+
+	if resp.Code != StatusClientClosedRequest {
+		t.Fatalf("expected status %d, got %d", StatusClientClosedRequest, resp.Code)
+	}
+}
+
+func TestStrictErrorHandlerCancelWinsOverFaultWrapper(t *testing.T) {
+	handler := NewStrictErrorHandler(StrictErrorHandlerOptions{Logger: zerolog.Nop()})
+	req := httptest.NewRequest(http.MethodGet, "/flows", nil)
+	resp := httptest.NewRecorder()
+
+	handler.HandleResponseError(resp, req, fault.ErrUnexpected.Wrap(context.Canceled))
+
+	if resp.Code != StatusClientClosedRequest {
+		t.Fatalf("expected status %d, got %d", StatusClientClosedRequest, resp.Code)
+	}
+}
+
+func TestStrictErrorHandlerDeadlineExceededStays500AtError(t *testing.T) {
+	var logs bytes.Buffer
+	logger := zerolog.New(&logs).Level(zerolog.DebugLevel)
+	handler := NewStrictErrorHandler(StrictErrorHandlerOptions{Logger: logger})
+	req := httptest.NewRequest(http.MethodGet, "/flows", nil)
+	resp := httptest.NewRecorder()
+
+	handler.HandleResponseError(resp, req, fmt.Errorf("query: %w", context.DeadlineExceeded))
+
+	if resp.Code != http.StatusInternalServerError {
+		t.Fatalf("expected status %d, got %d", http.StatusInternalServerError, resp.Code)
+	}
+	if !strings.Contains(logs.String(), `"level":"error"`) {
+		t.Fatalf("expected error log for server-side deadline, got %s", logs.String())
 	}
 }
