@@ -1,6 +1,8 @@
 package transactor
 
 import (
+	"context"
+
 	jet "github.com/go-jet/jet/v2/postgres"
 
 	"github.com/nanostack-dev/nanostack-framework/pkg/search"
@@ -21,4 +23,10 @@ func (b *PageBuilder[T, R]) CountStatementForTest() jet.Statement {
 
 func (b *PageBuilder[T, R]) PageStatementForTest(pagination search.Pagination) jet.Statement {
 	return b.pageStatement(pagination)
+}
+
+// WithRequestedRowLockForTest exposes the clause a locked context adds, so the
+// external test package can assert the SQL without a database.
+func WithRequestedRowLockForTest(ctx context.Context, stmt jet.Statement) (jet.Statement, error) {
+	return withRequestedRowLock(ctx, stmt)
 }

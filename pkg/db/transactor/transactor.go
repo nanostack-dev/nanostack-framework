@@ -88,7 +88,11 @@ func Executor(ctx context.Context, db qrm.DB) qrm.DB {
 // Query executes a query and returns the results.
 func Query[T any](ctx context.Context, db qrm.DB, stmt jet.Statement) Result[T] {
 	var result T
-	err := stmt.QueryContext(ctx, Executor(ctx, db), &result)
+	stmt, err := withRequestedRowLock(ctx, stmt)
+	if err != nil {
+		return newResult(result, err)
+	}
+	err = stmt.QueryContext(ctx, Executor(ctx, db), &result)
 	return newResult(result, err)
 }
 
@@ -121,7 +125,11 @@ func QueryOptional[T any](
 	ctx context.Context, db qrm.DB, stmt jet.Statement,
 ) (functional.Option[T], error) {
 	var result T
-	err := stmt.QueryContext(ctx, Executor(ctx, db), &result)
+	stmt, err := withRequestedRowLock(ctx, stmt)
+	if err != nil {
+		return functional.None[T](), err
+	}
+	err = stmt.QueryContext(ctx, Executor(ctx, db), &result)
 	if err != nil {
 		if isNoRows(err) {
 			return functional.None[T](), nil
@@ -165,7 +173,11 @@ func QueryMap[T any, R any](ctx context.Context, db qrm.DB, stmt jet.Statement, 
 // QueryMapSlice executes a query and maps a slice of results.
 func QueryMapSlice[T any, R any](ctx context.Context, db qrm.DB, stmt jet.Statement, mapFunc func(T) R) Result[[]R] {
 	var results []T
-	if err := stmt.QueryContext(ctx, Executor(ctx, db), &results); err != nil {
+	stmt, err := withRequestedRowLock(ctx, stmt)
+	if err != nil {
+		return newResult[[]R](nil, err)
+	}
+	if err = stmt.QueryContext(ctx, Executor(ctx, db), &results); err != nil {
 		return newResult[[]R](nil, err)
 	}
 	mapped := make([]R, len(results))
@@ -177,12 +189,20 @@ func QueryMapSlice[T any, R any](ctx context.Context, db qrm.DB, stmt jet.Statem
 
 // Exec executes a statement. It carries no value, so callers unwrap it with Err.
 func Exec(ctx context.Context, db qrm.DB, stmt jet.Statement) Result[struct{}] {
-	_, err := stmt.ExecContext(ctx, Executor(ctx, db))
+	stmt, err := withRequestedRowLock(ctx, stmt)
+	if err != nil {
+		return newResult(struct{}{}, err)
+	}
+	_, err = stmt.ExecContext(ctx, Executor(ctx, db))
 	return newResult(struct{}{}, err)
 }
 
 // QueryCount executes a query count statement.
 func QueryCount(ctx context.Context, db qrm.DB, statement jet.Statement) Result[int64] {
+	statement, err := withRequestedRowLock(ctx, statement)
+	if err != nil {
+		return newResult[int64](0, err)
+	}
 	query, args := statement.Sql()
 	rows, err := Executor(ctx, db).QueryContext(ctx, query, args...)
 	if err != nil {

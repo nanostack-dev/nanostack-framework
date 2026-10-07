@@ -59,6 +59,21 @@ config := transactor.QueryOptional[Run](ctx, db, runStmt).
     })
 ```
 
+## Locking the rows a query reads
+
+A transaction does not stop another one from changing the rows it has read: under Postgres's default isolation a read never blocks a write. When the transaction depends on those rows staying as read, pass the context through `ForShare` or `ForUpdate` for that one call. Every query helper then appends the clause to its SELECT:
+
+```go
+// The license copies the template; an update to it waits until this commits,
+// so the sync it starts sees the new license.
+template, err := templates.Find(transactor.ForShare(txCtx), templateID)
+```
+
+- `ForShare` lets other readers take the same lock and blocks writers. `ForUpdate` blocks both. `WithRowLock` takes any go-jet clause, such as `postgres.UPDATE().NOWAIT()`.
+- Pass the locked context inline, to one call. Every query run with it is locked, so assigning it to `txCtx` locks every later read in the transaction.
+- A locked query outside a transaction returns `ErrRowLockOutsideTx`: the lock would end with the statement. A locked context on a statement that is not a SELECT returns `ErrRowLockNotSelect`.
+- Postgres refuses a lock on an aggregate, `GROUP BY` or `DISTINCT` query, so a locked `PageBuilder` count fails.
+
 ## Translating constraint violations
 
 `Result` carries the error so a driver-level constraint violation can become a domain error before the caller sees it:
