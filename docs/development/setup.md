@@ -13,3 +13,9 @@ Private repository/module access depends on your Git credentials; configure `GOP
 The default tests exercise pure code and in-process fixtures. Database integration tests need a disposable PostgreSQL instance and the explicit DSNs described in [testing](testing.md). Consumer applications have their own startup, generation and service dependencies.
 
 There is no runnable framework `nanostack new` or `nanostack doctor` CLI in the current tree. [cli/README.md](../../cli/README.md) describes direction, not an installation prerequisite. Generation helpers also do not replace a consumer's own OpenAPI or database generation commands.
+
+## Agent clients
+
+Codex, OpenCode and Grok Build read the local `AGENTS.md` directly. Claude Code loads it through the committed [.claude/settings.json](../../.claude/settings.json) SessionStart hook, which resolves the Git root and prints that guide using only Git and the shell. Start from this repository or a nested directory.
+
+Approve repository trust through the client when required, and start a new session after changing hooks or installed skills so the client reloads them. Trust and login are developer-controlled. Keep personal overrides in ignored `.claude/settings.local.json`; no shared-workspace checkout or external skill installer is required.
