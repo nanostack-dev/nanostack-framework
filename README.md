@@ -28,6 +28,8 @@ The current `nanostack-shared` repository is expected to become a compatibility 
 
 ## Documents
 
+For standalone development, start with [AGENTS.md](AGENTS.md), [CONTEXT.md](CONTEXT.md) and the [documentation index](docs/README.md). [Implemented architecture](docs/technical/architecture.md) distinguishes current packages from the original direction below.
+
 - `docs/vision.md`: framework intent and goals
 - `docs/common-work-inventory.md`: repeated work currently done by apps
 - `docs/architecture.md`: proposed framework component boundaries
