@@ -49,21 +49,10 @@ func (r *RedisCache) Set(ctx context.Context, key string, value string, expirati
 func (r *RedisCache) GetOrElse(
 	ctx context.Context, key string, fallback func() (string, error), expiration time.Duration,
 ) (string, error) {
-	value, err := r.client.Get(ctx, key).Result()
-	if err == nil {
-		return value, nil
-	}
-	if !errors.Is(err, redis.Nil) {
-		return "", err
-	}
-	value, err = fallback()
-	if err != nil {
-		return "", err
-	}
-	if setErr := r.client.Set(ctx, key, value, expiration).Err(); setErr != nil {
-		return value, setErr
-	}
-	return value, nil
+	return r.GetOrElseWithExpiry(ctx, key, func() (string, time.Duration, error) {
+		value, err := fallback()
+		return value, expiration, err
+	})
 }
 
 func (r *RedisCache) GetOrElseWithExpiry(
