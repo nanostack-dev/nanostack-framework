@@ -45,6 +45,11 @@ Pass the prefix **without** a trailing colon — `"product"`, not `"product:"`.
 none is configured. It is what the FX module provides and what `Cache[T]` sits
 on. Applications should not depend on it directly.
 
+Redis's fixed and computed expiry fallback methods use the same read, load and
+write policy. A hit skips the loader. A read error other than a cache miss or a
+loader error propagates; a write error returns the loaded value alongside that
+error. The typed cache above owns the application-facing degradation policy.
+
 It previously carried an `interface{}`-based struct API (`GetStruct`,
 `SetStruct`, `GetOrElseStruct`, `GetOrElseStructWithExpiry`). Those are gone:
 `Cache[T]` does the serialization, with real types.
