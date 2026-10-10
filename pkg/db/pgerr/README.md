@@ -49,3 +49,7 @@ if pgerr.IsQueryCanceled(err) {
 error-level log, and only the message text separates the two. `IsQueryCanceled`
 matches the client-request half alone — deliberately narrower than
 `Is(err, pgerr.QueryCanceled)`.
+
+`pkg/log` applies this rule: `log.IsContextError` and `log.LevelFor` treat a
+client-request cancel as a context error, so `log.Error(ctx, err)` logs it at
+warn level. A `statement_timeout` kill stays at error level.

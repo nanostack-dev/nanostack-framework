@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/nanostack-dev/nanostack-framework/pkg/db/pgerr"
 	"github.com/nanostack-dev/nanostack-framework/pkg/fault"
 	"github.com/rs/zerolog"
 )
@@ -41,12 +42,20 @@ func LevelFor(err error) zerolog.Level {
 
 // IsContextError reports whether err is a cancellation or deadline expiry.
 //
+// A PostgreSQL statement canceled at the client's request counts too: lib/pq
+// reports a canceled query context as SQLSTATE 57014 "canceling statement due
+// to user request" without wrapping context.Canceled (see
+// pgerr.IsQueryCanceled). A statement_timeout kill shares the code but is a
+// server fault, so it does not match.
+//
 // These mean the caller went away — a client disconnected, an upstream gave up
 // — rather than the service failing, which is why LevelFor treats them as Warn.
 // It is exported because callers need the same distinction for control flow:
 // abandoning work because the caller left is not a failure to retry or report.
 func IsContextError(err error) bool {
-	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
+	return errors.Is(err, context.Canceled) ||
+		errors.Is(err, context.DeadlineExceeded) ||
+		pgerr.IsQueryCanceled(err)
 }
 
 // Event returns an event for err at the severity LevelFor picks, with err and,

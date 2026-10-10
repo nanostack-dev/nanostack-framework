@@ -12,6 +12,25 @@ HTTP request logging plus request-scoped log context for Nanostack Go services.
 - `From(ctx)` — fetch the request-scoped logger (disabled no-op when absent).
 - `RequestIDFromContext(ctx)` — fetch the correlation id (empty when absent).
 
+## Streaming responses
+
+The middleware wraps the `http.ResponseWriter` to record status and bytes. The
+wrapper forwards `Flush` and implements `Unwrap`, so `http.ResponseController`
+reaches the underlying connection. A streaming handler (SSE, long poll) must
+clear the server's `WriteTimeout` before it streams, because Go applies that
+timeout as an absolute deadline on the connection:
+
+```go
+rc := http.NewResponseController(w)
+if err := rc.SetWriteDeadline(time.Time{}); err != nil {
+    return err // http.ErrNotSupported means a wrapper lacks Unwrap
+}
+```
+
+Any middleware that wraps the writer must implement
+`Unwrap() http.ResponseWriter` too; otherwise the controller returns
+`http.ErrNotSupported` and the stream stops delivering once the timeout elapses.
+
 ## What Contextualize does
 
 For each request it:
