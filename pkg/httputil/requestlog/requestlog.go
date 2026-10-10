@@ -42,6 +42,14 @@ func (rec *statusRecorder) Flush() {
 	}
 }
 
+// Unwrap exposes the wrapped writer to http.ResponseController, so a handler
+// behind this middleware can still clear the server's write deadline or flush
+// with an error result. Without it, every ResponseController call returns
+// http.ErrNotSupported and a long-lived stream dies at the server WriteTimeout.
+func (rec *statusRecorder) Unwrap() http.ResponseWriter {
+	return rec.ResponseWriter
+}
+
 // Options controls request logging behavior.
 type Options struct {
 	LogRequestBody bool

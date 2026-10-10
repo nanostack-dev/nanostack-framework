@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/lib/pq"
+	"github.com/nanostack-dev/nanostack-framework/pkg/db/pgerr"
 	"github.com/nanostack-dev/nanostack-framework/pkg/fault"
 	"github.com/nanostack-dev/nanostack-framework/pkg/log"
 	"github.com/rs/zerolog"
@@ -72,6 +74,18 @@ func TestLevelFor(t *testing.T) {
 			name: "cancellation beats a wrapping fault",
 			err:  fault.Internal("UPSTREAM", "upstream failed").Wrap(context.Canceled),
 			want: zerolog.WarnLevel,
+		},
+		{
+			// lib/pq reports a canceled query context as 57014 without
+			// wrapping context.Canceled; the client still went away.
+			name: "query canceled at the client's request is warn",
+			err:  fmt.Errorf("jet: %w", queryCanceledByUser),
+			want: zerolog.WarnLevel,
+		},
+		{
+			name: "query canceled by statement timeout stays error",
+			err:  fmt.Errorf("jet: %w", queryCanceledByTimeout),
+			want: zerolog.ErrorLevel,
 		},
 	}
 
@@ -172,6 +186,8 @@ func TestIsContextError(t *testing.T) {
 		{"wrapped cancelled", fmt.Errorf("send email: %w", context.Canceled), true},
 		{"plain error", errors.New("connection refused"), false},
 		{"api error", fault.NotFound("GONE", "gone"), false},
+		{"query canceled at the client's request", fmt.Errorf("jet: %w", queryCanceledByUser), true},
+		{"query canceled by statement timeout", fmt.Errorf("jet: %w", queryCanceledByTimeout), false},
 	}
 
 	for _, test := range tests {
@@ -182,3 +198,14 @@ func TestIsContextError(t *testing.T) {
 		})
 	}
 }
+
+var (
+	queryCanceledByUser = &pq.Error{
+		Code:    pgerr.QueryCanceled,
+		Message: "canceling statement due to user request",
+	}
+	queryCanceledByTimeout = &pq.Error{
+		Code:    pgerr.QueryCanceled,
+		Message: "canceling statement due to statement timeout",
+	}
+)
