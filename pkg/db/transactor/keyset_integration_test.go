@@ -412,3 +412,53 @@ func TestIntegrationKeysetTimestamptzWithSecondsOffsetZone(t *testing.T) {
 		}
 	}
 }
+
+// Forged or extreme values must reach Postgres as comparable literals, never
+// fail to bind: a smallint compared with a value past its range, and a
+// timestamp in year 12000 at a page boundary.
+func TestIntegrationKeysetExtremeValues(t *testing.T) {
+	db := openDB(t)
+	for _, stmt := range []string{
+		`DROP TABLE IF EXISTS it_keyset_extreme`,
+		`CREATE TABLE it_keyset_extreme (id text PRIMARY KEY, small smallint NOT NULL, at timestamptz NOT NULL)`,
+		`INSERT INTO it_keyset_extreme VALUES ('a', 1, '2026-01-01Z'), ('b', 2, '12000-01-01Z'), ('c', 3, '12000-01-01Z')`,
+	} {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("%s: %v", stmt, err)
+		}
+	}
+	t.Cleanup(func() { _, _ = db.Exec(`DROP TABLE IF EXISTS it_keyset_extreme`) })
+
+	type row struct {
+		ID    string    `alias:"it_keyset_extreme.id"`
+		Small int64     `alias:"it_keyset_extreme.small"`
+		At    time.Time `alias:"it_keyset_extreme.at"`
+	}
+	id, small, at := jet.StringColumn("id"), jet.IntegerColumn("small"), jet.TimestampzColumn("at")
+	table := jet.NewTable("public", "it_keyset_extreme", "", id, small, at)
+	keys := map[ksField]transactor.Key[row]{
+		"SMALL": transactor.IntKey(small, func(r row) int64 { return r.Small }),
+		"AT":    transactor.TimeKey(at, func(r row) time.Time { return r.At }),
+	}
+	tiebreak := transactor.StringKey(id, func(r row) string { return r.ID })
+	run := func(order transactor.Order[row], page search.Pagination) (search.Result[row], error) {
+		return transactor.Page(db, func(r row) row { return r }, id, small, at).
+			From(table).Keyset(order).Run(context.Background(), page).Value()
+	}
+
+	bySmall := transactor.Keys([]search.Sort[ksField]{{Field: "SMALL", Direction: search.SortAscending}}, keys, tiebreak)
+	forged, _ := search.EncodeCursor(bySmall.Signature(), []any{int64(1) << 40, "a"})
+	if result, err := run(bySmall, search.Pagination{Limit: 2, Cursor: forged}); err != nil || result.Count != 0 {
+		t.Fatalf("forged out-of-range smallint cursor = %d rows, %v; want an empty page", result.Count, err)
+	}
+
+	byAt := transactor.Keys([]search.Sort[ksField]{{Field: "AT", Direction: search.SortAscending}}, keys, tiebreak)
+	first, err := run(byAt, search.Pagination{Limit: 2})
+	if err != nil || !first.HasMore() {
+		t.Fatalf("first page = %+v, %v", first, err)
+	}
+	rest, err := run(byAt, search.Pagination{Limit: 2, Cursor: first.NextCursor})
+	if err != nil || rest.Count != 1 || rest.Items[0].ID != "c" {
+		t.Fatalf("page after a year-12000 boundary = %+v, %v", rest, err)
+	}
+}

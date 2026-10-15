@@ -123,8 +123,26 @@ func NullableStringKey[T any](column jet.ColumnString, value func(T) *string) Ke
 	return stringKey(column, true, value)
 }
 
+// textCodec rejects a NUL byte, which Postgres text cannot hold: binding it
+// would fail in the database rather than as an invalid cursor.
+func textCodec() keyCodec[string] {
+	return keyCodec[string]{
+		encode: func(v string) any { return v },
+		decode: func(raw json.RawMessage) (string, error) {
+			var v string
+			if err := json.Unmarshal(raw, &v); err != nil {
+				return "", err
+			}
+			if strings.ContainsRune(v, 0) {
+				return "", fmt.Errorf("text contains NUL")
+			}
+			return v, nil
+		},
+	}
+}
+
 func stringKey[T any](column jet.ColumnString, nullable bool, value func(T) *string) Key[T] {
-	return newKey(column, nullable, value,
+	return newCodecKey(column, nullable, value, textCodec(),
 		func(v string) jet.Expression { return jet.String(v) },
 		func(v string) (jet.BoolExpression, jet.BoolExpression, jet.BoolExpression) {
 			return column.GT(jet.String(v)), column.LT(jet.String(v)), column.EQ(jet.String(v))
@@ -211,15 +229,33 @@ func NullableTimeKey[T any](column jet.ColumnTimestampz, value func(T) *time.Tim
 	return timeKey(column, true, value)
 }
 
-func timeKey[T any](column jet.ColumnTimestampz, nullable bool, value func(T) *time.Time) Key[T] {
-	// The instant is what a timestamptz compares on. Encoding it in UTC keeps
-	// it exact: a session zone with a seconds offset (local mean time before
-	// 1900, say) would otherwise lose those seconds in RFC 3339.
-	codec := keyCodec[time.Time]{
-		encode: func(v time.Time) any { return v.UTC() },
-		decode: jsonCodec[time.Time]().decode,
+// postgresMinMicros is the earliest timestamp Postgres stores, 4714-11-24 BC,
+// in Unix microseconds. Every int64 above it is inside the Postgres range,
+// whose upper end (294276 AD) lies beyond int64 microseconds.
+var postgresMinMicros = time.Date(-4713, time.November, 24, 0, 0, 0, 0, time.UTC).UnixMicro()
+
+// microsCodec encodes an instant as Unix microseconds, the precision Postgres
+// stores. An integer is exact for every storable year, where RFC 3339 loses
+// seconds offsets and cannot write years past 9999, and a decoded value
+// carries no zone that the database could refuse.
+func microsCodec() keyCodec[time.Time] {
+	return keyCodec[time.Time]{
+		encode: func(v time.Time) any { return v.UnixMicro() },
+		decode: func(raw json.RawMessage) (time.Time, error) {
+			var micros int64
+			if err := json.Unmarshal(raw, &micros); err != nil {
+				return time.Time{}, err
+			}
+			if micros < postgresMinMicros {
+				return time.Time{}, fmt.Errorf("timestamp before the Postgres range")
+			}
+			return time.UnixMicro(micros).UTC(), nil
+		},
 	}
-	return newCodecKey(column, nullable, value, codec,
+}
+
+func timeKey[T any](column jet.ColumnTimestampz, nullable bool, value func(T) *time.Time) Key[T] {
+	return newCodecKey(column, nullable, value, microsCodec(),
 		func(v time.Time) jet.Expression { return jet.TimestampzT(v) },
 		func(v time.Time) (jet.BoolExpression, jet.BoolExpression, jet.BoolExpression) {
 			return column.GT(jet.TimestampzT(v)), column.LT(jet.TimestampzT(v)), column.EQ(jet.TimestampzT(v))
@@ -237,13 +273,14 @@ func NullableLocalTimeKey[T any](column jet.ColumnTimestamp, value func(T) *time
 }
 
 func localTimeKey[T any](column jet.ColumnTimestamp, nullable bool, value func(T) *time.Time) Key[T] {
-	// A timestamp has no zone; its wall clock is the value. Encode the wall
-	// clock as UTC so the round trip cannot shift it.
+	// A timestamp has no zone; its wall clock is the value. Read the wall
+	// clock as if it were UTC, so the microseconds round trip cannot shift it.
+	micros := microsCodec()
 	codec := keyCodec[time.Time]{
 		encode: func(v time.Time) any {
-			return time.Date(v.Year(), v.Month(), v.Day(), v.Hour(), v.Minute(), v.Second(), v.Nanosecond(), time.UTC)
+			return micros.encode(time.Date(v.Year(), v.Month(), v.Day(), v.Hour(), v.Minute(), v.Second(), v.Nanosecond(), time.UTC))
 		},
-		decode: jsonCodec[time.Time]().decode,
+		decode: micros.decode,
 	}
 	return newCodecKey(column, nullable, value, codec,
 		func(v time.Time) jet.Expression { return jet.TimestampT(v) },
@@ -263,10 +300,15 @@ func NullableIntKey[T any](column jet.ColumnInteger, value func(T) *int64) Key[T
 }
 
 func intKey[T any](column jet.ColumnInteger, nullable bool, value func(T) *int64) Key[T] {
+	// The literal is cast to bigint: a bare parameter would take the column's
+	// type, and a forged value past smallint or integer would fail to bind.
+	// Postgres compares integer widths across one btree family, so an index
+	// on the column still serves the comparison.
+	typed := func(v int64) jet.IntegerExpression { return jet.IntExp(jet.CAST(jet.Int(v)).AS_BIGINT()) }
 	return newKey(column, nullable, value,
-		func(v int64) jet.Expression { return jet.Int(v) },
+		func(v int64) jet.Expression { return typed(v) },
 		func(v int64) (jet.BoolExpression, jet.BoolExpression, jet.BoolExpression) {
-			return column.GT(jet.Int(v)), column.LT(jet.Int(v)), column.EQ(jet.Int(v))
+			return column.GT(typed(v)), column.LT(typed(v)), column.EQ(typed(v))
 		})
 }
 
@@ -281,6 +323,12 @@ func FloatKey[T any](column jet.ColumnFloat, value func(T) float64) Key[T] {
 // NullableFloatKey orders on a nullable real or double precision column.
 func NullableFloatKey[T any](column jet.ColumnFloat, value func(T) *float64) Key[T] {
 	return floatKey(column, true, value)
+}
+
+// typedFloat casts the literal to double precision, so a forged value outside
+// real's range compares instead of failing to bind to a real column.
+func typedFloat(v float64) jet.FloatExpression {
+	return jet.FloatExp(jet.CAST(jet.Float(v)).AS_DOUBLE())
 }
 
 func floatKey[T any](column jet.ColumnFloat, nullable bool, value func(T) *float64) Key[T] {
@@ -317,9 +365,9 @@ func floatKey[T any](column jet.ColumnFloat, nullable bool, value func(T) *float
 		},
 	}
 	return newCodecKey(column, nullable, value, codec,
-		func(v float64) jet.Expression { return jet.Float(v) },
+		func(v float64) jet.Expression { return typedFloat(v) },
 		func(v float64) (jet.BoolExpression, jet.BoolExpression, jet.BoolExpression) {
-			return column.GT(jet.Float(v)), column.LT(jet.Float(v)), column.EQ(jet.Float(v))
+			return column.GT(typedFloat(v)), column.LT(typedFloat(v)), column.EQ(typedFloat(v))
 		})
 }
 
@@ -393,7 +441,19 @@ func normalizeDirection(direction search.SortDirection) search.SortDirection {
 	return search.SortAscending
 }
 
+// qualifiedName identifies a column by the SQL that references it, so two
+// keys collide only when they are the same column. A column projected from a
+// subquery renders as "alias.table.column" and stays distinct from its base
+// table column.
 func qualifiedName(column jet.Column) string {
+	const marker = " IS NULL"
+	rendered := jet.SELECT(jet.Int(1)).WHERE(column.IS_NULL()).DebugSql()
+	if start := strings.Index(rendered, "WHERE "); start >= 0 {
+		rest := rendered[start+len("WHERE "):]
+		if end := strings.Index(rest, marker); end >= 0 {
+			return strings.ReplaceAll(strings.Trim(rest[:end], "()"), `"`, "")
+		}
+	}
 	if table := column.TableName(); table != "" {
 		return table + "." + column.Name()
 	}

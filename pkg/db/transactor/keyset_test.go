@@ -156,9 +156,15 @@ func TestSeekRejectsForeignCursors(t *testing.T) {
 	if _, err := byName.Seek(forged); !errors.Is(err, search.ErrInvalidCursor) {
 		t.Fatalf("Seek() with NULL for a NOT NULL key = %v, want ErrInvalidCursor", err)
 	}
-	wrongType, _ := search.EncodeCursor(byCreated.Signature(), []any{42, "w_1"})
-	if _, err := byCreated.Seek(wrongType); !errors.Is(err, search.ErrInvalidCursor) {
-		t.Fatalf("Seek() with a number for a timestamp = %v, want ErrInvalidCursor", err)
+	for _, forged := range []any{"2026-01-01T00:00:00+16:00", 1.5, int64(-300_000_000_000_000_000)} {
+		token, _ := search.EncodeCursor(byCreated.Signature(), []any{forged, "w_1"})
+		if _, err := byCreated.Seek(token); !errors.Is(err, search.ErrInvalidCursor) {
+			t.Fatalf("Seek() with timestamp %v = %v, want ErrInvalidCursor", forged, err)
+		}
+	}
+	nul, _ := search.EncodeCursor(byName.Signature(), []any{"a\u0000b", "w_1"})
+	if _, err := byName.Seek(nul); !errors.Is(err, search.ErrInvalidCursor) {
+		t.Fatalf("Seek() with a NUL in text = %v, want ErrInvalidCursor", err)
 	}
 	if seek, err := byName.Seek(""); seek != nil || err != nil {
 		t.Fatalf("Seek(\"\") = %v, %v, want no predicate", seek, err)
@@ -340,7 +346,45 @@ func TestTimeKeyEncodesUTC(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := string(decoded.Values[0]); got != `"1900-01-01T00:00:00Z"` {
-		t.Fatalf("encoded instant = %s, want the UTC instant", got)
+	if got := string(decoded.Values[0]); got != "-2208988800000000" {
+		t.Fatalf("encoded instant = %s, want 1900-01-01T00:00:00Z in Unix microseconds", got)
+	}
+	// Years past 9999 are valid Postgres timestamps; RFC 3339 cannot write them.
+	far := time.Date(12000, 1, 1, 0, 0, 0, 0, time.UTC)
+	token, err = order.Cursor(keyRow{ID: "w", Created: far})
+	if err != nil {
+		t.Fatalf("Cursor() for year 12000: %v", err)
+	}
+	if _, err := order.Seek(token); err != nil {
+		t.Fatalf("Seek() for year 12000: %v", err)
+	}
+}
+
+// An integer literal is cast to bigint, so a value past the column's width
+// compares instead of failing to bind.
+func TestIntKeyCastsLiteralToBigint(t *testing.T) {
+	colRank := jet.IntegerColumn("rank")
+	_ = jet.NewTable("public", "widgets", "", colRank)
+	order := transactor.Keys([]search.Sort[sortField]{{Field: "RANK", Direction: search.SortAscending}},
+		map[sortField]transactor.Key[keyRow]{"RANK": transactor.IntKey(colRank, func(keyRow) int64 { return 0 })}, idKey())
+	token, _ := search.EncodeCursor(order.Signature(), []any{int64(1) << 40, "w_1"})
+	seek, err := order.Seek(token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sql := jet.SELECT(colID).FROM(testTable).WHERE(seek).DebugSql(); !strings.Contains(sql, "::bigint") {
+		t.Fatalf("seek SQL = %q, want the literal cast to bigint", sql)
+	}
+}
+
+// A column read from a subquery is a different reference from the base
+// column, so it must not swallow the tiebreak.
+func TestKeysDistinguishSubqueryColumns(t *testing.T) {
+	sub := testTable.SELECT(colID, colName).AsTable("latest")
+	subID := colID.From(sub)
+	order := transactor.Keys([]search.Sort[sortField]{{Field: "SUB", Direction: search.SortAscending}},
+		map[sortField]transactor.Key[keyRow]{"SUB": transactor.StringKey(subID, func(r keyRow) string { return r.Name })}, idKey())
+	if got := order.Signature(); !strings.Contains(got, "latest.") || !strings.Contains(got, ",widgets.id:ASC") {
+		t.Fatalf("Signature() = %q, want the subquery column and the tiebreak", got)
 	}
 }
