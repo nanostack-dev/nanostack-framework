@@ -26,11 +26,50 @@ import (
 type Key[T any] struct {
 	column   jet.Column
 	nullable bool
+	nulls    nullPlacement
 	// value reads the row's value, nil for SQL NULL.
 	value func(T) any
 	// bound decodes a cursor value into the comparisons against it. A JSON
 	// null decodes to a bound with isNull set.
 	bound func(json.RawMessage) (keyBound, error)
+}
+
+// nullPlacement says where NULLs sort. The zero value follows Postgres:
+// last ascending, first descending.
+type nullPlacement int
+
+const (
+	nullsDefault nullPlacement = iota
+	nullsFirst
+	nullsLast
+)
+
+// NullsFirst returns the key with NULLs sorted before every value, in both
+// directions. Use it when the API promises a placement that must not flip
+// with the direction; Postgres needs a matching index (… NULLS FIRST) to
+// serve it without a sort.
+func (k Key[T]) NullsFirst() Key[T] {
+	k.nulls = nullsFirst
+	return k
+}
+
+// NullsLast returns the key with NULLs sorted after every value, in both
+// directions, for example "unlicensed organizations last".
+func (k Key[T]) NullsLast() Key[T] {
+	k.nulls = nullsLast
+	return k
+}
+
+// nullsAfter reports whether NULLs follow every value in direction.
+func (k Key[T]) nullsAfter(direction search.SortDirection) bool {
+	switch k.nulls {
+	case nullsFirst:
+		return false
+	case nullsLast:
+		return true
+	default:
+		return direction != search.SortDescending
+	}
 }
 
 // keyBound holds the comparisons of one column against one cursor value.
@@ -488,6 +527,12 @@ func Keys[S ~string, T any](sorts []search.Sort[S], columns map[S]Key[T], tiebre
 	parts := make([]string, len(order.keys))
 	for i, k := range order.keys {
 		parts[i] = qualifiedName(k.key.column) + ":" + string(k.direction)
+		switch k.key.nulls {
+		case nullsFirst:
+			parts[i] += ":NULLS_FIRST"
+		case nullsLast:
+			parts[i] += ":NULLS_LAST"
+		}
 	}
 	order.signature = strings.Join(parts, ",")
 	return order
@@ -531,7 +576,14 @@ func (o Order[T]) Signature() string {
 func (o Order[T]) OrderBy() []jet.OrderByClause {
 	clauses := make([]jet.OrderByClause, len(o.keys))
 	for i, k := range o.keys {
-		clauses[i] = jetx.OrderBy(k.key.column, k.direction)
+		clause := jetx.OrderBy(k.key.column, k.direction)
+		switch k.key.nulls {
+		case nullsFirst:
+			clause = clause.NULLS_FIRST()
+		case nullsLast:
+			clause = clause.NULLS_LAST()
+		}
+		clauses[i] = clause
 	}
 	return clauses
 }
@@ -589,9 +641,10 @@ func (o Order[T]) rowSeek(bounds []keyBound) jet.BoolExpression {
 //
 //	(k1 after v1) OR (k1 = v1 AND k2 after v2) OR ... (... AND id after vid)
 //
-// "after" follows the ORDER BY placement of NULLs: ascending sorts them last,
-// so every non-null value has NULLs after it and nothing follows a NULL;
-// descending sorts them first, so a NULL is followed by every non-null value.
+// "after" follows the ORDER BY placement of NULLs: where they sort last
+// (ascending by default, or NullsLast), every non-null value has NULLs after
+// it and only NULLs follow a NULL; where they sort first (descending by
+// default, or NullsFirst), a NULL is followed by every non-null value.
 func (o Order[T]) expandedSeek(bounds []keyBound) jet.BoolExpression {
 	var disjuncts []jet.BoolExpression
 	var prefix []jet.BoolExpression
@@ -611,19 +664,22 @@ func (o Order[T]) expandedSeek(bounds []keyBound) jet.BoolExpression {
 
 func afterBound[T any](k orderedKey[T], bound keyBound) jet.BoolExpression {
 	column := k.key.column
-	if k.direction == search.SortDescending {
-		if bound.isNull {
-			return column.IS_NOT_NULL()
-		}
-		return bound.lt
-	}
+	nullsAfter := k.key.nullsAfter(k.direction)
 	if bound.isNull {
-		return nil
+		if nullsAfter {
+			// Only NULLs follow a NULL; the later keys order them.
+			return nil
+		}
+		return column.IS_NOT_NULL()
 	}
-	if k.key.nullable {
-		return bound.gt.OR(column.IS_NULL())
+	after := bound.gt
+	if k.direction == search.SortDescending {
+		after = bound.lt
 	}
-	return bound.gt
+	if k.key.nullable && nullsAfter {
+		return after.OR(column.IS_NULL())
+	}
+	return after
 }
 
 // Cursor encodes the position of row, the last row of a page.

@@ -39,6 +39,8 @@ const (
 	ksScore   ksField = "SCORE"
 	ksSeen    ksField = "SEEN"
 	ksRef     ksField = "REF"
+	ksNoteNL  ksField = "NOTE_NULLS_LAST"
+	ksScoreNF ksField = "SCORE_NULLS_FIRST"
 )
 
 var ksStatusLabels = []string{"pending", "active", "archived"}
@@ -82,6 +84,8 @@ func ksKeys() map[ksField]transactor.Key[ksRow] {
 		ksScore:   transactor.NullableFloatKey(ksScoreC, func(r ksRow) *float64 { return r.Score }),
 		ksSeen:    transactor.NullableLocalTimeKey(ksSeenC, func(r ksRow) *time.Time { return r.Seen }),
 		ksRef:     transactor.UUIDKey(ksRefC, func(r ksRow) uuid.UUID { return r.Ref }),
+		ksNoteNL:  transactor.NullableStringKey(ksNoteC, func(r ksRow) *string { return r.Note }).NullsLast(),
+		ksScoreNF: transactor.NullableFloatKey(ksScoreC, func(r ksRow) *float64 { return r.Score }).NullsFirst(),
 	}
 }
 
@@ -225,7 +229,7 @@ func ksWalk(t *testing.T, db *sql.DB, order transactor.Order[ksRow], limit int32
 }
 
 func ksOrderings() [][]search.Sort[ksField] {
-	fields := []ksField{ksName, ksCreated, ksNote, ksStatus, ksRank, ksScore, ksSeen, ksRef}
+	fields := []ksField{ksName, ksCreated, ksNote, ksStatus, ksRank, ksScore, ksSeen, ksRef, ksNoteNL, ksScoreNF}
 	dirs := []search.SortDirection{search.SortAscending, search.SortDescending}
 	orderings := [][]search.Sort[ksField]{nil}
 	for _, f := range fields {

@@ -119,6 +119,11 @@ func (r Request[FilterType, SortType]) WithPagination(
 ) Request[FilterType, SortType] {
 	if pagination != nil {
 		r.Pagination = *pagination
+		// A client may send only a cursor; an absent limit is the default,
+		// not a validation failure.
+		if r.Pagination.Limit == 0 {
+			r.Pagination.Limit = defaultLimit
+		}
 	} else {
 		r.Pagination = Pagination{Limit: defaultLimit, Offset: defaultOffset}
 	}

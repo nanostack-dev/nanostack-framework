@@ -388,3 +388,24 @@ func TestKeysDistinguishSubqueryColumns(t *testing.T) {
 		t.Fatalf("Signature() = %q, want the subquery column and the tiebreak", got)
 	}
 }
+
+func TestNullPlacementInOrderAndSignature(t *testing.T) {
+	columns := keyColumns()
+	columns[sortByNote] = columns[sortByNote].NullsLast()
+	order := transactor.Keys([]search.Sort[sortField]{{Field: sortByNote, Direction: search.SortDescending}}, columns, idKey())
+	if got := order.Signature(); got != "widgets.note:DESC:NULLS_LAST,widgets.id:DESC" {
+		t.Fatalf("Signature() = %q", got)
+	}
+	sql := normalize(jet.SELECT(colID).FROM(testTable).ORDER_BY(order.OrderBy()...).DebugSql())
+	if !strings.Contains(sql, "ORDER BY widgets.note DESC NULLS LAST, widgets.id DESC") {
+		t.Fatalf("order SQL = %q", sql)
+	}
+	note := "n"
+	seek, err := order.Seek(cursorFor(t, order, keyRow{ID: "w_1", Note: &note}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sql := normalize(jet.SELECT(colID).FROM(testTable).WHERE(seek).DebugSql()); !strings.Contains(sql, "(widgets.note < 'n'::text) OR (widgets.note IS NULL)") {
+		t.Fatalf("seek SQL = %q, want NULLs after every value when descending NULLS LAST", sql)
+	}
+}
