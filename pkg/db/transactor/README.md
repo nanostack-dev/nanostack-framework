@@ -74,6 +74,36 @@ template, err := templates.Find(transactor.ForShare(txCtx), templateID)
 - A locked query outside a transaction returns `ErrRowLockOutsideTx`: the lock would end with the statement. A locked context on a statement that is not a SELECT returns `ErrRowLockNotSelect`.
 - Postgres refuses a lock on an aggregate, `GROUP BY` or `DISTINCT` query, so a locked `PageBuilder` count fails.
 
+## Paginating a search
+
+`Page` runs the count-then-page pair behind a `search.Result`. Order a search with `Keyset`, not `OrderBy`: a keyset ends the ordering with a unique tiebreak, so every row has exactly one position, and pages are cut with a cursor rather than an offset.
+
+```go
+order := transactor.Keys(input.Sort, map[workspace.SortField]transactor.Key[model.Workspaces]{
+    workspace.SortFieldCreatedAt: transactor.TimeKey(table.Workspaces.CreatedAt,
+        func(m model.Workspaces) time.Time { return m.CreatedAt }),
+    workspace.SortFieldName: transactor.StringKey(table.Workspaces.Name,
+        func(m model.Workspaces) string { return m.Name }),
+}, transactor.StringKey(table.Workspaces.ID, func(m model.Workspaces) string { return m.ID }))
+
+return transactor.Page(r.db, r.mapper.ToDomain, table.Workspaces.AllColumns).
+    From(table.Workspaces).
+    Where(whereStmt).
+    Keyset(order).
+    Run(ctx, input.Pagination).
+    Value()
+```
+
+- `Run` starts after `Pagination.Cursor` and sets `Result.NextCursor` when another row follows. An empty `NextCursor` is the last page. `Total` still counts every match of the filter.
+- Offset pages get a `NextCursor` too, so a client can move from offsets to cursors at any page. A cursor with a non-zero offset fails with `search.ErrCursorWithOffset`.
+- A cursor that does not decode, or was issued for another sort, fails with `search.ErrInvalidCursor`. Map both errors to HTTP 400.
+- The tiebreak must be unique and NOT NULL, normally the primary key. It sorts in the direction of the last requested field.
+- Pick the key constructor that matches the column: `StringKey`, `EnumKey` (casts the cursor value to the enum type), `TimeKey` (timestamptz), `LocalTimeKey` (timestamp), `IntKey`, `FloatKey`, and a `Nullable*` variant for each nullable column. NULLs sort last ascending and first descending, the Postgres defaults the seek predicate follows.
+- When every key is NOT NULL and shares a direction, the seek is one row comparison, `(created_at, id) < ($1, $2)`, which a composite index on `(tenant, created_at, id)` answers with one range scan. Add that index for large tables.
+- A query that does not fit `Page` uses the same `Order` directly: `OrderBy()` for the clauses, `Seek(cursor)` for the predicate, `LIMIT limit+1`, then `Trim(rows, limit)` for the page and its next cursor.
+
+A cursor is position, not authority: it is base64url JSON, neither signed nor encrypted. Tenant scope and filters always come from the request, so an edited cursor can only move inside rows the caller may already read. See [ADR 0001](../../../docs/adr/0001-keyset-cursor-pagination.md).
+
 ## Translating constraint violations
 
 `Result` carries the error so a driver-level constraint violation can become a domain error before the caller sees it:

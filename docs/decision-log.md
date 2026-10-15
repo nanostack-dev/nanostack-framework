@@ -197,3 +197,7 @@ Delete `pkg/slicex`. `functional.Seq[T]` owns slice transformation.
 Measured, not assumed: `Seq` is identical to the `slicex` calls it replaces on time, bytes and allocations. Against a hand-written loop, `Map` and `FilterMap` are also identical, while a `Filter().Map()` chain costs +54% time and 2x memory for the intermediate slice, and `FindFirst` after a mapping chain is 48x slower than searching the source. Two ruleguard rules enforce the two idioms that avoid those costs.
 
 A lazy `iter.Seq` pipeline was built and benchmarked as the alternative and rejected: 1.6x to 2.5x slower on every workload that materializes a result, plus 8 to 10 fixed closure allocations, buying a short-circuit path that `FindFirst` on the source already provides for free.
+
+## 2026-10-15: Searches Page With Keyset Cursors
+
+`PageBuilder` gains `Keyset(transactor.Keys(...))`, `search.Pagination` gains `Cursor` and `search.Result` gains `NextCursor`. Offset paging over a non-unique sort could skip or repeat rows, and shifted with every write before the current page. A keyset ordering always ends with a unique tiebreak and resumes after the last row's values, so a walk returns every row that exists throughout it exactly once. Details, alternatives and consequences are in [ADR 0001](adr/0001-keyset-cursor-pagination.md).
