@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"net/netip"
 	"slices"
 	"strings"
 	"time"
@@ -18,7 +19,7 @@ import (
 // Key is one column of a keyset ordering over scanned rows of T: the column
 // to order and compare on, and how to read that column's value from a row.
 //
-// Build keys with the typed constructors (StringKey, UUIDKey, EnumKey,
+// Build keys with the typed constructors (StringKey, UUIDKey, InetKey, EnumKey,
 // TimeKey, LocalTimeKey, IntKey, FloatKey and their Nullable variants) so the
 // cursor value and the SQL literal share one type. A constructor rejects a
 // cursor value its column cannot hold with search.ErrInvalidCursor, before
@@ -222,6 +223,44 @@ func enumKey[T any](column jet.ColumnString, enumType string, labels []string, n
 			return v, nil
 		},
 	}
+	return newCodecKey(column, nullable, value, codec,
+		func(v string) jet.Expression { return typed(v) },
+		func(v string) (jet.BoolExpression, jet.BoolExpression, jet.BoolExpression) {
+			return column.GT(typed(v)), column.LT(typed(v)), column.EQ(typed(v))
+		})
+}
+
+// InetKey orders on a NOT NULL inet column, read as its text form. Postgres
+// refuses to compare inet with text, so the cursor value is cast to inet, and
+// a value that is not an address or network is rejected before the cast.
+func InetKey[T any](column jet.ColumnString, value func(T) string) Key[T] {
+	return inetKey(column, false, ptrOf(value))
+}
+
+// NullableInetKey orders on a nullable inet column.
+func NullableInetKey[T any](column jet.ColumnString, value func(T) *string) Key[T] {
+	return inetKey(column, true, value)
+}
+
+func inetKey[T any](column jet.ColumnString, nullable bool, value func(T) *string) Key[T] {
+	text := textCodec()
+	codec := keyCodec[string]{
+		encode: text.encode,
+		decode: func(raw json.RawMessage) (string, error) {
+			v, err := text.decode(raw)
+			if err != nil {
+				return "", err
+			}
+			if _, addrErr := netip.ParseAddr(v); addrErr == nil {
+				return v, nil
+			}
+			if _, prefixErr := netip.ParsePrefix(v); prefixErr == nil {
+				return v, nil
+			}
+			return "", fmt.Errorf("not an inet value")
+		},
+	}
+	typed := func(v string) jet.StringExpression { return jet.StringExp(jet.CAST(jet.String(v)).AS("inet")) }
 	return newCodecKey(column, nullable, value, codec,
 		func(v string) jet.Expression { return typed(v) },
 		func(v string) (jet.BoolExpression, jet.BoolExpression, jet.BoolExpression) {

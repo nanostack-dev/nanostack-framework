@@ -41,6 +41,7 @@ const (
 	ksRef     ksField = "REF"
 	ksNoteNL  ksField = "NOTE_NULLS_LAST"
 	ksScoreNF ksField = "SCORE_NULLS_FIRST"
+	ksIP      ksField = "IP"
 )
 
 var ksStatusLabels = []string{"pending", "active", "archived"}
@@ -56,6 +57,7 @@ type ksRow struct {
 	Score   *float64   `alias:"it_keyset.score"`
 	Seen    *time.Time `alias:"it_keyset.seen"`
 	Ref     uuid.UUID  `alias:"it_keyset.ref"`
+	IP      *string    `alias:"it_keyset.ip"`
 }
 
 var (
@@ -69,9 +71,10 @@ var (
 	ksScoreC   = jet.FloatColumn("score")
 	ksSeenC    = jet.TimestampColumn("seen")
 	ksRefC     = jet.StringColumn("ref")
+	ksIPC      = jet.StringColumn("ip")
 	ksTable    = jet.NewTable("public", "it_keyset", "",
-		ksID, ksTenantC, ksNameC, ksCreatedC, ksNoteC, ksStatusC, ksRankC, ksScoreC, ksSeenC, ksRefC)
-	ksAll = []jet.Projection{ksID, ksTenantC, ksNameC, ksCreatedC, ksNoteC, ksStatusC, ksRankC, ksScoreC, ksSeenC, ksRefC}
+		ksID, ksTenantC, ksNameC, ksCreatedC, ksNoteC, ksStatusC, ksRankC, ksScoreC, ksSeenC, ksRefC, ksIPC)
+	ksAll = []jet.Projection{ksID, ksTenantC, ksNameC, ksCreatedC, ksNoteC, ksStatusC, ksRankC, ksScoreC, ksSeenC, ksRefC, ksIPC}
 )
 
 func ksKeys() map[ksField]transactor.Key[ksRow] {
@@ -86,6 +89,7 @@ func ksKeys() map[ksField]transactor.Key[ksRow] {
 		ksRef:     transactor.UUIDKey(ksRefC, func(r ksRow) uuid.UUID { return r.Ref }),
 		ksNoteNL:  transactor.NullableStringKey(ksNoteC, func(r ksRow) *string { return r.Note }).NullsLast(),
 		ksScoreNF: transactor.NullableFloatKey(ksScoreC, func(r ksRow) *float64 { return r.Score }).NullsFirst(),
+		ksIP:      transactor.NullableInetKey(ksIPC, func(r ksRow) *string { return r.IP }),
 	}
 }
 
@@ -110,7 +114,8 @@ func setupKeysetSchema(t *testing.T, db *sql.DB) {
 			rank bigint NOT NULL,
 			score double precision,
 			seen timestamp,
-			ref uuid NOT NULL
+			ref uuid NOT NULL,
+			ip inet
 		)`,
 	} {
 		if _, err := db.Exec(stmt); err != nil {
@@ -156,16 +161,22 @@ func (g *ksGen) insert(t *testing.T, db *sql.DB, tenant string) string {
 		"f47ac10b-58cc-4372-a567-0e02b2c3d479",
 		"00000000-0000-4000-8000-00000000000a",
 	}[g.rng.IntN(3)]
+	var ip *string
+	if g.rng.IntN(4) > 0 {
+		// IPv4 sorts before IPv6 in inet order, unlike text order.
+		v := []string{"10.0.0.2", "9.255.0.1", "::1", "10.0.0.0/8", "2001:db8::1"}[g.rng.IntN(5)]
+		ip = &v
+	}
 	_, err := db.Exec(
-		`INSERT INTO it_keyset (id, tenant, name, created, note, status, rank, score, seen, ref)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+		`INSERT INTO it_keyset (id, tenant, name, created, note, status, rank, score, seen, ref, ip)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
 		id, tenant,
 		[]string{"apple", "Banana", "cherry", "apple ", "é"}[g.rng.IntN(5)],
 		g.base.Add(time.Duration(g.rng.IntN(4))*time.Microsecond),
 		note,
 		[]string{"pending", "active", "archived"}[g.rng.IntN(3)],
 		int64(g.rng.IntN(3)),
-		score, seen, ref,
+		score, seen, ref, ip,
 	)
 	if err != nil {
 		t.Fatalf("insert: %v", err)
@@ -229,7 +240,7 @@ func ksWalk(t *testing.T, db *sql.DB, order transactor.Order[ksRow], limit int32
 }
 
 func ksOrderings() [][]search.Sort[ksField] {
-	fields := []ksField{ksName, ksCreated, ksNote, ksStatus, ksRank, ksScore, ksSeen, ksRef, ksNoteNL, ksScoreNF}
+	fields := []ksField{ksName, ksCreated, ksNote, ksStatus, ksRank, ksScore, ksSeen, ksRef, ksNoteNL, ksScoreNF, ksIP}
 	dirs := []search.SortDirection{search.SortAscending, search.SortDescending}
 	orderings := [][]search.Sort[ksField]{nil}
 	for _, f := range fields {

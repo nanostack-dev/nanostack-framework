@@ -270,6 +270,7 @@ const (
 	sortByStatus sortField = "STATUS"
 	sortByRef    sortField = "REF"
 	sortByScore  sortField = "SCORE"
+	sortByIP     sortField = "IP"
 )
 
 func typedOrder(field sortField) transactor.Order[typedRow] {
@@ -278,6 +279,7 @@ func typedOrder(field sortField) transactor.Order[typedRow] {
 			sortByStatus: transactor.EnumKey(colStatus, "widget_status", []string{"on", "off"}, func(r typedRow) string { return r.Status }),
 			sortByRef:    transactor.UUIDKey(colRef, func(r typedRow) uuid.UUID { return r.Ref }),
 			sortByScore:  transactor.FloatKey(colScore, func(r typedRow) float64 { return r.Score }),
+			sortByIP:     transactor.InetKey(colStatus, func(r typedRow) string { return r.Status }),
 		},
 		transactor.StringKey(colID, func(r typedRow) string { return r.ID }))
 }
@@ -292,6 +294,7 @@ func TestSeekRejectsValuesTheColumnCannotHold(t *testing.T) {
 		"unknown enum label": {sortByStatus, "maybe"},
 		"malformed uuid":     {sortByRef, "not-a-uuid"},
 		"unknown float word": {sortByScore, "Lots"},
+		"malformed inet":     {sortByIP, "10.0.0.300"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			order := typedOrder(tc.field)
