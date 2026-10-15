@@ -211,12 +211,16 @@ type Order[T any] struct {
 // Keys builds the keyset ordering for a search's sort fields.
 //
 // columns maps each sortable field to its key; fields absent from the map are
-// ignored, as with SortColumns. tiebreak must be a unique NOT NULL column,
-// normally the primary key. It sorts in the direction of the last requested
-// field (ascending when none), so a composite index on (sort, id) serves the
-// query in one direction scan. A column requested twice keeps its first
-// position, and the tiebreak is not repeated when it was requested.
-func Keys[S ~string, T any](sorts []search.Sort[S], columns map[S]Key[T], tiebreak Key[T]) Order[T] {
+// ignored, as with SortColumns. The tiebreak keys must together be unique and
+// NOT NULL within the rows the search can return, normally the primary key.
+// A table with a composite key passes every column the search scope does not
+// already fix, for example the member id for a search scoped to one
+// organization, or both columns otherwise. The tiebreak sorts in the direction
+// of the last requested field (ascending when none), so a composite index on
+// (sort, id) serves the query in one direction scan. A column requested twice
+// keeps its first position, and a tiebreak column is not repeated when it was
+// requested.
+func Keys[S ~string, T any](sorts []search.Sort[S], columns map[S]Key[T], tiebreak Key[T], more ...Key[T]) Order[T] {
 	order := Order[T]{}
 	seen := map[string]bool{}
 	direction := search.SortAscending
@@ -233,8 +237,13 @@ func Keys[S ~string, T any](sorts []search.Sort[S], columns map[S]Key[T], tiebre
 		direction = normalizeDirection(sort.Direction)
 		order.keys = append(order.keys, orderedKey[T]{key: key, direction: direction})
 	}
-	if !seen[qualifiedName(tiebreak.column)] {
-		order.keys = append(order.keys, orderedKey[T]{key: tiebreak, direction: direction})
+	for _, key := range append([]Key[T]{tiebreak}, more...) {
+		name := qualifiedName(key.column)
+		if seen[name] {
+			continue
+		}
+		seen[name] = true
+		order.keys = append(order.keys, orderedKey[T]{key: key, direction: direction})
 	}
 	parts := make([]string, len(order.keys))
 	for i, k := range order.keys {

@@ -8,8 +8,14 @@ import (
 	"net/http"
 
 	"github.com/nanostack-dev/nanostack-framework/pkg/fault"
+	"github.com/nanostack-dev/nanostack-framework/pkg/search"
 	"github.com/rs/zerolog"
 )
+
+// CodeInvalidCursor is the API error code for a pagination cursor that cannot
+// continue the search: malformed, issued for another sort, or sent with an
+// offset.
+const CodeInvalidCursor = "INVALID_CURSOR"
 
 // StatusClientClosedRequest is the nginx convention for a request the client
 // abandoned before the response was written. net/http has no constant for it.
@@ -132,10 +138,34 @@ func (h *StrictErrorHandler) faultFrom(err error) (*fault.Error, bool) {
 	if apiErr, ok := fault.As(err); ok {
 		return apiErr, true
 	}
+	if apiErr, ok := cursorFault(err); ok {
+		return apiErr, true
+	}
 	if h != nil && h.adaptError != nil {
 		return h.adaptError(err)
 	}
 	return nil, false
+}
+
+// cursorFault maps the search package's cursor errors to a 400, so every
+// search endpoint answers a bad cursor the same way without per-handler code.
+// The repository returns the sentinel; the transport mapping lives here.
+func cursorFault(err error) (*fault.Error, bool) {
+	var message string
+	switch {
+	case errors.Is(err, search.ErrCursorWithOffset):
+		message = "A cursor cannot be combined with an offset."
+	case errors.Is(err, search.ErrInvalidCursor):
+		message = "The cursor is invalid for this search. Restart without a cursor, " +
+			"or send back the next_cursor of the previous page with the same sort."
+	default:
+		return nil, false
+	}
+	apiErr := &fault.Error{
+		Details: []fault.Detail{{Code: CodeInvalidCursor, Message: message, Field: "pagination.cursor"}},
+		Status:  http.StatusBadRequest,
+	}
+	return apiErr.Wrap(err), true
 }
 
 // logInternalError starts an error-level log event carrying every detail we can

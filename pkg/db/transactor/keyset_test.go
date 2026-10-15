@@ -234,3 +234,11 @@ func TestRunRejectsBadPaginationBeforeQuerying(t *testing.T) {
 		})
 	}
 }
+
+func TestKeysCompositeTiebreak(t *testing.T) {
+	order := transactor.Keys([]search.Sort[sortField]{{Field: sortByName, Direction: search.SortDescending}},
+		keyColumns(), transactor.StringKey(colTenant, func(r keyRow) string { return "" }), idKey())
+	if got := order.Signature(); got != "widgets.name:DESC,widgets.tenant_id:DESC,widgets.id:DESC" {
+		t.Fatalf("Signature() = %q", got)
+	}
+}
