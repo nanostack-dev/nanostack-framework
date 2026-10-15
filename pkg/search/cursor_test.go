@@ -86,3 +86,16 @@ func TestResultHasMore(t *testing.T) {
 		t.Fatal("NextCursor did not report more")
 	}
 }
+
+func TestEncodeCursorRefusesOversizedTokens(t *testing.T) {
+	if _, err := EncodeCursor("t.name:ASC,t.id:ASC", []any{strings.Repeat("x", MaxCursorLength), "id"}); err == nil {
+		t.Fatal("EncodeCursor() issued a cursor DecodeCursor would refuse")
+	}
+	token, err := EncodeCursor("t.name:ASC,t.id:ASC", []any{strings.Repeat("é", 1000), strings.Repeat("x", 1000)})
+	if err != nil {
+		t.Fatalf("two 1,000-character values: %v", err)
+	}
+	if _, err := DecodeCursor(token); err != nil {
+		t.Fatalf("DecodeCursor() of an issued cursor: %v", err)
+	}
+}

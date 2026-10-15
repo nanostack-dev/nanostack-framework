@@ -2,9 +2,12 @@ package transactor_test
 
 import (
 	"errors"
+	"math"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/google/uuid"
 
 	jet "github.com/go-jet/jet/v2/postgres"
 
@@ -240,5 +243,104 @@ func TestKeysCompositeTiebreak(t *testing.T) {
 		keyColumns(), transactor.StringKey(colTenant, func(r keyRow) string { return "" }), idKey())
 	if got := order.Signature(); got != "widgets.name:DESC,widgets.tenant_id:DESC,widgets.id:DESC" {
 		t.Fatalf("Signature() = %q", got)
+	}
+}
+
+type typedRow struct {
+	ID     string
+	Status string
+	Ref    uuid.UUID
+	Score  float64
+}
+
+var (
+	colStatus = jet.StringColumn("status")
+	colRef    = jet.StringColumn("ref")
+	colScore  = jet.FloatColumn("score")
+	_         = jet.NewTable("public", "widgets", "", colStatus, colRef, colScore)
+)
+
+const (
+	sortByStatus sortField = "STATUS"
+	sortByRef    sortField = "REF"
+	sortByScore  sortField = "SCORE"
+)
+
+func typedOrder(field sortField) transactor.Order[typedRow] {
+	return transactor.Keys([]search.Sort[sortField]{{Field: field, Direction: search.SortAscending}},
+		map[sortField]transactor.Key[typedRow]{
+			sortByStatus: transactor.EnumKey(colStatus, "widget_status", []string{"on", "off"}, func(r typedRow) string { return r.Status }),
+			sortByRef:    transactor.UUIDKey(colRef, func(r typedRow) uuid.UUID { return r.Ref }),
+			sortByScore:  transactor.FloatKey(colScore, func(r typedRow) float64 { return r.Score }),
+		},
+		transactor.StringKey(colID, func(r typedRow) string { return r.ID }))
+}
+
+// Forged values fail as ErrInvalidCursor in Seek, before a cast could fail
+// in the database and surface as a 500.
+func TestSeekRejectsValuesTheColumnCannotHold(t *testing.T) {
+	for name, tc := range map[string]struct {
+		field sortField
+		value any
+	}{
+		"unknown enum label": {sortByStatus, "maybe"},
+		"malformed uuid":     {sortByRef, "not-a-uuid"},
+		"unknown float word": {sortByScore, "Lots"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			order := typedOrder(tc.field)
+			forged, err := search.EncodeCursor(order.Signature(), []any{tc.value, "w_1"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := order.Seek(forged); !errors.Is(err, search.ErrInvalidCursor) {
+				t.Fatalf("Seek() = %v, want ErrInvalidCursor", err)
+			}
+		})
+	}
+}
+
+func TestTypedKeysRoundTrip(t *testing.T) {
+	ref := uuid.MustParse("f47ac10b-58cc-4372-a567-0e02b2c3d479")
+	for name, tc := range map[string]struct {
+		field sortField
+		row   typedRow
+		want  string
+	}{
+		"enum casts to its type": {sortByStatus, typedRow{ID: "w", Status: "off"}, "'off'::text::widget_status"},
+		"uuid casts to uuid":     {sortByRef, typedRow{ID: "w", Ref: ref}, "'f47ac10b-58cc-4372-a567-0e02b2c3d479'"},
+		"NaN survives":           {sortByScore, typedRow{ID: "w", Score: math.NaN()}, "NaN"},
+		"infinity survives":      {sortByScore, typedRow{ID: "w", Score: math.Inf(-1)}, "Inf"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			order := typedOrder(tc.field)
+			token, err := order.Cursor(tc.row)
+			if err != nil {
+				t.Fatalf("Cursor() error = %v", err)
+			}
+			seek, err := order.Seek(token)
+			if err != nil {
+				t.Fatalf("Seek() error = %v", err)
+			}
+			if sql := jet.SELECT(colID).FROM(testTable).WHERE(seek).DebugSql(); !strings.Contains(sql, tc.want) {
+				t.Fatalf("seek SQL = %q, want %q", sql, tc.want)
+			}
+		})
+	}
+}
+
+func TestTimeKeyEncodesUTC(t *testing.T) {
+	paris := time.FixedZone("LMT", 561)
+	order := transactor.Keys([]search.Sort[sortField]{{Field: sortByCreated, Direction: search.SortAscending}}, keyColumns(), idKey())
+	token, err := order.Cursor(keyRow{ID: "w", Created: time.Date(1900, 1, 1, 0, 9, 21, 0, paris)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := search.DecodeCursor(token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(decoded.Values[0]); got != `"1900-01-01T00:00:00Z"` {
+		t.Fatalf("encoded instant = %s, want the UTC instant", got)
 	}
 }

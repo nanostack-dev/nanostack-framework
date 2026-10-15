@@ -7,10 +7,12 @@ import (
 	"fmt"
 )
 
-// MaxCursorLength bounds the opaque cursor a client may send back. Cursors
-// carry one value per ordering column, so a few hundred bytes is typical;
-// anything longer was not issued by this package.
-const MaxCursorLength = 2048
+// MaxCursorLength bounds the opaque cursor a client may send back. A cursor
+// carries one value per ordering column, so a few hundred bytes is typical.
+// The bound leaves room for several text sort values of 1,000 characters each,
+// which is why a sortable text column must be bounded (VARCHAR(255) or a
+// validated length): a longer value would issue a cursor the decoder refuses.
+const MaxCursorLength = 8192
 
 const cursorVersion = 1
 
@@ -63,7 +65,14 @@ func EncodeCursor(order string, values []any) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("search: encode cursor: %w", err)
 	}
-	return base64.RawURLEncoding.EncodeToString(payload), nil
+	token := base64.RawURLEncoding.EncodeToString(payload)
+	if len(token) > MaxCursorLength {
+		// Issuing it would strand the client: DecodeCursor refuses it. The
+		// fix is a bounded sort column, so fail where the cause is visible.
+		return "", fmt.Errorf("search: cursor for %q is %d bytes, over the %d limit; sort only on bounded columns",
+			order, len(token), MaxCursorLength)
+	}
+	return token, nil
 }
 
 // DecodeCursor parses a token produced by EncodeCursor. Every failure wraps

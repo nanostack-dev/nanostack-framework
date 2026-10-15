@@ -6,12 +6,15 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"math"
 	"math/rand/v2"
 	"slices"
 	"testing"
 	"time"
 
 	jet "github.com/go-jet/jet/v2/postgres"
+
+	"github.com/google/uuid"
 
 	"github.com/nanostack-dev/nanostack-framework/pkg/db/transactor"
 	"github.com/nanostack-dev/nanostack-framework/pkg/search"
@@ -35,7 +38,10 @@ const (
 	ksRank    ksField = "RANK"
 	ksScore   ksField = "SCORE"
 	ksSeen    ksField = "SEEN"
+	ksRef     ksField = "REF"
 )
+
+var ksStatusLabels = []string{"pending", "active", "archived"}
 
 type ksRow struct {
 	ID      string     `alias:"it_keyset.id"`
@@ -47,6 +53,7 @@ type ksRow struct {
 	Rank    int64      `alias:"it_keyset.rank"`
 	Score   *float64   `alias:"it_keyset.score"`
 	Seen    *time.Time `alias:"it_keyset.seen"`
+	Ref     uuid.UUID  `alias:"it_keyset.ref"`
 }
 
 var (
@@ -59,9 +66,10 @@ var (
 	ksRankC    = jet.IntegerColumn("rank")
 	ksScoreC   = jet.FloatColumn("score")
 	ksSeenC    = jet.TimestampColumn("seen")
+	ksRefC     = jet.StringColumn("ref")
 	ksTable    = jet.NewTable("public", "it_keyset", "",
-		ksID, ksTenantC, ksNameC, ksCreatedC, ksNoteC, ksStatusC, ksRankC, ksScoreC, ksSeenC)
-	ksAll = []jet.Projection{ksID, ksTenantC, ksNameC, ksCreatedC, ksNoteC, ksStatusC, ksRankC, ksScoreC, ksSeenC}
+		ksID, ksTenantC, ksNameC, ksCreatedC, ksNoteC, ksStatusC, ksRankC, ksScoreC, ksSeenC, ksRefC)
+	ksAll = []jet.Projection{ksID, ksTenantC, ksNameC, ksCreatedC, ksNoteC, ksStatusC, ksRankC, ksScoreC, ksSeenC, ksRefC}
 )
 
 func ksKeys() map[ksField]transactor.Key[ksRow] {
@@ -69,10 +77,11 @@ func ksKeys() map[ksField]transactor.Key[ksRow] {
 		ksName:    transactor.StringKey(ksNameC, func(r ksRow) string { return r.Name }),
 		ksCreated: transactor.TimeKey(ksCreatedC, func(r ksRow) time.Time { return r.Created }),
 		ksNote:    transactor.NullableStringKey(ksNoteC, func(r ksRow) *string { return r.Note }),
-		ksStatus:  transactor.EnumKey(ksStatusC, "it_keyset_status", func(r ksRow) string { return r.Status }),
+		ksStatus:  transactor.EnumKey(ksStatusC, "it_keyset_status", ksStatusLabels, func(r ksRow) string { return r.Status }),
 		ksRank:    transactor.IntKey(ksRankC, func(r ksRow) int64 { return r.Rank }),
 		ksScore:   transactor.NullableFloatKey(ksScoreC, func(r ksRow) *float64 { return r.Score }),
 		ksSeen:    transactor.NullableLocalTimeKey(ksSeenC, func(r ksRow) *time.Time { return r.Seen }),
+		ksRef:     transactor.UUIDKey(ksRefC, func(r ksRow) uuid.UUID { return r.Ref }),
 	}
 }
 
@@ -96,7 +105,8 @@ func setupKeysetSchema(t *testing.T, db *sql.DB) {
 			status it_keyset_status NOT NULL,
 			rank bigint NOT NULL,
 			score double precision,
-			seen timestamp
+			seen timestamp,
+			ref uuid NOT NULL
 		)`,
 	} {
 		if _, err := db.Exec(stmt); err != nil {
@@ -128,7 +138,7 @@ func (g *ksGen) insert(t *testing.T, db *sql.DB, tenant string) string {
 	}
 	var score *float64
 	if g.rng.IntN(3) > 0 {
-		s := []float64{-1.5, 0, 0.1, 2.25}[g.rng.IntN(4)]
+		s := []float64{-1.5, 0, 0.1, 2.25, math.NaN(), math.Inf(1), math.Inf(-1)}[g.rng.IntN(7)]
 		score = &s
 	}
 	var seen *time.Time
@@ -136,16 +146,22 @@ func (g *ksGen) insert(t *testing.T, db *sql.DB, tenant string) string {
 		s := g.base.Add(time.Duration(g.rng.IntN(3)) * time.Hour)
 		seen = &s
 	}
+	// Few distinct refs so the uuid key has ties too.
+	ref := []string{
+		"018f6b8e-0000-7000-8000-000000000001",
+		"f47ac10b-58cc-4372-a567-0e02b2c3d479",
+		"00000000-0000-4000-8000-00000000000a",
+	}[g.rng.IntN(3)]
 	_, err := db.Exec(
-		`INSERT INTO it_keyset (id, tenant, name, created, note, status, rank, score, seen)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+		`INSERT INTO it_keyset (id, tenant, name, created, note, status, rank, score, seen, ref)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
 		id, tenant,
 		[]string{"apple", "Banana", "cherry", "apple ", "é"}[g.rng.IntN(5)],
 		g.base.Add(time.Duration(g.rng.IntN(4))*time.Microsecond),
 		note,
 		[]string{"pending", "active", "archived"}[g.rng.IntN(3)],
 		int64(g.rng.IntN(3)),
-		score, seen,
+		score, seen, ref,
 	)
 	if err != nil {
 		t.Fatalf("insert: %v", err)
@@ -209,7 +225,7 @@ func ksWalk(t *testing.T, db *sql.DB, order transactor.Order[ksRow], limit int32
 }
 
 func ksOrderings() [][]search.Sort[ksField] {
-	fields := []ksField{ksName, ksCreated, ksNote, ksStatus, ksRank, ksScore, ksSeen}
+	fields := []ksField{ksName, ksCreated, ksNote, ksStatus, ksRank, ksScore, ksSeen, ksRef}
 	dirs := []search.SortDirection{search.SortAscending, search.SortDescending}
 	orderings := [][]search.Sort[ksField]{nil}
 	for _, f := range fields {
@@ -371,5 +387,28 @@ func TestIntegrationKeysetRejectsCursorFromOtherSort(t *testing.T) {
 		Run(context.Background(), search.Pagination{Limit: 2, Cursor: first.NextCursor}).Value()
 	if err == nil {
 		t.Fatal("a cursor from another sort was accepted")
+	}
+}
+
+// A session zone whose offset has seconds (Paris before 1911 was UTC+00:09:21)
+// must not shift the boundary instant: RFC 3339 cannot carry the seconds.
+func TestIntegrationKeysetTimestamptzWithSecondsOffsetZone(t *testing.T) {
+	db := openDB(t)
+	db.SetMaxOpenConns(1)
+	setupKeysetSchema(t, db)
+	if _, err := db.Exec(`SET TIME ZONE 'Europe/Paris'`); err != nil {
+		t.Fatalf("set zone: %v", err)
+	}
+	t.Cleanup(func() { _, _ = db.Exec(`RESET TIME ZONE`) })
+	gen := &ksGen{rng: rand.New(rand.NewPCG(9, 10)), base: time.Date(1900, 1, 1, 0, 0, 0, 0, time.UTC)}
+	for i := range 30 {
+		gen.base = time.Date(1900, 1, 1, 0, 0, i, 0, time.UTC)
+		gen.insert(t, db, "t1")
+	}
+	for _, direction := range []search.SortDirection{search.SortAscending, search.SortDescending} {
+		order := transactor.Keys([]search.Sort[ksField]{{Field: ksCreated, Direction: direction}}, ksKeys(), ksTiebreak())
+		if got, want := ksWalk(t, db, order, 4, nil), ksOrdered(t, db, order); !slices.Equal(got, want) {
+			t.Fatalf("%s: walk in Europe/Paris returned %d rows, ordered query %d", direction, len(got), len(want))
+		}
 	}
 }

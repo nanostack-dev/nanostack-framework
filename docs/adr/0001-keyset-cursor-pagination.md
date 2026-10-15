@@ -15,6 +15,8 @@ Searches page with an opaque keyset cursor.
 - `transactor.Keys` builds a total ordering from the requested sort fields plus a unique tiebreak (the primary key). `PageBuilder.Keyset` uses it: it fetches `limit+1` rows after the cursor's position and returns the last row's position as `NextCursor`.
 - The cursor is base64url JSON with the ordering signature and one value per ordering column. A cursor from another ordering is rejected.
 - Seeks follow the Postgres NULL placement (last ascending, first descending), and use a row comparison when every key is NOT NULL and shares a direction, so a composite index serves them.
+- Keys are typed per column kind. Each validates a cursor value before querying (enum labels, UUID syntax, float words), encodes timestamptz in UTC, and round-trips NaN and the infinities, so a forged or unusual cursor is a 400 rather than a database error or a skipped row.
+- A keyset page scans one SQL row per item; children are loaded per page in a second statement.
 
 ## Alternatives
 
@@ -28,4 +30,5 @@ Searches page with an opaque keyset cursor.
 - Each repository declares its sortable columns as typed keys instead of bare columns. `SortColumns` and `OrderBy` remain for non-search queries.
 - `Total` still runs a `COUNT(*)` per page; a search may skip it later without changing the cursor contract.
 - Applications expose `cursor` in requests and `next_cursor` in responses, and map `search.ErrInvalidCursor` and `search.ErrCursorWithOffset` to HTTP 400.
+- `numeric` columns have no key yet: float64 would round them and repeat rows. Add an exact decimal key before sorting on one.
 - The property tests in `pkg/db/transactor/keyset_integration_test.go` pin the contract: for every ordering of a tie-heavy, NULL-heavy table, a cursor walk equals one ordered query, and a walk with inserts and deletes between pages returns each surviving row exactly once and in order.

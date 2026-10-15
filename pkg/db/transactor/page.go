@@ -90,6 +90,12 @@ func (b *PageBuilder[T, R]) OrderBy(clauses ...jet.OrderByClause) *PageBuilder[T
 // Keyset orders the page by a total keyset ordering built with Keys. It
 // replaces OrderBy, and enables cursor pagination: Run accepts
 // Pagination.Cursor and fills Result.NextCursor.
+//
+// T must scan one SQL row into one value. Run fetches limit+1 rows and
+// reads the next cursor off the last kept one, so a destination that groups
+// rows (a go-jet model with a nested slice of joined children) or a join that
+// repeats a parent would cut pages short and end the walk early. Page the
+// parent rows flat, then load children for the page in a second statement.
 func (b *PageBuilder[T, R]) Keyset(order Order[T]) *PageBuilder[T, R] {
 	b.keyset = &order
 	return b

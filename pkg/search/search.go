@@ -43,7 +43,7 @@ type Pagination struct {
 	Offset int32 `validate:"min=0"`
 	// Cursor is an opaque token from Result.NextCursor. Empty starts at the
 	// first row.
-	Cursor string `validate:"max=2048"`
+	Cursor string `validate:"max=8192"`
 }
 
 type Request[FilterType any, SortType ~string] struct {

@@ -3,10 +3,13 @@ package transactor
 import (
 	"encoding/json"
 	"fmt"
+	"math"
+	"slices"
 	"strings"
 	"time"
 
 	jet "github.com/go-jet/jet/v2/postgres"
+	"github.com/google/uuid"
 
 	"github.com/nanostack-dev/nanostack-framework/pkg/jetx"
 	"github.com/nanostack-dev/nanostack-framework/pkg/search"
@@ -15,9 +18,11 @@ import (
 // Key is one column of a keyset ordering over scanned rows of T: the column
 // to order and compare on, and how to read that column's value from a row.
 //
-// Build keys with the typed constructors (StringKey, EnumKey, TimeKey,
-// LocalTimeKey, IntKey, FloatKey and their Nullable variants) so the cursor
-// value and the SQL literal share one type.
+// Build keys with the typed constructors (StringKey, UUIDKey, EnumKey,
+// TimeKey, LocalTimeKey, IntKey, FloatKey and their Nullable variants) so the
+// cursor value and the SQL literal share one type. A constructor rejects a
+// cursor value its column cannot hold with search.ErrInvalidCursor, before
+// any query runs.
 type Key[T any] struct {
 	column   jet.Column
 	nullable bool
@@ -37,10 +42,41 @@ type keyBound struct {
 	eq      jet.BoolExpression
 }
 
+// keyCodec converts a column value to and from its cursor form. encode runs
+// when a cursor is issued; decode when one comes back, and must reject any
+// value the column cannot hold so a forged cursor fails as ErrInvalidCursor
+// rather than as a database error.
+type keyCodec[V any] struct {
+	encode func(V) any
+	decode func(json.RawMessage) (V, error)
+}
+
+func jsonCodec[V any]() keyCodec[V] {
+	return keyCodec[V]{
+		encode: func(v V) any { return v },
+		decode: func(raw json.RawMessage) (V, error) {
+			var v V
+			err := json.Unmarshal(raw, &v)
+			return v, err
+		},
+	}
+}
+
 func newKey[T any, V any](
 	column jet.Column,
 	nullable bool,
 	value func(T) *V,
+	literal func(V) jet.Expression,
+	compare func(V) (gt, lt, eq jet.BoolExpression),
+) Key[T] {
+	return newCodecKey(column, nullable, value, jsonCodec[V](), literal, compare)
+}
+
+func newCodecKey[T any, V any](
+	column jet.Column,
+	nullable bool,
+	value func(T) *V,
+	codec keyCodec[V],
 	literal func(V) jet.Expression,
 	compare func(V) (gt, lt, eq jet.BoolExpression),
 ) Key[T] {
@@ -49,7 +85,7 @@ func newKey[T any, V any](
 		nullable: nullable,
 		value: func(row T) any {
 			if v := value(row); v != nil {
-				return *v
+				return codec.encode(*v)
 			}
 			return nil
 		},
@@ -60,8 +96,8 @@ func newKey[T any, V any](
 				}
 				return keyBound{isNull: true, eq: column.IS_NULL()}, nil
 			}
-			var v V
-			if err := json.Unmarshal(raw, &v); err != nil {
+			v, err := codec.decode(raw)
+			if err != nil {
 				return keyBound{}, fmt.Errorf("%w: value for column %s", search.ErrInvalidCursor, column.Name())
 			}
 			gt, lt, eq := compare(v)
@@ -97,24 +133,71 @@ func stringKey[T any](column jet.ColumnString, nullable bool, value func(T) *str
 
 // EnumKey orders on a NOT NULL Postgres enum column. Postgres orders an enum
 // by declaration order and refuses to compare it with text, so the cursor value
-// is cast to enumType, the enum's SQL type name.
-func EnumKey[T any](column jet.ColumnString, enumType string, value func(T) string) Key[T] {
-	return enumKey(column, enumType, false, ptrOf(value))
+// is cast to enumType, the enum's SQL type name. labels lists the enum's
+// values: a cursor carrying any other value is rejected before the cast could
+// fail in the database.
+//
+// A text column holding enum-like values is a StringKey: it sorts as text.
+func EnumKey[T any](column jet.ColumnString, enumType string, labels []string, value func(T) string) Key[T] {
+	return enumKey(column, enumType, labels, false, ptrOf(value))
 }
 
 // NullableEnumKey orders on a nullable Postgres enum column.
-func NullableEnumKey[T any](column jet.ColumnString, enumType string, value func(T) *string) Key[T] {
-	return enumKey(column, enumType, true, value)
+func NullableEnumKey[T any](column jet.ColumnString, enumType string, labels []string, value func(T) *string) Key[T] {
+	return enumKey(column, enumType, labels, true, value)
 }
 
-func enumKey[T any](column jet.ColumnString, enumType string, nullable bool, value func(T) *string) Key[T] {
+func enumKey[T any](column jet.ColumnString, enumType string, labels []string, nullable bool, value func(T) *string) Key[T] {
 	typed := func(v string) jet.StringExpression {
 		return jet.StringExp(jet.CAST(jet.String(v)).AS(enumType))
 	}
-	return newKey(column, nullable, value,
+	allowed := slices.Clone(labels)
+	codec := keyCodec[string]{
+		encode: func(v string) any { return v },
+		decode: func(raw json.RawMessage) (string, error) {
+			var v string
+			if err := json.Unmarshal(raw, &v); err != nil {
+				return "", err
+			}
+			if !slices.Contains(allowed, v) {
+				return "", fmt.Errorf("not a %s label", enumType)
+			}
+			return v, nil
+		},
+	}
+	return newCodecKey(column, nullable, value, codec,
 		func(v string) jet.Expression { return typed(v) },
 		func(v string) (jet.BoolExpression, jet.BoolExpression, jet.BoolExpression) {
 			return column.GT(typed(v)), column.LT(typed(v)), column.EQ(typed(v))
+		})
+}
+
+// UUIDKey orders on a NOT NULL uuid column. A cursor value that does not
+// parse as a UUID is rejected before the uuid cast could fail in the database.
+func UUIDKey[T any](column jet.ColumnString, value func(T) uuid.UUID) Key[T] {
+	return uuidKey(column, false, ptrOf(value))
+}
+
+// NullableUUIDKey orders on a nullable uuid column.
+func NullableUUIDKey[T any](column jet.ColumnString, value func(T) *uuid.UUID) Key[T] {
+	return uuidKey(column, true, value)
+}
+
+func uuidKey[T any](column jet.ColumnString, nullable bool, value func(T) *uuid.UUID) Key[T] {
+	codec := keyCodec[uuid.UUID]{
+		encode: func(v uuid.UUID) any { return v.String() },
+		decode: func(raw json.RawMessage) (uuid.UUID, error) {
+			var text string
+			if err := json.Unmarshal(raw, &text); err != nil {
+				return uuid.Nil, err
+			}
+			return uuid.Parse(text)
+		},
+	}
+	return newCodecKey(column, nullable, value, codec,
+		func(v uuid.UUID) jet.Expression { return jet.UUID(v) },
+		func(v uuid.UUID) (jet.BoolExpression, jet.BoolExpression, jet.BoolExpression) {
+			return column.GT(jet.UUID(v)), column.LT(jet.UUID(v)), column.EQ(jet.UUID(v))
 		})
 }
 
@@ -129,7 +212,14 @@ func NullableTimeKey[T any](column jet.ColumnTimestampz, value func(T) *time.Tim
 }
 
 func timeKey[T any](column jet.ColumnTimestampz, nullable bool, value func(T) *time.Time) Key[T] {
-	return newKey(column, nullable, value,
+	// The instant is what a timestamptz compares on. Encoding it in UTC keeps
+	// it exact: a session zone with a seconds offset (local mean time before
+	// 1900, say) would otherwise lose those seconds in RFC 3339.
+	codec := keyCodec[time.Time]{
+		encode: func(v time.Time) any { return v.UTC() },
+		decode: jsonCodec[time.Time]().decode,
+	}
+	return newCodecKey(column, nullable, value, codec,
 		func(v time.Time) jet.Expression { return jet.TimestampzT(v) },
 		func(v time.Time) (jet.BoolExpression, jet.BoolExpression, jet.BoolExpression) {
 			return column.GT(jet.TimestampzT(v)), column.LT(jet.TimestampzT(v)), column.EQ(jet.TimestampzT(v))
@@ -147,7 +237,15 @@ func NullableLocalTimeKey[T any](column jet.ColumnTimestamp, value func(T) *time
 }
 
 func localTimeKey[T any](column jet.ColumnTimestamp, nullable bool, value func(T) *time.Time) Key[T] {
-	return newKey(column, nullable, value,
+	// A timestamp has no zone; its wall clock is the value. Encode the wall
+	// clock as UTC so the round trip cannot shift it.
+	codec := keyCodec[time.Time]{
+		encode: func(v time.Time) any {
+			return time.Date(v.Year(), v.Month(), v.Day(), v.Hour(), v.Minute(), v.Second(), v.Nanosecond(), time.UTC)
+		},
+		decode: jsonCodec[time.Time]().decode,
+	}
+	return newCodecKey(column, nullable, value, codec,
 		func(v time.Time) jet.Expression { return jet.TimestampT(v) },
 		func(v time.Time) (jet.BoolExpression, jet.BoolExpression, jet.BoolExpression) {
 			return column.GT(jet.TimestampT(v)), column.LT(jet.TimestampT(v)), column.EQ(jet.TimestampT(v))
@@ -172,18 +270,53 @@ func intKey[T any](column jet.ColumnInteger, nullable bool, value func(T) *int64
 		})
 }
 
-// FloatKey orders on a NOT NULL float or numeric column.
+// FloatKey orders on a NOT NULL real or double precision column. It does not
+// fit numeric: float64 cannot hold every numeric value, and a rounded cursor
+// would repeat a row forever. NaN and the infinities, which Postgres orders
+// above every number, round-trip exactly.
 func FloatKey[T any](column jet.ColumnFloat, value func(T) float64) Key[T] {
 	return floatKey(column, false, ptrOf(value))
 }
 
-// NullableFloatKey orders on a nullable float or numeric column.
+// NullableFloatKey orders on a nullable real or double precision column.
 func NullableFloatKey[T any](column jet.ColumnFloat, value func(T) *float64) Key[T] {
 	return floatKey(column, true, value)
 }
 
 func floatKey[T any](column jet.ColumnFloat, nullable bool, value func(T) *float64) Key[T] {
-	return newKey(column, nullable, value,
+	codec := keyCodec[float64]{
+		encode: func(v float64) any {
+			switch {
+			case math.IsNaN(v):
+				return "NaN"
+			case math.IsInf(v, 1):
+				return "Infinity"
+			case math.IsInf(v, -1):
+				return "-Infinity"
+			default:
+				return v
+			}
+		},
+		decode: func(raw json.RawMessage) (float64, error) {
+			var text string
+			if json.Unmarshal(raw, &text) == nil {
+				switch text {
+				case "NaN":
+					return math.NaN(), nil
+				case "Infinity":
+					return math.Inf(1), nil
+				case "-Infinity":
+					return math.Inf(-1), nil
+				default:
+					return 0, fmt.Errorf("unknown float %q", text)
+				}
+			}
+			var v float64
+			err := json.Unmarshal(raw, &v)
+			return v, err
+		},
+	}
+	return newCodecKey(column, nullable, value, codec,
 		func(v float64) jet.Expression { return jet.Float(v) },
 		func(v float64) (jet.BoolExpression, jet.BoolExpression, jet.BoolExpression) {
 			return column.GT(jet.Float(v)), column.LT(jet.Float(v)), column.EQ(jet.Float(v))
