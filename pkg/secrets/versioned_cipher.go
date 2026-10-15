@@ -94,13 +94,9 @@ func (c *VersionedCipher) EncryptString(plaintext string) (string, error) {
 	if !exists {
 		return "", fmt.Errorf("missing key for version %q", c.currentVersion)
 	}
-	block, err := aes.NewCipher(key)
+	gcm, err := newGCM(key)
 	if err != nil {
-		return "", fmt.Errorf("failed to initialize aes cipher: %w", err)
-	}
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return "", fmt.Errorf("failed to initialize aes-gcm: %w", err)
+		return "", err
 	}
 
 	nonce := make([]byte, gcm.NonceSize())
@@ -138,13 +134,9 @@ func (c *VersionedCipher) DecryptString(encrypted string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("invalid encrypted payload: %w", err)
 	}
-	block, err := aes.NewCipher(key)
+	gcm, err := newGCM(key)
 	if err != nil {
-		return "", fmt.Errorf("failed to initialize aes cipher: %w", err)
-	}
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return "", fmt.Errorf("failed to initialize aes-gcm: %w", err)
+		return "", err
 	}
 	nonceSize := gcm.NonceSize()
 	if len(payload) < nonceSize {
@@ -212,6 +204,24 @@ func ParseVersionedBase64Keys(raw string) (map[string]string, error) {
 		result[version] = base64Key
 	}
 	return result, nil
+}
+
+// newGCM builds the AES-GCM AEAD for key. Both EncryptString and
+// DecryptString need it, and routing them through one function means the
+// "never let key or plaintext material reach an error message" invariant
+// only has to hold in one place: aes.NewCipher and cipher.NewGCM fail on the
+// key's shape (its length, its validity as a cipher block), never its
+// content, so wrapping their errors here can never leak the key itself.
+func newGCM(key []byte) (cipher.AEAD, error) {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize aes cipher: %w", err)
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize aes-gcm: %w", err)
+	}
+	return gcm, nil
 }
 
 func (c *VersionedCipher) aad(version string) string {
