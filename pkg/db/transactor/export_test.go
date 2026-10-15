@@ -30,3 +30,7 @@ func (b *PageBuilder[T, R]) PageStatementForTest(pagination search.Pagination) j
 func WithRequestedRowLockForTest(ctx context.Context, stmt jet.Statement) (jet.Statement, error) {
 	return withRequestedRowLock(ctx, stmt)
 }
+
+func (b *PageBuilder[T, R]) KeysetStatementForTest(pagination search.Pagination, seek jet.BoolExpression) jet.Statement {
+	return b.keysetStatement(pagination, seek)
+}

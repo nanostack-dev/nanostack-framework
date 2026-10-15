@@ -3,6 +3,7 @@ package transactor
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	jet "github.com/go-jet/jet/v2/postgres"
 	"github.com/go-jet/jet/v2/qrm"
@@ -11,8 +12,14 @@ import (
 	"github.com/nanostack-dev/nanostack-framework/pkg/search"
 )
 
-// ErrPageSourceMissing is returned when Run is called without From.
-var ErrPageSourceMissing = errors.New("transactor: paginated query has no FROM")
+var (
+	// ErrPageSourceMissing is returned when Run is called without From.
+	ErrPageSourceMissing = errors.New("transactor: paginated query has no FROM")
+
+	// ErrPageOrderConflict is returned when Run is called with both OrderBy and
+	// Keyset: a keyset owns the whole ordering.
+	ErrPageOrderConflict = errors.New("transactor: paginated query has both OrderBy and Keyset")
+)
 
 // PageBuilder runs the count-then-page pair behind a search.Result.
 //
@@ -33,6 +40,15 @@ var ErrPageSourceMissing = errors.New("transactor: paginated query has no FROM")
 // Run returns a Result, so it terminates with Value() like every other helper
 // and the On* translations compose on it.
 //
+// Searches order with Keyset rather than OrderBy. A keyset ends the ordering
+// with a unique tiebreak, which makes the order total, and lets Run return a
+// NextCursor and accept one back:
+//
+//	Keyset(transactor.Keys(input.Sort, map[workspace.SortField]transactor.Key[model.Workspaces]{
+//		workspace.SortFieldCreatedAt: transactor.TimeKey(table.Workspaces.CreatedAt,
+//			func(m model.Workspaces) time.Time { return m.CreatedAt }),
+//	}, transactor.StringKey(table.Workspaces.ID, func(m model.Workspaces) string { return m.ID })))
+//
 // Both type parameters are inferred from mapFunc; neither is spelled at a call
 // site. That is why mapFunc precedes the columns — a method cannot introduce a
 // type parameter, so everything the builder needs must bind at construction.
@@ -42,6 +58,7 @@ type PageBuilder[T any, R any] struct {
 	from    jet.ReadableTable
 	where   jet.BoolExpression
 	orderBy []jet.OrderByClause
+	keyset  *Order[T]
 	mapFunc func(T) R
 }
 
@@ -70,15 +87,53 @@ func (b *PageBuilder[T, R]) OrderBy(clauses ...jet.OrderByClause) *PageBuilder[T
 	return b
 }
 
+// Keyset orders the page by a total keyset ordering built with Keys. It
+// replaces OrderBy, and enables cursor pagination: Run accepts
+// Pagination.Cursor and fills Result.NextCursor.
+//
+// T must scan one SQL row into one value. Run fetches limit+1 rows and
+// reads the next cursor off the last kept one, so a destination that groups
+// rows (a go-jet model with a nested slice of joined children) or a join that
+// repeats a parent would cut pages short and end the walk early. Page the
+// parent rows flat, then load children for the page in a second statement.
+func (b *PageBuilder[T, R]) Keyset(order Order[T]) *PageBuilder[T, R] {
+	b.keyset = &order
+	return b
+}
+
 // Run counts the matches and fetches one page.
 //
 // The count runs first: when it is zero the page query is skipped, since there
-// is nothing to fetch. Total always reflects every match, not the page.
+// is nothing to fetch. Total always reflects every match of the filter, not
+// the page and not only the rows after a cursor.
+//
+// With a Keyset, the page starts after Pagination.Cursor when one is given,
+// and NextCursor is set whenever another row follows the page, in offset mode
+// too, so a client can move from offsets to cursors at any page. A cursor
+// combined with an offset fails with search.ErrCursorWithOffset, and a cursor
+// that does not belong to this ordering with search.ErrInvalidCursor. Without
+// a Keyset a cursor fails with search.ErrInvalidCursor.
 func (b *PageBuilder[T, R]) Run(
 	ctx context.Context, pagination search.Pagination,
 ) Result[search.Result[R]] {
 	if b.from == nil {
 		return newResult(search.Result[R]{}, ErrPageSourceMissing)
+	}
+	if b.keyset != nil && len(b.orderBy) > 0 {
+		return newResult(search.Result[R]{}, ErrPageOrderConflict)
+	}
+	if err := pagination.Validate(); err != nil {
+		return newResult(search.Result[R]{}, err)
+	}
+	if b.keyset == nil && pagination.Cursor != "" {
+		return newResult(search.Result[R]{}, fmt.Errorf("%w: this search has no keyset ordering", search.ErrInvalidCursor))
+	}
+	var seek jet.BoolExpression
+	if b.keyset != nil {
+		var err error
+		if seek, err = b.keyset.Seek(pagination.Cursor); err != nil {
+			return newResult(search.Result[R]{}, err)
+		}
 	}
 
 	total, err := QueryCount(ctx, b.db, b.countStatement()).Value()
@@ -89,11 +144,27 @@ func (b *PageBuilder[T, R]) Run(
 		return newResult(search.Result[R]{Items: []R{}, Total: 0, Count: 0}, nil)
 	}
 
-	items, err := QueryMapSlice(ctx, b.db, b.pageStatement(pagination), b.mapFunc).Value()
+	if b.keyset == nil {
+		items, err := QueryMapSlice(ctx, b.db, b.pageStatement(pagination), b.mapFunc).Value()
+		if err != nil {
+			return newResult(search.Result[R]{}, err)
+		}
+		return newResult(search.Result[R]{Items: items, Total: total, Count: len(items)}, nil)
+	}
+
+	rows, err := Query[[]T](ctx, b.db, b.keysetStatement(pagination, seek)).Value()
 	if err != nil {
 		return newResult(search.Result[R]{}, err)
 	}
-	return newResult(search.Result[R]{Items: items, Total: total, Count: len(items)}, nil)
+	rows, next, err := b.keyset.Trim(rows, int(pagination.Limit))
+	if err != nil {
+		return newResult(search.Result[R]{}, err)
+	}
+	items := make([]R, len(rows))
+	for i, row := range rows {
+		items[i] = b.mapFunc(row)
+	}
+	return newResult(search.Result[R]{Items: items, Total: total, Count: len(items), NextCursor: next}, nil)
 }
 
 func (b *PageBuilder[T, R]) countStatement() jet.Statement {
@@ -113,6 +184,20 @@ func (b *PageBuilder[T, R]) pageStatement(pagination search.Pagination) jet.Stat
 		stmt = stmt.ORDER_BY(b.orderBy...)
 	}
 	return stmt.LIMIT(int64(pagination.Limit)).OFFSET(int64(pagination.Offset))
+}
+
+// keysetStatement fetches one row past the page so Trim can tell whether
+// another page follows without a second query.
+func (b *PageBuilder[T, R]) keysetStatement(pagination search.Pagination, seek jet.BoolExpression) jet.Statement {
+	stmt := b.from.SELECT(b.columns[0], b.columns[1:]...)
+	if where := jetx.CombineFilters(b.where, seek); where != nil {
+		stmt = stmt.WHERE(where)
+	}
+	stmt = stmt.ORDER_BY(b.keyset.OrderBy()...).LIMIT(int64(pagination.Limit) + 1)
+	if pagination.Offset > 0 {
+		stmt = stmt.OFFSET(int64(pagination.Offset))
+	}
+	return stmt
 }
 
 // SortColumns translates a search request's sort fields into order-by clauses

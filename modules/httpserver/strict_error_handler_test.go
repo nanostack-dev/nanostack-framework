@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/nanostack-dev/nanostack-framework/pkg/fault"
+	"github.com/nanostack-dev/nanostack-framework/pkg/search"
 	"github.com/rs/zerolog"
 )
 
@@ -369,5 +370,29 @@ func TestStrictErrorHandlerDeadlineExceededStays500AtError(t *testing.T) {
 	}
 	if !strings.Contains(logs.String(), `"level":"error"`) {
 		t.Fatalf("expected error log for server-side deadline, got %s", logs.String())
+	}
+}
+
+func TestStrictErrorHandlerMapsCursorErrorsToBadRequest(t *testing.T) {
+	handler := NewStrictErrorHandler(StrictErrorHandlerOptions{Logger: zerolog.Nop()})
+	for name, err := range map[string]error{
+		"invalid cursor":     fmt.Errorf("repository: %w", search.ErrInvalidCursor),
+		"cursor with offset": search.ErrCursorWithOffset,
+	} {
+		t.Run(name, func(t *testing.T) {
+			resp := httptest.NewRecorder()
+			handler.HandleResponseError(resp, httptest.NewRequest(http.MethodPost, "/flows/search", nil), err)
+
+			var body errorResponse
+			if decodeErr := json.Unmarshal(resp.Body.Bytes(), &body); decodeErr != nil {
+				t.Fatalf("unmarshal response: %v", decodeErr)
+			}
+			if resp.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400", resp.Code)
+			}
+			if len(body.Errors) != 1 || body.Errors[0].Code != CodeInvalidCursor {
+				t.Fatalf("errors = %+v, want one %s", body.Errors, CodeInvalidCursor)
+			}
+		})
 	}
 }

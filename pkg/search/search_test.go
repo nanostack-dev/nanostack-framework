@@ -13,3 +13,10 @@ func TestNewRequestDefaults(t *testing.T) {
 		t.Fatal("expected sort slice")
 	}
 }
+
+func TestWithPaginationDefaultsAbsentLimit(t *testing.T) {
+	req := NewRequest[struct{}, sortField]().WithPagination(&Pagination{Cursor: "abc"})
+	if req.Pagination.Limit != defaultLimit || req.Pagination.Cursor != "abc" {
+		t.Fatalf("pagination = %+v", req.Pagination)
+	}
+}
