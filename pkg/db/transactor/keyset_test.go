@@ -346,8 +346,8 @@ func TestTimeKeyEncodesUTC(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := string(decoded.Values[0]); got != "-2208988800000000" {
-		t.Fatalf("encoded instant = %s, want 1900-01-01T00:00:00Z in Unix microseconds", got)
+	if got := string(decoded.Values[0]); got != "-3155673600000000" {
+		t.Fatalf("encoded instant = %s, want 1900-01-01T00:00:00Z in microseconds since 2000", got)
 	}
 	// Years past 9999 are valid Postgres timestamps; RFC 3339 cannot write them.
 	far := time.Date(12000, 1, 1, 0, 0, 0, 0, time.UTC)

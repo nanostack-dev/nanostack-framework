@@ -229,27 +229,40 @@ func NullableTimeKey[T any](column jet.ColumnTimestampz, value func(T) *time.Tim
 	return timeKey(column, true, value)
 }
 
-// postgresMinMicros is the earliest timestamp Postgres stores, 4714-11-24 BC,
-// in Unix microseconds. Every int64 above it is inside the Postgres range,
-// whose upper end (294276 AD) lies beyond int64 microseconds.
-var postgresMinMicros = time.Date(-4713, time.November, 24, 0, 0, 0, 0, time.UTC).UnixMicro()
+// Postgres stores timestamps from 4714-11-24 BC to 294276-12-31 AD at
+// microsecond precision.
+var (
+	postgresMinTime = time.Date(-4713, time.November, 24, 0, 0, 0, 0, time.UTC)
+	postgresMaxTime = time.Date(294276, time.December, 31, 23, 59, 59, 999_999_000, time.UTC)
+	// postgresEpochUnix is 2000-01-01 UTC, the Postgres timestamp epoch.
+	postgresEpochUnix = time.Date(2000, time.January, 1, 0, 0, 0, 0, time.UTC).Unix()
+)
 
-// microsCodec encodes an instant as Unix microseconds, the precision Postgres
-// stores. An integer is exact for every storable year, where RFC 3339 loses
-// seconds offsets and cannot write years past 9999, and a decoded value
-// carries no zone that the database could refuse.
+// microsCodec encodes an instant as microseconds since 2000-01-01 UTC, the
+// representation Postgres itself stores. It is exact across the whole
+// Postgres range, which Unix microseconds overflow past year 294247, where
+// RFC 3339 loses seconds offsets and cannot write years past 9999, and a
+// decoded value carries no zone the database could refuse. The arithmetic
+// goes through seconds, since a time.Duration overflows after 292 years.
 func microsCodec() keyCodec[time.Time] {
 	return keyCodec[time.Time]{
-		encode: func(v time.Time) any { return v.UnixMicro() },
+		encode: func(v time.Time) any {
+			return (v.Unix()-postgresEpochUnix)*1_000_000 + int64(v.Nanosecond()/1_000)
+		},
 		decode: func(raw json.RawMessage) (time.Time, error) {
 			var micros int64
 			if err := json.Unmarshal(raw, &micros); err != nil {
 				return time.Time{}, err
 			}
-			if micros < postgresMinMicros {
-				return time.Time{}, fmt.Errorf("timestamp before the Postgres range")
+			seconds, remainder := micros/1_000_000, micros%1_000_000
+			if remainder < 0 {
+				seconds, remainder = seconds-1, remainder+1_000_000
 			}
-			return time.UnixMicro(micros).UTC(), nil
+			decoded := time.Unix(postgresEpochUnix+seconds, remainder*1_000).UTC()
+			if decoded.Before(postgresMinTime) || decoded.After(postgresMaxTime) {
+				return time.Time{}, fmt.Errorf("timestamp outside the Postgres range")
+			}
+			return decoded, nil
 		},
 	}
 }
@@ -312,27 +325,69 @@ func intKey[T any](column jet.ColumnInteger, nullable bool, value func(T) *int64
 		})
 }
 
-// FloatKey orders on a NOT NULL real or double precision column. It does not
-// fit numeric: float64 cannot hold every numeric value, and a rounded cursor
-// would repeat a row forever. NaN and the infinities, which Postgres orders
-// above every number, round-trip exactly.
+// FloatKey orders on a NOT NULL double precision column. It does not fit
+// numeric, where float64 rounding would repeat a row forever, nor real, which
+// takes RealKey. NaN and the infinities, which Postgres orders above every
+// number, round-trip exactly.
 func FloatKey[T any](column jet.ColumnFloat, value func(T) float64) Key[T] {
 	return floatKey(column, false, ptrOf(value))
 }
 
-// NullableFloatKey orders on a nullable real or double precision column.
+// NullableFloatKey orders on a nullable double precision column.
 func NullableFloatKey[T any](column jet.ColumnFloat, value func(T) *float64) Key[T] {
 	return floatKey(column, true, value)
 }
 
-// typedFloat casts the literal to double precision, so a forged value outside
-// real's range compares instead of failing to bind to a real column.
+// typedFloat casts the literal to double precision explicitly.
 func typedFloat(v float64) jet.FloatExpression {
 	return jet.FloatExp(jet.CAST(jet.Float(v)).AS_DOUBLE())
 }
 
-func floatKey[T any](column jet.ColumnFloat, nullable bool, value func(T) *float64) Key[T] {
-	codec := keyCodec[float64]{
+// RealKey orders on a NOT NULL real column. A real compared with a double
+// literal is promoted, and 0.1 stored as real is not 0.1 as double, so the
+// boundary row would match itself and repeat. The key compares as real, and
+// rejects a cursor value outside real's range before the cast could fail.
+func RealKey[T any](column jet.ColumnFloat, value func(T) float32) Key[T] {
+	return realKey(column, false, func(row T) *float32 {
+		v := value(row)
+		return &v
+	})
+}
+
+// NullableRealKey orders on a nullable real column.
+func NullableRealKey[T any](column jet.ColumnFloat, value func(T) *float32) Key[T] {
+	return realKey(column, true, value)
+}
+
+func realKey[T any](column jet.ColumnFloat, nullable bool, value func(T) *float32) Key[T] {
+	double := floatCodec()
+	codec := keyCodec[float32]{
+		encode: func(v float32) any { return double.encode(float64(v)) },
+		decode: func(raw json.RawMessage) (float32, error) {
+			v, err := double.decode(raw)
+			if err != nil {
+				return 0, err
+			}
+			if !math.IsInf(v, 0) && !math.IsNaN(v) && math.Abs(v) > math.MaxFloat32 {
+				return 0, fmt.Errorf("outside the real range")
+			}
+			return float32(v), nil
+		},
+	}
+	typed := func(v float32) jet.FloatExpression {
+		return jet.FloatExp(jet.CAST(jet.Float(float64(v))).AS_REAL())
+	}
+	return newCodecKey(column, nullable, value, codec,
+		func(v float32) jet.Expression { return typed(v) },
+		func(v float32) (jet.BoolExpression, jet.BoolExpression, jet.BoolExpression) {
+			return column.GT(typed(v)), column.LT(typed(v)), column.EQ(typed(v))
+		})
+}
+
+// floatCodec writes NaN and the infinities as words, which JSON numbers
+// cannot express.
+func floatCodec() keyCodec[float64] {
+	return keyCodec[float64]{
 		encode: func(v float64) any {
 			switch {
 			case math.IsNaN(v):
@@ -364,6 +419,10 @@ func floatKey[T any](column jet.ColumnFloat, nullable bool, value func(T) *float
 			return v, err
 		},
 	}
+}
+
+func floatKey[T any](column jet.ColumnFloat, nullable bool, value func(T) *float64) Key[T] {
+	codec := floatCodec()
 	return newCodecKey(column, nullable, value, codec,
 		func(v float64) jet.Expression { return typedFloat(v) },
 		func(v float64) (jet.BoolExpression, jet.BoolExpression, jet.BoolExpression) {

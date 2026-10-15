@@ -420,8 +420,10 @@ func TestIntegrationKeysetExtremeValues(t *testing.T) {
 	db := openDB(t)
 	for _, stmt := range []string{
 		`DROP TABLE IF EXISTS it_keyset_extreme`,
-		`CREATE TABLE it_keyset_extreme (id text PRIMARY KEY, small smallint NOT NULL, at timestamptz NOT NULL)`,
-		`INSERT INTO it_keyset_extreme VALUES ('a', 1, '2026-01-01Z'), ('b', 2, '12000-01-01Z'), ('c', 3, '12000-01-01Z')`,
+		`CREATE TABLE it_keyset_extreme (id text PRIMARY KEY, small smallint NOT NULL, at timestamptz NOT NULL, ratio real NOT NULL)`,
+		`INSERT INTO it_keyset_extreme VALUES
+			('a', 1, '2026-01-01Z', 0.1), ('b', 2, '12000-01-01Z', 0.1), ('c', 3, '12000-01-01Z', 0.1),
+			('d', 4, '294276-12-31 23:59:59.999999Z', 0.2), ('e', 5, '294276-12-31 23:59:59.999999Z', 0.3)`,
 	} {
 		if _, err := db.Exec(stmt); err != nil {
 			t.Fatalf("%s: %v", stmt, err)
@@ -433,16 +435,18 @@ func TestIntegrationKeysetExtremeValues(t *testing.T) {
 		ID    string    `alias:"it_keyset_extreme.id"`
 		Small int64     `alias:"it_keyset_extreme.small"`
 		At    time.Time `alias:"it_keyset_extreme.at"`
+		Ratio float32   `alias:"it_keyset_extreme.ratio"`
 	}
-	id, small, at := jet.StringColumn("id"), jet.IntegerColumn("small"), jet.TimestampzColumn("at")
-	table := jet.NewTable("public", "it_keyset_extreme", "", id, small, at)
+	id, small, at, ratio := jet.StringColumn("id"), jet.IntegerColumn("small"), jet.TimestampzColumn("at"), jet.FloatColumn("ratio")
+	table := jet.NewTable("public", "it_keyset_extreme", "", id, small, at, ratio)
 	keys := map[ksField]transactor.Key[row]{
 		"SMALL": transactor.IntKey(small, func(r row) int64 { return r.Small }),
 		"AT":    transactor.TimeKey(at, func(r row) time.Time { return r.At }),
+		"RATIO": transactor.RealKey(ratio, func(r row) float32 { return r.Ratio }),
 	}
 	tiebreak := transactor.StringKey(id, func(r row) string { return r.ID })
 	run := func(order transactor.Order[row], page search.Pagination) (search.Result[row], error) {
-		return transactor.Page(db, func(r row) row { return r }, id, small, at).
+		return transactor.Page(db, func(r row) row { return r }, id, small, at, ratio).
 			From(table).Keyset(order).Run(context.Background(), page).Value()
 	}
 
@@ -452,13 +456,27 @@ func TestIntegrationKeysetExtremeValues(t *testing.T) {
 		t.Fatalf("forged out-of-range smallint cursor = %d rows, %v; want an empty page", result.Count, err)
 	}
 
-	byAt := transactor.Keys([]search.Sort[ksField]{{Field: "AT", Direction: search.SortAscending}}, keys, tiebreak)
-	first, err := run(byAt, search.Pagination{Limit: 2})
-	if err != nil || !first.HasMore() {
-		t.Fatalf("first page = %+v, %v", first, err)
-	}
-	rest, err := run(byAt, search.Pagination{Limit: 2, Cursor: first.NextCursor})
-	if err != nil || rest.Count != 1 || rest.Items[0].ID != "c" {
-		t.Fatalf("page after a year-12000 boundary = %+v, %v", rest, err)
+	// Year 12000 and the last microsecond Postgres stores both sit on page
+	// boundaries at limit 1, as does a real value that is inexact as double.
+	for _, field := range []ksField{"AT", "RATIO"} {
+		order := transactor.Keys([]search.Sort[ksField]{{Field: field, Direction: search.SortAscending}}, keys, tiebreak)
+		var got []string
+		page := search.Pagination{Limit: 1}
+		for range 10 {
+			result, err := run(order, page)
+			if err != nil {
+				t.Fatalf("%s walk: %v", field, err)
+			}
+			for _, r := range result.Items {
+				got = append(got, r.ID)
+			}
+			if !result.HasMore() {
+				break
+			}
+			page.Cursor = result.NextCursor
+		}
+		if !slices.Equal(got, []string{"a", "b", "c", "d", "e"}) {
+			t.Fatalf("%s walk = %v, want every row once", field, got)
+		}
 	}
 }

@@ -15,7 +15,7 @@ Searches page with an opaque keyset cursor.
 - `transactor.Keys` builds a total ordering from the requested sort fields plus a unique tiebreak (the primary key). `PageBuilder.Keyset` uses it: it fetches `limit+1` rows after the cursor's position and returns the last row's position as `NextCursor`.
 - The cursor is base64url JSON with the ordering signature and one value per ordering column. A cursor from another ordering is rejected.
 - Seeks follow the Postgres NULL placement (last ascending, first descending), and use a row comparison when every key is NOT NULL and shares a direction, so a composite index serves them.
-- Keys are typed per column kind. Each validates a cursor value before querying (enum labels, UUID syntax, NUL-free text, float words, the Postgres timestamp range), encodes timestamps as Unix microseconds (exact for every storable year, no zone to refuse), casts integer and float literals to bigint and double precision so no value fails to bind, and round-trips NaN and the infinities, so a forged or unusual cursor is a 400 rather than a database error or a skipped row.
+- Keys are typed per column kind. Each validates a cursor value before querying (enum labels, UUID syntax, NUL-free text, float words, the Postgres timestamp range), encodes timestamps as microseconds since 2000-01-01, the Postgres representation (exact over the whole Postgres range, no zone to refuse), casts integer and float literals to bigint and double precision so no value fails to bind, and round-trips NaN and the infinities, so a forged or unusual cursor is a 400 rather than a database error or a skipped row.
 - A keyset page scans one SQL row per item; children are loaded per page in a second statement.
 
 ## Alternatives
