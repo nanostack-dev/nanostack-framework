@@ -207,6 +207,8 @@ func validPage(p Page, limit int, first bool) error {
 		return fmt.Errorf("next_cursor on a page of %d items out of %d: no row can follow", n, p.Total)
 	case first && p.Total > 0 && n == 0:
 		return fmt.Errorf("first page is empty but total is %d", p.Total)
+	case first && n < p.Total && p.NextCursor == "":
+		return fmt.Errorf("first page holds %d of %d rows and issues no cursor: the rest is unreachable", n, p.Total)
 	}
 	return nil
 }
@@ -277,14 +279,15 @@ func CheckRefusals(ctx context.Context, suite Suite, s Scope) []error {
 	}
 	if suite.Mutate != nil {
 		for i, forged := range suite.Mutate(first.NextCursor) {
-			status, response, err := suite.Call(ctx, withPagination(scope, suite.Limit, forged, 0))
+			body := withPagination(scope, suite.Limit, forged, 0)
+			status, response, err := suite.Call(ctx, body)
 			switch {
 			case err != nil:
 				errs = append(errs, fmt.Errorf("forged cursor %d: %w", i, err))
 			case status == http.StatusOK:
 				page, err := suite.Decode(response)
 				if err == nil {
-					err = validPage(page, suite.Limit, false)
+					err = validPage(page, suite.Limit, !hasCursor(body))
 				}
 				if err == nil && page.Total != first.Total {
 					// Same filter, stable fixture: the count of matches cannot move.

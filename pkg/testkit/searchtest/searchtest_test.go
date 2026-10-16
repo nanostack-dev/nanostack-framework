@@ -325,6 +325,8 @@ func TestValidPage(t *testing.T) {
 		"a cursor on an empty page":      {Page{Total: 5, NextCursor: "n"}, false, false},
 		"a cursor after every match":     {Page{IDs: []string{"a", "b"}, Total: 2, Count: 2, NextCursor: "n"}, true, false},
 		"an empty first page with total": {Page{Total: 5}, true, false},
+		"a truncated first page":         {Page{IDs: []string{"a", "b"}, Total: 5, Count: 2}, true, false},
+		"a single-page result":           {Page{IDs: []string{"a", "b"}, Total: 2, Count: 2}, true, true},
 		"more items than total":          {Page{IDs: []string{"a", "b"}, Total: 1, Count: 2}, false, false},
 		"more items than the limit":      {Page{IDs: []string{"a", "b", "c"}, Total: 9, Count: 3}, false, false},
 		"count disagrees":                {Page{IDs: []string{"a"}, Total: 9, Count: 42}, false, false},
