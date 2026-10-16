@@ -12,6 +12,7 @@ import (
 	"github.com/nanostack-dev/nanostack-framework/pkg/db/pgerr"
 	"github.com/nanostack-dev/nanostack-framework/pkg/fault"
 	"github.com/nanostack-dev/nanostack-framework/pkg/log"
+	"github.com/nanostack-dev/nanostack-framework/pkg/search"
 	"github.com/rs/zerolog"
 )
 
@@ -56,6 +57,27 @@ func TestLevelFor(t *testing.T) {
 		{
 			name: "wrapped not found is debug",
 			err:  fmt.Errorf("get flow: %w", fault.NotFound("FLOW_NOT_FOUND", "flow not found")),
+			want: zerolog.DebugLevel,
+		},
+		{
+			// A forged or stale cursor is the API refusing the request (400).
+			name: "invalid cursor is debug",
+			err:  fmt.Errorf("%w: not a cursor payload", search.ErrInvalidCursor),
+			want: zerolog.DebugLevel,
+		},
+		{
+			name: "cursor with offset is debug",
+			err:  search.ErrCursorWithOffset,
+			want: zerolog.DebugLevel,
+		},
+		{
+			name: "unknown sort is debug",
+			err:  search.ErrUnknownSort,
+			want: zerolog.DebugLevel,
+		},
+		{
+			name: "invalid cursor wrapped by a repository is debug",
+			err:  fmt.Errorf("failed to search collections: %w", search.ErrInvalidCursor),
 			want: zerolog.DebugLevel,
 		},
 		{

@@ -33,6 +33,16 @@ var (
 	ErrUnknownSort = errors.New("search: unknown sort field")
 )
 
+// IsClientError reports whether err is a search error the caller caused: an
+// invalid cursor, a cursor combined with an offset, or an unknown sort field.
+// Each answers HTTP 400, so it is the API refusing a bad request, not the
+// service failing.
+func IsClientError(err error) bool {
+	return errors.Is(err, ErrInvalidCursor) ||
+		errors.Is(err, ErrCursorWithOffset) ||
+		errors.Is(err, ErrUnknownSort)
+}
+
 // Cursor is the decoded form of an opaque pagination token: the ordering it
 // was issued for and the last row's value for each ordering column.
 //
