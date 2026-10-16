@@ -30,9 +30,12 @@ func FrameworkCursorMutations(cursor string) []string {
 	if err != nil {
 		return nil
 	}
+	// Untouched values stay raw JSON: decoding them into any would turn a
+	// large integer into a float64 and corrupt it, so every forgery aimed at
+	// a later key would be refused for the wrong reason.
 	values := make([]any, len(decoded.Values))
 	for i, raw := range decoded.Values {
-		_ = json.Unmarshal(raw, &values[i])
+		values[i] = raw
 	}
 	var forged []string
 	add := func(order string, vals []any) {

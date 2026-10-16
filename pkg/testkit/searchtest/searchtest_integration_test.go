@@ -195,15 +195,16 @@ func TestIntegrationConformanceOfARealSearch(t *testing.T) {
 				Want: []string{"w3", "w1", "w6", "w5", "w2", "w4", "w7"}},
 		},
 		Refusals: searchtest.Refusals{
-			Scopes: []map[string]any{
-				t1(nil),
-				t1(map[string]any{"sort_by": "name"}),
-				t1(map[string]any{"sort_by": "status"}),
-				t1(map[string]any{"sort_by": "score", "sort_direction": "DESC"}),
-				{"tenant": "nobody"},
+			Scopes: []searchtest.Scope{
+				{Body: t1(nil), Incompatible: t1(map[string]any{"sort_by": "name"})},
+				{Body: t1(map[string]any{"sort_by": "name"}), Incompatible: t1(map[string]any{"sort_by": "status"})},
+				{Body: t1(map[string]any{"sort_by": "status"})},
+				{Body: t1(map[string]any{"sort_by": "score", "sort_direction": "DESC"})},
+				// No rows: the search must still refuse a well-formed cursor
+				// issued for another ordering.
+				{Body: map[string]any{"tenant": "nobody"}, Incompatible: t1(map[string]any{"sort_by": "name"})},
 			},
-			SortField:    true,
-			Incompatible: t1(map[string]any{"sort_by": "name"}),
+			SortField: true,
 		},
 		Mutate: searchtest.FrameworkCursorMutations,
 	})

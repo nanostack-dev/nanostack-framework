@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"slices"
 	"strings"
@@ -19,13 +20,17 @@ import (
 type fakeSearch struct {
 	rows []fakeRow
 
-	ignoreSort        bool // always orders by id
-	stopAfterFirst    bool // first page claims to be the last
-	repeatCursor      bool // next_cursor never advances
-	serverErrorForged bool // 500 on a cursor whose values do not decode
-	acceptUnknownSort bool // falls back to the default order
-	wrongCount        bool // count is off by one
-	shortcutEmpty     bool // returns an empty page before validating input in the empty scope
+	ignoreSort         bool // always orders by id
+	stopAfterFirst     bool // first page claims to be the last
+	repeatCursor       bool // next_cursor never advances
+	serverErrorForged  bool // 500 on a cursor whose values do not decode
+	acceptUnknownSort  bool // falls back to the default order
+	wrongCount         bool // count is off by one
+	shortcutEmpty      bool // returns an empty page before validating input in the empty scope
+	emptySkipsOrder    bool // empty scope decodes the cursor but never checks its ordering
+	codeInMessage      bool // puts the expected code in the message, not the code field
+	extraCursorAtEnd   bool // issues a cursor on the last populated page
+	negativeFirstTotal bool // first page reports total -1
 }
 
 type fakeRow struct{ ID, Name string }
@@ -56,7 +61,7 @@ func (f fakeSearch) call(_ context.Context, body map[string]any) (int, []byte, e
 	case "", "id", "name":
 	default:
 		if !f.acceptUnknownSort {
-			return refuse("INVALID_SORT")
+			return f.refuse("INVALID_SORT")
 		}
 		sortBy = ""
 	}
@@ -64,7 +69,7 @@ func (f fakeSearch) call(_ context.Context, body map[string]any) (int, []byte, e
 		sortBy = ""
 	}
 	if err := (search.Pagination{Limit: 1, Offset: int32(req.Pagination.Offset), Cursor: req.Pagination.Cursor}).Validate(); err != nil {
-		return refuse("INVALID_CURSOR")
+		return f.refuse("INVALID_CURSOR")
 	}
 	order := "id:ASC"
 	key := func(r fakeRow) string { return r.ID }
@@ -78,15 +83,18 @@ func (f fakeSearch) call(_ context.Context, body map[string]any) (int, []byte, e
 	start := 0
 	if req.Pagination.Cursor != "" {
 		cursor, err := search.DecodeCursor(req.Pagination.Cursor)
-		if err != nil || cursor.Order != order {
-			return refuse("INVALID_CURSOR")
+		if err != nil {
+			return f.refuse("INVALID_CURSOR")
+		}
+		if cursor.Order != order && !(f.emptySkipsOrder && req.Scope == "empty") {
+			return f.refuse("INVALID_CURSOR")
 		}
 		var after string
 		if err := json.Unmarshal(cursor.Values[0], &after); err != nil {
 			if f.serverErrorForged {
 				return http.StatusInternalServerError, []byte(`{"errors":[{"code":"UNEXPECTED_ERROR"}]}`), nil
 			}
-			return refuse("INVALID_CURSOR")
+			return f.refuse("INVALID_CURSOR")
 		}
 		for start < len(sorted) && key(sorted[start]) <= after {
 			start++
@@ -95,7 +103,7 @@ func (f fakeSearch) call(_ context.Context, body map[string]any) (int, []byte, e
 	end := min(start+req.Pagination.Limit, len(sorted))
 	page := sorted[start:end]
 	next := ""
-	if end < len(sorted) && !f.stopAfterFirst {
+	if (end < len(sorted) || (f.extraCursorAtEnd && len(page) > 0)) && !f.stopAfterFirst {
 		last := key(page[len(page)-1])
 		if f.repeatCursor {
 			last = key(sorted[0])
@@ -106,7 +114,11 @@ func (f fakeSearch) call(_ context.Context, body map[string]any) (int, []byte, e
 	if f.wrongCount {
 		count++
 	}
-	return ok(page, int64(len(sorted)), next, count)
+	total := int64(len(sorted))
+	if f.negativeFirstTotal && req.Pagination.Cursor == "" {
+		total = -1
+	}
+	return ok(page, total, next, count)
 }
 
 func ok(rows []fakeRow, total int64, next string, count ...int) (int, []byte, error) {
@@ -126,7 +138,10 @@ func ok(rows []fakeRow, total int64, next string, count ...int) (int, []byte, er
 	return http.StatusOK, encoded, err
 }
 
-func refuse(code string) (int, []byte, error) {
+func (f fakeSearch) refuse(code string) (int, []byte, error) {
+	if f.codeInMessage {
+		return http.StatusBadRequest, []byte(fmt.Sprintf(`{"errors":[{"code":"WRONG","message":%q}]}`, code)), nil
+	}
 	return http.StatusBadRequest, []byte(fmt.Sprintf(`{"errors":[{"code":%q}]}`, code)), nil
 }
 
@@ -147,9 +162,11 @@ func fakeSuite(f fakeSearch) Suite {
 			{Name: "by name", Body: map[string]any{"sort_by": "name"}, Want: []string{"r2", "r4", "r1", "r3", "r5"}},
 		},
 		Refusals: Refusals{
-			Scopes:       []map[string]any{{}, {"scope": "empty"}},
-			SortField:    true,
-			Incompatible: map[string]any{"sort_by": "name"},
+			Scopes: []Scope{
+				{Body: map[string]any{}, Incompatible: map[string]any{"sort_by": "name"}},
+				{Body: map[string]any{"scope": "empty"}, Incompatible: map[string]any{"sort_by": "name"}},
+			},
+			SortField: true,
 		},
 		Mutate: FrameworkCursorMutations,
 	}
@@ -163,8 +180,8 @@ func checkAll(suite Suite) error {
 			errs = append(errs, fmt.Errorf("walk %s: %w", c.Name, err))
 		}
 	}
-	for i, scope := range suite.Refusals.Scopes {
-		errs = append(errs, CheckRefusals(context.Background(), suite, scope, i == 0)...)
+	for _, scope := range suite.Refusals.Scopes {
+		errs = append(errs, CheckRefusals(context.Background(), suite, scope)...)
 	}
 	return errors.Join(errs...)
 }
@@ -185,6 +202,10 @@ func TestChecksCatchEachDefect(t *testing.T) {
 		"unknown sort silently accepted": {fakeSearch{acceptUnknownSort: true}, "unknown sort_by"},
 		"count disagrees with items":     {fakeSearch{wrongCount: true}, "count"},
 		"shortcut skips validation":      {fakeSearch{shortcutEmpty: true}, "malformed cursor"},
+		"empty scope ignores ordering":   {fakeSearch{emptySkipsOrder: true}, "cursor from another ordering"},
+		"code only in the message":       {fakeSearch{codeInMessage: true}, "without error code"},
+		"cursor after the last row":      {fakeSearch{extraCursorAtEnd: true}, "next_cursor after all"},
+		"negative first total":           {fakeSearch{negativeFirstTotal: true}, "negative total"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			err := checkAll(fakeSuite(tc.search))
@@ -239,5 +260,35 @@ func TestFrameworkCursorMutationsCoverEveryValue(t *testing.T) {
 	}
 	if FrameworkCursorMutations("not a cursor") != nil {
 		t.Fatal("an undecodable cursor produced forgeries")
+	}
+}
+
+func TestErrorCodesReadsCodeFieldsOnly(t *testing.T) {
+	for body, want := range map[string][]string{
+		`{"errors":[{"code":"INVALID_CURSOR"}]}`:                   {"INVALID_CURSOR"},
+		`{"errors":[{"code":"INVALID\u005fCURSOR"}]}`:              {"INVALID_CURSOR"},
+		`{"errors":[{"code":"WRONG","message":"INVALID_CURSOR"}]}`: {"WRONG"},
+		`not json`: nil,
+	} {
+		if got := errorCodes([]byte(body)); !slices.Equal(got, want) {
+			t.Errorf("errorCodes(%s) = %v, want %v", body, got, want)
+		}
+	}
+}
+
+func TestFrameworkCursorMutationsKeepUntouchedValuesExact(t *testing.T) {
+	big := int64(math.MaxInt64)
+	cursor, err := search.EncodeCursor("t.rank:ASC,t.id:ASC", []any{big, "r1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forged := range FrameworkCursorMutations(cursor) {
+		decoded, err := search.DecodeCursor(forged)
+		if err != nil || len(decoded.Values) != 2 || decoded.Order != "t.rank:ASC,t.id:ASC" {
+			continue
+		}
+		if string(decoded.Values[1]) != `"r1"` && string(decoded.Values[0]) != "9223372036854775807" {
+			t.Fatalf("a forgery of the id changed the untouched rank to %s", decoded.Values[0])
+		}
 	}
 }

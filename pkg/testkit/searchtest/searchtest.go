@@ -50,19 +50,27 @@ type Case struct {
 	Want []string
 }
 
+// Scope is one valid request the refusals are sent in.
+type Scope struct {
+	// Body must answer 200 as sent.
+	Body map[string]any
+	// Incompatible is a populated request whose ordering differs from Body's.
+	// The kit takes the cursor it issues and sends it with Body, which must
+	// refuse it. It works for empty scopes too, which issue no cursor of
+	// their own. Nil skips the check.
+	Incompatible map[string]any
+}
+
 // Refusals describes the invalid requests a search must answer with 400.
 type Refusals struct {
-	// Scopes are valid request bodies the refusals are sent in: at least one
+	// Scopes are the requests the refusals are sent in: at least one
 	// populated scope, plus every scope where the search may short-circuit
-	// (empty, no match, missing binding). Each must answer 200 as sent. A
-	// populated scope per sort field lets Mutate forge every key type.
-	Scopes []map[string]any
+	// (empty, no match, missing binding). A populated scope per sort field
+	// lets Mutate forge every key type.
+	Scopes []Scope
 	// SortField is true when the endpoint accepts sort_by; the kit then sends
 	// an unknown field and expects SortCode.
 	SortField bool
-	// Incompatible is a body whose ordering differs from Scopes[0]'s; a cursor
-	// from Scopes[0] sent with it must be refused. Nil skips the check.
-	Incompatible map[string]any
 	// CursorCode and SortCode are the error codes the 400 must carry; they
 	// default to INVALID_CURSOR and INVALID_SORT. A service that refuses an
 	// unknown sort in request validation sets SortCode to that code.
@@ -101,7 +109,7 @@ func Run(t *testing.T, suite Suite) {
 	}
 	for i, scope := range suite.Refusals.Scopes {
 		t.Run(fmt.Sprintf("%s/refusals/scope-%d", suite.Name, i), func(t *testing.T) {
-			for _, err := range CheckRefusals(t.Context(), suite, scope, i == 0) {
+			for _, err := range CheckRefusals(t.Context(), suite, scope) {
 				t.Error(err)
 			}
 		})
@@ -132,7 +140,7 @@ func CheckWalk(ctx context.Context, suite Suite, c Case) error {
 	var got []string
 	seenCursors := map[string]bool{}
 	cursor := ""
-	total := int64(-1)
+	var total int64
 	for page := 0; ; page++ {
 		if page >= suite.MaxPages {
 			return fmt.Errorf("walk did not end within %d pages", suite.MaxPages)
@@ -142,20 +150,29 @@ func CheckWalk(ctx context.Context, suite Suite, c Case) error {
 			return fmt.Errorf("page %d: %w", page, err)
 		}
 		switch {
+		case p.Total < 0 || p.Count < 0:
+			return fmt.Errorf("page %d: negative total %d or count %d", page, p.Total, p.Count)
 		case p.Count != len(p.IDs):
 			return fmt.Errorf("page %d: count %d, %d items", page, p.Count, len(p.IDs))
 		case len(p.IDs) > suite.Limit:
 			return fmt.Errorf("page %d: %d items exceed limit %d", page, len(p.IDs), suite.Limit)
-		case total >= 0 && p.Total != total:
+		case page > 0 && p.Total != total:
 			return fmt.Errorf("page %d: total %d, first page said %d", page, p.Total, total)
+		case page > 0 && len(p.IDs) == 0:
+			// A keyset page reads one row past the limit, so it knows when no
+			// row follows; a continuation that leads to an empty page was a
+			// cursor it should not have issued.
+			return fmt.Errorf("page %d: empty page after a next_cursor", page)
 		}
-		total = p.Total
+		if page == 0 {
+			total = p.Total
+		}
 		got = append(got, p.IDs...)
 		if p.NextCursor == "" {
 			break
 		}
-		if len(p.IDs) == 0 {
-			return fmt.Errorf("page %d: empty page with a next_cursor", page)
+		if len(got) >= len(c.Want) {
+			return fmt.Errorf("page %d: next_cursor after all %d expected rows", page, len(c.Want))
 		}
 		if seenCursors[p.NextCursor] {
 			return fmt.Errorf("page %d: next_cursor repeats an earlier one; the walk would never end", page)
@@ -173,10 +190,10 @@ func CheckWalk(ctx context.Context, suite Suite, c Case) error {
 }
 
 // CheckRefusals sends the invalid requests in one scope and reports every
-// violation. primary marks Refusals.Scopes[0], the scope Incompatible is
-// defined against; forged cursors are tried in every scope that has a second
-// page, so scopes with different sorts exercise different key types.
-func CheckRefusals(ctx context.Context, suite Suite, scope map[string]any, primary bool) []error {
+// violation. Forged cursors are tried in every scope that has a second page,
+// so scopes with different sorts exercise different key types.
+func CheckRefusals(ctx context.Context, suite Suite, s Scope) []error {
+	scope := s.Body
 	suite = withDefaults(suite)
 	cursorCode := orDefault(suite.Refusals.CursorCode, "INVALID_CURSOR")
 	sortCode := orDefault(suite.Refusals.SortCode, "INVALID_SORT")
@@ -208,12 +225,19 @@ func CheckRefusals(ctx context.Context, suite Suite, scope map[string]any, prima
 		unknown["sort_by"] = "searchtest_unknown_field"
 		refuse("unknown sort_by", withPagination(unknown, suite.Limit, "", 0), sortCode)
 	}
+	if s.Incompatible != nil {
+		other, err := fetchPage(ctx, suite, withPagination(s.Incompatible, suite.Limit, "", 0))
+		switch {
+		case err != nil:
+			errs = append(errs, fmt.Errorf("incompatible request: %w", err))
+		case other.NextCursor == "":
+			errs = append(errs, fmt.Errorf("incompatible request issued no cursor; seed more rows than the limit"))
+		default:
+			refuse("cursor from another ordering", withPagination(scope, suite.Limit, other.NextCursor, 0), cursorCode)
+		}
+	}
 	if first.NextCursor == "" {
 		return errs
-	}
-	if primary && suite.Refusals.Incompatible != nil {
-		refuse("cursor from another ordering",
-			withPagination(suite.Refusals.Incompatible, suite.Limit, first.NextCursor, 0), cursorCode)
 	}
 	if suite.Mutate != nil {
 		for i, forged := range suite.Mutate(first.NextCursor) {
@@ -241,10 +265,39 @@ func expectRefusal(ctx context.Context, suite Suite, body map[string]any, code s
 	if status != http.StatusBadRequest {
 		return fmt.Errorf("status %d, want 400: %s", status, truncate(response))
 	}
-	if code != "" && !strings.Contains(string(response), `"`+code+`"`) {
+	if code != "" && !slices.Contains(errorCodes(response), code) {
 		return fmt.Errorf("400 without error code %s: %s", code, truncate(response))
 	}
 	return nil
+}
+
+// errorCodes collects every "code" string in a JSON error body, at any depth,
+// so the check reads the codes themselves rather than matching text that
+// could sit in a message.
+func errorCodes(response []byte) []string {
+	var body any
+	if err := json.Unmarshal(response, &body); err != nil {
+		return nil
+	}
+	var codes []string
+	var visit func(any)
+	visit = func(node any) {
+		switch v := node.(type) {
+		case map[string]any:
+			for key, value := range v {
+				if code, ok := value.(string); ok && key == "code" {
+					codes = append(codes, code)
+				}
+				visit(value)
+			}
+		case []any:
+			for _, item := range v {
+				visit(item)
+			}
+		}
+	}
+	visit(body)
+	return codes
 }
 
 func fetchPage(ctx context.Context, suite Suite, body map[string]any) (Page, error) {
