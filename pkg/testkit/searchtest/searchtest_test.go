@@ -34,6 +34,8 @@ type fakeSearch struct {
 	emptyFirstPage     bool // first page has no rows but a cursor
 	emptyIgnoresOffset bool // empty scope accepts a valid cursor with an offset
 	forgedBadPage      bool // answers a forged cursor with an inconsistent 200
+	forgedZeroTotal    bool // answers a forged cursor with an empty page and total 0
+	cursorOnLastPage   bool // the first page of a one-page result carries a cursor
 }
 
 type fakeRow struct{ ID, Name string }
@@ -98,6 +100,9 @@ func (f fakeSearch) call(_ context.Context, body map[string]any) (int, []byte, e
 			if f.forgedBadPage {
 				return http.StatusOK, []byte(`{"items":[],"total":-1,"count":42}`), nil
 			}
+			if f.forgedZeroTotal {
+				return http.StatusOK, []byte(`{"items":[],"total":0,"count":0}`), nil
+			}
 			if f.serverErrorForged {
 				return http.StatusInternalServerError, []byte(`{"errors":[{"code":"UNEXPECTED_ERROR"}]}`), nil
 			}
@@ -114,7 +119,7 @@ func (f fakeSearch) call(_ context.Context, body map[string]any) (int, []byte, e
 	end := min(start+req.Pagination.Limit, len(sorted))
 	page := sorted[start:end]
 	next := ""
-	if (end < len(sorted) || (f.extraCursorAtEnd && len(page) > 0)) && !f.stopAfterFirst {
+	if (end < len(sorted) || (f.extraCursorAtEnd && len(page) > 0) || (f.cursorOnLastPage && len(page) > 0 && start == 0)) && !f.stopAfterFirst {
 		last := key(page[len(page)-1])
 		if f.repeatCursor {
 			last = key(sorted[0])
@@ -217,9 +222,10 @@ func TestChecksCatchEachDefect(t *testing.T) {
 		"code only in the message":       {fakeSearch{codeInMessage: true}, "without error code"},
 		"cursor after the last row":      {fakeSearch{extraCursorAtEnd: true}, "next_cursor after all"},
 		"negative first total":           {fakeSearch{negativeFirstTotal: true}, "negative total"},
-		"empty first page with a cursor": {fakeSearch{emptyFirstPage: true}, "empty page in a walk"},
+		"empty first page with a cursor": {fakeSearch{emptyFirstPage: true}, "no row can follow"},
 		"empty scope ignores offset":     {fakeSearch{emptyIgnoresOffset: true}, "cursor with offset"},
 		"forged cursor gives a bad page": {fakeSearch{forgedBadPage: true}, "200 with an invalid page"},
+		"forged cursor zeroes the total": {fakeSearch{forgedZeroTotal: true}, "the scope's total is"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			err := checkAll(fakeSuite(tc.search))
@@ -304,5 +310,46 @@ func TestFrameworkCursorMutationsKeepUntouchedValuesExact(t *testing.T) {
 		if string(decoded.Values[1]) != `"r1"` && string(decoded.Values[0]) != "9223372036854775807" {
 			t.Fatalf("a forgery of the id changed the untouched rank to %s", decoded.Values[0])
 		}
+	}
+}
+
+func TestValidPage(t *testing.T) {
+	for name, tc := range map[string]struct {
+		page  Page
+		first bool
+		ok    bool
+	}{
+		"a middle page":                  {Page{IDs: []string{"a", "b"}, Total: 5, Count: 2, NextCursor: "n"}, false, true},
+		"the last page":                  {Page{IDs: []string{"e"}, Total: 5, Count: 1}, false, true},
+		"an empty scope":                 {Page{Total: 0}, true, true},
+		"a cursor on an empty page":      {Page{Total: 5, NextCursor: "n"}, false, false},
+		"a cursor after every match":     {Page{IDs: []string{"a", "b"}, Total: 2, Count: 2, NextCursor: "n"}, true, false},
+		"an empty first page with total": {Page{Total: 5}, true, false},
+		"more items than total":          {Page{IDs: []string{"a", "b"}, Total: 1, Count: 2}, false, false},
+		"more items than the limit":      {Page{IDs: []string{"a", "b", "c"}, Total: 9, Count: 3}, false, false},
+		"count disagrees":                {Page{IDs: []string{"a"}, Total: 9, Count: 42}, false, false},
+		"a negative total":               {Page{Total: -1}, false, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := validPage(tc.page, 2, tc.first); (err == nil) != tc.ok {
+				t.Fatalf("validPage() = %v, want ok=%v", err, tc.ok)
+			}
+		})
+	}
+}
+
+func TestRefusalsReportAScopeWithoutAnOffsetCursor(t *testing.T) {
+	suite := fakeSuite(fakeSearch{})
+	errs := CheckRefusals(context.Background(), suite, Scope{Body: map[string]any{"scope": "empty"}})
+	if err := errors.Join(errs...); err == nil || !strings.Contains(err.Error(), "give it SameOrder") {
+		t.Fatalf("CheckRefusals() = %v, want a SameOrder configuration error", err)
+	}
+}
+
+func TestChecksCatchACursorOnASinglePageResult(t *testing.T) {
+	f := fakeSearch{cursorOnLastPage: true, rows: fakeRows[:2]}
+	errs := CheckRefusals(context.Background(), withDefaults(Suite{Call: f.call}), Scope{Body: map[string]any{}})
+	if err := errors.Join(errs...); err == nil || !strings.Contains(err.Error(), "no row can follow") {
+		t.Fatalf("CheckRefusals() = %v, want the impossible cursor caught", err)
 	}
 }

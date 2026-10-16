@@ -154,9 +154,6 @@ func CheckWalk(ctx context.Context, suite Suite, c Case) error {
 		if err != nil {
 			return fmt.Errorf("page %d: %w", page, err)
 		}
-		if err := validPage(p, suite.Limit); err != nil {
-			return fmt.Errorf("page %d: %w", page, err)
-		}
 		switch {
 		case page > 0 && p.Total != total:
 			return fmt.Errorf("page %d: total %d, first page said %d", page, p.Total, total)
@@ -192,8 +189,11 @@ func CheckWalk(ctx context.Context, suite Suite, c Case) error {
 	return nil
 }
 
-// validPage checks what every successful page must satisfy on its own.
-func validPage(p Page, limit int) error {
+// validPage checks what every successful page must satisfy on its own. A
+// first page (no cursor sent) must also hold rows whenever total says some
+// match. Every page the kit reads goes through it.
+func validPage(p Page, limit int, first bool) error {
+	n := int64(len(p.IDs))
 	switch {
 	case p.Total < 0 || p.Count < 0:
 		return fmt.Errorf("negative total %d or count %d", p.Total, p.Count)
@@ -201,8 +201,12 @@ func validPage(p Page, limit int) error {
 		return fmt.Errorf("count %d, %d items", p.Count, len(p.IDs))
 	case len(p.IDs) > limit:
 		return fmt.Errorf("%d items exceed limit %d", len(p.IDs), limit)
-	case int64(len(p.IDs)) > p.Total:
-		return fmt.Errorf("%d items exceed total %d", len(p.IDs), p.Total)
+	case n > p.Total:
+		return fmt.Errorf("%d items exceed total %d", n, p.Total)
+	case p.NextCursor != "" && (n == 0 || n >= p.Total):
+		return fmt.Errorf("next_cursor on a page of %d items out of %d: no row can follow", n, p.Total)
+	case first && p.Total > 0 && n == 0:
+		return fmt.Errorf("first page is empty but total is %d", p.Total)
 	}
 	return nil
 }
@@ -224,9 +228,6 @@ func CheckRefusals(ctx context.Context, suite Suite, s Scope) []error {
 
 	// Control: the scope as sent is valid, so a 400 below is about the change.
 	first, err := fetchPage(ctx, suite, withPagination(scope, suite.Limit, "", 0))
-	if err == nil {
-		err = validPage(first, suite.Limit)
-	}
 	if err != nil {
 		return []error{fmt.Errorf("control request: %w", err)}
 	}
@@ -246,8 +247,11 @@ func CheckRefusals(ctx context.Context, suite Suite, s Scope) []error {
 			offsetCursor = same.NextCursor
 		}
 	}
-	if offsetCursor != "" {
+	switch {
+	case offsetCursor != "":
 		refuse("cursor with offset", withPagination(scope, suite.Limit, offsetCursor, 1), cursorCode)
+	case s.SameOrder == nil:
+		errs = append(errs, fmt.Errorf("cursor with offset: the scope issued no cursor; give it SameOrder, a populated request with its ordering"))
 	}
 	if suite.Refusals.SortField {
 		unknown := maps.Clone(scope)
@@ -280,7 +284,11 @@ func CheckRefusals(ctx context.Context, suite Suite, s Scope) []error {
 			case status == http.StatusOK:
 				page, err := suite.Decode(response)
 				if err == nil {
-					err = validPage(page, suite.Limit)
+					err = validPage(page, suite.Limit, false)
+				}
+				if err == nil && page.Total != first.Total {
+					// Same filter, stable fixture: the count of matches cannot move.
+					err = fmt.Errorf("total %d, the scope's total is %d", page.Total, first.Total)
 				}
 				if err != nil {
 					errs = append(errs, fmt.Errorf("forged cursor %d: 200 with an invalid page: %w", i, err))
@@ -336,6 +344,8 @@ func errorCodes(response []byte) []string {
 	return codes
 }
 
+// fetchPage sends a request that must succeed and returns its page after
+// validPage; a request without a cursor is checked as a first page.
 func fetchPage(ctx context.Context, suite Suite, body map[string]any) (Page, error) {
 	status, response, err := suite.Call(ctx, body)
 	if err != nil {
@@ -348,7 +358,16 @@ func fetchPage(ctx context.Context, suite Suite, body map[string]any) (Page, err
 	if err != nil {
 		return Page{}, fmt.Errorf("decode page: %w: %s", err, truncate(response))
 	}
+	if err := validPage(p, suite.Limit, !hasCursor(body)); err != nil {
+		return Page{}, fmt.Errorf("%w: %s", err, truncate(response))
+	}
 	return p, nil
+}
+
+func hasCursor(body map[string]any) bool {
+	pagination, _ := body["pagination"].(map[string]any)
+	cursor, _ := pagination["cursor"].(string)
+	return cursor != ""
 }
 
 func withPagination(body map[string]any, limit int, cursor string, offset int) map[string]any {
