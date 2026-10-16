@@ -26,6 +26,11 @@ var (
 	// non-zero offset. A cursor already says where the page starts, so the two
 	// cannot be combined. Callers map it to a client error (HTTP 400).
 	ErrCursorWithOffset = errors.New("search: cursor cannot be combined with offset")
+
+	// ErrUnknownSort reports a sort field the search cannot order by. A
+	// silent fallback to the default order would answer a different question
+	// than the client asked, so callers map it to a client error (HTTP 400).
+	ErrUnknownSort = errors.New("search: unknown sort field")
 )
 
 // Cursor is the decoded form of an opaque pagination token: the ordering it

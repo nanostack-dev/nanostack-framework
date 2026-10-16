@@ -79,12 +79,15 @@ template, err := templates.Find(transactor.ForShare(txCtx), templateID)
 `Page` runs the count-then-page pair behind a `search.Result`. Order a search with `Keyset`, not `OrderBy`: a keyset ends the ordering with a unique tiebreak, so every row has exactly one position, and pages are cut with a cursor rather than an offset.
 
 ```go
-order := transactor.Keys(input.Sort, map[workspace.SortField]transactor.Key[model.Workspaces]{
+order, err := transactor.StrictKeys(input.Sort, map[workspace.SortField]transactor.Key[model.Workspaces]{
     workspace.SortFieldCreatedAt: transactor.TimeKey(table.Workspaces.CreatedAt,
         func(m model.Workspaces) time.Time { return m.CreatedAt }),
     workspace.SortFieldName: transactor.StringKey(table.Workspaces.Name,
         func(m model.Workspaces) string { return m.Name }),
 }, transactor.StringKey(table.Workspaces.ID, func(m model.Workspaces) string { return m.ID }))
+if err != nil {
+    return search.Result[workspace.Workspace]{}, err // search.ErrUnknownSort, a 400
+}
 
 return transactor.Page(r.db, r.mapper.ToDomain, table.Workspaces.AllColumns).
     From(table.Workspaces).
@@ -94,6 +97,7 @@ return transactor.Page(r.db, r.mapper.ToDomain, table.Workspaces.AllColumns).
     Value()
 ```
 
+- Build a search's ordering with `StrictKeys`: a requested sort field missing from the map fails with `search.ErrUnknownSort` (400 `INVALID_SORT` through `StrictErrorHandler`) instead of silently ordering by something else. Resolve the documented default sort to a mapped field before calling it. `Keys` keeps the lenient behaviour for non-search orderings. Pass the error through every service layer unchanged; a service that wraps unknown repository errors as 500 hides it.
 - `Run` starts after `Pagination.Cursor` and sets `Result.NextCursor` when another row follows. An empty `NextCursor` is the last page. `Total` still counts every match of the filter.
 - Offset pages get a `NextCursor` too, so a client can move from offsets to cursors at any page. A cursor with a non-zero offset fails with `search.ErrCursorWithOffset`.
 - A cursor that does not decode, or was issued for another sort, fails with `search.ErrInvalidCursor`. Map both errors to HTTP 400.
@@ -103,6 +107,8 @@ return transactor.Page(r.db, r.mapper.ToDomain, table.Workspaces.AllColumns).
 - Sort only on bounded columns. A cursor holds the last row's sort values and may be at most `search.MaxCursorLength` (8 KiB) long; issuing a longer one fails.
 - When every key is NOT NULL and shares a direction, the seek is one row comparison, `(created_at, id) < ($1, $2)`, which a composite index on `(tenant, created_at, id)` answers with one range scan. Add that index for large tables.
 - A query that does not fit `Page` uses the same `Order` directly: `OrderBy()` for the clauses, `Seek(cursor)` for the predicate, `LIMIT limit+1`, then `Trim(rows, limit)` for the page and its next cursor.
+
+Check every search end to end with [`searchtest`](../../testkit/searchtest/README.md) from the consumer's component tests.
 
 A cursor is position, not authority: it is base64url JSON, neither signed nor encrypted. Tenant scope and filters always come from the request, so an edited cursor can only move inside rows the caller may already read. See [ADR 0001](../../../docs/adr/0001-keyset-cursor-pagination.md).
 

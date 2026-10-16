@@ -412,3 +412,32 @@ func TestNullPlacementInOrderAndSignature(t *testing.T) {
 		t.Fatalf("seek SQL = %q, want NULLs after every value when descending NULLS LAST", sql)
 	}
 }
+
+func TestStrictKeysRefuseAnUnknownSortField(t *testing.T) {
+	for name, sorts := range map[string][]search.Sort[sortField]{
+		"alone":                {{Field: sortUnmapped, Direction: search.SortAscending}},
+		"after a valid field":  {{Field: sortByName, Direction: search.SortAscending}, {Field: sortUnmapped, Direction: search.SortDescending}},
+		"the injected default": search.NewRequest[struct{}, sortField]().WithSort(nil, nil).Sort,
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := transactor.StrictKeys(sorts, keyColumns(), idKey())
+			if !errors.Is(err, search.ErrUnknownSort) {
+				t.Fatalf("StrictKeys() error = %v, want ErrUnknownSort", err)
+			}
+		})
+	}
+}
+
+func TestStrictKeysMatchKeysForMappedFields(t *testing.T) {
+	sorts := []search.Sort[sortField]{{Field: sortByCreated, Direction: search.SortDescending}, {Field: sortByName, Direction: search.SortAscending}}
+	strict, err := transactor.StrictKeys(sorts, keyColumns(), idKey())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lenient := transactor.Keys(sorts, keyColumns(), idKey()); strict.Signature() != lenient.Signature() {
+		t.Fatalf("StrictKeys %q differs from Keys %q", strict.Signature(), lenient.Signature())
+	}
+	if _, err := transactor.StrictKeys[sortField](nil, keyColumns(), idKey()); err != nil {
+		t.Fatalf("no sort: %v", err)
+	}
+}

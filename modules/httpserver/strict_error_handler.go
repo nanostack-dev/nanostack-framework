@@ -17,6 +17,10 @@ import (
 // offset.
 const CodeInvalidCursor = "INVALID_CURSOR"
 
+// CodeInvalidSort is the API error code for a sort field the search cannot
+// order by.
+const CodeInvalidSort = "INVALID_SORT"
+
 // StatusClientClosedRequest is the nginx convention for a request the client
 // abandoned before the response was written. net/http has no constant for it.
 const StatusClientClosedRequest = 499
@@ -147,12 +151,16 @@ func (h *StrictErrorHandler) faultFrom(err error) (*fault.Error, bool) {
 	return nil, false
 }
 
-// cursorFault maps the search package's cursor errors to a 400, so every
+// cursorFault maps the search package's cursor and sort errors to a 400, so every
 // search endpoint answers a bad cursor the same way without per-handler code.
 // The repository returns the sentinel; the transport mapping lives here.
 func cursorFault(err error) (*fault.Error, bool) {
 	var message string
+	code, field := CodeInvalidCursor, "pagination.cursor"
 	switch {
+	case errors.Is(err, search.ErrUnknownSort):
+		code, field = CodeInvalidSort, "sort_by"
+		message = "The search cannot sort by this field."
 	case errors.Is(err, search.ErrCursorWithOffset):
 		message = "A cursor cannot be combined with an offset."
 	case errors.Is(err, search.ErrInvalidCursor):
@@ -162,7 +170,7 @@ func cursorFault(err error) (*fault.Error, bool) {
 		return nil, false
 	}
 	apiErr := &fault.Error{
-		Details: []fault.Detail{{Code: CodeInvalidCursor, Message: message, Field: "pagination.cursor"}},
+		Details: []fault.Detail{{Code: code, Message: message, Field: field}},
 		Status:  http.StatusBadRequest,
 	}
 	return apiErr.Wrap(err), true
