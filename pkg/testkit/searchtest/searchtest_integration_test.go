@@ -202,7 +202,7 @@ func TestIntegrationConformanceOfARealSearch(t *testing.T) {
 				{Body: t1(map[string]any{"sort_by": "score", "sort_direction": "DESC"})},
 				// No rows: the search must still refuse a well-formed cursor
 				// issued for another ordering.
-				{Body: map[string]any{"tenant": "nobody"}, Incompatible: t1(map[string]any{"sort_by": "name"})},
+				{Body: map[string]any{"tenant": "nobody"}, Incompatible: t1(map[string]any{"sort_by": "name"}), SameOrder: t1(nil)},
 			},
 			SortField: true,
 		},

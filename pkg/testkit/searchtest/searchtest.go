@@ -59,6 +59,11 @@ type Scope struct {
 	// refuse it. It works for empty scopes too, which issue no cursor of
 	// their own. Nil skips the check.
 	Incompatible map[string]any
+	// SameOrder is a populated request with Body's ordering. An empty scope
+	// issues no cursor, so the kit uses SameOrder's cursor to check that the
+	// scope still refuses a valid cursor sent with an offset. A populated
+	// scope uses its own cursor and needs none.
+	SameOrder map[string]any
 }
 
 // Refusals describes the invalid requests a search must answer with 400.
@@ -149,20 +154,18 @@ func CheckWalk(ctx context.Context, suite Suite, c Case) error {
 		if err != nil {
 			return fmt.Errorf("page %d: %w", page, err)
 		}
+		if err := validPage(p, suite.Limit); err != nil {
+			return fmt.Errorf("page %d: %w", page, err)
+		}
 		switch {
-		case p.Total < 0 || p.Count < 0:
-			return fmt.Errorf("page %d: negative total %d or count %d", page, p.Total, p.Count)
-		case p.Count != len(p.IDs):
-			return fmt.Errorf("page %d: count %d, %d items", page, p.Count, len(p.IDs))
-		case len(p.IDs) > suite.Limit:
-			return fmt.Errorf("page %d: %d items exceed limit %d", page, len(p.IDs), suite.Limit)
 		case page > 0 && p.Total != total:
 			return fmt.Errorf("page %d: total %d, first page said %d", page, p.Total, total)
-		case page > 0 && len(p.IDs) == 0:
-			// A keyset page reads one row past the limit, so it knows when no
-			// row follows; a continuation that leads to an empty page was a
-			// cursor it should not have issued.
-			return fmt.Errorf("page %d: empty page after a next_cursor", page)
+		case len(p.IDs) == 0:
+			// Want holds more rows than the limit, so every page of the walk
+			// has rows: the first one does, and a keyset page reads one row
+			// past the limit, so a cursor leading to an empty page was one it
+			// should not have issued.
+			return fmt.Errorf("page %d: empty page in a walk of %d rows", page, len(c.Want))
 		}
 		if page == 0 {
 			total = p.Total
@@ -189,6 +192,21 @@ func CheckWalk(ctx context.Context, suite Suite, c Case) error {
 	return nil
 }
 
+// validPage checks what every successful page must satisfy on its own.
+func validPage(p Page, limit int) error {
+	switch {
+	case p.Total < 0 || p.Count < 0:
+		return fmt.Errorf("negative total %d or count %d", p.Total, p.Count)
+	case p.Count != len(p.IDs):
+		return fmt.Errorf("count %d, %d items", p.Count, len(p.IDs))
+	case len(p.IDs) > limit:
+		return fmt.Errorf("%d items exceed limit %d", len(p.IDs), limit)
+	case int64(len(p.IDs)) > p.Total:
+		return fmt.Errorf("%d items exceed total %d", len(p.IDs), p.Total)
+	}
+	return nil
+}
+
 // CheckRefusals sends the invalid requests in one scope and reports every
 // violation. Forged cursors are tried in every scope that has a second page,
 // so scopes with different sorts exercise different key types.
@@ -206,17 +224,31 @@ func CheckRefusals(ctx context.Context, suite Suite, s Scope) []error {
 
 	// Control: the scope as sent is valid, so a 400 below is about the change.
 	first, err := fetchPage(ctx, suite, withPagination(scope, suite.Limit, "", 0))
+	if err == nil {
+		err = validPage(first, suite.Limit)
+	}
 	if err != nil {
 		return []error{fmt.Errorf("control request: %w", err)}
 	}
 	refuse("malformed cursor", withPagination(scope, suite.Limit, "!!not-a-cursor!!", 0), cursorCode)
 	refuse("oversized cursor", withPagination(scope, suite.Limit, strings.Repeat("A", search.MaxCursorLength+1), 0), cursorCode)
-	// Any non-empty cursor with an offset is refused before it is decoded.
+	// A cursor this ordering accepts, sent with an offset, must be refused:
+	// a malformed one would be refused for the wrong reason.
 	offsetCursor := first.NextCursor
-	if offsetCursor == "" {
-		offsetCursor = "c3RhbGU"
+	if offsetCursor == "" && s.SameOrder != nil {
+		same, err := fetchPage(ctx, suite, withPagination(s.SameOrder, suite.Limit, "", 0))
+		switch {
+		case err != nil:
+			errs = append(errs, fmt.Errorf("same-order request: %w", err))
+		case same.NextCursor == "":
+			errs = append(errs, fmt.Errorf("same-order request issued no cursor; seed more rows than the limit"))
+		default:
+			offsetCursor = same.NextCursor
+		}
 	}
-	refuse("cursor with offset", withPagination(scope, suite.Limit, offsetCursor, 1), cursorCode)
+	if offsetCursor != "" {
+		refuse("cursor with offset", withPagination(scope, suite.Limit, offsetCursor, 1), cursorCode)
+	}
 	if suite.Refusals.SortField {
 		unknown := maps.Clone(scope)
 		if unknown == nil {
@@ -246,7 +278,11 @@ func CheckRefusals(ctx context.Context, suite Suite, s Scope) []error {
 			case err != nil:
 				errs = append(errs, fmt.Errorf("forged cursor %d: %w", i, err))
 			case status == http.StatusOK:
-				if _, err := suite.Decode(response); err != nil {
+				page, err := suite.Decode(response)
+				if err == nil {
+					err = validPage(page, suite.Limit)
+				}
+				if err != nil {
 					errs = append(errs, fmt.Errorf("forged cursor %d: 200 with an invalid page: %w", i, err))
 				}
 			case status != http.StatusBadRequest:

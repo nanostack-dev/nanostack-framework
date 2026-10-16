@@ -31,6 +31,9 @@ type fakeSearch struct {
 	codeInMessage      bool // puts the expected code in the message, not the code field
 	extraCursorAtEnd   bool // issues a cursor on the last populated page
 	negativeFirstTotal bool // first page reports total -1
+	emptyFirstPage     bool // first page has no rows but a cursor
+	emptyIgnoresOffset bool // empty scope accepts a valid cursor with an offset
+	forgedBadPage      bool // answers a forged cursor with an inconsistent 200
 }
 
 type fakeRow struct{ ID, Name string }
@@ -68,7 +71,8 @@ func (f fakeSearch) call(_ context.Context, body map[string]any) (int, []byte, e
 	if f.ignoreSort {
 		sortBy = ""
 	}
-	if err := (search.Pagination{Limit: 1, Offset: int32(req.Pagination.Offset), Cursor: req.Pagination.Cursor}).Validate(); err != nil {
+	offsetChecked := !(f.emptyIgnoresOffset && req.Scope == "empty")
+	if err := (search.Pagination{Limit: 1, Offset: int32(req.Pagination.Offset), Cursor: req.Pagination.Cursor}).Validate(); err != nil && offsetChecked {
 		return f.refuse("INVALID_CURSOR")
 	}
 	order := "id:ASC"
@@ -91,6 +95,9 @@ func (f fakeSearch) call(_ context.Context, body map[string]any) (int, []byte, e
 		}
 		var after string
 		if err := json.Unmarshal(cursor.Values[0], &after); err != nil {
+			if f.forgedBadPage {
+				return http.StatusOK, []byte(`{"items":[],"total":-1,"count":42}`), nil
+			}
 			if f.serverErrorForged {
 				return http.StatusInternalServerError, []byte(`{"errors":[{"code":"UNEXPECTED_ERROR"}]}`), nil
 			}
@@ -99,6 +106,10 @@ func (f fakeSearch) call(_ context.Context, body map[string]any) (int, []byte, e
 		for start < len(sorted) && key(sorted[start]) <= after {
 			start++
 		}
+	}
+	if f.emptyFirstPage && req.Pagination.Cursor == "" && req.Scope != "empty" {
+		first, _ := search.EncodeCursor(order, []any{""})
+		return ok(nil, int64(len(sorted)), first)
 	}
 	end := min(start+req.Pagination.Limit, len(sorted))
 	page := sorted[start:end]
@@ -164,7 +175,7 @@ func fakeSuite(f fakeSearch) Suite {
 		Refusals: Refusals{
 			Scopes: []Scope{
 				{Body: map[string]any{}, Incompatible: map[string]any{"sort_by": "name"}},
-				{Body: map[string]any{"scope": "empty"}, Incompatible: map[string]any{"sort_by": "name"}},
+				{Body: map[string]any{"scope": "empty"}, Incompatible: map[string]any{"sort_by": "name"}, SameOrder: map[string]any{}},
 			},
 			SortField: true,
 		},
@@ -206,6 +217,9 @@ func TestChecksCatchEachDefect(t *testing.T) {
 		"code only in the message":       {fakeSearch{codeInMessage: true}, "without error code"},
 		"cursor after the last row":      {fakeSearch{extraCursorAtEnd: true}, "next_cursor after all"},
 		"negative first total":           {fakeSearch{negativeFirstTotal: true}, "negative total"},
+		"empty first page with a cursor": {fakeSearch{emptyFirstPage: true}, "empty page in a walk"},
+		"empty scope ignores offset":     {fakeSearch{emptyIgnoresOffset: true}, "cursor with offset"},
+		"forged cursor gives a bad page": {fakeSearch{forgedBadPage: true}, "200 with an invalid page"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			err := checkAll(fakeSuite(tc.search))
