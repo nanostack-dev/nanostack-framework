@@ -3,6 +3,7 @@ package search
 import (
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -97,5 +98,28 @@ func TestEncodeCursorRefusesOversizedTokens(t *testing.T) {
 	}
 	if _, err := DecodeCursor(token); err != nil {
 		t.Fatalf("DecodeCursor() of an issued cursor: %v", err)
+	}
+}
+
+func TestIsClientError(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"nil", nil, false},
+		{"invalid cursor", ErrInvalidCursor, true},
+		{"wrapped invalid cursor", fmt.Errorf("search flows: %w", ErrInvalidCursor), true},
+		{"cursor with offset", ErrCursorWithOffset, true},
+		{"unknown sort", ErrUnknownSort, true},
+		{"plain error", errors.New("connection refused"), false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := IsClientError(test.err); got != test.want {
+				t.Fatalf("IsClientError(%v) = %v, want %v", test.err, got, test.want)
+			}
+		})
 	}
 }

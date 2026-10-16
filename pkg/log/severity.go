@@ -7,6 +7,7 @@ import (
 
 	"github.com/nanostack-dev/nanostack-framework/pkg/db/pgerr"
 	"github.com/nanostack-dev/nanostack-framework/pkg/fault"
+	"github.com/nanostack-dev/nanostack-framework/pkg/search"
 	"github.com/rs/zerolog"
 )
 
@@ -21,6 +22,10 @@ import (
 //   - A handled API error below 500 is Debug. A 404 or a validation failure is
 //     the API answering correctly, and paging on it trains people to ignore the
 //     pager.
+//   - A search error the caller caused (search.IsClientError: an invalid
+//     cursor, a cursor with an offset, an unknown sort field) is Debug for the
+//     same reason. It is a plain sentinel that the transport maps to a 400, so
+//     it carries no fault status of its own.
 //   - Everything else is Error.
 //
 // Cancellation is checked first: a cancelled request often also carries a fault
@@ -36,6 +41,9 @@ func LevelFor(err error) zerolog.Level {
 		if apiErr.HTTPStatus() < http.StatusInternalServerError {
 			return zerolog.DebugLevel
 		}
+	}
+	if search.IsClientError(err) {
+		return zerolog.DebugLevel
 	}
 	return zerolog.ErrorLevel
 }
