@@ -396,3 +396,18 @@ func TestStrictErrorHandlerMapsCursorErrorsToBadRequest(t *testing.T) {
 		})
 	}
 }
+
+func TestStrictErrorHandlerMapsUnknownSortToBadRequest(t *testing.T) {
+	handler := NewStrictErrorHandler(StrictErrorHandlerOptions{Logger: zerolog.Nop()})
+	resp := httptest.NewRecorder()
+	handler.HandleResponseError(resp, httptest.NewRequest(http.MethodPost, "/flows/search", nil),
+		fmt.Errorf("repository: %w: color", search.ErrUnknownSort))
+
+	var body errorResponse
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if resp.Code != http.StatusBadRequest || len(body.Errors) != 1 || body.Errors[0].Code != CodeInvalidSort {
+		t.Fatalf("status %d errors %+v, want 400 %s", resp.Code, body.Errors, CodeInvalidSort)
+	}
+}

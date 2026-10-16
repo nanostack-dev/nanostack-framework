@@ -201,3 +201,9 @@ A lazy `iter.Seq` pipeline was built and benchmarked as the alternative and reje
 ## 2026-10-15: Searches Page With Keyset Cursors
 
 `PageBuilder` gains `Keyset(transactor.Keys(...))`, `search.Pagination` gains `Cursor` and `search.Result` gains `NextCursor`. Offset paging over a non-unique sort could skip or repeat rows, and shifted with every write before the current page. A keyset ordering always ends with a unique tiebreak and resumes after the last row's values, so a walk returns every row that exists throughout it exactly once. Details, alternatives and consequences are in [ADR 0001](adr/0001-keyset-cursor-pagination.md).
+
+## 2026-10-16: Strict Search Sorts And A Search Conformance Kit
+
+`transactor.StrictKeys` refuses a requested sort field it cannot map with `search.ErrUnknownSort`, which `StrictErrorHandler` answers as `400 INVALID_SORT`; `Keys` stays lenient for non-search orderings. `pkg/testkit/searchtest` checks a search through HTTP: cursor walks against fixture-defined expected order, refusals in every scope including empty ones, and forged framework cursors that must never produce a 5xx.
+
+Rationale: reviewing the cursor-search rollout found 21 defects over 11 passes, and 16 fell in two classes this removes at the source: unknown sort fields silently falling back to the default (each service re-validated by hand and some missed it), and forged or extreme cursor values reaching Postgres as 500s (found one review pass at a time). A design review of the first proposal rejected an `Implicit` flag on `search.Sort` (it breaks positional literals and cannot identify every server-injected default) and a reference-page comparison (it cannot prove the requested sort was honoured), in favour of an opt-in strict constructor and explicit expected orders.

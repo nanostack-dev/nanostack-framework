@@ -529,7 +529,7 @@ type Order[T any] struct {
 // Keys builds the keyset ordering for a search's sort fields.
 //
 // columns maps each sortable field to its key; fields absent from the map are
-// ignored, as with SortColumns. The tiebreak keys must together be unique and
+// ignored, as with SortColumns. Searches use StrictKeys, which refuses them. The tiebreak keys must together be unique and
 // NOT NULL within the rows the search can return, normally the primary key.
 // A table with a composite key passes every column the search scope does not
 // already fix, for example the member id for a search scoped to one
@@ -575,6 +575,26 @@ func Keys[S ~string, T any](sorts []search.Sort[S], columns map[S]Key[T], tiebre
 	}
 	order.signature = strings.Join(parts, ",")
 	return order
+}
+
+// StrictKeys is Keys for searches: a requested sort field absent from columns
+// fails with search.ErrUnknownSort, naming it, instead of being dropped.
+// Ordering by a silently different column answers another question than the
+// client asked. A search resolves its documented default to a mapped field
+// before calling it.
+func StrictKeys[S ~string, T any](
+	sorts []search.Sort[S], columns map[S]Key[T], tiebreak Key[T], more ...Key[T],
+) (Order[T], error) {
+	var unknown []string
+	for _, sort := range sorts {
+		if _, ok := columns[sort.Field]; !ok {
+			unknown = append(unknown, string(sort.Field))
+		}
+	}
+	if len(unknown) > 0 {
+		return Order[T]{}, fmt.Errorf("%w: %s", search.ErrUnknownSort, strings.Join(unknown, ", "))
+	}
+	return Keys(sorts, columns, tiebreak, more...), nil
 }
 
 func normalizeDirection(direction search.SortDirection) search.SortDirection {
