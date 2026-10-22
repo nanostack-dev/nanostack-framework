@@ -191,24 +191,17 @@ func (reqs Requirements) Evaluate(
 	return ctx, fmt.Errorf("%w: %w", ErrUnauthorized, errors.Join(append(attempted, absent...)...))
 }
 
-// satisfy requires every scheme in the alternative to pass, threading the
-// context through them so a later scheme sees what an earlier one attached.
-// Schemes are visited in sorted order so a multi-scheme alternative fails
-// deterministically.
 func satisfy(
 	ctx context.Context, r *http.Request, req Requirement, auth Authenticator,
 ) (context.Context, error) {
+	// An alternative is a map in OpenAPI, so it has no order: sorting makes a
+	// failing multi-scheme alternative always report the same scheme.
 	schemes := append([]SchemeRequirement(nil), req.Schemes...)
 	sort.Slice(schemes, func(i, j int) bool { return schemes[i].Name < schemes[j].Name })
 
 	return satisfyEach(ctx, ctx, r, schemes, auth)
 }
 
-// satisfyEach walks the schemes of one alternative, handing each the context the
-// previous one produced. It recurses rather than looping because the context
-// genuinely accumulates across schemes, and an alternative holds a handful of
-// schemes at most. base is the context to hand back on failure, so a rejected
-// alternative contributes nothing.
 func satisfyEach(
 	base, authorized context.Context,
 	r *http.Request,
@@ -216,15 +209,17 @@ func satisfyEach(
 	auth Authenticator,
 ) (context.Context, error) {
 	if len(schemes) == 0 {
-		return authorized, nil
+		return authorized, nil // every scheme of the alternative passed
 	}
 
+	// Each scheme sees what the previous ones attached to the context.
 	next, err := auth(authorized, r, schemes[0])
 	if err != nil {
+		// Hand back the original context: a rejected alternative leaves nothing behind.
 		return base, fmt.Errorf("scheme %q: %w", schemes[0].Name, err)
 	}
 	if next == nil {
-		next = authorized
+		next = authorized // the scheme passed without adding anything
 	}
 	return satisfyEach(base, next, r, schemes[1:], auth)
 }
