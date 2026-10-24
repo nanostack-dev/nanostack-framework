@@ -7,7 +7,7 @@ Start with [agent rules](../AGENTS.md) and [canonical vocabulary](../CONTEXT.md)
 - [Implemented architecture](technical/architecture.md) and [ownership boundaries](boundaries.md).
 - [Functional values and collections](../pkg/functional/README.md).
 - [Transactions and queries](../pkg/db/transactor/README.md), [SQL error classification](../pkg/db/pgerr/README.md), [Jet expressions](../pkg/jetx/README.md).
-- [HTTP lifecycle](../modules/httpserver/README.md), [request logging](../pkg/httputil/requestlog/README.md), [typed cache](../modules/cache/README.md), [queue lifecycle](../modules/pgqueue/README.md).
+- [HTTP lifecycle](../modules/httpserver/README.md), [request logging](../pkg/httputil/requestlog/README.md), [distributed tracing](../pkg/tracing/README.md), [typed cache](../modules/cache/README.md), [queue lifecycle](../modules/pgqueue/README.md).
 - [Workflow bridge](../pkg/workflow/README.md) and [contract-test harness](../pkg/testkit/ct/README.md).
 
 ## Development and operations

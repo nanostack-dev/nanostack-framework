@@ -12,7 +12,7 @@ Select affected packages for iteration, such as `go test -race -count=1 ./pkg/fu
 
 ## PostgreSQL integration
 
-Use a disposable PostgreSQL server. The transactor tests expect `PGERR_TEST_DSN`; migrations tests expect `MIGRATIONS_TEST_DSN` with permission to create and remove temporary databases.
+Use a disposable PostgreSQL server. The transactor tests expect `PGERR_TEST_DSN`; the traced-driver test in `modules/postgres` expects `POSTGRES_TEST_DSN`; migrations tests expect `MIGRATIONS_TEST_DSN` with permission to create and remove temporary databases.
 
 ```sh
 docker run --rm -d --name framework-docs-postgres -p 55432:5432 \
@@ -21,6 +21,8 @@ PGERR_TEST_DSN='postgres://postgres:itpass@localhost:55432/pgerrit?sslmode=disab
   go test -tags=integration -race -count=1 ./pkg/db/transactor
 MIGRATIONS_TEST_DSN='postgres://postgres:itpass@localhost:55432/postgres?sslmode=disable' \
   go test -tags=integration -race -count=1 ./modules/migrations
+POSTGRES_TEST_DSN='postgres://postgres:itpass@localhost:55432/postgres?sslmode=disable' \
+  go test -tags=integration -race -count=1 ./modules/postgres
 docker stop framework-docs-postgres
 ```
 

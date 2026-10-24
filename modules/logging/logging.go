@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/nanostack-dev/nanostack-framework/pkg/fxlog"
+	"github.com/nanostack-dev/nanostack-framework/pkg/log"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxevent"
@@ -87,6 +88,9 @@ func isTerminal(f *os.File) bool {
 var Module = fx.Module( //nolint:gochecknoglobals // Required for fx module definition.
 	"logging",
 	fx.Provide(NewLoggingConfig, NewZerologLogger, NewBinder),
+	// trace_id/span_id from the context's span, so every bound logger links
+	// to its trace — on the HTTP path and in queue jobs alike.
+	fx.Provide(fx.Annotate(log.TraceEnricher, fx.ResultTags(EnricherGroup))),
 	// Publishes the Binder as the process-wide default so package-level
 	// log.Ctx works from any call site. Runs during construction, before any
 	// OnStart hook.

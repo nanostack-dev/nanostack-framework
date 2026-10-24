@@ -17,4 +17,6 @@ Applications still own:
 - retry policy and max attempts
 - idempotency and external side-effect decisions
 
+Trace context across the queue (enqueue context → stored `traceparent` → handler context) is owned by pgkit itself, not by a framework hook. Once a handler's context carries the span, `log.TraceEnricher` adds `trace_id`/`span_id` on `log.Bind` and PostgreSQL queries become child spans with no further framework wiring.
+
 Low-level worker lifecycle primitives currently live in `pkg/queueworker` so they can be reused without depending on FX.

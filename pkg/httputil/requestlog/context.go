@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/google/uuid"
+	"github.com/nanostack-dev/nanostack-framework/pkg/log"
 	"github.com/rs/zerolog"
 )
 
@@ -31,7 +32,9 @@ const (
 //   - derives a child logger from base carrying request_id, method and path and
 //     stores it on the context, so downstream code can retrieve it with From
 //     (or zerolog.Ctx) and attach further fields in place via
-//     (*zerolog.Logger).UpdateContext.
+//     (*zerolog.Logger).UpdateContext;
+//   - adds trace_id and span_id when the context carries a valid OpenTelemetry
+//     span context, so it must run inside tracing.Middleware.
 //
 // It must run before any middleware that enriches the request logger (for
 // example an auth middleware adding an org id) and before New, which reuses the
@@ -45,11 +48,15 @@ func Contextualize(base zerolog.Logger) func(http.Handler) http.Handler {
 			}
 			w.Header().Set(RequestIDHeader, requestID)
 
-			logger := base.With().
+			builder := base.With().
 				Str("request_id", requestID).
 				Str("method", r.Method).
-				Str("path", r.URL.Path).
-				Logger()
+				Str("path", r.URL.Path)
+			// trace_id/span_id come from the span the tracing middleware
+			// started (or the remote parent it extracted). They are not
+			// stored separately: log.TraceEnricher reads the span context
+			// itself when a Binder rebuilds the logger.
+			logger := log.WithTrace(r.Context(), builder).Logger()
 
 			// The three fields are stored on the context as well as on the
 			// logger. Anything that rebuilds a logger from a base — see
