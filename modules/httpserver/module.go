@@ -12,8 +12,11 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/cors"
 	"github.com/nanostack-dev/nanostack-framework/pkg/health"
+	"github.com/nanostack-dev/nanostack-framework/pkg/tracing"
 	nethttpmiddleware "github.com/oapi-codegen/nethttp-middleware"
 	"github.com/rs/zerolog"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/fx"
 )
 
@@ -90,6 +93,8 @@ type Params struct {
 	Lifecycle fx.Lifecycle
 	Logger    zerolog.Logger
 	Registry  *health.Registry `optional:"true"`
+	// TracerProvider defaults to the global provider (see modules/tracing).
+	TracerProvider trace.TracerProvider `optional:"true"`
 }
 
 func NewModule(options Options) fx.Option {
@@ -113,6 +118,7 @@ func Register(params Params, options Options) {
 			for i := len(options.Middlewares) - 1; i >= 0; i-- {
 				handler = options.Middlewares[i](handler)
 			}
+			handler = tracingMiddleware(params.TracerProvider)(handler)
 			server = &http.Server{
 				Addr:              ":" + strconv.Itoa(options.Port),
 				Handler:           handler,
@@ -142,6 +148,7 @@ func Register(params Params, options Options) {
 
 func setupRouter(options Options, logger zerolog.Logger, registry *health.Registry) (*chi.Mux, error) {
 	router := chi.NewRouter()
+	router.Use(tracing.RouteMiddleware)
 	router.Use(cors.New(cors.Options{
 		AllowedOrigins:   options.AllowedOrigins,
 		AllowOriginFunc:  options.AllowOrigin,
@@ -195,6 +202,15 @@ func setupRouter(options Options, logger zerolog.Logger, registry *health.Regist
 		options.ConfigureRouter(router)
 	}
 	return router, nil
+}
+
+// tracingMiddleware is outermost, so the server span exists before any
+// application middleware (requestlog.Contextualize included) runs.
+func tracingMiddleware(provider trace.TracerProvider) func(http.Handler) http.Handler {
+	if provider == nil {
+		return tracing.Middleware()
+	}
+	return tracing.Middleware(otelhttp.WithTracerProvider(provider))
 }
 
 func defaultValidatorBypass(r *http.Request) bool {

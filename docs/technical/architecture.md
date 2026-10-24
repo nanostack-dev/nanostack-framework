@@ -5,8 +5,8 @@ The repository is a Go module consumed by applications; it does not deploy a pro
 | Area | Implemented responsibility | Reference |
 | --- | --- | --- |
 | `app` | Fx service composition | [Assembly API](../../app/app.go) |
-| `modules` | Config, logging, PostgreSQL, cache, migrations, locks, HTTP, security, profiling and transaction lifecycle wiring | [Module boundaries](../boundaries.md#module-rules) |
-| `pkg` | Functional values, transaction/query helpers, SQL error classification, health, logs, validation, IDs, secrets, HTTP helpers and generic test infrastructure | [Package boundary](../../pkg/README.md) |
+| `modules` | Config, logging, tracing, PostgreSQL, cache, migrations, locks, HTTP, security, profiling and transaction lifecycle wiring | [Module boundaries](../boundaries.md#module-rules) |
+| `pkg` | Functional values, transaction/query helpers, SQL error classification, health, logs, tracing, validation, IDs, secrets, HTTP helpers and generic test infrastructure | [Package boundary](../../pkg/README.md) |
 | `gen/oapi`, `gen/jet` | Generation configuration conventions | [Generation](../generation.md) |
 | `gorules` | Ruleguard rules consumed by application lint configuration | [Functional rules](../../gorules/functional.go), [transaction rules](../../gorules/transactor.go) |
 
@@ -19,6 +19,10 @@ Applications combine framework modules with their own adapters through Fx. Infra
 Database execution follows the context-carried [transactor](../../pkg/db/transactor/README.md). The outer transaction owns commit/rollback, query results allow caller-specific constraint translation, and row-lock helpers require a transaction. Scan destinations must match go-jet column prefixes. `jetx` supplies expressions and filters rather than a competing query executor.
 
 The [functional package](../../pkg/functional/README.md) separates absence, failure and accumulating validation. Consult current function signatures when adopting it: historical decision entries and older examples may describe a previous API shape.
+
+## Observability
+
+[Tracing](../../pkg/tracing/README.md) follows the standard `OTEL_*` environment and is a no-op without an OTLP endpoint. `modules/httpserver` starts a server span per request (continuing the edge's W3C `traceparent`) and names it after the chi route; `modules/postgres` records queries as child spans; `tracing.Client`/`tracing.Transport` propagate to downstream services. Log lines carry `trace_id`/`span_id` through `requestlog.Contextualize` and `log.TraceEnricher`, which `modules/logging` registers.
 
 ## Compatibility
 

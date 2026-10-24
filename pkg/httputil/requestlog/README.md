@@ -39,7 +39,11 @@ For each request it:
 - stores the id on the context and echoes it on the `X-Request-Id` response
   header;
 - derives a child logger carrying `request_id`, `method` and `path` and stores
-  it on the context.
+  it on the context;
+- adds `trace_id` and `span_id` (hex) when the context carries a valid
+  OpenTelemetry span context. Run it inside `tracing.Middleware` so the server
+  span exists; a logger rebuilt by `log.Bind` gets the same fields from
+  `log.TraceEnricher`, without duplicate keys.
 
 Downstream code logs through `requestlog.From(ctx)` and every line inherits
 those fields. Middleware that learns more about the request later (for example
@@ -60,6 +64,7 @@ the `incoming request` summary, with no changes at the call sites.
 logger:
 
 ```
+tracing.Middleware()   // server span, continues traceparent
 Contextualize(base)   // seeds request_id + request-scoped logger
   └─ auth middleware   // From(ctx).UpdateContext(... org_id ...)
        └─ New(base, …)  // reuses the context logger; drops its own method/path

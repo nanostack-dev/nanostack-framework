@@ -9,3 +9,7 @@ The module owns the reusable shell: chi router creation, CORS wiring, optional O
 Apps can still provide narrow hooks for app-owned legacy error adapters or SSE route detection when those policies are not generic enough for the framework to infer.
 
 A strict handler that fails because the client disconnected (`context.Canceled` in the error chain, or a cancelled request context) is logged at warn and answered with `499` (`StatusClientClosedRequest`), so the access log does not record a 500. `context.DeadlineExceeded` is not treated this way: the framework sets no request deadline, so an expired one is the service's own timeout and stays a 500.
+
+## Tracing
+
+The final handler is wrapped by `tracing.Middleware` outermost, around `Options.Middlewares`, so the server span exists before application middleware such as `requestlog.Contextualize` runs. `tracing.RouteMiddleware` is the router's first middleware and names the span `"METHOD <chi route pattern>"` after routing. `/health` is not traced. `Params.TracerProvider` is optional and defaults to the global provider installed by `modules/tracing`; without that module the provider is a no-op that still propagates the incoming `traceparent`. See [tracing](../../pkg/tracing/README.md).
