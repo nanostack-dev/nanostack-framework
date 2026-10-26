@@ -88,6 +88,35 @@ func TestIntegrationForUpdateBlocksEveryOtherLock(t *testing.T) {
 	}
 }
 
+func TestIntegrationForNoKeyUpdateLetsForeignKeysInAndBlocksWriters(t *testing.T) {
+	db := openDB(t)
+	setupLockedSchema(t, db)
+	holdRowLocked(t, db, transactor.ForNoKeyUpdate)
+
+	if !rowLockable(t, db, "KEY SHARE") {
+		t.Fatal("a foreign key's FOR KEY SHARE was blocked while the row was held FOR NO KEY UPDATE")
+	}
+	if rowLockable(t, db, "SHARE") {
+		t.Fatal("a FOR SHARE reader took the row while it was held FOR NO KEY UPDATE")
+	}
+	if rowLockable(t, db, "NO KEY UPDATE") {
+		t.Fatal("a second writer took the row while it was held FOR NO KEY UPDATE")
+	}
+}
+
+func TestIntegrationForKeyShareLetsUpdatesInAndBlocksDeletes(t *testing.T) {
+	db := openDB(t)
+	setupLockedSchema(t, db)
+	holdRowLocked(t, db, transactor.ForKeyShare)
+
+	if !rowLockable(t, db, "NO KEY UPDATE") {
+		t.Fatal("an update of other columns was blocked while the row was held FOR KEY SHARE")
+	}
+	if rowLockable(t, db, "UPDATE") {
+		t.Fatal("a delete's FOR UPDATE took the row while it was held FOR KEY SHARE")
+	}
+}
+
 func TestIntegrationAnUnlockedReadLocksNothing(t *testing.T) {
 	db := openDB(t)
 	setupLockedSchema(t, db)

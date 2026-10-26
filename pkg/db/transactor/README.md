@@ -69,7 +69,10 @@ A transaction does not stop another one from changing the rows it has read: unde
 template, err := templates.Find(transactor.ForShare(txCtx), templateID)
 ```
 
-- `ForShare` lets other readers take the same lock and blocks writers. `ForUpdate` blocks both. `WithRowLock` takes any go-jet clause, such as `postgres.UPDATE().NOWAIT()`.
+- `ForShare` lets other readers take the same lock and blocks writers. `ForUpdate` blocks both.
+- `ForNoKeyUpdate` is the write lock for a change that keeps the key: rows in other tables may still insert foreign keys that point at the locked rows. Use it instead of `ForUpdate` unless the transaction deletes the rows or changes their key.
+- `ForKeyShare` is the lock a foreign key takes: it keeps the rows alive, refusing a delete or a key change, and lets updates of other columns through.
+- `WithRowLock` takes any go-jet clause, such as `postgres.UPDATE().NOWAIT()`.
 - Pass the locked context inline, to one call. Every query run with it is locked, so assigning it to `txCtx` locks every later read in the transaction.
 - A locked query outside a transaction returns `ErrRowLockOutsideTx`: the lock would end with the statement. A locked context on a statement that is not a SELECT returns `ErrRowLockNotSelect`.
 - Postgres refuses a lock on an aggregate, `GROUP BY` or `DISTINCT` query, so a locked `PageBuilder` count fails.

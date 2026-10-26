@@ -33,6 +33,21 @@ func ForUpdate(ctx context.Context) context.Context {
 	return WithRowLock(ctx, jet.UPDATE())
 }
 
+// ForNoKeyUpdate is ForUpdate for a write that changes no key: the rows are
+// read to be written, yet another transaction may still insert a row whose
+// foreign key points at them, since that takes FOR KEY SHARE. Prefer it to
+// ForUpdate unless the transaction deletes the rows or changes their key.
+func ForNoKeyUpdate(ctx context.Context) context.Context {
+	return WithRowLock(ctx, jet.NO_KEY_UPDATE())
+}
+
+// ForKeyShare keeps the rows alive until the transaction ends, the lock a
+// foreign key takes on the row it references: no other transaction may delete
+// them or change their key, while updates to other columns go through.
+func ForKeyShare(ctx context.Context) context.Context {
+	return WithRowLock(ctx, jet.KEY_SHARE())
+}
+
 // WithRowLock asks for any row lock clause go-jet can build, such as
 // jet.UPDATE().NOWAIT() or jet.UPDATE().SKIP_LOCKED().
 func WithRowLock(ctx context.Context, lock jet.RowLock) context.Context {
