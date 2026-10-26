@@ -8,7 +8,7 @@ import (
 	"errors"
 	"testing"
 
-	_ "github.com/lib/pq"
+	"github.com/lib/pq"
 
 	"github.com/nanostack-dev/nanostack-framework/pkg/db/transactor"
 )
@@ -53,7 +53,8 @@ func holdRowLocked(t *testing.T, db *sql.DB, lock func(context.Context) context.
 }
 
 // rowLockable reports whether another transaction can take mode on the row
-// right now.
+// right now. Any error but lock_not_available fails the test, so a refusal
+// is never mistaken for a lock.
 func rowLockable(t *testing.T, db *sql.DB, mode string) bool {
 	t.Helper()
 	tx, err := db.Begin()
@@ -62,7 +63,16 @@ func rowLockable(t *testing.T, db *sql.DB, mode string) bool {
 	}
 	defer func() { _ = tx.Rollback() }()
 	_, err = tx.Exec(`SELECT id FROM it_locked WHERE id = 'a' FOR ` + mode + ` NOWAIT`)
-	return err == nil
+	var pqErr *pq.Error
+	switch {
+	case err == nil:
+		return true
+	case errors.As(err, &pqErr) && pqErr.Code == "55P03":
+		return false
+	default:
+		t.Fatalf("probe FOR %s: %v", mode, err)
+		return false
+	}
 }
 
 func TestIntegrationForShareLetsReadersShareAndBlocksWriters(t *testing.T) {
@@ -83,8 +93,10 @@ func TestIntegrationForUpdateBlocksEveryOtherLock(t *testing.T) {
 	setupLockedSchema(t, db)
 	holdRowLocked(t, db, transactor.ForUpdate)
 
-	if rowLockable(t, db, "SHARE") {
-		t.Fatal("a FOR SHARE reader took the row while it was held FOR UPDATE")
+	for _, mode := range []string{"KEY SHARE", "SHARE", "NO KEY UPDATE"} {
+		if rowLockable(t, db, mode) {
+			t.Fatalf("FOR %s took the row while it was held FOR UPDATE", mode)
+		}
 	}
 }
 
