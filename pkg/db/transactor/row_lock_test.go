@@ -30,8 +30,10 @@ func TestRowLockAddsTheRequestedClause(t *testing.T) {
 		lock func(context.Context) context.Context
 		want string
 	}{
-		"for share":  {transactor.ForShare, "FOR SHARE"},
-		"for update": {transactor.ForUpdate, "FOR UPDATE"},
+		"for share":         {transactor.ForShare, "FOR SHARE"},
+		"for update":        {transactor.ForUpdate, "FOR UPDATE"},
+		"for no key update": {transactor.ForNoKeyUpdate, "FOR NO KEY UPDATE"},
+		"for key share":     {transactor.ForKeyShare, "FOR KEY SHARE"},
 		"nowait": {func(ctx context.Context) context.Context {
 			return transactor.WithRowLock(ctx, postgres.UPDATE().NOWAIT())
 		}, "FOR UPDATE NOWAIT"},
