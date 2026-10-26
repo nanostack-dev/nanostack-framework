@@ -61,7 +61,7 @@ config := transactor.QueryOptional[Run](ctx, db, runStmt).
 
 ## Locking the rows a query reads
 
-A transaction does not stop another one from changing the rows it has read: under Postgres's default isolation a read never blocks a write. When the transaction depends on those rows staying as read, pass the context through `ForShare` or `ForUpdate` for that one call. Every query helper then appends the clause to its SELECT:
+A transaction does not stop another one from changing the rows it has read: under Postgres's default isolation a read never blocks a write. When the transaction depends on those rows staying as read, pass the context through a row-lock helper for that one call. Every query helper then appends the clause to its SELECT:
 
 ```go
 // The license copies the template; an update to it waits until this commits,
@@ -70,7 +70,7 @@ template, err := templates.Find(transactor.ForShare(txCtx), templateID)
 ```
 
 - `ForShare` lets other readers take the same lock and blocks writers. `ForUpdate` blocks both.
-- `ForNoKeyUpdate` is the write lock for a change that keeps the key: rows in other tables may still insert foreign keys that point at the locked rows. Use it instead of `ForUpdate` unless the transaction deletes the rows or changes their key.
+- `ForNoKeyUpdate` is the write lock for a change that keeps the key: other transactions may still insert rows whose foreign keys point at the locked rows. Use it instead of `ForUpdate` unless the transaction deletes the rows or changes their key.
 - `ForKeyShare` is the lock a foreign key takes: it keeps the rows alive, refusing a delete or a key change, and lets updates of other columns through.
 - `WithRowLock` takes any go-jet clause, such as `postgres.UPDATE().NOWAIT()`.
 - Pass the locked context inline, to one call. Every query run with it is locked, so assigning it to `txCtx` locks every later read in the transaction.
