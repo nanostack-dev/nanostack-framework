@@ -95,7 +95,7 @@ linters:
       default-signifies-exhaustive: true
 
     # Only Deps structs: a dependency left out compiles as nil (ADR 0010). A
-    # field that New defaults takes the `exhaustruct:"optional"` tag.
+    # field that New defaults takes a `//exhaustruct:optional` comment.
     exhaustruct_v5:
       enforce-patterns:
         - .+\.Deps$
