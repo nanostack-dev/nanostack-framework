@@ -13,6 +13,7 @@ Start with [agent rules](../AGENTS.md) and [canonical vocabulary](../CONTEXT.md)
 ## Development and operations
 
 - [Setup](development/setup.md), [testing](development/testing.md), [troubleshooting](development/troubleshooting.md).
+- [Lint standard](../lint/README.md) shared by every service, with its [research](research/golangci-lint-standard.md).
 - [Publishing and consumer upgrades](runbooks/deployment.md), [rollback](runbooks/rollback.md).
 - [Architectural decisions](adr/README.md), preserving the [dated decision log](decision-log.md).
 
