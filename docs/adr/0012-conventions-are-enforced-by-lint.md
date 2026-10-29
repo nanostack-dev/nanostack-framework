@@ -1,6 +1,6 @@
 # 0012: Conventions are enforced by lint, not review
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-10-29
 - Part of: [feature architecture](../feature-architecture.md)
 
@@ -27,14 +27,17 @@ The decisions in this guide only help if every feature follows them. Echopoint a
           - pkg: echopoint/internal/apigen
             desc: HTTP types stay in handlers (ADR 0009)
       features-do-not-import-features:
-        files: ["**/internal/feature/**", "!**/internal/feature/flows/**"]
+        files: ["**/internal/feature/**"]
         deny:
-          - pkg: echopoint/internal/feature/flows
-            desc: declare a narrow interface in the consumer (ADR 0004)
+          - pkg: echopoint/internal/feature
+            desc: declare a narrow interface in the consumer and wire it in app.New (ADR 0004, 0010)
   ```
+
+  Every depguard entry is a prefix. A feature that splits off its own subpackage adds a rule for its own files that allows it; in lax mode the longer `allow` entry wins.
 
 - **Complete `Deps`.** `exhaustruct`, limited to types named `Deps`, fails a struct literal that leaves a dependency out ([0010](0010-wiring-is-plain-go.md)).
 - **A ruleguard rule** flags `log.Error(...)` followed by `return err` ([0008](0008-errors-are-wrapped-and-logged-once.md)).
+- **Rollout.** Today's code breaks these rules: echopoint's `flows/service.go` has 1,455 lines and `flows` imports 4 other features. Each new rule lands with an exclusion that lists the features not yet migrated. Migrating a feature removes it from the list, and nothing new joins it.
 
 ## Alternatives
 

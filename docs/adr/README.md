@@ -22,4 +22,4 @@ Read together through the [feature architecture guide](../feature-architecture.m
 - [0009: Handlers only translate](0009-handlers-only-translate.md)
 - [0010: Wiring is plain Go](0010-wiring-is-plain-go.md) (accepted)
 - [0011: HTTP tests specify, unit tests only for standalone logic](0011-http-tests-specify-table-tests-prove-rules.md) (accepted)
-- [0012: Conventions are enforced by lint, not review](0012-conventions-are-enforced-by-lint.md)
+- [0012: Conventions are enforced by lint, not review](0012-conventions-are-enforced-by-lint.md) (accepted)
