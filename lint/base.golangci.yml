@@ -94,7 +94,8 @@ linters:
         - mapliteral
       default-signifies-exhaustive: true
 
-    # Only Deps structs: a dependency left out compiles as nil (ADR 0010).
+    # Only Deps structs: a dependency left out compiles as nil (ADR 0010). A
+    # field that New defaults takes the `exhaustruct:"optional"` tag.
     exhaustruct_v5:
       enforce-patterns:
         - .+\.Deps$
@@ -139,6 +140,9 @@ linters:
       # Setting rules drops revive's defaults unless they are enabled again.
       enable-default-rules: true
       rules:
+        - name: context-as-argument # test helpers take t first, then ctx
+          arguments:
+            - allow-types-before: "*testing.T"
         - name: file-length-limit # ADR 0012 file budget
           arguments:
             - max: 400
@@ -168,6 +172,7 @@ linters:
       - path: _test\.go
         linters:
           - bodyclose
+          - exhaustruct_v5 # tests build partial Deps around fakes
           - funlen
           - gocognit
           - gosec
