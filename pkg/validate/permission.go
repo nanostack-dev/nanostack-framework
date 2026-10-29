@@ -1,6 +1,7 @@
 package validate
 
 import (
+	"reflect"
 	"regexp"
 	"strings"
 
@@ -13,7 +14,7 @@ var permissionPartPattern = regexp.MustCompile(`^[a-z0-9-_]+$`)
 
 // IsValidPermissionName validates permission names in the resource:action format.
 func IsValidPermissionName(fl validator.FieldLevel) bool {
-	permissionName, ok := fl.Field().Interface().(string)
+	permissionName, ok := reflect.TypeAssert[string](fl.Field())
 	if !ok {
 		return false
 	}

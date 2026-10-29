@@ -9,11 +9,12 @@ import (
 	"testing"
 
 	"github.com/lib/pq"
+	"github.com/rs/zerolog"
+
 	"github.com/nanostack-dev/nanostack-framework/pkg/db/pgerr"
 	"github.com/nanostack-dev/nanostack-framework/pkg/fault"
 	"github.com/nanostack-dev/nanostack-framework/pkg/log"
 	"github.com/nanostack-dev/nanostack-framework/pkg/search"
-	"github.com/rs/zerolog"
 )
 
 func TestLevelFor(t *testing.T) {

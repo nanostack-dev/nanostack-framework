@@ -14,22 +14,22 @@ import (
 
 type Loader interface {
 	Init(configPath string, dotEnvPath string) error
-	LoadConfig(configKey string, cfg interface{}) error
-	MustLoadConfig(configKey string, cfg interface{})
+	LoadConfig(configKey string, cfg any) error
+	MustLoadConfig(configKey string, cfg any)
 	Clean()
 }
 
 type LoaderImpl struct {
-	nanostackConfig map[string]interface{}
-	configRegistry  map[string]interface{}
+	nanostackConfig map[string]any
+	configRegistry  map[string]any
 }
 
 func NewConfigLoader() *LoaderImpl {
-	return &LoaderImpl{configRegistry: make(map[string]interface{})}
+	return &LoaderImpl{configRegistry: make(map[string]any)}
 }
 
 func (c *LoaderImpl) Init(configPath string, dotEnvPath string) error {
-	c.nanostackConfig = make(map[string]interface{})
+	c.nanostackConfig = make(map[string]any)
 
 	envFile := os.Getenv("ENV_FILE")
 	if envFile == "" {
@@ -82,7 +82,7 @@ func (c *LoaderImpl) replacePlaceholders(data string, re *regexp.Regexp) (string
 	return result, nil
 }
 
-func (c *LoaderImpl) LoadConfig(configKey string, cfg interface{}) error {
+func (c *LoaderImpl) LoadConfig(configKey string, cfg any) error {
 	if cached, exists := c.configRegistry[configKey]; exists {
 		reflect.ValueOf(cfg).Elem().Set(reflect.ValueOf(cached))
 		return nil
@@ -105,13 +105,13 @@ func (c *LoaderImpl) LoadConfig(configKey string, cfg interface{}) error {
 	return nil
 }
 
-func (c *LoaderImpl) MustLoadConfig(configKey string, cfg interface{}) {
+func (c *LoaderImpl) MustLoadConfig(configKey string, cfg any) {
 	if err := c.LoadConfig(configKey, cfg); err != nil {
 		panic(fmt.Sprintf("failed to load required config %q: %v", configKey, err))
 	}
 }
 
-func (c *LoaderImpl) validateConfig(configStruct interface{}) error {
+func (c *LoaderImpl) validateConfig(configStruct any) error {
 	v := reflect.ValueOf(configStruct)
 	if v.Kind() != reflect.Pointer || v.IsNil() {
 		return errors.New("configStruct must be a non-nil pointer")
@@ -161,7 +161,12 @@ func (c *LoaderImpl) getFieldFullName(field reflect.StructField, parent string) 
 	return fullName
 }
 
-func (c *LoaderImpl) checkFieldValue(field reflect.StructField, fieldValue reflect.Value, fullName string, missingFields *[]string) {
+func (c *LoaderImpl) checkFieldValue(
+	field reflect.StructField,
+	fieldValue reflect.Value,
+	fullName string,
+	missingFields *[]string,
+) {
 	optional := field.Tag.Get("optional") == "true"
 	if !optional && c.isZeroValue(fieldValue) {
 		*missingFields = append(*missingFields, fullName)
@@ -187,5 +192,5 @@ func (c *LoaderImpl) isZeroValue(fieldValue reflect.Value) bool {
 
 func (c *LoaderImpl) Clean() {
 	c.nanostackConfig = nil
-	c.configRegistry = make(map[string]interface{})
+	c.configRegistry = make(map[string]any)
 }

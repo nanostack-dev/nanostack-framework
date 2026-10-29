@@ -23,7 +23,7 @@ func NewStructValidator() (*StructValidator, error) {
 	v := validator.New()
 
 	v.RegisterTagNameFunc(func(fld reflect.StructField) string {
-		name := strings.SplitN(fld.Tag.Get("json"), ",", 2)[0]
+		name, _, _ := strings.Cut(fld.Tag.Get("json"), ",")
 		if name == "-" {
 			return ""
 		}
@@ -47,7 +47,11 @@ func NewStructValidator() (*StructValidator, error) {
 		return nil, fmt.Errorf("failed to register strongpassword validation: %w", err)
 	}
 	if err := v.RegisterTranslation("strongpassword", translator, func(ut ut.Translator) error {
-		return ut.Add("strongpassword", "Password must contain at least one uppercase letter, one lowercase letter, one digit, and one special character", true)
+		return ut.Add(
+			"strongpassword",
+			"Password must contain at least one uppercase letter, one lowercase letter, one digit, and one special character",
+			true,
+		)
 	}, func(ut ut.Translator, fe validator.FieldError) string {
 		t, err := ut.T("strongpassword", fe.Field(), fe.Tag(), fe.Param())
 		if err != nil {
@@ -79,7 +83,11 @@ func NewStructValidator() (*StructValidator, error) {
 		return nil, fmt.Errorf("failed to register permission_name validation: %w", err)
 	}
 	if err := v.RegisterTranslation("permission_name", translator, func(ut ut.Translator) error {
-		return ut.Add("permission_name", "{0} must follow the format 'resource:action' using only lowercase letters, numbers, dashes, and underscores", true)
+		return ut.Add(
+			"permission_name",
+			"{0} must follow the format 'resource:action' using only lowercase letters, numbers, dashes, and underscores",
+			true,
+		)
 	}, func(ut ut.Translator, fe validator.FieldError) string {
 		t, err := ut.T("permission_name", fe.Field())
 		if err != nil {

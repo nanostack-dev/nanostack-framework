@@ -219,7 +219,11 @@ func (m *MigrationProvider) validateMigrationPairs(moduleName string, upFiles, d
 			}
 		}
 		if !found {
-			m.log.Warn().Str("module", moduleName).Str("upFile", filepath.Base(upFile)).Str("missingDown", expectedDownFile).Msg("missing corresponding down migration file")
+			m.log.Warn().
+				Str("module", moduleName).
+				Str("upFile", filepath.Base(upFile)).
+				Str("missingDown", expectedDownFile).
+				Msg("missing corresponding down migration file")
 		}
 	}
 }
@@ -228,6 +232,6 @@ type MigrateLogger struct {
 	logger zerolog.Logger
 }
 
-func (l *MigrateLogger) Printf(format string, v ...interface{}) { l.logger.Debug().Msgf(format, v...) }
+func (l *MigrateLogger) Printf(format string, v ...any) { l.logger.Debug().Msgf(format, v...) }
 
 func (l *MigrateLogger) Verbose() bool { return true }

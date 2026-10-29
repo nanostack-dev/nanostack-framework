@@ -282,13 +282,7 @@ func (s Seq[T]) IsEmpty() bool {
 
 // AnyMatch reports whether at least one item matches pred.
 func (s Seq[T]) AnyMatch(pred func(T) bool) bool {
-	for _, item := range s {
-		if pred(item) {
-			return true
-		}
-	}
-
-	return false
+	return slices.ContainsFunc(s, pred)
 }
 
 // AllMatch reports whether every item matches pred.

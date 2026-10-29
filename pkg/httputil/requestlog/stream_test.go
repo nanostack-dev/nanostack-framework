@@ -9,8 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nanostack-dev/nanostack-framework/pkg/httputil/requestlog"
 	"github.com/rs/zerolog"
+
+	"github.com/nanostack-dev/nanostack-framework/pkg/httputil/requestlog"
 )
 
 // A streaming handler behind the middleware must be able to clear the server's

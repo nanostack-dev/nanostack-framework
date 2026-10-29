@@ -24,8 +24,16 @@ func TestConfigFromEnvEnabled(t *testing.T) {
 		want bool
 	}{
 		{name: "no endpoint", want: false},
-		{name: "generic endpoint", env: map[string]string{tracing.EnvExporterEndpoint: "http://otel-collector:4318"}, want: true},
-		{name: "traces endpoint", env: map[string]string{tracing.EnvTracesEndpoint: "http://otel-collector:4318/v1/traces"}, want: true},
+		{
+			name: "generic endpoint",
+			env:  map[string]string{tracing.EnvExporterEndpoint: "http://otel-collector:4318"},
+			want: true,
+		},
+		{
+			name: "traces endpoint",
+			env:  map[string]string{tracing.EnvTracesEndpoint: "http://otel-collector:4318/v1/traces"},
+			want: true,
+		},
 		{name: "sdk disabled", env: map[string]string{
 			tracing.EnvExporterEndpoint: "http://otel-collector:4318", tracing.EnvSDKDisabled: "true",
 		}, want: false},

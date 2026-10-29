@@ -74,7 +74,8 @@ func (f fakeSearch) call(_ context.Context, body map[string]any) (int, []byte, e
 		sortBy = ""
 	}
 	offsetChecked := !(f.emptyIgnoresOffset && req.Scope == "empty")
-	if err := (search.Pagination{Limit: 1, Offset: int32(req.Pagination.Offset), Cursor: req.Pagination.Cursor}).Validate(); err != nil && offsetChecked {
+	if err := (search.Pagination{Limit: 1, Offset: int32(req.Pagination.Offset), Cursor: req.Pagination.Cursor}).Validate(); err != nil &&
+		offsetChecked {
 		return f.refuse("INVALID_CURSOR")
 	}
 	order := "id:ASC"
@@ -119,7 +120,8 @@ func (f fakeSearch) call(_ context.Context, body map[string]any) (int, []byte, e
 	end := min(start+req.Pagination.Limit, len(sorted))
 	page := sorted[start:end]
 	next := ""
-	if (end < len(sorted) || (f.extraCursorAtEnd && len(page) > 0) || (f.cursorOnLastPage && len(page) > 0 && start == 0)) && !f.stopAfterFirst {
+	if (end < len(sorted) || (f.extraCursorAtEnd && len(page) > 0) || (f.cursorOnLastPage && len(page) > 0 && start == 0)) &&
+		!f.stopAfterFirst {
 		last := key(page[len(page)-1])
 		if f.repeatCursor {
 			last = key(sorted[0])
@@ -180,7 +182,11 @@ func fakeSuite(f fakeSearch) Suite {
 		Refusals: Refusals{
 			Scopes: []Scope{
 				{Body: map[string]any{}, Incompatible: map[string]any{"sort_by": "name"}},
-				{Body: map[string]any{"scope": "empty"}, Incompatible: map[string]any{"sort_by": "name"}, SameOrder: map[string]any{}},
+				{
+					Body:         map[string]any{"scope": "empty"},
+					Incompatible: map[string]any{"sort_by": "name"},
+					SameOrder:    map[string]any{},
+				},
 			},
 			SortField: true,
 		},

@@ -151,12 +151,10 @@ func TestLazyConcurrentGet(t *testing.T) {
 	values := make([]int, goroutines)
 	var done sync.WaitGroup
 	for i := range goroutines {
-		done.Add(1)
-		go func() {
-			defer done.Done()
+		done.Go(func() {
 			start.Wait()
 			values[i] = l.Get()
-		}()
+		})
 	}
 	start.Done()
 	done.Wait()

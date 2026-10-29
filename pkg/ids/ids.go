@@ -16,7 +16,10 @@ func ValidatePrefix(prefix string) error {
 		return errors.New("prefix cannot be empty")
 	}
 	if !prefixPattern.MatchString(prefix) {
-		return fmt.Errorf("prefix %q must be lowercase and contain only letters, numbers, dashes, or underscores", prefix)
+		return fmt.Errorf(
+			"prefix %q must be lowercase and contain only letters, numbers, dashes, or underscores",
+			prefix,
+		)
 	}
 	return nil
 }

@@ -6,13 +6,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nanostack-dev/nanostack-framework/pkg/tracing"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/nanostack-dev/nanostack-framework/pkg/tracing"
 )
 
 func restoreGlobals(t *testing.T) {

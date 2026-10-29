@@ -5,8 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nanostack-dev/nanostack-framework/pkg/log"
 	"github.com/rs/zerolog"
+
+	"github.com/nanostack-dev/nanostack-framework/pkg/log"
 )
 
 func TestComponentIsBoundWithoutWiring(t *testing.T) {

@@ -5,10 +5,11 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/rs/zerolog"
+
 	"github.com/nanostack-dev/nanostack-framework/pkg/db/pgerr"
 	"github.com/nanostack-dev/nanostack-framework/pkg/fault"
 	"github.com/nanostack-dev/nanostack-framework/pkg/search"
-	"github.com/rs/zerolog"
 )
 
 // LevelFor returns the severity that fits err.

@@ -10,8 +10,9 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/nanostack-dev/nanostack-framework/pkg/httputil/requestlog"
 	"github.com/rs/zerolog"
+
+	"github.com/nanostack-dev/nanostack-framework/pkg/httputil/requestlog"
 )
 
 func TestContextualize(t *testing.T) {

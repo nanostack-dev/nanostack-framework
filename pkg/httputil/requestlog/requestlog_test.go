@@ -7,8 +7,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/nanostack-dev/nanostack-framework/pkg/httputil/requestlog"
 	"github.com/rs/zerolog"
+
+	"github.com/nanostack-dev/nanostack-framework/pkg/httputil/requestlog"
 )
 
 func TestMiddlewarePreservesBody(t *testing.T) {
