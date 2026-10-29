@@ -22,7 +22,7 @@ This guide explains how a Go feature is built in a Nanostack service. It is desi
 | [0008](adr/0008-errors-are-wrapped-and-logged-once.md) | Errors and logs | `fault` where the meaning is known, `%w` context on the way up, one log at the boundary |
 | [0009](adr/0009-handlers-only-translate.md) | HTTP | OpenAPI strict server, one handler per feature, and handlers that only map |
 | [0010](adr/0010-wiring-is-plain-go.md) | Wiring | `feature.New(Deps)` and `app.New` in plain Go, with `errgroup` for the lifecycle (accepted) |
-| [0011](adr/0011-http-tests-specify-table-tests-prove-rules.md) | Tests | Real HTTP requests on containers for operations, crons and jobs; unit tests only for standalone logic; no mocks (accepted) |
+| [0011](adr/0011-http-tests-specify-table-tests-prove-rules.md) | Tests | Real HTTP requests on containers for operations; jobs and crons called directly in service tests; unit tests only for standalone logic; no mocks (accepted) |
 | [0012](adr/0012-conventions-are-enforced-by-lint.md) | Conventions | Files named after operations, size budgets, and import rules in lint |
 
 ## Why
