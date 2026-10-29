@@ -1,6 +1,6 @@
 # Feature architecture for Nanostack services
 
-- Status: proposed; [0010](adr/0010-wiring-is-plain-go.md) accepted on 2026-10-29
+- Status: proposed; [0010](adr/0010-wiring-is-plain-go.md) and [0011](adr/0011-http-tests-specify-table-tests-prove-rules.md) accepted on 2026-10-29
 - Date: 2026-10-29
 - Applies to: anchor, echopoint and new services built on this framework
 - Baseline: anchor `8165b3d4`, echopoint `1d13937e`, nanostack-framework `48a612d`
@@ -22,7 +22,7 @@ This guide explains how a Go feature is built in a Nanostack service. It is desi
 | [0008](adr/0008-errors-are-wrapped-and-logged-once.md) | Errors and logs | `fault` where the meaning is known, `%w` context on the way up, one log at the boundary |
 | [0009](adr/0009-handlers-only-translate.md) | HTTP | OpenAPI strict server, one handler per feature, and handlers that only map |
 | [0010](adr/0010-wiring-is-plain-go.md) | Wiring | `feature.New(Deps)` and `app.New` in plain Go, with `errgroup` for the lifecycle (accepted) |
-| [0011](adr/0011-http-tests-specify-table-tests-prove-rules.md) | Tests | One HTTP component test file per operation, table tests for domain rules, and no mocks |
+| [0011](adr/0011-http-tests-specify-table-tests-prove-rules.md) | Tests | Real HTTP requests on containers for operations, crons and jobs; unit tests only for standalone logic; no mocks (accepted) |
 | [0012](adr/0012-conventions-are-enforced-by-lint.md) | Conventions | Files named after operations, size budgets, and import rules in lint |
 
 ## Why
