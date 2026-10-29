@@ -5,6 +5,7 @@ import (
 	"time"
 
 	jet "github.com/go-jet/jet/v2/postgres"
+
 	"github.com/nanostack-dev/nanostack-framework/pkg/jetx"
 	"github.com/nanostack-dev/nanostack-framework/pkg/search"
 )
@@ -143,8 +144,16 @@ func TestOrderBy(t *testing.T) {
 	}{
 		{name: "ascending", direction: search.SortAscending, want: "\nSELECT a AS \"a\"\nORDER BY a ASC;\n"},
 		{name: "descending", direction: search.SortDescending, want: "\nSELECT a AS \"a\"\nORDER BY a DESC;\n"},
-		{name: "unknown direction falls back to ascending", direction: "sideways", want: "\nSELECT a AS \"a\"\nORDER BY a ASC;\n"},
-		{name: "empty direction falls back to ascending", direction: "", want: "\nSELECT a AS \"a\"\nORDER BY a ASC;\n"},
+		{
+			name:      "unknown direction falls back to ascending",
+			direction: "sideways",
+			want:      "\nSELECT a AS \"a\"\nORDER BY a ASC;\n",
+		},
+		{
+			name:      "empty direction falls back to ascending",
+			direction: "",
+			want:      "\nSELECT a AS \"a\"\nORDER BY a ASC;\n",
+		},
 	}
 
 	for _, test := range tests {

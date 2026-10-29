@@ -3,6 +3,7 @@ package health
 import (
 	"context"
 	"encoding/json"
+	"maps"
 	"net/http"
 	"os"
 	"time"
@@ -167,18 +168,14 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	status := http.StatusOK
 	if h.registry != nil {
 		extra, healthy := h.registry.Evaluate(r.Context())
-		for k, v := range extra {
-			payload[k] = v
-		}
+		maps.Copy(payload, extra)
 		if !healthy {
 			payload["status"] = "UNHEALTHY"
 			status = http.StatusServiceUnavailable
 		}
 	}
 
-	for key, value := range h.response.Extra {
-		payload[key] = value
-	}
+	maps.Copy(payload, h.response.Extra)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)

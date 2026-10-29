@@ -224,8 +224,7 @@ func TestResultTryRecover(t *testing.T) {
 		if got.IsOk() {
 			t.Fatalf("IsOk() = true, want false")
 		}
-		var rerr runtime.Error
-		if !errors.As(got.Err(), &rerr) {
+		if _, ok := errors.AsType[runtime.Error](got.Err()); !ok {
 			t.Fatalf("Err() = %v, want it to wrap a runtime.Error", got.Err())
 		}
 	})

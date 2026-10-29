@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"slices"
 	"strconv"
 	"time"
 
@@ -11,13 +12,14 @@ import (
 	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/cors"
-	"github.com/nanostack-dev/nanostack-framework/pkg/health"
-	"github.com/nanostack-dev/nanostack-framework/pkg/tracing"
 	nethttpmiddleware "github.com/oapi-codegen/nethttp-middleware"
 	"github.com/rs/zerolog"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/fx"
+
+	"github.com/nanostack-dev/nanostack-framework/pkg/health"
+	"github.com/nanostack-dev/nanostack-framework/pkg/tracing"
 )
 
 const (
@@ -115,8 +117,8 @@ func Register(params Params, options Options) {
 			if options.Handler != nil {
 				handler = options.Handler(router)
 			}
-			for i := len(options.Middlewares) - 1; i >= 0; i-- {
-				handler = options.Middlewares[i](handler)
+			for _, v := range slices.Backward(options.Middlewares) {
+				handler = v(handler)
 			}
 			handler = tracingMiddleware(params.TracerProvider)(handler)
 			server = &http.Server{

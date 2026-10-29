@@ -13,6 +13,6 @@ func mustNewStructValidator() *StructValidator {
 }
 
 // ValidateStruct validates a struct with the package default validator.
-func ValidateStruct(s interface{}) *fault.Error {
+func ValidateStruct(s any) *fault.Error {
 	return defaultStructValidator.Validate(s)
 }
