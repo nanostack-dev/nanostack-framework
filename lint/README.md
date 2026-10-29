@@ -19,6 +19,8 @@ go tool lintconfig          # writes .golangci.yml and .golangci-lint-version
 go tool lintconfig -check   # in CI: fails when the committed files are stale
 ```
 
+When the lint configuration lives above the module, as in a repository whose module is in `apps/<name>`, pass the directory: `go tool lintconfig -dir ../..`.
+
 The framework version in the service's `go.mod` decides which base it gets, so a lint change reaches a service only when it bumps the framework.
 
 A minimal `.golangci.local.yml`:

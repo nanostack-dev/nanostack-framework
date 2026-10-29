@@ -1,7 +1,8 @@
 // Command lintconfig writes a service's .golangci.yml and .golangci-lint-version
 // from the framework's lint standard and the service's .golangci.local.yml. Run
-// it from the service's module root, usually as `go tool lintconfig`. With
-// -check it writes nothing and fails when the committed files are stale.
+// it from the service's module root, usually as `go tool lintconfig`; -dir points
+// at another directory, such as a repository root above the module. With -check
+// it writes nothing and fails when the committed files are stale.
 package main
 
 import (
@@ -11,6 +12,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"runtime/debug"
 
 	"github.com/nanostack-dev/nanostack-framework/lint"
@@ -25,15 +27,16 @@ const (
 
 func main() {
 	check := flag.Bool("check", false, "fail when the committed files differ instead of writing them")
+	dir := flag.String("dir", ".", "directory that holds the overlay and receives the generated files")
 	flag.Parse()
-	if err := run(*check); err != nil {
+	if err := run(*dir, *check); err != nil {
 		fmt.Fprintln(os.Stderr, "lintconfig:", err)
 		os.Exit(1)
 	}
 }
 
-func run(check bool) error {
-	overlay, err := os.ReadFile(overlayFile)
+func run(dir string, check bool) error {
+	overlay, err := os.ReadFile(filepath.Join(dir, overlayFile))
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("read %s: %w", overlayFile, err)
 	}
@@ -46,6 +49,7 @@ func run(check bool) error {
 	files := map[string][]byte{configFile: config, versionFile: []byte(lint.Version() + "\n")}
 
 	for name, want := range files {
+		name = filepath.Join(dir, name)
 		if !check {
 			if writeErr := os.WriteFile(name, want, 0o600); writeErr != nil {
 				return fmt.Errorf("write %s: %w", name, writeErr)
