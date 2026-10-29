@@ -1,8 +1,9 @@
 # 0010: Wiring is plain Go
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-10-29
 - Part of: [feature architecture](../feature-architecture.md)
+- Supersedes: the FX-based assembly in [app shell](../app-shell.md) and [boundaries](../boundaries.md)
 
 ## Context
 
@@ -20,6 +21,8 @@ Services wire themselves through Uber FX, and [`app/`](../app-shell.md) assemble
 - `internal/app` builds the features in dependency order.
 - `Run` uses `errgroup` and `signal.NotifyContext`.
 - The framework offers a small lifecycle helper instead of FX modules.
+- Every object is built once at startup and shared. Actions keep no request state, so `Execute` never writes its own fields.
+- A `Deps` field left out of a struct literal still compiles and stays nil, so lint rejects it ([0012](0012-conventions-are-enforced-by-lint.md)).
 
 ```go
 // feature/flows/flows.go
@@ -75,6 +78,8 @@ Integration tests call `app.New` and read the fields they need, in place of `fx.
 
 ## Consequences
 
-- A missing dependency is a compile error, and a cycle cannot be written without someone breaking it on purpose. This follows "make dependencies explicit" ([Peter Bourgon](https://peter.bourgon.org/go-best-practices-2016/)) and Mat Ryer's `run(ctx, …)` ([Grafana blog](https://grafana.com/blog/2024/02/09/how-i-write-http-services-in-go-after-13-years/)). Prometheus runs its whole lifecycle in one run group ([main.go](https://github.com/prometheus/prometheus/blob/main/cmd/prometheus/main.go)).
+- Building a feature before what it needs is a compile error, because Go rejects a variable used before its declaration. A missing `Deps` field fails lint, and a cycle cannot be written without someone breaking it on purpose. This follows "make dependencies explicit" ([Peter Bourgon](https://peter.bourgon.org/go-best-practices-2016/)) and Mat Ryer's `run(ctx, …)` ([Grafana blog](https://grafana.com/blog/2024/02/09/how-i-write-http-services-in-go-after-13-years/)). Prometheus runs its whole lifecycle in one run group ([main.go](https://github.com/prometheus/prometheus/blob/main/cmd/prometheus/main.go)).
 - Stopping in reverse order after a partial startup is written once, in the framework helper.
-- `modules/` loses its FX role. If accepted, this supersedes the FX-based assembly described in [app shell](../app-shell.md) and [boundaries](../boundaries.md). It applies to every service at once (OQ-1), so services keep one way of starting.
+- Cycles break by building every feature's `Queries` first, since they need only the database. A write-to-write cycle goes through the outbox ([0007](0007-side-effects-leave-through-the-outbox.md)).
+- `app.New` grows with each feature and is a merge hotspot. CockroachDB's `NewServer` is 1,231 lines ([server.go](https://github.com/cockroachdb/cockroach/blob/HEAD/pkg/server/server.go#L256)). Each test override needs an explicit option.
+- `modules/` loses its FX role. This supersedes the FX-based assembly described in [app shell](../app-shell.md) and [boundaries](../boundaries.md). It applies to every service (OQ-1), so services keep one way of starting.

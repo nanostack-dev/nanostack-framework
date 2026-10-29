@@ -33,6 +33,7 @@ The decisions in this guide only help if every feature follows them. Echopoint a
             desc: declare a narrow interface in the consumer (ADR 0004)
   ```
 
+- **Complete `Deps`.** `exhaustruct`, limited to types named `Deps`, fails a struct literal that leaves a dependency out ([0010](0010-wiring-is-plain-go.md)).
 - **A ruleguard rule** flags `log.Error(...)` followed by `return err` ([0008](0008-errors-are-wrapped-and-logged-once.md)).
 
 ## Alternatives

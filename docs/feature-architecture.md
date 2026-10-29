@@ -1,13 +1,13 @@
 # Feature architecture for Nanostack services
 
-- Status: proposed
+- Status: proposed; [0010](adr/0010-wiring-is-plain-go.md) accepted on 2026-10-29
 - Date: 2026-10-29
 - Applies to: anchor, echopoint and new services built on this framework
 - Baseline: anchor `8165b3d4`, echopoint `1d13937e`, nanostack-framework `48a612d`
 
 This guide explains how a Go feature is built in a Nanostack service. It is designed so a reviewer can read one change in one sitting. Each choice is recorded as an ADR, with the alternatives considered, below. The guide describes the target state and ignores migration cost: refactors are cheap now, and each service's HTTP component suite checks behaviour on every change.
 
-> **Rule of thumb.** A reviewer finds a behaviour by its name, sees everything it touches in one file, and trusts the compiler for the wiring.
+> **Rule of thumb.** A reviewer finds a behaviour by its name, sees everything it touches in one file, and trusts the compiler and lint for the wiring.
 
 ## Decisions
 
@@ -21,7 +21,7 @@ This guide explains how a Go feature is built in a Nanostack service. It is desi
 | [0007](adr/0007-side-effects-leave-through-the-outbox.md) | Side effects | A queue job enqueued in the same transaction, and no remote call inside it |
 | [0008](adr/0008-errors-are-wrapped-and-logged-once.md) | Errors and logs | `fault` where the meaning is known, `%w` context on the way up, one log at the boundary |
 | [0009](adr/0009-handlers-only-translate.md) | HTTP | OpenAPI strict server, one handler per feature, and handlers that only map |
-| [0010](adr/0010-wiring-is-plain-go.md) | Wiring | `feature.New(Deps)` and `app.New` in plain Go, with `errgroup` for the lifecycle |
+| [0010](adr/0010-wiring-is-plain-go.md) | Wiring | `feature.New(Deps)` and `app.New` in plain Go, with `errgroup` for the lifecycle (accepted) |
 | [0011](adr/0011-http-tests-specify-table-tests-prove-rules.md) | Tests | One HTTP component test file per operation, table tests for domain rules, and no mocks |
 | [0012](adr/0012-conventions-are-enforced-by-lint.md) | Conventions | Files named after operations, size budgets, and import rules in lint |
 
@@ -151,7 +151,7 @@ Work per service, then per feature, one PR per step. Each step is a pure move, g
 
 | ID | Question | Affects |
 |---|---|---|
-| OQ-1 | Do we drop FX for every service, so all of them wire themselves the same way? | [0010](adr/0010-wiring-is-plain-go.md) |
+| OQ-1 | Resolved: every service drops FX, so all of them wire themselves the same way. | [0010](adr/0010-wiring-is-plain-go.md) |
 | OQ-2 | Should aggregates with a state machine (executions, sync runs) use an `UpdateFn` closure instead of `InTx` in the action? | [0006](adr/0006-actions-own-the-transaction.md) |
 | OQ-3 | `fault.Error.Error()` leaves out `Meta`, so the boundary line lacks fault metadata. Should the strict error handler log it? And should the queue worker write a line per failed job, which pgkit does not do today? | [0008](adr/0008-errors-are-wrapped-and-logged-once.md) |
 | OQ-4 | Should inputs live beside the action (chosen) or in the domain package (anchor today)? | [0004](adr/0004-one-action-per-write.md) |

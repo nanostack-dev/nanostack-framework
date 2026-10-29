@@ -23,6 +23,6 @@ These existing documents include intended future capabilities; the implemented a
 - [Vision](vision.md), [original architecture direction](architecture.md), [roadmap](roadmap.md), [common-work inventory](common-work-inventory.md).
 - [Service assembly direction](app-shell.md), [generation conventions](generation.md), [testkit scope](testkit.md), [history and publication strategy](privacy.md).
 - [CLI direction](../cli/README.md), [starter direction](../starter/README.md) and [service starter](../starter/service/README.md).
-- [Feature architecture](feature-architecture.md) (proposed): how a service feature is laid out, with ADRs 0002–0012.
+- [Feature architecture](feature-architecture.md) (proposed, 0010 accepted): how a service feature is laid out, with ADRs 0002–0012.
 
 Package guides remain beside their owners. Add optional research and postmortem folders when actual findings or incidents warrant them.

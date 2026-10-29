@@ -1,5 +1,7 @@
 # Boundaries
 
+> [ADR 0010](adr/0010-wiring-is-plain-go.md) replaces FX wiring with plain Go. The FX roles of `app/` and `modules/` below last until services migrate.
+
 Nanostack Framework removes repeated service shell code without absorbing product semantics.
 
 ## Repository Areas
