@@ -223,3 +223,19 @@ Choices: without an endpoint the provider is a no-op but the propagator is still
 Rationale: services need short critical sections that do not hold a database transaction open across remote calls, plus shared presence state and fan-out events. Each service had started to hand-roll these on go-redis. The code is written here from the documented Redis patterns (`SET NX PX`, compare-and-delete in Lua) instead of vendoring `bsm/redislock` (Apache-2.0) or `redsync` (BSD-3-Clause).
 
 Choices: a lease expires, so a crashed holder cannot block the mutex forever, but a stalled holder can lose the lease while it runs. `Do` cancels the work when that happens, and every lease carries a fencing token for resources that can refuse stale writers. Absence comes back as `functional.Option`, never as an error. `Queue` and `Topic` are at most once, and durable work stays in `pgqueue`. Tests run against real Valkey and Redis instead of an in-memory fake, because the Lua scripts, `WATCH` and pub/sub timing are what needs proof.
+
+## 2026-10-30: Mutex And Topic Hardened Against Server And Network Faults
+
+A review of how a mature distributed-objects library and its issue history handle lock and pub/sub failures found seven defects in `pkg/redisx`, each now proven by a real-server test that failed before:
+
+- go-redis sends a script again after a lost reply. The second run of the acquire script saw the caller's own lease and answered `ErrLocked`, and the lease stayed until it expired. The second run of the release script answered `ErrLeaseLost` after a clean release. Both scripts now give the same answer twice, and a `TryLock` that fails gives back a lease the server possibly took.
+- A refresh against a server that stops answering blocked the keep-alive for the client read timeout and its retries, so `Do` cancelled the work seconds after the lease expired. The keep-alive now refreshes in its own goroutine and cancels at the expiry, counted from the send time of the last successful refresh.
+- The keep-alive stopped when the caller context ended, while `fn` could still be running. It now refreshes until `fn` returns.
+- The fence restarted at 1 after a server lost its data. It is now at least the server time in microseconds.
+- A subscription that reconnected lost messages without telling anyone, and go-redis dropped messages after a handler was stuck for a minute. `OnError` now receives `ErrResubscribed`, and the backlog stays on the server until its buffer limit closes the connection, which is reported the same way.
+- A panic in a topic handler killed the process. It now goes to `OnError`.
+- go-redis 9.21 read a RESP3 push only once 36 bytes had arrived, so `Subscribe` on a short channel name waited for its deadline, or forever without one. The module now requires go-redis 9.22.0, which has the upstream fix.
+
+Waiting `Lock` callers are now woken by a pub/sub message from the release, and poll at most once a second as a fallback, capped by the holder's remaining TTL. `redistest` gains `StartServer` (restart, pause, cut connections) and `FaultyClient` (lose the reply of a command).
+
+Rejected, with reasons in the package README: fair ordering of waiters, waiting for replicas or a multi-server quorum (still timing-dependent; fencing is the answer), reentrant and read-write locks, one shared refresh loop, and exactly-once counters and queues under client retries.

@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
+	"runtime/debug"
 
 	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog"
@@ -31,9 +33,10 @@ func (t Topic[T]) WithCodec(codec Codec[T]) Topic[T] {
 	return t
 }
 
-// OnError receives the messages a subscriber could not decode and the errors
-// its handler returned. The subscription continues after each one. Without
-// OnError they are logged at error level with the context logger.
+// OnError receives the messages a subscriber could not decode, the errors and
+// panics of its handler, and ErrResubscribed after a lost connection. The
+// subscription continues after each one. Without OnError they are logged at
+// error level with the context logger.
 func (t Topic[T]) OnError(fn func(ctx context.Context, err error)) Topic[T] {
 	t.onError = fn
 	return t
@@ -58,8 +61,16 @@ func (t Topic[T]) Publish(ctx context.Context, msg T) (int, error) {
 // Subscribe calls handler for each message, one at a time and in order, until
 // ctx ends or the Subscription closes. Subscribe returns once the server has
 // confirmed the subscription, so every message published after it returns is
-// delivered. After a lost connection, the client subscribes again on its own;
-// messages published in between are lost.
+// delivered while the connection holds.
+//
+// After a lost connection, the client subscribes again on its own. Messages
+// published in between are lost, and OnError then receives an error that
+// matches ErrResubscribed. A handler that is slower than the publishers makes
+// the server buffer the messages, until it closes the connection at its output
+// buffer limit: that loss is reported the same way.
+//
+// A handler that panics is reported to OnError, and the subscription
+// continues.
 func (t Topic[T]) Subscribe(ctx context.Context, handler func(ctx context.Context, msg T) error) (*Subscription, error) {
 	pubsub := t.rdb.Subscribe(ctx, t.channel)
 	if _, err := pubsub.Receive(ctx); err != nil {
@@ -68,10 +79,18 @@ func (t Topic[T]) Subscribe(ctx context.Context, handler func(ctx context.Contex
 	}
 	subCtx, cancel := context.WithCancel(ctx)
 	sub := &Subscription{cancel: cancel, done: make(chan struct{})}
-	messages := pubsub.Channel()
+	// Without a send timeout go-redis never drops a message on its own: the
+	// backlog stays on the server, which reports its limit by closing the
+	// connection.
+	messages := pubsub.ChannelWithSubscriptions(redis.WithChannelSendTimeout(math.MaxInt64))
 	go func() {
 		defer close(sub.done)
-		defer func() { sub.err = pubsub.Close() }()
+		defer func() {
+			sub.err = pubsub.Close()
+			for range messages {
+				// Let go-redis see the close.
+			}
+		}()
 		for {
 			select {
 			case <-subCtx.Done():
@@ -80,7 +99,14 @@ func (t Topic[T]) Subscribe(ctx context.Context, handler func(ctx context.Contex
 				if !ok {
 					return
 				}
-				t.deliver(subCtx, message.Payload, handler)
+				switch message := message.(type) {
+				case *redis.Message:
+					t.deliver(subCtx, message.Payload, handler)
+				case *redis.Subscription:
+					if message.Kind == "subscribe" {
+						t.report(subCtx, fmt.Errorf("redisx: subscription to %s: %w", t.channel, ErrResubscribed))
+					}
+				}
 			}
 		}
 	}()
@@ -88,14 +114,27 @@ func (t Topic[T]) Subscribe(ctx context.Context, handler func(ctx context.Contex
 }
 
 func (t Topic[T]) deliver(ctx context.Context, raw string, handler func(ctx context.Context, msg T) error) {
-	msg, err := t.codec.Decode(raw)
-	if err == nil {
-		err = handler(ctx, msg)
-	}
+	err := t.handle(ctx, raw, handler)
 	if err == nil || (ctx.Err() != nil && errors.Is(err, ctx.Err())) {
 		return
 	}
-	err = fmt.Errorf("redisx: handle message on %s: %w", t.channel, err)
+	t.report(ctx, fmt.Errorf("redisx: handle message on %s: %w", t.channel, err))
+}
+
+func (t Topic[T]) handle(ctx context.Context, raw string, handler func(ctx context.Context, msg T) error) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("handler panicked: %v\n%s", r, debug.Stack())
+		}
+	}()
+	msg, err := t.codec.Decode(raw)
+	if err != nil {
+		return err
+	}
+	return handler(ctx, msg)
+}
+
+func (t Topic[T]) report(ctx context.Context, err error) {
 	if t.onError != nil {
 		t.onError(ctx, err)
 		return
