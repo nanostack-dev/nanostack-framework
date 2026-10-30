@@ -25,13 +25,17 @@ func TestDoSucceedsFirstAttempt(t *testing.T) {
 
 func TestDoSucceedsOnLaterAttempt(t *testing.T) {
 	calls := 0
-	err := retry.Do(context.Background(), retry.Options{MaxAttempts: 3, Delay: time.Millisecond}, func(context.Context) error {
-		calls++
-		if calls < 3 {
-			return errors.New("transient")
-		}
-		return nil
-	})
+	err := retry.Do(
+		context.Background(),
+		retry.Options{MaxAttempts: 3, Delay: time.Millisecond},
+		func(context.Context) error {
+			calls++
+			if calls < 3 {
+				return errors.New("transient")
+			}
+			return nil
+		},
+	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -43,10 +47,14 @@ func TestDoSucceedsOnLaterAttempt(t *testing.T) {
 func TestDoExhaustsAttemptsAndReturnsLastError(t *testing.T) {
 	calls := 0
 	want := errors.New("boom-3")
-	err := retry.Do(context.Background(), retry.Options{MaxAttempts: 3, Delay: time.Millisecond}, func(context.Context) error {
-		calls++
-		return errors.New("boom-" + string(rune('0'+calls)))
-	})
+	err := retry.Do(
+		context.Background(),
+		retry.Options{MaxAttempts: 3, Delay: time.Millisecond},
+		func(context.Context) error {
+			calls++
+			return errors.New("boom-" + string(rune('0'+calls)))
+		},
+	)
 	if calls != 3 {
 		t.Fatalf("expected 3 calls, got %d", calls)
 	}

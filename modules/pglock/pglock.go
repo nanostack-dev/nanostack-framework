@@ -8,9 +8,10 @@ import (
 
 	cpglock "cirello.io/pglock"
 	"github.com/google/uuid"
-	"github.com/nanostack-dev/nanostack-framework/modules/config"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
+
+	"github.com/nanostack-dev/nanostack-framework/modules/config"
 )
 
 const (
@@ -58,7 +59,13 @@ func NewClient(lc fx.Lifecycle, log zerolog.Logger, db *sql.DB, cfg Config) (*cp
 }
 
 func ProvideConfig(loader config.Loader) (Config, error) {
-	cfg := Config{TableName: "pglock_locks", AutoCreateTable: true, LeaseDuration: defaultLeaseDuration, HeartbeatFrequency: defaultHeartbeatFrequency, TestOnStartup: true}
+	cfg := Config{
+		TableName:          "pglock_locks",
+		AutoCreateTable:    true,
+		LeaseDuration:      defaultLeaseDuration,
+		HeartbeatFrequency: defaultHeartbeatFrequency,
+		TestOnStartup:      true,
+	}
 	_ = loader.LoadConfig("pglock", &cfg)
 	return cfg, nil
 }

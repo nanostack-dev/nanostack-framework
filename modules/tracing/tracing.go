@@ -6,11 +6,12 @@ package tracing
 import (
 	"context"
 
-	"github.com/nanostack-dev/nanostack-framework/pkg/tracing"
 	"github.com/rs/zerolog"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/fx"
+
+	"github.com/nanostack-dev/nanostack-framework/pkg/tracing"
 )
 
 // Module provides trace.TracerProvider and tracing.Config. Override the

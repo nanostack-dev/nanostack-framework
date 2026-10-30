@@ -5,11 +5,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nanostack-dev/nanostack-framework/pkg/fxlog"
-	"github.com/nanostack-dev/nanostack-framework/pkg/log"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxevent"
+
+	"github.com/nanostack-dev/nanostack-framework/pkg/fxlog"
+	"github.com/nanostack-dev/nanostack-framework/pkg/log"
 )
 
 type Config struct {

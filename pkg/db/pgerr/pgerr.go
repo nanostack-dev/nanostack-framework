@@ -15,6 +15,7 @@ package pgerr
 
 import (
 	"errors"
+	"slices"
 	"strings"
 
 	"github.com/lib/pq"
@@ -61,12 +62,7 @@ func Is(err error, code string, constraints ...string) bool {
 	if len(constraints) == 0 {
 		return true
 	}
-	for _, constraint := range constraints {
-		if pqErr.Constraint == constraint {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(constraints, pqErr.Constraint)
 }
 
 // IsUniqueViolation reports whether err is a unique-constraint violation

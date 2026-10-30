@@ -76,8 +76,13 @@ func handler(db *sql.DB) http.Handler {
 			errs.HandleRequestError(w, r, err)
 			return
 		}
-		req := search.NewRequest[struct{}, field]().WithSort(body.SortBy, body.SortDirection).WithPagination(body.Pagination)
-		order, err := transactor.StrictKeys(req.Sort, keys(), transactor.StringKey(colID, func(r row) string { return r.ID }))
+		req := search.NewRequest[struct{}, field]().WithSort(body.SortBy, body.SortDirection).
+			WithPagination(body.Pagination)
+		order, err := transactor.StrictKeys(
+			req.Sort,
+			keys(),
+			transactor.StringKey(colID, func(r row) string { return r.ID }),
+		)
 		if err != nil {
 			errs.HandleResponseError(w, r, err)
 			return
@@ -202,7 +207,11 @@ func TestIntegrationConformanceOfARealSearch(t *testing.T) {
 				{Body: t1(map[string]any{"sort_by": "score", "sort_direction": "DESC"})},
 				// No rows: the search must still refuse a well-formed cursor
 				// issued for another ordering.
-				{Body: map[string]any{"tenant": "nobody"}, Incompatible: t1(map[string]any{"sort_by": "name"}), SameOrder: t1(nil)},
+				{
+					Body:         map[string]any{"tenant": "nobody"},
+					Incompatible: t1(map[string]any{"sort_by": "name"}),
+					SameOrder:    t1(nil),
+				},
 			},
 			SortField: true,
 		},

@@ -4,8 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/nanostack-dev/nanostack-framework/pkg/log"
 	"github.com/rs/zerolog"
+
+	"github.com/nanostack-dev/nanostack-framework/pkg/log"
 )
 
 // installForTest publishes binder as the process default and restores whatever

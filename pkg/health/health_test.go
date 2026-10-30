@@ -11,7 +11,9 @@ import (
 
 func TestHandler(t *testing.T) {
 	recorder := httptest.NewRecorder()
-	NewHandler(Config{Service: "svc", Version: "v1", CommitSHA: "abc"}).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/health", nil))
+	NewHandler(
+		Config{Service: "svc", Version: "v1", CommitSHA: "abc"},
+	).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/health", nil))
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", recorder.Code)
 	}
@@ -80,7 +82,8 @@ func TestDynamicRegistry(t *testing.T) {
 			t.Fatalf("decode response: %v", err)
 		}
 
-		if payload["db"] != "HEALTHY" || payload["redis"] != "UNHEALTHY: connection pool exhausted" || payload["status"] != "UNHEALTHY" {
+		if payload["db"] != "HEALTHY" || payload["redis"] != "UNHEALTHY: connection pool exhausted" ||
+			payload["status"] != "UNHEALTHY" {
 			t.Fatalf("expected unhealthy status, got: %+v", payload)
 		}
 	})

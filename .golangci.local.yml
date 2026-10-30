@@ -1,0 +1,44 @@
+# The framework's own additions to lint/base.golangci.yml. Run
+# `go run ./lint/cmd/lintconfig` after changing this file or the base.
+formatters:
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/nanostack-dev/nanostack-framework
+
+linters:
+  settings:
+    gocritic:
+      enabled-checks:
+        - ruleguard
+      settings:
+        ruleguard:
+          rules: ${base-path}/gorules/functional.go,${base-path}/gorules/transactor.go
+          failOn: all
+
+  # Findings that predate the standard. Fix one and delete its path; warn-unused
+  # reports a path with nothing left to exclude. Nothing new joins these lists.
+  exclusions:
+    rules:
+      - linters: [errorlint]
+        path: ^(pkg/httputil/requestlog/stream_test\.go)$
+      - linters: [exhaustive]
+        path: ^(pkg/db/transactor/keyset\.go|pkg/db/transactor/keyset_test\.go)$
+      - linters: [funlen]
+        path: ^(pkg/testkit/searchtest/searchtest\.go)$
+      - linters: [gocognit]
+        path: ^(modules/httpserver/module\.go|pkg/testkit/searchtest/searchtest\.go)$
+      - linters: [gocritic]
+        path: ^(pkg/functional/slice_bench_test\.go|pkg/functional/slice_test\.go)$
+      - linters: [gosec]
+        path: ^(modules/config/configloader\.go)$
+      - linters: [govet]
+        path: ^(modules/cache/redis_fallback_test\.go|pkg/httputil/requestlog/stream_test\.go|modules/config/configloader\.go|modules/httpserver/module\.go|modules/migrations/migrator\.go|modules/pglock/pglock\.go|modules/postgres/postgres\.go|pkg/db/transactor/keyset\.go|pkg/db/transactor/keyset_test\.go|pkg/db/transactor/page\.go|pkg/ptr/ptr_test\.go|pkg/search/cursor\.go|pkg/search/cursor_test\.go|pkg/search/search_test\.go|pkg/secrets/versioned_cipher\.go|pkg/testkit/searchtest/mutations\.go|pkg/testkit/searchtest/searchtest\.go|pkg/testkit/searchtest/searchtest_test\.go|pkg/tracing/provider_test\.go|pkg/validate/validator\.go)$
+      - linters: [revive]
+        path: ^(modules/httpserver/tracing_test\.go|pkg/db/transactor/keyset\.go|pkg/db/transactor/keyset_test\.go|pkg/functional/result_test\.go|pkg/health/health_test\.go|pkg/validate/default_validator\.go)$
+      - linters: [staticcheck]
+        path: ^(pkg/testkit/searchtest/searchtest_test\.go|pkg/tracing/provider_test\.go)$
+      - linters: [testifylint]
+        path: ^(modules/config/configloader_test\.go)$
+      - linters: [unparam]
+        path: ^(pkg/tracing/http_test\.go)$

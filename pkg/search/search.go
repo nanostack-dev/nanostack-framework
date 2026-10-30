@@ -39,7 +39,7 @@ func (r Result[T]) HasMore() bool {
 // result's NextCursor to continue. Offset remains for clients that jump to a
 // page number, and cannot be combined with a cursor; see Validate.
 type Pagination struct {
-	Limit  int32 `json:"limit" validate:"required,min=1,max=1000"`
+	Limit  int32 `json:"limit"  validate:"required,min=1,max=1000"`
 	Offset int32 `json:"offset" validate:"min=0"`
 	// Cursor is an opaque token from Result.NextCursor. Empty starts at the
 	// first row.

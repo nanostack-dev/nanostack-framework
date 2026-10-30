@@ -8,14 +8,15 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nanostack-dev/nanostack-framework/pkg/httputil/requestlog"
-	"github.com/nanostack-dev/nanostack-framework/pkg/log"
-	"github.com/nanostack-dev/nanostack-framework/pkg/tracing"
 	"github.com/rs/zerolog"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 	"go.opentelemetry.io/otel/trace/noop"
+
+	"github.com/nanostack-dev/nanostack-framework/pkg/httputil/requestlog"
+	"github.com/nanostack-dev/nanostack-framework/pkg/log"
+	"github.com/nanostack-dev/nanostack-framework/pkg/tracing"
 )
 
 const edgeTraceparent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"

@@ -6,7 +6,11 @@ Run baseline checks from the module root:
 go test -race -count=1 ./...
 go vet ./...
 go build ./...
+go run ./lint/cmd/lintconfig -check
+golangci-lint run ./...
 ```
+
+Run the golangci-lint release named in `.golangci-lint-version`. The [lint standard](../../lint/README.md) explains the generated `.golangci.yml`.
 
 Select affected packages for iteration, such as `go test -race -count=1 ./pkg/functional ./pkg/db/transactor`. Database tests use the `integration` build tag and skip if their DSN is absent; skipped tests are not database verification.
 
@@ -41,6 +45,6 @@ REDIS_TEST_IMAGE=redis:7-alpine go test -tags=integration -race -count=1 ./pkg/r
 
 Regenerate functional families with `go generate ./pkg/functional`, then review the generated diff and rerun that package's tests. Keep application-generated files in their owning repository.
 
-The current framework tree has no tracked CI or golangci-lint configuration. `gorules/` is consumed by application lint configuration. Do not claim a missing framework CI gate passed. Public changes also need affected consumer lint, integration/contract checks and builds.
+The current framework tree has no tracked CI. Its golangci-lint configuration is generated from [`lint/`](../../lint/README.md), and `gorules/` is loaded by the framework's own and each application's lint configuration. Do not claim a missing framework CI gate passed. Public changes also need affected consumer lint, integration/contract checks and builds.
 
 Documentation-only changes use local link validation and `git diff --check`; do not add runtime tests merely to mirror prose.

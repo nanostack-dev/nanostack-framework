@@ -234,7 +234,11 @@ func CheckRefusals(ctx context.Context, suite Suite, s Scope) []error {
 		return []error{fmt.Errorf("control request: %w", err)}
 	}
 	refuse("malformed cursor", withPagination(scope, suite.Limit, "!!not-a-cursor!!", 0), cursorCode)
-	refuse("oversized cursor", withPagination(scope, suite.Limit, strings.Repeat("A", search.MaxCursorLength+1), 0), cursorCode)
+	refuse(
+		"oversized cursor",
+		withPagination(scope, suite.Limit, strings.Repeat("A", search.MaxCursorLength+1), 0),
+		cursorCode,
+	)
 	// A cursor this ordering accepts, sent with an offset, must be refused:
 	// a malformed one would be refused for the wrong reason.
 	offsetCursor := first.NextCursor
@@ -253,7 +257,12 @@ func CheckRefusals(ctx context.Context, suite Suite, s Scope) []error {
 	case offsetCursor != "":
 		refuse("cursor with offset", withPagination(scope, suite.Limit, offsetCursor, 1), cursorCode)
 	case s.SameOrder == nil:
-		errs = append(errs, fmt.Errorf("cursor with offset: the scope issued no cursor; give it SameOrder, a populated request with its ordering"))
+		errs = append(
+			errs,
+			fmt.Errorf(
+				"cursor with offset: the scope issued no cursor; give it SameOrder, a populated request with its ordering",
+			),
+		)
 	}
 	if suite.Refusals.SortField {
 		unknown := maps.Clone(scope)
@@ -297,7 +306,16 @@ func CheckRefusals(ctx context.Context, suite Suite, s Scope) []error {
 					errs = append(errs, fmt.Errorf("forged cursor %d: 200 with an invalid page: %w", i, err))
 				}
 			case status != http.StatusBadRequest:
-				errs = append(errs, fmt.Errorf("forged cursor %d %q: status %d, want 200 or 400: %s", i, forged, status, truncate(response)))
+				errs = append(
+					errs,
+					fmt.Errorf(
+						"forged cursor %d %q: status %d, want 200 or 400: %s",
+						i,
+						forged,
+						status,
+						truncate(response),
+					),
+				)
 			}
 		}
 	}

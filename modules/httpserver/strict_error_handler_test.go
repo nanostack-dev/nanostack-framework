@@ -11,9 +11,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/rs/zerolog"
+
 	"github.com/nanostack-dev/nanostack-framework/pkg/fault"
 	"github.com/nanostack-dev/nanostack-framework/pkg/search"
-	"github.com/rs/zerolog"
 )
 
 type errorResponse struct {
@@ -147,8 +148,7 @@ func TestStrictErrorHandlerHandleResponseErrorWithAdapter(t *testing.T) {
 	handler := NewStrictErrorHandler(StrictErrorHandlerOptions{
 		Logger: zerolog.Nop(),
 		AdaptError: func(err error) (*fault.Error, bool) {
-			var target *legacyError
-			if !errors.As(err, &target) {
+			if _, ok := errors.AsType[*legacyError](err); !ok {
 				return nil, false
 			}
 			return fault.BadRequest("INVALID_INPUT", "invalid input").
@@ -182,8 +182,7 @@ func TestStrictErrorHandlerHandleResponseErrorWithSSEEndpoint(t *testing.T) {
 	handler := NewStrictErrorHandler(StrictErrorHandlerOptions{
 		Logger: zerolog.Nop(),
 		AdaptError: func(err error) (*fault.Error, bool) {
-			var target *legacyError
-			if !errors.As(err, &target) {
+			if _, ok := errors.AsType[*legacyError](err); !ok {
 				return nil, false
 			}
 			return fault.NewWithStatus("CONFLICT", "conflict", http.StatusConflict), true

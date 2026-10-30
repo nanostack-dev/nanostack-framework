@@ -132,7 +132,11 @@ func newCodecKey[T any, V any](
 		bound: func(raw json.RawMessage) (keyBound, error) {
 			if string(raw) == "null" {
 				if !nullable {
-					return keyBound{}, fmt.Errorf("%w: null for non-null column %s", search.ErrInvalidCursor, column.Name())
+					return keyBound{}, fmt.Errorf(
+						"%w: null for non-null column %s",
+						search.ErrInvalidCursor,
+						column.Name(),
+					)
 				}
 				return keyBound{isNull: true, eq: column.IS_NULL()}, nil
 			}
@@ -205,7 +209,13 @@ func NullableEnumKey[T any](column jet.ColumnString, enumType string, labels []s
 	return enumKey(column, enumType, labels, true, value)
 }
 
-func enumKey[T any](column jet.ColumnString, enumType string, labels []string, nullable bool, value func(T) *string) Key[T] {
+func enumKey[T any](
+	column jet.ColumnString,
+	enumType string,
+	labels []string,
+	nullable bool,
+	value func(T) *string,
+) Key[T] {
 	typed := func(v string) jet.StringExpression {
 		return jet.StringExp(jet.CAST(jet.String(v)).AS(enumType))
 	}
@@ -369,7 +379,9 @@ func localTimeKey[T any](column jet.ColumnTimestamp, nullable bool, value func(T
 	micros := microsCodec()
 	codec := keyCodec[time.Time]{
 		encode: func(v time.Time) any {
-			return micros.encode(time.Date(v.Year(), v.Month(), v.Day(), v.Hour(), v.Minute(), v.Second(), v.Nanosecond(), time.UTC))
+			return micros.encode(
+				time.Date(v.Year(), v.Month(), v.Day(), v.Hour(), v.Minute(), v.Second(), v.Nanosecond(), time.UTC),
+			)
 		},
 		decode: micros.decode,
 	}
@@ -611,10 +623,10 @@ func normalizeDirection(direction search.SortDirection) search.SortDirection {
 func qualifiedName(column jet.Column) string {
 	const marker = " IS NULL"
 	rendered := jet.SELECT(jet.Int(1)).WHERE(column.IS_NULL()).DebugSql()
-	if start := strings.Index(rendered, "WHERE "); start >= 0 {
-		rest := rendered[start+len("WHERE "):]
-		if end := strings.Index(rest, marker); end >= 0 {
-			return strings.ReplaceAll(strings.Trim(rest[:end], "()"), `"`, "")
+	if _, after, ok := strings.Cut(rendered, "WHERE "); ok {
+		rest := after
+		if before, _, ok := strings.Cut(rest, marker); ok {
+			return strings.ReplaceAll(strings.Trim(before, "()"), `"`, "")
 		}
 	}
 	if table := column.TableName(); table != "" {
@@ -709,7 +721,10 @@ func (o Order[T]) expandedSeek(bounds []keyBound) jet.BoolExpression {
 	var prefix []jet.BoolExpression
 	for i, k := range o.keys {
 		if after := afterBound(k, bounds[i]); after != nil {
-			disjuncts = append(disjuncts, jetx.CombineFilters(append(append([]jet.BoolExpression{}, prefix...), after)...))
+			disjuncts = append(
+				disjuncts,
+				jetx.CombineFilters(append(append([]jet.BoolExpression{}, prefix...), after)...),
+			)
 		}
 		prefix = append(prefix, bounds[i].eq)
 	}

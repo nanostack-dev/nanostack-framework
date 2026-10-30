@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"strings"
 )
@@ -175,9 +176,7 @@ func (e *Error) Meta(key string, value any) *Error {
 	c.ensurePrimary()
 	last := len(c.Details) - 1
 	meta := make(map[string]any, len(c.Details[last].Metadata)+1)
-	for k, v := range c.Details[last].Metadata {
-		meta[k] = v
-	}
+	maps.Copy(meta, c.Details[last].Metadata)
 	meta[key] = value
 	c.Details[last].Metadata = meta
 	return c
@@ -190,12 +189,8 @@ func (e *Error) Metadata(metadata map[string]any) *Error {
 	c.ensurePrimary()
 	last := len(c.Details) - 1
 	meta := make(map[string]any, len(c.Details[last].Metadata)+len(metadata))
-	for k, v := range c.Details[last].Metadata {
-		meta[k] = v
-	}
-	for k, v := range metadata {
-		meta[k] = v
-	}
+	maps.Copy(meta, c.Details[last].Metadata)
+	maps.Copy(meta, metadata)
 	c.Details[last].Metadata = meta
 	return c
 }
@@ -293,8 +288,7 @@ func (e *Error) StatusCode() int {
 
 // As returns the framework API error when err wraps one.
 func As(err error) (*Error, bool) {
-	var target *Error
-	if errors.As(err, &target) {
+	if target, ok := errors.AsType[*Error](err); ok {
 		return target, true
 	}
 	return nil, false

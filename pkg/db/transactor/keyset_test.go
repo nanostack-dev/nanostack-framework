@@ -80,7 +80,11 @@ func TestKeysSignature(t *testing.T) {
 func TestKeysTiebreakNotRepeated(t *testing.T) {
 	columns := keyColumns()
 	columns["ID"] = idKey()
-	order := transactor.Keys([]search.Sort[sortField]{{Field: "ID", Direction: search.SortDescending}}, columns, idKey())
+	order := transactor.Keys(
+		[]search.Sort[sortField]{{Field: "ID", Direction: search.SortDescending}},
+		columns,
+		idKey(),
+	)
 	if got := order.Signature(); got != "widgets.id:DESC" {
 		t.Fatalf("Signature() = %q", got)
 	}
@@ -97,13 +101,20 @@ func cursorFor(t *testing.T, order transactor.Order[keyRow], row keyRow) string 
 
 func TestSeekUsesRowComparisonForUniformNotNullKeys(t *testing.T) {
 	created := time.Date(2026, 10, 15, 10, 0, 0, 0, time.UTC)
-	order := transactor.Keys([]search.Sort[sortField]{{Field: sortByCreated, Direction: search.SortDescending}}, keyColumns(), idKey())
+	order := transactor.Keys(
+		[]search.Sort[sortField]{{Field: sortByCreated, Direction: search.SortDescending}},
+		keyColumns(),
+		idKey(),
+	)
 	seek, err := order.Seek(cursorFor(t, order, keyRow{ID: "w_9", Created: created}))
 	if err != nil {
 		t.Fatalf("Seek() error = %v", err)
 	}
 	sql := normalize(jet.SELECT(colID).FROM(testTable).WHERE(seek).DebugSql())
-	if !strings.Contains(sql, "ROW(widgets.created_at, widgets.id) < ROW('2026-10-15 10:00:00Z'::timestamp with time zone, 'w_9'::text)") {
+	if !strings.Contains(
+		sql,
+		"ROW(widgets.created_at, widgets.id) < ROW('2026-10-15 10:00:00Z'::timestamp with time zone, 'w_9'::text)",
+	) {
 		t.Fatalf("seek SQL = %q, want a row comparison", sql)
 	}
 }
@@ -142,8 +153,16 @@ func TestSeekExpandsMixedDirectionsAndNulls(t *testing.T) {
 }
 
 func TestSeekRejectsForeignCursors(t *testing.T) {
-	byName := transactor.Keys([]search.Sort[sortField]{{Field: sortByName, Direction: search.SortAscending}}, keyColumns(), idKey())
-	byCreated := transactor.Keys([]search.Sort[sortField]{{Field: sortByCreated, Direction: search.SortAscending}}, keyColumns(), idKey())
+	byName := transactor.Keys(
+		[]search.Sort[sortField]{{Field: sortByName, Direction: search.SortAscending}},
+		keyColumns(),
+		idKey(),
+	)
+	byCreated := transactor.Keys(
+		[]search.Sort[sortField]{{Field: sortByCreated, Direction: search.SortAscending}},
+		keyColumns(),
+		idKey(),
+	)
 	token := cursorFor(t, byName, keyRow{ID: "w_1", Name: "a"})
 
 	if _, err := byCreated.Seek(token); !errors.Is(err, search.ErrInvalidCursor) {
@@ -192,7 +211,11 @@ func keysetBuilder() *transactor.PageBuilder[keyRow, keyRow] {
 }
 
 func TestKeysetStatement(t *testing.T) {
-	order := transactor.Keys([]search.Sort[sortField]{{Field: sortByName, Direction: search.SortAscending}}, keyColumns(), idKey())
+	order := transactor.Keys(
+		[]search.Sort[sortField]{{Field: sortByName, Direction: search.SortAscending}},
+		keyColumns(),
+		idKey(),
+	)
 	where := colTenant.EQ(jet.String("t1"))
 	seek, err := order.Seek(cursorFor(t, order, keyRow{ID: "w_1", Name: "a"}))
 	if err != nil {
@@ -276,10 +299,15 @@ const (
 func typedOrder(field sortField) transactor.Order[typedRow] {
 	return transactor.Keys([]search.Sort[sortField]{{Field: field, Direction: search.SortAscending}},
 		map[sortField]transactor.Key[typedRow]{
-			sortByStatus: transactor.EnumKey(colStatus, "widget_status", []string{"on", "off"}, func(r typedRow) string { return r.Status }),
-			sortByRef:    transactor.UUIDKey(colRef, func(r typedRow) uuid.UUID { return r.Ref }),
-			sortByScore:  transactor.FloatKey(colScore, func(r typedRow) float64 { return r.Score }),
-			sortByIP:     transactor.InetKey(colStatus, func(r typedRow) string { return r.Status }),
+			sortByStatus: transactor.EnumKey(
+				colStatus,
+				"widget_status",
+				[]string{"on", "off"},
+				func(r typedRow) string { return r.Status },
+			),
+			sortByRef:   transactor.UUIDKey(colRef, func(r typedRow) uuid.UUID { return r.Ref }),
+			sortByScore: transactor.FloatKey(colScore, func(r typedRow) float64 { return r.Score }),
+			sortByIP:    transactor.InetKey(colStatus, func(r typedRow) string { return r.Status }),
 		},
 		transactor.StringKey(colID, func(r typedRow) string { return r.ID }))
 }
@@ -340,7 +368,11 @@ func TestTypedKeysRoundTrip(t *testing.T) {
 
 func TestTimeKeyEncodesUTC(t *testing.T) {
 	paris := time.FixedZone("LMT", 561)
-	order := transactor.Keys([]search.Sort[sortField]{{Field: sortByCreated, Direction: search.SortAscending}}, keyColumns(), idKey())
+	order := transactor.Keys(
+		[]search.Sort[sortField]{{Field: sortByCreated, Direction: search.SortAscending}},
+		keyColumns(),
+		idKey(),
+	)
 	token, err := order.Cursor(keyRow{ID: "w", Created: time.Date(1900, 1, 1, 0, 9, 21, 0, paris)})
 	if err != nil {
 		t.Fatal(err)
@@ -368,8 +400,13 @@ func TestTimeKeyEncodesUTC(t *testing.T) {
 func TestIntKeyCastsLiteralToBigint(t *testing.T) {
 	colRank := jet.IntegerColumn("rank")
 	_ = jet.NewTable("public", "widgets", "", colRank)
-	order := transactor.Keys([]search.Sort[sortField]{{Field: "RANK", Direction: search.SortAscending}},
-		map[sortField]transactor.Key[keyRow]{"RANK": transactor.IntKey(colRank, func(keyRow) int64 { return 0 })}, idKey())
+	order := transactor.Keys(
+		[]search.Sort[sortField]{{Field: "RANK", Direction: search.SortAscending}},
+		map[sortField]transactor.Key[keyRow]{
+			"RANK": transactor.IntKey(colRank, func(keyRow) int64 { return 0 }),
+		},
+		idKey(),
+	)
 	token, _ := search.EncodeCursor(order.Signature(), []any{int64(1) << 40, "w_1"})
 	seek, err := order.Seek(token)
 	if err != nil {
@@ -385,8 +422,13 @@ func TestIntKeyCastsLiteralToBigint(t *testing.T) {
 func TestKeysDistinguishSubqueryColumns(t *testing.T) {
 	sub := testTable.SELECT(colID, colName).AsTable("latest")
 	subID := colID.From(sub)
-	order := transactor.Keys([]search.Sort[sortField]{{Field: "SUB", Direction: search.SortAscending}},
-		map[sortField]transactor.Key[keyRow]{"SUB": transactor.StringKey(subID, func(r keyRow) string { return r.Name })}, idKey())
+	order := transactor.Keys(
+		[]search.Sort[sortField]{{Field: "SUB", Direction: search.SortAscending}},
+		map[sortField]transactor.Key[keyRow]{
+			"SUB": transactor.StringKey(subID, func(r keyRow) string { return r.Name }),
+		},
+		idKey(),
+	)
 	if got := order.Signature(); !strings.Contains(got, "latest.") || !strings.Contains(got, ",widgets.id:ASC") {
 		t.Fatalf("Signature() = %q, want the subquery column and the tiebreak", got)
 	}
@@ -395,7 +437,11 @@ func TestKeysDistinguishSubqueryColumns(t *testing.T) {
 func TestNullPlacementInOrderAndSignature(t *testing.T) {
 	columns := keyColumns()
 	columns[sortByNote] = columns[sortByNote].NullsLast()
-	order := transactor.Keys([]search.Sort[sortField]{{Field: sortByNote, Direction: search.SortDescending}}, columns, idKey())
+	order := transactor.Keys(
+		[]search.Sort[sortField]{{Field: sortByNote, Direction: search.SortDescending}},
+		columns,
+		idKey(),
+	)
 	if got := order.Signature(); got != "widgets.note:DESC:NULLS_LAST,widgets.id:DESC" {
 		t.Fatalf("Signature() = %q", got)
 	}
@@ -408,7 +454,12 @@ func TestNullPlacementInOrderAndSignature(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if sql := normalize(jet.SELECT(colID).FROM(testTable).WHERE(seek).DebugSql()); !strings.Contains(sql, "(widgets.note < 'n'::text) OR (widgets.note IS NULL)") {
+	if sql := normalize(
+		jet.SELECT(colID).FROM(testTable).WHERE(seek).DebugSql(),
+	); !strings.Contains(
+		sql,
+		"(widgets.note < 'n'::text) OR (widgets.note IS NULL)",
+	) {
 		t.Fatalf("seek SQL = %q, want NULLs after every value when descending NULLS LAST", sql)
 	}
 }
@@ -429,7 +480,10 @@ func TestStrictKeysRefuseAnUnknownSortField(t *testing.T) {
 }
 
 func TestStrictKeysMatchKeysForMappedFields(t *testing.T) {
-	sorts := []search.Sort[sortField]{{Field: sortByCreated, Direction: search.SortDescending}, {Field: sortByName, Direction: search.SortAscending}}
+	sorts := []search.Sort[sortField]{
+		{Field: sortByCreated, Direction: search.SortDescending},
+		{Field: sortByName, Direction: search.SortAscending},
+	}
 	strict, err := transactor.StrictKeys(sorts, keyColumns(), idKey())
 	if err != nil {
 		t.Fatal(err)
