@@ -215,3 +215,11 @@ Rationale: reviewing the cursor-search rollout found 21 defects over 11 passes, 
 Rationale: one request must be followable from Traefik through echopoint to anchor, and log rows must link to that trace. Doing it once in the framework keeps span names, sampling and log keys identical across services.
 
 Choices: without an endpoint the provider is a no-op but the propagator is still installed, so local runs need no collector and logs keep the edge's trace id. Span names use the chi route pattern, resolved after routing by `RouteMiddleware`, because raw paths carry ids. Database spans exist only under an existing span; otherwise pollers and lock heartbeats would emit a root trace per query. Trace fields come from a `log.Enricher` registered by `modules/logging` because `Bind` derives from the base logger: a field written only by `Contextualize` would be lost at the next `Bind`. Queue trace propagation is left to pgkit rather than duplicated in `modules/pgqueue`.
+
+## 2026-10-30: Typed Shared State, Mutex And Pub/Sub On Redis
+
+`pkg/redisx` gives typed `Value`, `Map`, `Set`, `Queue` and `Counter` structures, a `Mutex` and pub/sub `Topic`s from one `redisx.Client`, built with Go 1.27 generic methods (`rx.Value[Session]("session:1")`). `pkg/testkit/redistest` starts one real server per test binary on first use and gives each test its own key namespace.
+
+Rationale: services need short critical sections that do not hold a database transaction open across remote calls, plus shared presence state and fan-out events. Each service had started to hand-roll these on go-redis. The code is written here from the documented Redis patterns (`SET NX PX`, compare-and-delete in Lua) instead of vendoring `bsm/redislock` (Apache-2.0) or `redsync` (BSD-3-Clause).
+
+Choices: a lease expires, so a crashed holder cannot block the mutex forever, but a stalled holder can lose the lease while it runs. `Do` cancels the work when that happens, and every lease carries a fencing token for resources that can refuse stale writers. Absence comes back as `functional.Option`, never as an error. `Queue` and `Topic` are at most once, and durable work stays in `pgqueue`. Tests run against real Valkey and Redis instead of an in-memory fake, because the Lua scripts, `WATCH` and pub/sub timing are what needs proof.

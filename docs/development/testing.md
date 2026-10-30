@@ -28,6 +28,15 @@ docker stop framework-docs-postgres
 
 Wait until PostgreSQL accepts connections before running tests. See [transactor tests](../../pkg/db/transactor/result_integration_test.go) and [migration tests](../../modules/migrations/migrations_integration_test.go) for the fixture contract.
 
+## Redis and Valkey integration
+
+`pkg/redisx` and `pkg/testkit/redistest` use the `integration` tag too. They need no setup: `redistest` starts a Valkey container through Docker on first use and removes it when the test binary exits. Set `REDIS_TEST_ADDR` to use a server you run, or `REDIS_TEST_IMAGE` to test another server version.
+
+```sh
+go test -tags=integration -race -count=1 ./pkg/redisx ./pkg/testkit/redistest
+REDIS_TEST_IMAGE=redis:7-alpine go test -tags=integration -race -count=1 ./pkg/redisx
+```
+
 ## Generated APIs and consumers
 
 Regenerate functional families with `go generate ./pkg/functional`, then review the generated diff and rerun that package's tests. Keep application-generated files in their owning repository.
