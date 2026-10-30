@@ -11,7 +11,7 @@ The framework testkit should extract only generic test harness infrastructure.
 - health polling
 - generated client factory hooks
 - OpenAPI parsing and route enumeration helpers
-- a real Redis or Valkey server started on first use, with a key namespace per test (`pkg/testkit/redistest`)
+- a real Redis or Valkey server started on first use, with a key namespace per test, plus a server of its own that a test can restart, pause or disconnect, and a client that loses replies (`pkg/testkit/redistest`)
 
 ## Does Not Own
 
