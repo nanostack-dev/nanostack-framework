@@ -19,14 +19,18 @@ var (
 	// ErrConflict is returned by Value.Update when concurrent writers kept
 	// changing the value for every attempt.
 	ErrConflict = errors.New("redisx: value changed concurrently on every attempt")
+	// ErrResubscribed goes to Topic.OnError when a subscription lost its
+	// connection and subscribed again: messages published in between are lost.
+	ErrResubscribed = errors.New("redisx: subscribed again after a lost connection, messages published in between are lost")
 )
 
 // Client is the entry point to the shared data structures, mutexes and topics
 // of one Redis or Valkey deployment. It is cheap to copy and safe for
 // concurrent use.
 type Client struct {
-	rdb    redis.UniversalClient
-	prefix string
+	rdb      redis.UniversalClient
+	prefix   string
+	releases *releases
 }
 
 // Option configures a Client.
@@ -41,7 +45,7 @@ func WithPrefix(prefix string) Option {
 // New wraps a go-redis client. A *redis.Client, *redis.ClusterClient or
 // *redis.Ring all work. The Client does not own rdb: close it yourself.
 func New(rdb redis.UniversalClient, opts ...Option) *Client {
-	c := &Client{rdb: rdb}
+	c := &Client{rdb: rdb, releases: newReleases(rdb)}
 	for _, opt := range opts {
 		opt(c)
 	}

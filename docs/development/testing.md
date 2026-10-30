@@ -37,6 +37,8 @@ go test -tags=integration -race -count=1 ./pkg/redisx ./pkg/testkit/redistest
 REDIS_TEST_IMAGE=redis:7-alpine go test -tags=integration -race -count=1 ./pkg/redisx
 ```
 
+Failure tests use `redistest.StartServer`, which always starts a container of its own so that a restart or a pause does not disturb the other tests. With `REDIS_TEST_ADDR` set and no Docker, those tests are skipped; skipped tests are not failure verification. `redistest.FaultyClient` loses command replies on purpose and works with any server.
+
 ## Generated APIs and consumers
 
 Regenerate functional families with `go generate ./pkg/functional`, then review the generated diff and rerun that package's tests. Keep application-generated files in their owning repository.

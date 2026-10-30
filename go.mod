@@ -18,9 +18,11 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/joho/godotenv v1.5.1
 	github.com/lib/pq v1.12.3
+	github.com/moby/moby/api v1.54.2
+	github.com/moby/moby/client v0.4.0
 	github.com/oapi-codegen/nethttp-middleware v1.2.0
 	github.com/quasilyte/go-ruleguard/dsl v0.3.23
-	github.com/redis/go-redis/v9 v9.21.0
+	github.com/redis/go-redis/v9 v9.22.0
 	github.com/rs/zerolog v1.35.1
 	github.com/segmentio/ksuid v1.0.4
 	github.com/stretchr/testify v1.11.1
@@ -67,8 +69,6 @@ require (
 	github.com/mattn/go-isatty v0.0.24 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
 	github.com/moby/go-archive v0.2.0 // indirect
-	github.com/moby/moby/api v1.54.2 // indirect
-	github.com/moby/moby/client v0.4.0 // indirect
 	github.com/moby/patternmatcher v0.6.1 // indirect
 	github.com/moby/sys/sequential v0.6.0 // indirect
 	github.com/moby/sys/user v0.4.0 // indirect

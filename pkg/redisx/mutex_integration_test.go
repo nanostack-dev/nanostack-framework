@@ -133,13 +133,20 @@ func TestMutexRefreshExtendsTheLease(t *testing.T) {
 	require.NoError(t, lease.Release(ctx))
 }
 
-func TestMutexReleaseTwiceReportsTheLeaseLost(t *testing.T) {
+func TestMutexReleaseCanBeRetried(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
-	lease, err := redistest.New(t).Mutex("twice").TryLock(ctx)
+	mutex := redistest.New(t).Mutex("twice")
+	lease, err := mutex.TryLock(ctx)
 	require.NoError(t, err)
 
 	require.NoError(t, lease.Release(ctx))
+	require.NoError(t, lease.Release(ctx))
+
+	// Once another holder released the mutex too, the old lease is lost.
+	other, err := mutex.TryLock(ctx)
+	require.NoError(t, err)
+	require.NoError(t, other.Release(ctx))
 	require.ErrorIs(t, lease.Release(ctx), redisx.ErrLeaseLost)
 }
 

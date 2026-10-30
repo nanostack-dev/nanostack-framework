@@ -8,6 +8,9 @@
 // Set REDIS_TEST_ADDR to use a server you run yourself. Otherwise the package
 // starts a container (REDIS_TEST_IMAGE, default DefaultImage) through
 // testcontainers, which removes it when the test binary exits.
+//
+// For failure tests, StartServer gives a test a server of its own to restart,
+// pause or disconnect, and FaultyClient gives a client that loses replies.
 package redistest
 
 import (
@@ -91,10 +94,7 @@ func start() (string, error) {
 	if addr := os.Getenv("REDIS_TEST_ADDR"); addr != "" {
 		return addr, ping(addr)
 	}
-	image := os.Getenv("REDIS_TEST_IMAGE")
-	if image == "" {
-		image = DefaultImage
-	}
+	image := image()
 	ctx, cancel := context.WithTimeout(context.Background(), startTimeout)
 	defer cancel()
 	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
