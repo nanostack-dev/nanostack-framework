@@ -1,5 +1,7 @@
 # App Shell
 
+> [ADR 0010](adr/0010-wiring-is-plain-go.md) replaces FX assembly with plain Go. This page describes the FX shell that services use until they migrate.
+
 The first app-shell layer is intentionally small.
 
 ## Fluent App API
