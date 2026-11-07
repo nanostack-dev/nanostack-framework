@@ -6,8 +6,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/nanostack-dev/nanostack-framework/pkg/functional"
 	"github.com/redis/go-redis/v9"
+
+	"github.com/nanostack-dev/nanostack-framework/pkg/functional"
 )
 
 // Queue is a first-in, first-out Redis list of typed items under one key.

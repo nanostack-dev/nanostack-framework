@@ -6,13 +6,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nanostack-dev/nanostack-framework/pkg/tracing"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/nanostack-dev/nanostack-framework/pkg/tracing"
 )
 
 func restoreGlobals(t *testing.T) {
@@ -78,7 +79,7 @@ func TestEnabledProviderExportsWithResourceFromEnv(t *testing.T) {
 	}
 	attrs := map[attribute.Key]string{}
 	for _, kv := range spans[0].Resource.Attributes() {
-		attrs[kv.Key] = kv.Value.Emit()
+		attrs[kv.Key] = kv.Value.String()
 	}
 	if attrs["service.name"] != "echopoint" {
 		t.Fatalf("service.name = %q, want env value to win over fallback", attrs["service.name"])

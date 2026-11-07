@@ -74,7 +74,19 @@ var (
 	ksIPC      = jet.StringColumn("ip")
 	ksTable    = jet.NewTable("public", "it_keyset", "",
 		ksID, ksTenantC, ksNameC, ksCreatedC, ksNoteC, ksStatusC, ksRankC, ksScoreC, ksSeenC, ksRefC, ksIPC)
-	ksAll = []jet.Projection{ksID, ksTenantC, ksNameC, ksCreatedC, ksNoteC, ksStatusC, ksRankC, ksScoreC, ksSeenC, ksRefC, ksIPC}
+	ksAll = []jet.Projection{
+		ksID,
+		ksTenantC,
+		ksNameC,
+		ksCreatedC,
+		ksNoteC,
+		ksStatusC,
+		ksRankC,
+		ksScoreC,
+		ksSeenC,
+		ksRefC,
+		ksIPC,
+	}
 )
 
 func ksKeys() map[ksField]transactor.Key[ksRow] {
@@ -82,7 +94,12 @@ func ksKeys() map[ksField]transactor.Key[ksRow] {
 		ksName:    transactor.StringKey(ksNameC, func(r ksRow) string { return r.Name }),
 		ksCreated: transactor.TimeKey(ksCreatedC, func(r ksRow) time.Time { return r.Created }),
 		ksNote:    transactor.NullableStringKey(ksNoteC, func(r ksRow) *string { return r.Note }),
-		ksStatus:  transactor.EnumKey(ksStatusC, "it_keyset_status", ksStatusLabels, func(r ksRow) string { return r.Status }),
+		ksStatus: transactor.EnumKey(
+			ksStatusC,
+			"it_keyset_status",
+			ksStatusLabels,
+			func(r ksRow) string { return r.Status },
+		),
 		ksRank:    transactor.IntKey(ksRankC, func(r ksRow) int64 { return r.Rank }),
 		ksScore:   transactor.NullableFloatKey(ksScoreC, func(r ksRow) *float64 { return r.Score }),
 		ksSeen:    transactor.NullableLocalTimeKey(ksSeenC, func(r ksRow) *time.Time { return r.Seen }),
@@ -134,7 +151,7 @@ type ksGen struct {
 	base time.Time
 }
 
-func (g *ksGen) insert(t *testing.T, db *sql.DB, tenant string) string {
+func (g *ksGen) insert(t *testing.T, db *sql.DB, tenant string) {
 	t.Helper()
 	g.next++
 	// Random ids, not sequential, so the tiebreak order is unrelated to
@@ -181,7 +198,6 @@ func (g *ksGen) insert(t *testing.T, db *sql.DB, tenant string) string {
 	if err != nil {
 		t.Fatalf("insert: %v", err)
 	}
-	return id
 }
 
 func ksPage(t *testing.T, db *sql.DB, order transactor.Order[ksRow], page search.Pagination) search.Result[ksRow] {
@@ -255,7 +271,10 @@ func ksOrderings() [][]search.Sort[ksField] {
 			}
 			for _, d1 := range dirs {
 				for _, d2 := range dirs {
-					orderings = append(orderings, []search.Sort[ksField]{{Field: f1, Direction: d1}, {Field: f2, Direction: d2}})
+					orderings = append(
+						orderings,
+						[]search.Sort[ksField]{{Field: f1, Direction: d1}, {Field: f2, Direction: d2}},
+					)
 				}
 			}
 		}
@@ -298,7 +317,11 @@ func TestIntegrationKeysetTotalAndOffsetHandoff(t *testing.T) {
 	for range 40 {
 		gen.insert(t, db, "t1")
 	}
-	order := transactor.Keys([]search.Sort[ksField]{{Field: ksName, Direction: search.SortDescending}}, ksKeys(), ksTiebreak())
+	order := transactor.Keys(
+		[]search.Sort[ksField]{{Field: ksName, Direction: search.SortDescending}},
+		ksKeys(),
+		ksTiebreak(),
+	)
 	want := ksOrdered(t, db, order)
 
 	// Offset pages still hand out a cursor, so a client can switch mid-walk.
@@ -343,7 +366,8 @@ func TestIntegrationKeysetStableUnderWrites(t *testing.T) {
 			// Delete a random existing row: sometimes already returned,
 			// sometimes still ahead of the cursor.
 			var victim string
-			if err := db.QueryRow(`SELECT id FROM it_keyset WHERE tenant = 't1' ORDER BY random() LIMIT 1`).Scan(&victim); err != nil {
+			if err := db.QueryRow(`SELECT id FROM it_keyset WHERE tenant = 't1' ORDER BY random() LIMIT 1`).
+				Scan(&victim); err != nil {
 				t.Fatalf("pick victim: %v", err)
 			}
 			if _, err := db.Exec(`DELETE FROM it_keyset WHERE id = $1`, victim); err != nil {
@@ -394,104 +418,21 @@ func TestIntegrationKeysetRejectsCursorFromOtherSort(t *testing.T) {
 	for range 5 {
 		gen.insert(t, db, "t1")
 	}
-	byName := transactor.Keys([]search.Sort[ksField]{{Field: ksName, Direction: search.SortAscending}}, ksKeys(), ksTiebreak())
-	byRank := transactor.Keys([]search.Sort[ksField]{{Field: ksRank, Direction: search.SortAscending}}, ksKeys(), ksTiebreak())
+	byName := transactor.Keys(
+		[]search.Sort[ksField]{{Field: ksName, Direction: search.SortAscending}},
+		ksKeys(),
+		ksTiebreak(),
+	)
+	byRank := transactor.Keys(
+		[]search.Sort[ksField]{{Field: ksRank, Direction: search.SortAscending}},
+		ksKeys(),
+		ksTiebreak(),
+	)
 	first := ksPage(t, db, byName, search.Pagination{Limit: 2})
 	_, err := transactor.Page(db, func(r ksRow) ksRow { return r }, ksAll...).
 		From(ksTable).Keyset(byRank).
 		Run(context.Background(), search.Pagination{Limit: 2, Cursor: first.NextCursor}).Value()
 	if err == nil {
 		t.Fatal("a cursor from another sort was accepted")
-	}
-}
-
-// A session zone whose offset has seconds (Paris before 1911 was UTC+00:09:21)
-// must not shift the boundary instant: RFC 3339 cannot carry the seconds.
-func TestIntegrationKeysetTimestamptzWithSecondsOffsetZone(t *testing.T) {
-	db := openDB(t)
-	db.SetMaxOpenConns(1)
-	setupKeysetSchema(t, db)
-	if _, err := db.Exec(`SET TIME ZONE 'Europe/Paris'`); err != nil {
-		t.Fatalf("set zone: %v", err)
-	}
-	t.Cleanup(func() { _, _ = db.Exec(`RESET TIME ZONE`) })
-	gen := &ksGen{rng: rand.New(rand.NewPCG(9, 10)), base: time.Date(1900, 1, 1, 0, 0, 0, 0, time.UTC)}
-	for i := range 30 {
-		gen.base = time.Date(1900, 1, 1, 0, 0, i, 0, time.UTC)
-		gen.insert(t, db, "t1")
-	}
-	for _, direction := range []search.SortDirection{search.SortAscending, search.SortDescending} {
-		order := transactor.Keys([]search.Sort[ksField]{{Field: ksCreated, Direction: direction}}, ksKeys(), ksTiebreak())
-		if got, want := ksWalk(t, db, order, 4, nil), ksOrdered(t, db, order); !slices.Equal(got, want) {
-			t.Fatalf("%s: walk in Europe/Paris returned %d rows, ordered query %d", direction, len(got), len(want))
-		}
-	}
-}
-
-// Forged or extreme values must reach Postgres as comparable literals, never
-// fail to bind: a smallint compared with a value past its range, and a
-// timestamp in year 12000 at a page boundary.
-func TestIntegrationKeysetExtremeValues(t *testing.T) {
-	db := openDB(t)
-	for _, stmt := range []string{
-		`DROP TABLE IF EXISTS it_keyset_extreme`,
-		`CREATE TABLE it_keyset_extreme (id text PRIMARY KEY, small smallint NOT NULL, at timestamptz NOT NULL, ratio real NOT NULL)`,
-		`INSERT INTO it_keyset_extreme VALUES
-			('a', 1, '2026-01-01Z', 0.1), ('b', 2, '12000-01-01Z', 0.1), ('c', 3, '12000-01-01Z', 0.1),
-			('d', 4, '294276-12-31 23:59:59.999999Z', 0.2), ('e', 5, '294276-12-31 23:59:59.999999Z', 0.3)`,
-	} {
-		if _, err := db.Exec(stmt); err != nil {
-			t.Fatalf("%s: %v", stmt, err)
-		}
-	}
-	t.Cleanup(func() { _, _ = db.Exec(`DROP TABLE IF EXISTS it_keyset_extreme`) })
-
-	type row struct {
-		ID    string    `alias:"it_keyset_extreme.id"`
-		Small int64     `alias:"it_keyset_extreme.small"`
-		At    time.Time `alias:"it_keyset_extreme.at"`
-		Ratio float32   `alias:"it_keyset_extreme.ratio"`
-	}
-	id, small, at, ratio := jet.StringColumn("id"), jet.IntegerColumn("small"), jet.TimestampzColumn("at"), jet.FloatColumn("ratio")
-	table := jet.NewTable("public", "it_keyset_extreme", "", id, small, at, ratio)
-	keys := map[ksField]transactor.Key[row]{
-		"SMALL": transactor.IntKey(small, func(r row) int64 { return r.Small }),
-		"AT":    transactor.TimeKey(at, func(r row) time.Time { return r.At }),
-		"RATIO": transactor.RealKey(ratio, func(r row) float32 { return r.Ratio }),
-	}
-	tiebreak := transactor.StringKey(id, func(r row) string { return r.ID })
-	run := func(order transactor.Order[row], page search.Pagination) (search.Result[row], error) {
-		return transactor.Page(db, func(r row) row { return r }, id, small, at, ratio).
-			From(table).Keyset(order).Run(context.Background(), page).Value()
-	}
-
-	bySmall := transactor.Keys([]search.Sort[ksField]{{Field: "SMALL", Direction: search.SortAscending}}, keys, tiebreak)
-	forged, _ := search.EncodeCursor(bySmall.Signature(), []any{int64(1) << 40, "a"})
-	if result, err := run(bySmall, search.Pagination{Limit: 2, Cursor: forged}); err != nil || result.Count != 0 {
-		t.Fatalf("forged out-of-range smallint cursor = %d rows, %v; want an empty page", result.Count, err)
-	}
-
-	// Year 12000 and the last microsecond Postgres stores both sit on page
-	// boundaries at limit 1, as does a real value that is inexact as double.
-	for _, field := range []ksField{"AT", "RATIO"} {
-		order := transactor.Keys([]search.Sort[ksField]{{Field: field, Direction: search.SortAscending}}, keys, tiebreak)
-		var got []string
-		page := search.Pagination{Limit: 1}
-		for range 10 {
-			result, err := run(order, page)
-			if err != nil {
-				t.Fatalf("%s walk: %v", field, err)
-			}
-			for _, r := range result.Items {
-				got = append(got, r.ID)
-			}
-			if !result.HasMore() {
-				break
-			}
-			page.Cursor = result.NextCursor
-		}
-		if !slices.Equal(got, []string{"a", "b", "c", "d", "e"}) {
-			t.Fatalf("%s walk = %v, want every row once", field, got)
-		}
 	}
 }

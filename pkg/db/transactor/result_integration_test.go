@@ -49,7 +49,7 @@ func openDB(t *testing.T) *sql.DB {
 		t.Fatalf("open: %v", err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	if err := db.Ping(); err != nil {
+	if err = db.Ping(); err != nil {
 		t.Fatalf("ping: %v", err)
 	}
 	return db

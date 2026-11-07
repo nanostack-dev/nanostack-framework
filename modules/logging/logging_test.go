@@ -6,11 +6,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nanostack-dev/nanostack-framework/modules/logging"
-	"github.com/nanostack-dev/nanostack-framework/pkg/log"
 	"github.com/rs/zerolog"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/fx"
+
+	"github.com/nanostack-dev/nanostack-framework/modules/logging"
+	"github.com/nanostack-dev/nanostack-framework/pkg/log"
 )
 
 func TestModuleRegistersTraceEnricher(t *testing.T) {

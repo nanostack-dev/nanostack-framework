@@ -27,14 +27,14 @@ func errorsOf() (func(context.Context, error), <-chan error) {
 	}, errs
 }
 
-func waitForError(t *testing.T, errs <-chan error, target error) error {
+func waitForError(t *testing.T, errs <-chan error, target error) {
 	t.Helper()
 	timeout := time.After(30 * time.Second)
 	for {
 		select {
 		case err := <-errs:
 			if errors.Is(err, target) {
-				return err
+				return
 			}
 		case <-timeout:
 			t.Fatalf("no error matching %v", target)
@@ -97,7 +97,7 @@ func TestTopicReportsASlowSubscriberTheServerDropped(t *testing.T) {
 	topic := rx.Topic[string]("slow").OnError(onError)
 
 	unblock := make(chan struct{})
-	sub, err := topic.Subscribe(ctx, func(ctx context.Context, msg string) error {
+	sub, err := topic.Subscribe(ctx, func(context.Context, string) error {
 		<-unblock
 		return nil
 	})
@@ -113,7 +113,7 @@ func TestTopicReportsASlowSubscriberTheServerDropped(t *testing.T) {
 			pipe.Publish(ctx, topic.Channel(), payload)
 		}
 		last := pipe.Publish(ctx, topic.Channel(), payload)
-		_, err := pipe.Exec(ctx)
+		_, err = pipe.Exec(ctx)
 		require.NoError(t, err)
 		if last.Val() == 0 {
 			dropped = true
@@ -142,7 +142,7 @@ func TestTopicContinuesAfterAHandlerPanics(t *testing.T) {
 	defer sub.Close()
 
 	for _, msg := range []string{"a", "boom", "b"} {
-		_, err := topic.Publish(ctx, msg)
+		_, err = topic.Publish(ctx, msg)
 		require.NoError(t, err)
 	}
 	require.Eventually(t, func() bool { return len(got.snapshot()) == 2 }, 5*time.Second, 10*time.Millisecond)

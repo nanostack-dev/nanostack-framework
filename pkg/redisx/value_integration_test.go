@@ -69,8 +69,8 @@ func TestValueWithTTLExpires(t *testing.T) {
 	require.LessOrEqual(t, ttl, 150*time.Millisecond)
 
 	require.Eventually(t, func() bool {
-		exists, err := value.Exists(ctx)
-		return err == nil && !exists
+		exists, existsErr := value.Exists(ctx)
+		return existsErr == nil && !exists
 	}, 2*time.Second, 20*time.Millisecond)
 }
 

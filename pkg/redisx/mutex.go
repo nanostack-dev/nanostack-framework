@@ -164,7 +164,7 @@ func (m Mutex) Lock(ctx context.Context) (*Lease, error) {
 		}
 		// The server reports the holder's TTL in whole milliseconds, so 0
 		// means it expires within the next one.
-		pause := mrand.N(delay)
+		pause := mrand.N(delay) //nolint:gosec // G404: retry jitter, not a secret
 		if holderTTL >= 0 {
 			pause = min(pause, holderTTL)
 		}

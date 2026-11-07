@@ -47,7 +47,7 @@ func holdRowLocked(t *testing.T, db *sql.DB, lock func(context.Context) context.
 	}
 	t.Cleanup(func() { _ = tx.Rollback() })
 	ctx := lock(transactor.WithTx(context.Background(), tx))
-	if _, err := transactor.Query[lockedRow](ctx, db, selectLockedRow("a")).Value(); err != nil {
+	if _, err = transactor.Query[lockedRow](ctx, db, selectLockedRow()).Value(); err != nil {
 		t.Fatalf("locked read: %v", err)
 	}
 }
@@ -143,7 +143,7 @@ func TestIntegrationALockedQueryOutsideATransactionFails(t *testing.T) {
 	db := openDB(t)
 	setupLockedSchema(t, db)
 
-	_, err := transactor.Query[lockedRow](transactor.ForShare(context.Background()), db, selectLockedRow("a")).Value()
+	_, err := transactor.Query[lockedRow](transactor.ForShare(context.Background()), db, selectLockedRow()).Value()
 	if !errors.Is(err, transactor.ErrRowLockOutsideTx) {
 		t.Fatalf("err = %v, want ErrRowLockOutsideTx", err)
 	}

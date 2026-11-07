@@ -3,14 +3,16 @@ package httpserver
 import (
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/nanostack-dev/nanostack-framework/pkg/health"
 	"github.com/rs/zerolog"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/nanostack-dev/nanostack-framework/pkg/health"
 )
 
 func TestServerSpansNamedByRouteAndHealthUntraced(t *testing.T) {
@@ -21,7 +23,7 @@ func TestServerSpansNamedByRouteAndHealthUntraced(t *testing.T) {
 	options := Options{
 		Health: health.Config{Service: "anchor"},
 		ConfigureRouter: func(router *chi.Mux) {
-			router.Get("/products/{productID}", func(w http.ResponseWriter, r *http.Request) {
+			router.Get("/products/{productID}", func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusOK)
 			})
 		},
@@ -39,8 +41,8 @@ func TestServerSpansNamedByRouteAndHealthUntraced(t *testing.T) {
 		t.Fatal(err)
 	}
 	handler := http.Handler(router)
-	for i := len(options.Middlewares) - 1; i >= 0; i-- {
-		handler = options.Middlewares[i](handler)
+	for _, v := range slices.Backward(options.Middlewares) {
+		handler = v(handler)
 	}
 	handler = tracingMiddleware(provider)(handler)
 

@@ -101,8 +101,8 @@ func TestMapWithTTLRefreshesTheExpiryOnEveryWrite(t *testing.T) {
 	require.Equal(t, 2, length)
 
 	require.Eventually(t, func() bool {
-		length, err := m.Len(ctx)
-		return err == nil && length == 0
+		n, lenErr := m.Len(ctx)
+		return lenErr == nil && n == 0
 	}, 2*time.Second, 20*time.Millisecond)
 }
 
@@ -234,8 +234,8 @@ func TestQueueIsFirstInFirstOut(t *testing.T) {
 	require.Equal(t, "a", front.Value().User)
 
 	for _, want := range []string{"a", "b", "c"} {
-		item, err := jobs.Pop(ctx)
-		require.NoError(t, err)
+		item, popErr := jobs.Pop(ctx)
+		require.NoError(t, popErr)
 		require.Equal(t, want, item.Value().User)
 	}
 	item, err := jobs.Pop(ctx)
@@ -305,8 +305,9 @@ func TestQueueGivesEachItemToOneConsumer(t *testing.T) {
 	for range 8 {
 		wg.Go(func() {
 			for {
-				item, err := q.Pop(ctx)
-				if !assert.NoError(t, err) || item.IsAbsent() {
+				item, popErr := q.Pop(ctx)
+				if popErr != nil || item.IsAbsent() {
+					assert.NoError(t, popErr)
 					return
 				}
 				mu.Lock()
@@ -349,8 +350,8 @@ func TestCounterCountsAtomically(t *testing.T) {
 	var wg sync.WaitGroup
 	for range 50 {
 		wg.Go(func() {
-			_, err := hits.Incr(ctx)
-			assert.NoError(t, err)
+			_, incrErr := hits.Incr(ctx)
+			assert.NoError(t, incrErr)
 		})
 	}
 	wg.Wait()
@@ -377,8 +378,8 @@ func TestCounterWithTTLExpires(t *testing.T) {
 	_, err := window.Incr(ctx)
 	require.NoError(t, err)
 	require.Eventually(t, func() bool {
-		count, err := window.Get(ctx)
-		return err == nil && count == 0
+		count, getErr := window.Get(ctx)
+		return getErr == nil && count == 0
 	}, 2*time.Second, 20*time.Millisecond)
 }
 

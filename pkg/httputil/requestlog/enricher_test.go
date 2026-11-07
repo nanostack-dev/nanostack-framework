@@ -8,9 +8,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/rs/zerolog"
+
 	"github.com/nanostack-dev/nanostack-framework/pkg/httputil/requestlog"
 	"github.com/nanostack-dev/nanostack-framework/pkg/log"
-	"github.com/rs/zerolog"
 )
 
 // The regression this package pairs with pkg/log to prevent: binding inside a

@@ -28,12 +28,12 @@ func TestTracedQueriesAgainstPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	if err := db.PingContext(context.Background()); err != nil {
+	if err = db.PingContext(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 
 	var one int
-	if err := db.QueryRowContext(context.Background(), "select $1::int", 1).Scan(&one); err != nil {
+	if err = db.QueryRowContext(context.Background(), "select $1::int", 1).Scan(&one); err != nil {
 		t.Fatal(err)
 	}
 	if spans := recorder.Ended(); len(spans) != 0 {
@@ -41,7 +41,7 @@ func TestTracedQueriesAgainstPostgres(t *testing.T) {
 	}
 
 	ctx, parent := provider.Tracer("test").Start(context.Background(), "request")
-	if err := db.QueryRowContext(ctx, "select $1::int", 424242).Scan(&one); err != nil {
+	if err = db.QueryRowContext(ctx, "select $1::int", 424242).Scan(&one); err != nil {
 		t.Fatal(err)
 	}
 	parent.End()
@@ -62,7 +62,7 @@ func TestTracedQueriesAgainstPostgres(t *testing.T) {
 		t.Fatal("query span is not a child of the request span")
 	}
 	for _, kv := range query.Attributes() {
-		if strings.Contains(kv.Value.Emit(), "424242") {
+		if strings.Contains(kv.Value.String(), "424242") {
 			t.Fatalf("bind argument recorded in %s", kv.Key)
 		}
 	}

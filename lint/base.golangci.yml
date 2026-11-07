@@ -1,0 +1,183 @@
+# The Nanostack golangci-lint standard, from lint/base.golangci.yml in
+# nanostack-framework. A service keeps its own rules in .golangci.local.yml;
+# `go tool lintconfig` merges both into .golangci.yml. See lint/README.md.
+version: "2"
+
+run:
+  # Paths in exclusion rules resolve from the service's go.mod, wherever the
+  # configuration came from.
+  relative-path-mode: gomod
+  timeout: 10m
+
+formatters:
+  enable:
+    - goimports
+    - golines
+  settings:
+    golines:
+      max-len: 120
+
+linters:
+  default: none
+  enable:
+    # The standard set.
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    # Bugs in database, HTTP, error, context and test code.
+    - bidichk
+    - bodyclose
+    - durationcheck
+    - errorlint
+    - exhaustive
+    - fatcontext
+    - gosec
+    - nilerr
+    - nilnesserr
+    - noctx
+    - rowserrcheck
+    - spancheck
+    - sqlclosecheck
+    - testifylint
+    - usetesting
+    # Conventions: ADR 0010 and 0012 in docs/adr.
+    - depguard
+    - exhaustruct_v5
+    - forbidigo
+    - funlen
+    - gocognit
+    - gocritic
+    - misspell
+    - modernize
+    - nolintlint
+    - revive
+    - unconvert
+    - unparam
+    - usestdlibvars
+
+  settings:
+    depguard:
+      rules:
+        deprecated:
+          files:
+            - $all
+          deny:
+            - pkg: github.com/golang/protobuf
+              desc: Use google.golang.org/protobuf instead
+            - pkg: github.com/satori/go.uuid
+              desc: Use github.com/google/uuid instead, satori's package is not maintained
+            - pkg: github.com/gofrs/uuid$
+              desc: Use github.com/gofrs/uuid/v5 or later, it was not a go module before v5
+        non-test files:
+          files:
+            - "!$test"
+          deny:
+            - pkg: math/rand$
+              desc: Use math/rand/v2 instead, see https://go.dev/blog/randv2
+        context-scoped logging:
+          files:
+            - "!$test"
+          deny:
+            - pkg: log$
+              desc: Use nanostack-framework/pkg/log, which carries the request context
+            - pkg: github.com/rs/zerolog/log$
+              desc: Use nanostack-framework/pkg/log, the zerolog global carries no request context
+
+    errcheck:
+      check-type-assertions: true
+
+    exhaustive:
+      check:
+        - switch
+        - mapliteral
+      default-signifies-exhaustive: true
+
+    # Only Deps structs: a dependency left out compiles as nil (ADR 0010). A
+    # field that New defaults takes a `//exhaustruct:optional` comment.
+    exhaustruct_v5:
+      enforce-patterns:
+        - .+\.Deps$
+      explicit-mode: true
+
+    funlen:
+      lines: 100
+      statements: 50
+
+    gocognit:
+      min-complexity: 20
+
+    gocritic:
+      settings:
+        captLocal:
+          paramsOnly: false
+        underef:
+          skipRecvDeref: false
+
+    gosec:
+      excludes:
+        - G101 # a name that looks like a credential, such as a header name
+        - G117 # a struct field that looks like a secret
+
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment
+      settings:
+        shadow:
+          strict: true
+
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+      allow-no-explanation:
+        - funlen
+        - gocognit
+        - golines
+
+    revive:
+      # Setting rules drops revive's defaults unless they are enabled again.
+      enable-default-rules: true
+      rules:
+        - name: context-as-argument # test helpers take t first, then ctx
+          arguments:
+            - allow-types-before: "*testing.T"
+        - name: file-length-limit # ADR 0012 file budget
+          arguments:
+            - max: 400
+              skip-comments: true
+              skip-blank-lines: true
+        - name: var-naming
+          disabled: true
+
+    staticcheck:
+      checks:
+        - all
+        - -ST1000
+        - -ST1016
+        - -QF1008
+
+    usetesting:
+      os-temp-dir: true
+
+  exclusions:
+    generated: strict
+    warn-unused: true
+    presets:
+      - comments
+      - common-false-positives
+      - std-error-handling
+    rules:
+      - path: _test\.go
+        linters:
+          - bodyclose
+          - exhaustruct_v5 # tests build partial Deps around fakes
+          - funlen
+          - gocognit
+          - gosec
+          - noctx
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

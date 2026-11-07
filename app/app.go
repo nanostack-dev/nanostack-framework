@@ -36,7 +36,7 @@ func (b *Builder) Use(options ...fx.Option) *Builder {
 }
 
 // Populate appends fx.Populate targets without hiding the FX primitive.
-func (b *Builder) Populate(targets ...interface{}) *Builder {
+func (b *Builder) Populate(targets ...any) *Builder {
 	if len(targets) == 0 {
 		return b
 	}

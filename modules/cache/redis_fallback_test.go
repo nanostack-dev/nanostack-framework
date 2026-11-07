@@ -59,7 +59,16 @@ func TestRedisFallbackPolicy(t *testing.T) {
 						return tt.getErr
 					case *redis.StatusCmd:
 						sets++
-						if want := []any{"set", "key", "loaded", "ex", int64(60)}; !reflect.DeepEqual(command.Args(), want) {
+						if want := []any{
+							"set",
+							"key",
+							"loaded",
+							"ex",
+							int64(60),
+						}; !reflect.DeepEqual(
+							command.Args(),
+							want,
+						) {
 							t.Fatalf("write args = %#v, want %#v", command.Args(), want)
 						}
 						command.SetErr(tt.setErr)
@@ -78,15 +87,29 @@ func TestRedisFallbackPolicy(t *testing.T) {
 				var got string
 				var err error
 				if computedExpiry {
-					got, err = store.GetOrElseWithExpiry(context.Background(), "key", func() (string, time.Duration, error) {
-						value, loadErr := load()
-						return value, time.Minute, loadErr
-					})
+					got, err = store.GetOrElseWithExpiry(
+						context.Background(),
+						"key",
+						func() (string, time.Duration, error) {
+							value, loadErr := load()
+							return value, time.Minute, loadErr
+						},
+					)
 				} else {
 					got, err = store.GetOrElse(context.Background(), "key", load, time.Minute)
 				}
 				if got != tt.want || !errors.Is(err, tt.wantErr) || loads != tt.wantLoad || sets != tt.wantSet {
-					t.Fatalf("got (%q, %v), loads=%d writes=%d; want (%q, %v), loads=%d writes=%d", got, err, loads, sets, tt.want, tt.wantErr, tt.wantLoad, tt.wantSet)
+					t.Fatalf(
+						"got (%q, %v), loads=%d writes=%d; want (%q, %v), loads=%d writes=%d",
+						got,
+						err,
+						loads,
+						sets,
+						tt.want,
+						tt.wantErr,
+						tt.wantLoad,
+						tt.wantSet,
+					)
 				}
 			})
 		}

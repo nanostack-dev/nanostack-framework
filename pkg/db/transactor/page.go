@@ -126,7 +126,10 @@ func (b *PageBuilder[T, R]) Run(
 		return newResult(search.Result[R]{}, err)
 	}
 	if b.keyset == nil && pagination.Cursor != "" {
-		return newResult(search.Result[R]{}, fmt.Errorf("%w: this search has no keyset ordering", search.ErrInvalidCursor))
+		return newResult(
+			search.Result[R]{},
+			fmt.Errorf("%w: this search has no keyset ordering", search.ErrInvalidCursor),
+		)
 	}
 	var seek jet.BoolExpression
 	if b.keyset != nil {

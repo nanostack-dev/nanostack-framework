@@ -7,9 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nanostack-dev/nanostack-framework/pkg/fxlog"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx/fxevent"
+
+	"github.com/nanostack-dev/nanostack-framework/pkg/fxlog"
 )
 
 func decode(t *testing.T, raw string) map[string]any {

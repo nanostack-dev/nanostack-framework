@@ -14,7 +14,8 @@ import (
 )
 
 func TestAddrStartsOneServerForTheWholeBinary(t *testing.T) {
-	require.Equal(t, redistest.Addr(t), redistest.Addr(t))
+	first := redistest.Addr(t)
+	require.Equal(t, first, redistest.Addr(t))
 	require.NoError(t, redistest.Client(t).Ping(t.Context()).Err())
 }
 

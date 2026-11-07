@@ -6,8 +6,9 @@
 package apisec
 
 import (
-	"github.com/nanostack-dev/nanostack-framework/pkg/apisec"
 	"go.uber.org/fx"
+
+	"github.com/nanostack-dev/nanostack-framework/pkg/apisec"
 )
 
 // Document is the raw OpenAPI contract a service serves. Applications supply it

@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/getkin/kin-openapi/openapi3"
+
 	"github.com/nanostack-dev/nanostack-framework/pkg/apisec"
 )
 

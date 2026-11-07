@@ -33,7 +33,11 @@ func TestPaginationJSONIsLowercase(t *testing.T) {
 		t.Fatalf("json = %s", encoded)
 	}
 	var decoded Pagination
-	if err := json.Unmarshal([]byte(`{"limit":3,"cursor":"abc"}`), &decoded); err != nil || decoded.Cursor != "abc" || decoded.Limit != 3 {
+	if err := json.Unmarshal(
+		[]byte(`{"limit":3,"cursor":"abc"}`),
+		&decoded,
+	); err != nil || decoded.Cursor != "abc" ||
+		decoded.Limit != 3 {
 		t.Fatalf("decoded = %+v, %v", decoded, err)
 	}
 }

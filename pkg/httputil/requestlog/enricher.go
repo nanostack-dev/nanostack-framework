@@ -3,8 +3,9 @@ package requestlog
 import (
 	"context"
 
-	"github.com/nanostack-dev/nanostack-framework/pkg/log"
 	"github.com/rs/zerolog"
+
+	"github.com/nanostack-dev/nanostack-framework/pkg/log"
 )
 
 // NewLogEnricher returns the log.Enricher that republishes the request identity

@@ -71,7 +71,10 @@ func (t Topic[T]) Publish(ctx context.Context, msg T) (int, error) {
 //
 // A handler that panics is reported to OnError, and the subscription
 // continues.
-func (t Topic[T]) Subscribe(ctx context.Context, handler func(ctx context.Context, msg T) error) (*Subscription, error) {
+func (t Topic[T]) Subscribe(
+	ctx context.Context,
+	handler func(ctx context.Context, msg T) error,
+) (*Subscription, error) {
 	pubsub := t.rdb.Subscribe(ctx, t.channel)
 	if _, err := pubsub.Receive(ctx); err != nil {
 		_ = pubsub.Close()
@@ -83,34 +86,43 @@ func (t Topic[T]) Subscribe(ctx context.Context, handler func(ctx context.Contex
 	// backlog stays on the server, which reports its limit by closing the
 	// connection.
 	messages := pubsub.ChannelWithSubscriptions(redis.WithChannelSendTimeout(math.MaxInt64))
-	go func() {
-		defer close(sub.done)
-		defer func() {
-			sub.err = pubsub.Close()
-			for range messages {
-				// Let go-redis see the close.
-			}
-		}()
-		for {
-			select {
-			case <-subCtx.Done():
+	go t.listen(subCtx, sub, pubsub, messages, handler)
+	return sub, nil
+}
+
+// listen runs a subscription until ctx ends or go-redis closes messages.
+func (t Topic[T]) listen(
+	ctx context.Context,
+	sub *Subscription,
+	pubsub *redis.PubSub,
+	messages <-chan any,
+	handler func(ctx context.Context, msg T) error,
+) {
+	defer close(sub.done)
+	defer func() {
+		sub.err = pubsub.Close()
+		for range messages {
+			// Let go-redis see the close.
+		}
+	}()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case message, ok := <-messages:
+			if !ok {
 				return
-			case message, ok := <-messages:
-				if !ok {
-					return
-				}
-				switch message := message.(type) {
-				case *redis.Message:
-					t.deliver(subCtx, message.Payload, handler)
-				case *redis.Subscription:
-					if message.Kind == "subscribe" {
-						t.report(subCtx, fmt.Errorf("redisx: subscription to %s: %w", t.channel, ErrResubscribed))
-					}
+			}
+			switch message := message.(type) {
+			case *redis.Message:
+				t.deliver(ctx, message.Payload, handler)
+			case *redis.Subscription:
+				if message.Kind == "subscribe" {
+					t.report(ctx, fmt.Errorf("redisx: subscription to %s: %w", t.channel, ErrResubscribed))
 				}
 			}
 		}
-	}()
-	return sub, nil
+	}
 }
 
 func (t Topic[T]) deliver(ctx context.Context, raw string, handler func(ctx context.Context, msg T) error) {

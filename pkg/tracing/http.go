@@ -5,10 +5,11 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/nanostack-dev/nanostack-framework/pkg/health"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/nanostack-dev/nanostack-framework/pkg/health"
 )
 
 const serverOperation = "http.server"

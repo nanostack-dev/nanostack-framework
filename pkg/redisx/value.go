@@ -6,8 +6,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/nanostack-dev/nanostack-framework/pkg/functional"
 	"github.com/redis/go-redis/v9"
+
+	"github.com/nanostack-dev/nanostack-framework/pkg/functional"
 )
 
 const maxUpdateAttempts = 32
@@ -54,7 +55,7 @@ func (v Value[T]) Set(ctx context.Context, value T) error {
 	if err != nil {
 		return err
 	}
-	if err := v.rdb.Set(ctx, v.key, raw, v.ttl).Err(); err != nil {
+	if err = v.rdb.Set(ctx, v.key, raw, v.ttl).Err(); err != nil {
 		return fmt.Errorf("redisx: set %s: %w", v.key, err)
 	}
 	return nil

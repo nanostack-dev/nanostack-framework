@@ -15,6 +15,7 @@ import (
 	"time"
 
 	jet "github.com/go-jet/jet/v2/postgres"
+
 	"github.com/nanostack-dev/nanostack-framework/pkg/search"
 )
 

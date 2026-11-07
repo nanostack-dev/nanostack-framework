@@ -2,6 +2,7 @@ package validate
 
 import (
 	"net/url"
+	"reflect"
 	"regexp"
 	"strings"
 
@@ -12,7 +13,7 @@ var templatePattern = regexp.MustCompile(`\{\{[^}]+\}\}`)
 
 // IsValidRequestURL checks URL validity, including dynamic template placeholders.
 func IsValidRequestURL(fl validator.FieldLevel) bool {
-	value, ok := fl.Field().Interface().(string)
+	value, ok := reflect.TypeAssert[string](fl.Field())
 	if !ok {
 		return false
 	}

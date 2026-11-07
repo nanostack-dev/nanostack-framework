@@ -3,14 +3,14 @@ package requestlog_test
 import (
 	"bufio"
 	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
-	"github.com/nanostack-dev/nanostack-framework/pkg/httputil/requestlog"
 	"github.com/rs/zerolog"
+
+	"github.com/nanostack-dev/nanostack-framework/pkg/httputil/requestlog"
 )
 
 // A streaming handler behind the middleware must be able to clear the server's
@@ -58,7 +58,7 @@ func TestMiddlewareLetsStreamOutliveServerWriteTimeout(t *testing.T) {
 	for scanner.Scan() {
 		received++
 	}
-	if err := scanner.Err(); err != nil && err != io.EOF {
+	if err = scanner.Err(); err != nil {
 		t.Fatalf("read stream after %d events: %v", received, err)
 	}
 	if received != events {

@@ -5,8 +5,9 @@ import (
 	"net/http"
 
 	"github.com/google/uuid"
-	"github.com/nanostack-dev/nanostack-framework/pkg/log"
 	"github.com/rs/zerolog"
+
+	"github.com/nanostack-dev/nanostack-framework/pkg/log"
 )
 
 // RequestIDHeader is the canonical header carrying the per-request correlation

@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"io"
+	"maps"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -76,8 +77,13 @@ func handler(db *sql.DB) http.Handler {
 			errs.HandleRequestError(w, r, err)
 			return
 		}
-		req := search.NewRequest[struct{}, field]().WithSort(body.SortBy, body.SortDirection).WithPagination(body.Pagination)
-		order, err := transactor.StrictKeys(req.Sort, keys(), transactor.StringKey(colID, func(r row) string { return r.ID }))
+		req := search.NewRequest[struct{}, field]().WithSort(body.SortBy, body.SortDirection).
+			WithPagination(body.Pagination)
+		order, err := transactor.StrictKeys(
+			req.Sort,
+			keys(),
+			transactor.StringKey(colID, func(r row) string { return r.ID }),
+		)
 		if err != nil {
 			errs.HandleResponseError(w, r, err)
 			return
@@ -131,7 +137,7 @@ func setup(t *testing.T) *sql.DB {
 		`CREATE TABLE it_searchtest (id text PRIMARY KEY, tenant text NOT NULL, name varchar(255) NOT NULL,
 			status it_searchtest_status NOT NULL, created timestamptz NOT NULL, score double precision)`,
 	} {
-		if _, err := db.Exec(stmt); err != nil {
+		if _, err = db.Exec(stmt); err != nil {
 			t.Fatalf("%s: %v", stmt, err)
 		}
 	}
@@ -140,7 +146,7 @@ func setup(t *testing.T) *sql.DB {
 		_, _ = db.Exec(`DROP TYPE IF EXISTS it_searchtest_status`)
 	})
 	for _, s := range seeds {
-		if _, err := db.Exec(`INSERT INTO it_searchtest VALUES ($1, 't1', $2, $3, $4, $5)`,
+		if _, err = db.Exec(`INSERT INTO it_searchtest VALUES ($1, 't1', $2, $3, $4, $5)`,
 			s.id, s.name, s.status, created, s.score); err != nil {
 			t.Fatal(err)
 		}
@@ -170,9 +176,7 @@ func TestIntegrationConformanceOfARealSearch(t *testing.T) {
 	}
 	t1 := func(extra map[string]any) map[string]any {
 		body := map[string]any{"tenant": "t1"}
-		for k, v := range extra {
-			body[k] = v
-		}
+		maps.Copy(body, extra)
 		return body
 	}
 	searchtest.Run(t, searchtest.Suite{
@@ -202,7 +206,11 @@ func TestIntegrationConformanceOfARealSearch(t *testing.T) {
 				{Body: t1(map[string]any{"sort_by": "score", "sort_direction": "DESC"})},
 				// No rows: the search must still refuse a well-formed cursor
 				// issued for another ordering.
-				{Body: map[string]any{"tenant": "nobody"}, Incompatible: t1(map[string]any{"sort_by": "name"}), SameOrder: t1(nil)},
+				{
+					Body:         map[string]any{"tenant": "nobody"},
+					Incompatible: t1(map[string]any{"sort_by": "name"}),
+					SameOrder:    t1(nil),
+				},
 			},
 			SortField: true,
 		},

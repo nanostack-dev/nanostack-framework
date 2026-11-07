@@ -54,8 +54,8 @@ func TestTopicDeliversTypedMessagesInOrder(t *testing.T) {
 	for i := range 50 {
 		msg := event{Seq: i, Kind: "created"}
 		want = append(want, msg)
-		receivers, err := topic.Publish(ctx, msg)
-		require.NoError(t, err)
+		receivers, publishErr := topic.Publish(ctx, msg)
+		require.NoError(t, publishErr)
 		require.Equal(t, 1, receivers)
 	}
 	require.Eventually(t, func() bool { return len(got.snapshot()) == 50 }, 5*time.Second, 10*time.Millisecond)
@@ -224,8 +224,8 @@ func TestSubscriptionEndsWithItsContext(t *testing.T) {
 	}
 	require.NoError(t, sub.Close())
 	require.Eventually(t, func() bool {
-		receivers, err := topic.Publish(t.Context(), 1)
-		return err == nil && receivers == 0
+		receivers, publishErr := topic.Publish(t.Context(), 1)
+		return publishErr == nil && receivers == 0
 	}, 5*time.Second, 20*time.Millisecond, "the server still has the subscriber")
 }
 

@@ -1,9 +1,10 @@
 package logging
 
 import (
-	"github.com/nanostack-dev/nanostack-framework/pkg/log"
 	"github.com/rs/zerolog"
 	"go.uber.org/fx"
+
+	"github.com/nanostack-dev/nanostack-framework/pkg/log"
 )
 
 // EnricherGroup is the fx value group applications use to register their own

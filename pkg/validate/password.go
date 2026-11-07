@@ -1,6 +1,7 @@
 package validate
 
 import (
+	"reflect"
 	"regexp"
 
 	"github.com/go-playground/validator/v10"
@@ -15,7 +16,7 @@ var (
 
 // IsStrongPassword checks password complexity criteria.
 func IsStrongPassword(fl validator.FieldLevel) bool {
-	password, ok := fl.Field().Interface().(string)
+	password, ok := reflect.TypeAssert[string](fl.Field())
 	if !ok {
 		return false
 	}

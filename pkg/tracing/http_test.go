@@ -2,16 +2,18 @@ package tracing_test
 
 import (
 	"context"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/nanostack-dev/nanostack-framework/pkg/tracing"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/nanostack-dev/nanostack-framework/pkg/tracing"
 )
 
 const incomingTraceparent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
@@ -33,9 +35,7 @@ func newServer(t *testing.T) (http.Handler, *tracetest.SpanRecorder) {
 
 func serve(handler http.Handler, method, target string, header http.Header) {
 	request := httptest.NewRequest(method, target, nil)
-	for key, values := range header {
-		request.Header[key] = values
-	}
+	maps.Copy(request.Header, header)
 	handler.ServeHTTP(httptest.NewRecorder(), request)
 }
 

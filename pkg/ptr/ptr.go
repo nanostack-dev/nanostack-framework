@@ -1,8 +1,10 @@
 package ptr
 
 // Ptr returns a pointer to v.
+//
+//go:fix inline
 func Ptr[T any](v T) *T {
-	return &v
+	return new(v)
 }
 
 // DerefOr returns fallback when v is nil.
