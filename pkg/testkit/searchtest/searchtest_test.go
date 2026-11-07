@@ -73,7 +73,7 @@ func (f fakeSearch) call(_ context.Context, body map[string]any) (int, []byte, e
 	if f.ignoreSort {
 		sortBy = ""
 	}
-	offsetChecked := !(f.emptyIgnoresOffset && req.Scope == "empty")
+	offsetChecked := !f.emptyIgnoresOffset || req.Scope != "empty"
 	if err := (search.Pagination{Limit: 1, Offset: int32(req.Pagination.Offset), Cursor: req.Pagination.Cursor}).Validate(); err != nil &&
 		offsetChecked {
 		return f.refuse("INVALID_CURSOR")
@@ -93,7 +93,7 @@ func (f fakeSearch) call(_ context.Context, body map[string]any) (int, []byte, e
 		if err != nil {
 			return f.refuse("INVALID_CURSOR")
 		}
-		if cursor.Order != order && !(f.emptySkipsOrder && req.Scope == "empty") {
+		if cursor.Order != order && (!f.emptySkipsOrder || req.Scope != "empty") {
 			return f.refuse("INVALID_CURSOR")
 		}
 		var after string

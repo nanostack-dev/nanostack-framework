@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"io"
+	"maps"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -136,7 +137,7 @@ func setup(t *testing.T) *sql.DB {
 		`CREATE TABLE it_searchtest (id text PRIMARY KEY, tenant text NOT NULL, name varchar(255) NOT NULL,
 			status it_searchtest_status NOT NULL, created timestamptz NOT NULL, score double precision)`,
 	} {
-		if _, err := db.Exec(stmt); err != nil {
+		if _, err = db.Exec(stmt); err != nil {
 			t.Fatalf("%s: %v", stmt, err)
 		}
 	}
@@ -145,7 +146,7 @@ func setup(t *testing.T) *sql.DB {
 		_, _ = db.Exec(`DROP TYPE IF EXISTS it_searchtest_status`)
 	})
 	for _, s := range seeds {
-		if _, err := db.Exec(`INSERT INTO it_searchtest VALUES ($1, 't1', $2, $3, $4, $5)`,
+		if _, err = db.Exec(`INSERT INTO it_searchtest VALUES ($1, 't1', $2, $3, $4, $5)`,
 			s.id, s.name, s.status, created, s.score); err != nil {
 			t.Fatal(err)
 		}
@@ -175,9 +176,7 @@ func TestIntegrationConformanceOfARealSearch(t *testing.T) {
 	}
 	t1 := func(extra map[string]any) map[string]any {
 		body := map[string]any{"tenant": "t1"}
-		for k, v := range extra {
-			body[k] = v
-		}
+		maps.Copy(body, extra)
 		return body
 	}
 	searchtest.Run(t, searchtest.Suite{

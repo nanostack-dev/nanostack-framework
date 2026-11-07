@@ -79,7 +79,7 @@ func TestEnabledProviderExportsWithResourceFromEnv(t *testing.T) {
 	}
 	attrs := map[attribute.Key]string{}
 	for _, kv := range spans[0].Resource.Attributes() {
-		attrs[kv.Key] = kv.Value.Emit()
+		attrs[kv.Key] = kv.Value.String()
 	}
 	if attrs["service.name"] != "echopoint" {
 		t.Fatalf("service.name = %q, want env value to win over fallback", attrs["service.name"])

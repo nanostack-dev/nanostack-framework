@@ -66,7 +66,7 @@ app:
 	// Test case: Missing required environment variable entirely (and no default value)
 	loader := NewConfigLoader()
 	err = loader.Init(configPath, tempDir)
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Contains(t, err.Error(), "missing required environment variables")
 
 	// Test case: File path does not exist
@@ -74,7 +74,7 @@ app:
 	t.Setenv("SECRET_KEY", "some-key")
 	loader2 := NewConfigLoader()
 	err = loader2.Init(configPath, tempDir)
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to read secret file for DB_PASSWORD_FILE")
 
 	// Clean up environment variables

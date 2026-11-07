@@ -23,7 +23,7 @@ func TestServerSpansNamedByRouteAndHealthUntraced(t *testing.T) {
 	options := Options{
 		Health: health.Config{Service: "anchor"},
 		ConfigureRouter: func(router *chi.Mux) {
-			router.Get("/products/{productID}", func(w http.ResponseWriter, r *http.Request) {
+			router.Get("/products/{productID}", func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusOK)
 			})
 		},

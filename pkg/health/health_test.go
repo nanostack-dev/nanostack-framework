@@ -29,10 +29,10 @@ func TestHandler(t *testing.T) {
 func TestDynamicRegistry(t *testing.T) {
 	t.Run("Healthy Checks", func(t *testing.T) {
 		reg := NewRegistry()
-		reg.Register(NewChecker("db", func(ctx context.Context) error {
+		reg.Register(NewChecker("db", func(context.Context) error {
 			return nil
 		}))
-		reg.Register(NewChecker("redis", func(ctx context.Context) error {
+		reg.Register(NewChecker("redis", func(context.Context) error {
 			return nil
 		}))
 
@@ -59,10 +59,10 @@ func TestDynamicRegistry(t *testing.T) {
 
 	t.Run("Unhealthy Check", func(t *testing.T) {
 		reg := NewRegistry()
-		reg.Register(NewChecker("db", func(ctx context.Context) error {
+		reg.Register(NewChecker("db", func(context.Context) error {
 			return nil
 		}))
-		reg.Register(NewChecker("redis", func(ctx context.Context) error {
+		reg.Register(NewChecker("redis", func(context.Context) error {
 			return errors.New("connection pool exhausted")
 		}))
 

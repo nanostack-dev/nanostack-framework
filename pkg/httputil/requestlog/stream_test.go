@@ -3,7 +3,6 @@ package requestlog_test
 import (
 	"bufio"
 	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -59,7 +58,7 @@ func TestMiddlewareLetsStreamOutliveServerWriteTimeout(t *testing.T) {
 	for scanner.Scan() {
 		received++
 	}
-	if err := scanner.Err(); err != nil && err != io.EOF {
+	if err = scanner.Err(); err != nil {
 		t.Fatalf("read stream after %d events: %v", received, err)
 	}
 	if received != events {

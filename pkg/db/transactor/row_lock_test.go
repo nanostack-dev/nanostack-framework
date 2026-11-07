@@ -17,8 +17,8 @@ var (
 	lockedTable = postgres.NewTable("public", "it_locked", "", lockedID)
 )
 
-func selectLockedRow(id string) postgres.SelectStatement {
-	return lockedTable.SELECT(lockedID).WHERE(lockedID.EQ(postgres.String(id)))
+func selectLockedRow() postgres.SelectStatement {
+	return lockedTable.SELECT(lockedID).WHERE(lockedID.EQ(postgres.String("a")))
 }
 
 func inFakeTx(ctx context.Context) context.Context {
@@ -40,7 +40,7 @@ func TestRowLockAddsTheRequestedClause(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			lockedCtx := test.lock(inFakeTx(context.Background()))
-			stmt, err := transactor.WithRequestedRowLockForTest(lockedCtx, selectLockedRow("a"))
+			stmt, err := transactor.WithRequestedRowLockForTest(lockedCtx, selectLockedRow())
 			if err != nil {
 				t.Fatalf("err = %v", err)
 			}
@@ -52,7 +52,7 @@ func TestRowLockAddsTheRequestedClause(t *testing.T) {
 }
 
 func TestRowLockLeavesAnUnlockedQueryAlone(t *testing.T) {
-	stmt := selectLockedRow("a")
+	stmt := selectLockedRow()
 	got, err := transactor.WithRequestedRowLockForTest(context.Background(), stmt)
 	if err != nil || got != stmt {
 		t.Fatalf("got %v, %v; want the statement untouched", got, err)
@@ -60,7 +60,7 @@ func TestRowLockLeavesAnUnlockedQueryAlone(t *testing.T) {
 }
 
 func TestRowLockRefusesAQueryOutsideATransaction(t *testing.T) {
-	_, err := transactor.WithRequestedRowLockForTest(transactor.ForShare(context.Background()), selectLockedRow("a"))
+	_, err := transactor.WithRequestedRowLockForTest(transactor.ForShare(context.Background()), selectLockedRow())
 	if !errors.Is(err, transactor.ErrRowLockOutsideTx) {
 		t.Fatalf("err = %v, want ErrRowLockOutsideTx", err)
 	}

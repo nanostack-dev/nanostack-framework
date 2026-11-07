@@ -27,8 +27,8 @@ func TestMutexLockWakesAtOnceOnRelease(t *testing.T) {
 		require.NoError(t, err)
 		acquired := make(chan *redisx.Lease, 1)
 		go func() {
-			lease, err := mutex.Lock(ctx)
-			assert.NoError(t, err)
+			lease, lockErr := mutex.Lock(ctx)
+			assert.NoError(t, lockErr)
 			acquired <- lease
 		}()
 		// Long enough for a polling waiter to reach its longest pause.
