@@ -9,7 +9,7 @@ One golangci-lint configuration for every Nanostack Go service. The framework ow
 | `.golangci.local.yml` | service | module path, ruleguard files, service exclusions |
 | `.golangci.yml`, `.golangci-lint-version` | generated | committed; never edited by hand |
 
-golangci-lint has no `extends`, and its maintainers declined remote configuration ([#2137](https://github.com/golangci/golangci-lint/issues/2137)). The choice of linters and the alternatives are in the [research](../docs/research/golangci-lint-standard.md).
+golangci-lint has no `extends`, and its maintainers declined remote configuration ([#2137](https://github.com/golangci/golangci-lint/issues/2137)). The choice of linters and the alternatives are in the [research](../docs/research/golangci-lint-standard.md); open gaps in this design are in the [architecture review](../docs/research/lint-standard-architecture.md).
 
 ## Adopt it in a service
 
