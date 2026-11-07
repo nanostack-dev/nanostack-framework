@@ -99,6 +99,10 @@ func countExclusions(overlay *yaml.Node) (int, error) {
 		if len(rule.Linters) == 0 {
 			return 0, fmt.Errorf("%w: exclusion rule (line %d) must name the linters it silences", errBudget, node.Line)
 		}
+		if rule.Path == "" {
+			return 0, fmt.Errorf("%w: exclusion rule (line %d) must match one path, such as path: ^cmd/app/main\\.go$",
+				errBudget, node.Line)
+		}
 		if strings.Contains(rule.Path, "|") {
 			return 0, fmt.Errorf(
 				"%w: exclusion rule (line %d) must match one path; write one rule per file instead of %q",

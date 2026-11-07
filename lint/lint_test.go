@@ -112,6 +112,7 @@ func TestConfig(t *testing.T) {
 		{"rules over the budget are refused", rule("noctx", "gosec") + budget(1), "over its budget of 1"},
 		{"a budget above the rules must come down", rule("noctx") + budget(3), "lower nanostack.exclusion-budget to 1"},
 		{"a rule must name its linters", "linters:\n  exclusions:\n    rules:\n      - path: ^cmd/it/\n" + budget(0), "must name the linters"},
+		{"a rule must name a path", "linters:\n  exclusions:\n    rules:\n      - text: shadow\n        linters: [govet]\n" + budget(1), "must match one path"},
 		{"a rule must match one path", "linters:\n  exclusions:\n    rules:\n      - path: ^(a|b)\\.go$\n        linters: [noctx]\n" + budget(1), "one rule per file"},
 		{"an unknown nanostack key is refused", "nanostack:\n  budget: 1\n", ".nanostack.budget"},
 		{"a budget must be a whole number", "nanostack:\n  exclusion-budget: \"1\"\n", "whole number"},
