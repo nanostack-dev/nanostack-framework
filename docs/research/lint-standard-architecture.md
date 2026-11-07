@@ -3,6 +3,7 @@
 - Date: 2026-11-06
 - Subject: the design of [`lint/`](../../lint/README.md) after its rebase on `main`. The choice of linters is in [the first research](golangci-lint-standard.md).
 - Outcome: keep the design. Close five gaps, listed in [order of value](#what-to-change).
+- Status: changes 1 to 4 are applied in the same branch; 5 to 10 are open.
 - Evidence: six web research passes on primary sources (80 cited below), and local runs of golangci-lint v2.15.0 on this repository. A claim marked UNVERIFIED was not confirmed at its source.
 
 ## In 30 seconds
@@ -75,6 +76,8 @@ Append-only is a valid choice for a standard: a service should not opt out of a 
 ## What to change
 
 Ordered by value for the effort. Items 1 to 4 are small; 5 needs a decision.
+
+Items 1 to 4 are applied. The framework overlay names the `integration` tag and holds 32 one-line rules with a reason each; 6 findings were fixed instead. `lintconfig` refuses an overlay whose rules name more or fewer linters than its `nanostack.exclusion-budget`, or a rule whose path joins files with `|`. The new [CI workflow](../../.github/workflows/ci.yml) runs `lintconfig -check`, a full lint that fails on `Skipped 0 issues by rules`, and `go test ./...`. The [lint README](../../lint/README.md) shows the service setup.
 
 | # | Change | Helps | Source of the practice |
 |---|---|---|---|
@@ -164,3 +167,6 @@ All runs used golangci-lint v2.15.0 on `feat/lint-standard` at its rebase on `ma
 | An exclusion rule that matches nothing, full run | warning printed, exit 0 |
 | The same rule, run on one package | every out-of-scope rule warns |
 | `go run ./lint/cmd/lintconfig -check` | passes |
+| Full run after the split into one rule per file | 2 findings the old list never named: golangci-lint shows one finding per line (`uniq-by-line`), so a second finding on a line appears only once the first is fixed or excluded |
+| Overlay with 33 rules and a budget of 31 | `lintconfig` fails: over its budget |
+| Probe rule for a file that does not exist, full run | the CI step fails on the warning |

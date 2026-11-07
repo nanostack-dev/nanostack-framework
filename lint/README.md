@@ -6,7 +6,7 @@ One golangci-lint configuration for every Nanostack Go service. The framework ow
 |---|---|---|
 | [`base.golangci.yml`](base.golangci.yml) | framework | 33 linters and their settings |
 | [`golangci-lint-version`](golangci-lint-version) | framework | the golangci-lint release the base is written for |
-| `.golangci.local.yml` | service | module path, ruleguard files, service exclusions |
+| `.golangci.local.yml` | service | module path, build tags, ruleguard files, exclusions and their budget |
 | `.golangci.yml`, `.golangci-lint-version` | generated | committed; never edited by hand |
 
 golangci-lint has no `extends`, and its maintainers declined remote configuration ([#2137](https://github.com/golangci/golangci-lint/issues/2137)). The choice of linters and the alternatives are in the [research](../docs/research/golangci-lint-standard.md); open gaps in this design are in the [architecture review](../docs/research/lint-standard-architecture.md).
@@ -26,6 +26,8 @@ The framework version in the service's `go.mod` decides which base it gets, so a
 A minimal `.golangci.local.yml`:
 
 ```yaml
+run:
+  build-tags: [integration] # files behind a build tag are never linted without it
 formatters:
   settings:
     goimports:
@@ -52,9 +54,43 @@ linters:
 
 An overlay cannot remove a base linter. To silence one in some files, add an exclusion rule.
 
+The `nanostack` section belongs to `lintconfig`, which reads it and leaves it out of `.golangci.yml`.
+
 ## Adding the standard to existing code
 
-Each finding that predates the standard is fixed or listed in the overlay's exclusion rules, by linter and path. `warn-unused` prints a warning on a full `./...` run for a rule that no longer matches anything; delete that rule. The warning does not fail the run, and nothing blocks a new entry, so review exclusion changes like code. The framework's own [`.golangci.local.yml`](../.golangci.local.yml) shows the shape.
+Fix each finding that predates the standard, or exclude it with one rule per linter and file, sorted, with what it hides:
+
+```yaml
+linters:
+  exclusions:
+    rules:
+      - {linters: [funlen], path: ^pkg/report/export\.go$} # Export, 70 statements
+      - {linters: [govet], path: ^pkg/report/export\.go$} # shadow: err x2
+nanostack:
+  exclusion-budget: 2
+```
+
+`lintconfig` and `lintconfig -check` fail unless `exclusion-budget` equals the number of linters the overlay's rules name. A rule must name its linters and match one path: a path with `|` is refused. A fix deletes a line and must lower the number. A new exclusion must raise it, so a reviewer sees it in the diff.
+
+golangci-lint shows one finding per line by default (`uniq-by-line`). Fixing a finding can uncover a second one on the same line, so lint again after each fix.
+
+## Run it in CI
+
+```yaml
+- run: go tool lintconfig -check
+- uses: golangci/golangci-lint-action@v9
+  with:
+    version-file: .golangci-lint-version
+    install-only: true
+- run: |
+    code=0
+    golangci-lint run ./... 2>lint.log || code=$?
+    cat lint.log >&2
+    if grep -q 'Skipped 0 issues by rules' lint.log; then code=1; fi # a stale exclusion
+    exit "$code"
+```
+
+`warn-unused` prints `Skipped 0 issues by rules` for an exclusion that hides nothing, but exits 0, so the last step fails on it. Run it on all of `./...`: on fewer packages, every rule for the others warns too. If the warning names the base rule for `_test\.go`, the service's tests have no finding it hides; report it to the framework. The framework's own [workflow](../.github/workflows/ci.yml) runs these steps.
 
 ## Changing the standard
 

@@ -1,6 +1,7 @@
 package lint_test
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 
@@ -47,6 +48,16 @@ func render(t *testing.T, overlay string) config {
 	return c
 }
 
+// rule is an overlay with one exclusion rule for ^cmd/it/ silencing linters.
+func rule(linters ...string) string {
+	return "linters:\n  exclusions:\n    rules:\n      - path: ^cmd/it/\n" +
+		"        linters: [" + strings.Join(linters, ", ") + "]\n"
+}
+
+func budget(n int) string {
+	return "nanostack:\n  exclusion-budget: " + strconv.Itoa(n) + "\n"
+}
+
 func TestConfig(t *testing.T) {
 	base := render(t, "")
 
@@ -78,12 +89,41 @@ func TestConfig(t *testing.T) {
 	})
 
 	t.Run("exclusion rules are appended", func(t *testing.T) {
-		got := render(t, "linters:\n  exclusions:\n    rules:\n      - path: cmd/it/\n        linters: [noctx]\n")
+		got := render(t, rule("noctx")+budget(1))
 		rules := got.Linters.Exclusions.Rules
-		if len(rules) != len(base.Linters.Exclusions.Rules)+1 || rules[len(rules)-1].Path != "cmd/it/" {
-			t.Fatalf("rules = %+v, want the base rules plus cmd/it/", rules)
+		if len(rules) != len(base.Linters.Exclusions.Rules)+1 || rules[len(rules)-1].Path != "^cmd/it/" {
+			t.Fatalf("rules = %+v, want the base rules plus ^cmd/it/", rules)
 		}
 	})
+
+	t.Run("the nanostack section is not written", func(t *testing.T) {
+		out, err := lint.Config("header", []byte(rule("noctx")+budget(1)))
+		if err != nil || strings.Contains(string(out), "\nnanostack:") {
+			t.Fatalf("err = %v, output:\n%s", err, out)
+		}
+	})
+
+	t.Run("a budget of zero needs no exclusions", func(t *testing.T) {
+		render(t, budget(0))
+	})
+
+	for _, tc := range []struct{ name, overlay, want string }{
+		{"rules without a budget are refused", rule("noctx"), "add `nanostack: {exclusion-budget: 1}`"},
+		{"rules over the budget are refused", rule("noctx", "gosec") + budget(1), "over its budget of 1"},
+		{"a budget above the rules must come down", rule("noctx") + budget(3), "lower nanostack.exclusion-budget to 1"},
+		{"a rule must name its linters", "linters:\n  exclusions:\n    rules:\n      - path: ^cmd/it/\n" + budget(0), "must name the linters"},
+		{"a rule must match one path", "linters:\n  exclusions:\n    rules:\n      - path: ^(a|b)\\.go$\n        linters: [noctx]\n" + budget(1), "one rule per file"},
+		{"an unknown nanostack key is refused", "nanostack:\n  budget: 1\n", ".nanostack.budget"},
+		{"a budget must be a whole number", "nanostack:\n  exclusion-budget: \"1\"\n", "whole number"},
+		{"a negative budget is refused", budget(-1), "whole number"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := lint.Config("header", []byte(tc.overlay))
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("err = %v, want it to contain %q", err, tc.want)
+			}
+		})
+	}
 
 	t.Run("a value of another shape is refused", func(t *testing.T) {
 		_, err := lint.Config("header", []byte("linters:\n  enable: errcheck\n"))

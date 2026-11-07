@@ -1,5 +1,10 @@
 # The framework's own additions to lint/base.golangci.yml. Run
 # `go run ./lint/cmd/lintconfig` after changing this file or the base.
+run:
+  # Container tests sit behind this tag; without it they are never linted.
+  build-tags:
+    - integration
+
 formatters:
   settings:
     goimports:
@@ -16,29 +21,42 @@ linters:
           rules: ${base-path}/gorules/functional.go,${base-path}/gorules/transactor.go
           failOn: all
 
-  # Findings that predate the standard. Fix one and delete its path; warn-unused
-  # reports a path with nothing left to exclude. Nothing new joins these lists.
+  # Findings that predate the standard: one linter and one file per line, sorted,
+  # with what it hides. Fix one, delete its line and lower the budget below.
   exclusions:
     rules:
-      - linters: [errorlint]
-        path: ^(pkg/httputil/requestlog/stream_test\.go)$
-      - linters: [exhaustive]
-        path: ^(pkg/db/transactor/keyset\.go|pkg/db/transactor/keyset_test\.go)$
-      - linters: [funlen]
-        path: ^(pkg/testkit/searchtest/searchtest\.go)$
-      - linters: [gocognit]
-        path: ^(modules/httpserver/module\.go|pkg/testkit/searchtest/searchtest\.go)$
-      - linters: [gocritic]
-        path: ^(pkg/functional/slice_bench_test\.go|pkg/functional/slice_test\.go)$
-      - linters: [gosec]
-        path: ^(modules/config/configloader\.go)$
-      - linters: [govet]
-        path: ^(modules/cache/redis_fallback_test\.go|pkg/httputil/requestlog/stream_test\.go|modules/config/configloader\.go|modules/httpserver/module\.go|modules/migrations/migrator\.go|modules/pglock/pglock\.go|modules/postgres/postgres\.go|pkg/db/transactor/keyset\.go|pkg/db/transactor/keyset_test\.go|pkg/db/transactor/page\.go|pkg/ptr/ptr_test\.go|pkg/search/cursor\.go|pkg/search/cursor_test\.go|pkg/search/search_test\.go|pkg/secrets/versioned_cipher\.go|pkg/testkit/searchtest/mutations\.go|pkg/testkit/searchtest/searchtest\.go|pkg/testkit/searchtest/searchtest_test\.go|pkg/tracing/provider_test\.go|pkg/validate/validator\.go)$
-      - linters: [revive]
-        path: ^(modules/httpserver/tracing_test\.go|pkg/db/transactor/keyset\.go|pkg/db/transactor/keyset_test\.go|pkg/functional/result_test\.go|pkg/health/health_test\.go|pkg/validate/default_validator\.go)$
-      - linters: [staticcheck]
-        path: ^(pkg/testkit/searchtest/searchtest_test\.go|pkg/tracing/provider_test\.go)$
-      - linters: [testifylint]
-        path: ^(modules/config/configloader_test\.go)$
-      - linters: [unparam]
-        path: ^(pkg/tracing/http_test\.go)$
+      - {linters: [exhaustive], path: ^pkg/db/transactor/keyset\.go$} # 2 switches on nulls skip nullsDefault
+      - {linters: [exhaustive], path: ^pkg/db/transactor/keyset_test\.go$} # 4 Key maps list only the sorts a test uses
+      - {linters: [funlen], path: ^pkg/testkit/searchtest/searchtest\.go$} # CheckRefusals, 63 statements
+      - {linters: [gocognit], path: ^modules/httpserver/module\.go$} # setupRouter, complexity 21
+      - {linters: [gocognit], path: ^pkg/testkit/searchtest/searchtest\.go$} # CheckRefusals, complexity 34
+      - {linters: [gocritic], path: ^pkg/functional/slice_bench_test\.go$} # benchmarks Filter().Map() against FilterMap
+      - {linters: [gocritic], path: ^pkg/functional/slice_test\.go$} # tests the Filter().Map() and Map().FindFirst() chains
+      - {linters: [gosec], path: ^modules/config/configloader\.go$} # G703 on the config and .env paths the service passes
+      - {linters: [govet], path: ^modules/cache/redis_fallback_test\.go$} # shadow: loadErr
+      - {linters: [govet], path: ^modules/config/configloader\.go$} # shadow: err x3
+      - {linters: [govet], path: ^modules/httpserver/module\.go$} # shadow: err
+      - {linters: [govet], path: ^modules/migrations/migrator\.go$} # shadow: err
+      - {linters: [govet], path: ^modules/pglock/pglock\.go$} # shadow: err x3
+      - {linters: [govet], path: ^modules/postgres/postgres\.go$} # shadow: err
+      - {linters: [govet], path: ^pkg/db/transactor/keyset\.go$} # shadow: ok
+      - {linters: [govet], path: ^pkg/db/transactor/keyset_test\.go$} # shadow x6
+      - {linters: [govet], path: ^pkg/db/transactor/page\.go$} # shadow: err
+      - {linters: [govet], path: ^pkg/ptr/ptr_test\.go$} # nilness: checks new() for nil
+      - {linters: [govet], path: ^pkg/search/cursor\.go$} # shadow: err
+      - {linters: [govet], path: ^pkg/search/cursor_test\.go$} # shadow: err
+      - {linters: [govet], path: ^pkg/search/search_test\.go$} # shadow: err
+      - {linters: [govet], path: ^pkg/secrets/versioned_cipher\.go$} # shadow: err
+      - {linters: [govet], path: ^pkg/testkit/searchtest/mutations\.go$} # shadow: err x2
+      - {linters: [govet], path: ^pkg/testkit/searchtest/searchtest\.go$} # shadow: err x5
+      - {linters: [govet], path: ^pkg/testkit/searchtest/searchtest_test\.go$} # shadow: err x2
+      - {linters: [govet], path: ^pkg/tracing/provider_test\.go$} # shadow: err x2
+      - {linters: [govet], path: ^pkg/validate/validator\.go$} # shadow: err x12
+      - {linters: [revive], path: ^pkg/db/transactor/keyset\.go$} # 587 lines, limit 400
+      - {linters: [revive], path: ^pkg/db/transactor/keyset_test\.go$} # 450 lines, limit 400
+      - {linters: [revive], path: ^pkg/functional/result_test\.go$} # 410 lines, limit 400
+      - {linters: [revive], path: ^pkg/validate/default_validator\.go$} # ValidateStruct stutters; renaming breaks callers
+      - {linters: [unparam], path: ^pkg/tracing/http_test\.go$} # serve always gets GET
+nanostack:
+  # One per linter in each rule above; lintconfig fails when they differ.
+  exclusion-budget: 32

@@ -29,6 +29,10 @@ func Version() string {
 // .golangci.yml, starting with header. Mappings merge key by key, lists gain the
 // overlay items they do not already hold, and an overlay scalar replaces the
 // base one. An empty overlay returns the base unchanged.
+//
+// The overlay's nanostack section is removed before the merge. Its
+// exclusion-budget must equal the number of linters its exclusion rules name,
+// so a new exclusion or a fixed one shows as a change to that number.
 func Config(header string, overlay []byte) ([]byte, error) {
 	var doc yaml.Node
 	if err := yaml.Unmarshal(base, &doc); err != nil {
@@ -39,6 +43,9 @@ func Config(header string, overlay []byte) ([]byte, error) {
 		return nil, fmt.Errorf("parse overlay: %w", err)
 	}
 	if len(extra.Content) > 0 {
+		if err := checkBudget(extra.Content[0]); err != nil {
+			return nil, err
+		}
 		if err := merge(doc.Content[0], extra.Content[0], ""); err != nil {
 			return nil, err
 		}
