@@ -8,7 +8,7 @@ This repository contains reusable Go service primitives and lifecycle wiring. It
 - Package changes or service integration: read [current architecture](docs/technical/architecture.md), then the affected package guide in [the index](docs/README.md).
 - First checkout or environment failure: read [setup](docs/development/setup.md) and [troubleshooting](docs/development/troubleshooting.md).
 - Code changes: follow [testing](docs/development/testing.md); database behavior needs the documented PostgreSQL integration tests.
-- Public API changes or release work: read [publishing and consumer upgrades](docs/runbooks/deployment.md), [rollback](docs/runbooks/rollback.md) and [existing decisions](docs/adr/README.md).
+- Public API changes, compatibility checks or release work: read [publishing and consumer upgrades](docs/runbooks/deployment.md), [rollback](docs/runbooks/rollback.md) and [existing decisions](docs/adr/README.md). Check compatibility with the consumer build in that runbook. `apidiff` never finishes on this module's generic methods and fills the machine's memory.
 
 ## Boundaries and invariants
 

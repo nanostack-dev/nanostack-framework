@@ -239,3 +239,13 @@ A review of how a mature distributed-objects library and its issue history handl
 Waiting `Lock` callers are now woken by a pub/sub message from the release, and poll at most once a second as a fallback, capped by the holder's remaining TTL. `redistest` gains `StartServer` (restart, pause, cut connections) and `FaultyClient` (lose the reply of a command).
 
 Rejected, with reasons in the package README: fair ordering of waiters, waiting for replicas or a multi-server quorum (still timing-dependent; fencing is the answer), reentrant and read-write locks, one shared refresh loop, and exactly-once counters and queues under client retries.
+
+## 2026-11-07: Check API Compatibility With Consumer Builds
+
+Check public API compatibility by building each consumer against the framework change, as the [publishing runbook](runbooks/deployment.md) describes. Do not use `golang.org/x/exp/cmd/apidiff` on this module.
+
+Rationale: apidiff recurses without end on Go 1.27 generic methods. `Option[T].Map[R any]` returns `Option[R]`, and each check of that result creates a new instantiation, so the recursion never meets a type it has already checked. One run on `pkg/functional` used 139 GB of memory and filled swap. The bug is in every apidiff version tested, up to `golang.org/x/exp` 47ce03d25ef0 (2026-11-06, "apidiff: support generic methods"). A three-line package with one generic method reproduces it.
+
+The consumer build also fits the framework's current state. Versions are below v1.0, so a minor release may break the API, and every consumer is a Nanostack repository. A consumer build reports the breaks that matter, and an apidiff report would list changes no consumer uses.
+
+Revisit when the framework reaches v1.0 or gains outside consumers, and when an apidiff release passes on `pkg/functional`.
