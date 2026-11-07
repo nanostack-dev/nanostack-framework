@@ -82,11 +82,11 @@ The framework version in each service's `go.mod` decides which base it gets, so 
 2. echopoint, then anchor: generate `.golangci.yml`, run the full lint, and put each new finding either in a fix or in a rollout exclusion in the overlay.
 3. The ADR 0012 rules (depguard feature imports, `file-length-limit`, `exhaustruct_v5` on `Deps`) start with an exclusion that lists the features not yet migrated. The list only shrinks.
 
-## Your call
+## Decided
 
-- `nakedret` and `nonamedreturns`: dropped as style. Keep one if you want a rule on named results.
-- `perfsprint` and `whitespace`: dropped as low value. Both have autofix, so keeping them costs little.
-- Test files with `govet` and `errcheck` on: expect findings in `cmd/it` on the first run.
+- `nakedret` and `nonamedreturns` stay out: they check style only.
+- `perfsprint` and `whitespace` stay out: low value, although both have autofix.
+- `govet` and `errcheck` stay on in test files. They catch bugs such as an unchecked `json.Unmarshal` error that lets a test pass on bad data. Expect findings in echopoint's `cmd/it` on the first run.
 
 ## What large projects enable
 

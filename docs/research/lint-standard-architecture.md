@@ -3,7 +3,7 @@
 - Date: 2026-11-06
 - Subject: the design of [`lint/`](../../lint/README.md) after its rebase on `main`. The choice of linters is in [the first research](golangci-lint-standard.md).
 - Outcome: keep the design. Close five gaps, listed in [order of value](#what-to-change).
-- Status: changes 1 to 4 are applied in the same branch; 5 to 10 are open.
+- Status: changes 1 to 4 are applied in the same branch and 5 is decided (lists stay append-only); 6 to 10 are open.
 - Evidence: six web research passes on primary sources (80 cited below), and local runs of golangci-lint v2.15.0 on this repository. A claim marked UNVERIFIED was not confirmed at its source.
 
 ## In 30 seconds
@@ -85,7 +85,7 @@ Items 1 to 4 are applied. The framework overlay names the `integration` tag and 
 | 2 | Write one exclusion per linter and file, sorted, each with a short reason. | both | [Notion](https://www.notion.com/blog/how-we-evolved-our-code-notions-ratcheting-system-using-custom-eslint-rules), [maratori](https://gist.github.com/maratori/47a4d00457a92aa426dbd48a18776322) |
 | 3 | Fail CI when the exclusion list grows: `lintconfig -check` counts exclusion entries and compares them with a number committed in the overlay, which only goes down. | both | [Notion](https://www.notion.com/blog/how-we-evolved-our-code-notions-ratcheting-system-using-custom-eslint-rules), [`ratchets`](https://docs.rs/crate/ratchets/0.2.4/source/DESIGN.md) (agents may lower a budget, never raise it; UNVERIFIED, seen in snippets) |
 | 4 | Add framework CI: `lintconfig -check`, `golangci-lint run ./...` with the integration tag, `go test ./...`. Pass `version-file` to the action. | both | [action](https://github.com/golangci/golangci-lint-action) |
-| 5 | Decide the merge rule for lists: keep append-only and say so, or add explicit `disable` keys reviewed in the PR. | both | [RuboCop](https://docs.rubocop.org/rubocop/latest/configuration/inheritance.html), [Ruff](https://docs.astral.sh/ruff/configuration/) |
+| 5 | Decide the merge rule for lists: keep append-only and say so, or add explicit `disable` keys reviewed in the PR. Decided: append-only, because a `disable` key would bypass the exclusion budget. | both | [RuboCop](https://docs.rubocop.org/rubocop/latest/configuration/inheritance.html), [Ruff](https://docs.astral.sh/ruff/configuration/) |
 | 6 | Put a one-line reason beside each linter in the base, and list the removed linters with a bracketed reason. Lists stay alphabetical. | humans | [maratori](https://gist.github.com/maratori/47a4d00457a92aa426dbd48a18776322), [Kubernetes](https://raw.githubusercontent.com/kubernetes/kubernetes/master/hack/golangci.yaml) |
 | 7 | Write a version policy: a base change that can add findings is a framework minor release with a changelog line; one that only removes findings is a patch. | humans | [eslint-plugin-testing-library](https://github.com/testing-library/eslint-plugin-testing-library/blob/main/docs/semantic-versioning-policy.md) |
 | 8 | Let Renovate bump `lint/golangci-lint-version` with a custom regex manager, and read the changelog for renamed options on each bump. | humans | [custom managers](https://docs.renovatebot.com/presets-customManagers/), [changelog](https://golangci-lint.run/docs/product/changelog/) |

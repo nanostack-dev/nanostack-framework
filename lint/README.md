@@ -52,7 +52,7 @@ linters:
 | A scalar | Replaces the base value. |
 | A different shape than the base (a scalar for a list) | Refused with the path, for example `.linters.enable`. |
 
-An overlay cannot remove a base linter. To silence one in some files, add an exclusion rule.
+An overlay cannot remove a base linter. To silence one in some files, add an exclusion rule: the budget counts it, and a `disable` key would not be counted.
 
 The `nanostack` section belongs to `lintconfig`, which reads it and leaves it out of `.golangci.yml`.
 
