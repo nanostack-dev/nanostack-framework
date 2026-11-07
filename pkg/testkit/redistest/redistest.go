@@ -98,15 +98,17 @@ func start() (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), startTimeout)
 	defer cancel()
 	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
-		ContainerRequest: testcontainers.ContainerRequest{
-			Image:        image,
-			ExposedPorts: []string{"6379/tcp"},
-			WaitingFor:   wait.ForListeningPort("6379/tcp"),
-		},
-		Started: true,
+		Image:        image,
+		ExposedPorts: []string{"6379/tcp"},
+		WaitingFor:   wait.ForListeningPort("6379/tcp"),
+		Started:      true,
 	})
 	if err != nil {
-		return "", fmt.Errorf("start %s (is Docker running? set REDIS_TEST_ADDR to use your own server): %w", image, err)
+		return "", fmt.Errorf(
+			"start %s (is Docker running? set REDIS_TEST_ADDR to use your own server): %w",
+			image,
+			err,
+		)
 	}
 	endpoint, err := container.PortEndpoint(ctx, "6379/tcp", "")
 	if err != nil {

@@ -37,23 +37,21 @@ func StartServer(t testing.TB) *Server {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), startTimeout)
 	defer cancel()
-	port, err := freePort()
+	port, err := freePort(ctx)
 	if err != nil {
 		t.Fatalf("redistest: %v", err)
 	}
 	ctr, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
-		ContainerRequest: testcontainers.ContainerRequest{
-			Image:        image(),
-			ExposedPorts: []string{"6379/tcp"},
-			Cmd:          []string{"--save", "", "--appendonly", "no"},
-			HostConfigModifier: func(hc *container.HostConfig) {
-				hc.PortBindings = network.PortMap{
-					network.MustParsePort("6379/tcp"): {{HostPort: strconv.Itoa(port)}},
-				}
-			},
-			WaitingFor: wait.ForListeningPort("6379/tcp"),
+		Image:        image(),
+		ExposedPorts: []string{"6379/tcp"},
+		Cmd:          []string{"--save", "", "--appendonly", "no"},
+		HostConfigModifier: func(hc *container.HostConfig) {
+			hc.PortBindings = network.PortMap{
+				network.MustParsePort("6379/tcp"): {{HostPort: strconv.Itoa(port)}},
+			}
 		},
-		Started: true,
+		WaitingFor: wait.ForListeningPort("6379/tcp"),
+		Started:    true,
 	})
 	testcontainers.CleanupContainer(t, ctr)
 	if err != nil {
@@ -109,7 +107,7 @@ func (s *Server) Pause(t testing.TB) {
 		_, err := docker.ContainerPause(ctx, id, client.ContainerPauseOptions{})
 		return err
 	})
-	t.Cleanup(func() { s.resume() })
+	t.Cleanup(func() { _ = s.resume() }) // CleanupContainer removes it next
 }
 
 // Resume undoes Pause. The server then answers the commands that waited.
@@ -161,7 +159,7 @@ func (s *Server) docker(t testing.TB, call func(context.Context, *testcontainers
 		t.Fatalf("redistest: connect to Docker: %v", err)
 	}
 	defer docker.Close()
-	if err := call(ctx, docker, s.container.GetContainerID()); err != nil {
+	if err = call(ctx, docker, s.container.GetContainerID()); err != nil {
 		t.Fatalf("redistest: %v", err)
 	}
 }
@@ -188,11 +186,16 @@ func image() string {
 	return DefaultImage
 }
 
-func freePort() (int, error) {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+func freePort(ctx context.Context) (int, error) {
+	var config net.ListenConfig
+	listener, err := config.Listen(ctx, "tcp", "127.0.0.1:0")
 	if err != nil {
 		return 0, fmt.Errorf("find a free port: %w", err)
 	}
 	defer listener.Close()
-	return listener.Addr().(*net.TCPAddr).Port, nil
+	addr, ok := listener.Addr().(*net.TCPAddr)
+	if !ok {
+		return 0, fmt.Errorf("find a free port: %s is not a TCP address", listener.Addr())
+	}
+	return addr.Port, nil
 }

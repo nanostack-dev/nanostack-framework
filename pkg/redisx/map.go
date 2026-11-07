@@ -6,8 +6,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/nanostack-dev/nanostack-framework/pkg/functional"
 	"github.com/redis/go-redis/v9"
+
+	"github.com/nanostack-dev/nanostack-framework/pkg/functional"
 )
 
 // Map is a Redis hash: string fields with typed values, under one key.
@@ -140,9 +141,9 @@ func (m Map[V]) All(ctx context.Context) (map[string]V, error) {
 	}
 	values := make(map[string]V, len(raws))
 	for field, raw := range raws {
-		value, err := m.codec.Decode(raw)
-		if err != nil {
-			return nil, err
+		value, decodeErr := m.codec.Decode(raw)
+		if decodeErr != nil {
+			return nil, decodeErr
 		}
 		values[field] = value
 	}

@@ -5,9 +5,10 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/nanostack-dev/nanostack-framework/pkg/functional"
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
+
+	"github.com/nanostack-dev/nanostack-framework/pkg/functional"
 
 	"github.com/nanostack-dev/nanostack-framework/pkg/redisx"
 )

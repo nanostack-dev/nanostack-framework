@@ -21,7 +21,9 @@ var (
 	ErrConflict = errors.New("redisx: value changed concurrently on every attempt")
 	// ErrResubscribed goes to Topic.OnError when a subscription lost its
 	// connection and subscribed again: messages published in between are lost.
-	ErrResubscribed = errors.New("redisx: subscribed again after a lost connection, messages published in between are lost")
+	ErrResubscribed = errors.New(
+		"redisx: subscribed again after a lost connection, messages published in between are lost",
+	)
 )
 
 // Client is the entry point to the shared data structures, mutexes and topics
