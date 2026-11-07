@@ -3,8 +3,8 @@
 - Date: 2026-11-06
 - Subject: the design of [`lint/`](../../lint/README.md) after its rebase on `main`. The choice of linters is in [the first research](golangci-lint-standard.md).
 - Outcome: keep the design. Close five gaps, listed in [order of value](#what-to-change).
-- Status: changes 1 to 4 are applied in the same branch and 5 is decided (lists stay append-only); 6 to 10 are open.
-- Evidence: six web research passes on primary sources (80 cited below), and local runs of golangci-lint v2.15.0 on this repository. A claim marked UNVERIFIED was not confirmed at its source.
+- Status: changes 1 to 4 are applied in the same branch and 5 is decided (lists stay append-only); 6 to 14 are open.
+- Evidence: seven web research passes on primary sources (80 cited below), and local runs of golangci-lint v2.15.0 on this repository. A claim marked UNVERIFIED was not confirmed at its source.
 
 ## In 30 seconds
 
@@ -75,7 +75,7 @@ Append-only is a valid choice for a standard: a service should not opt out of a 
 
 ## What to change
 
-Ordered by value for the effort. Items 1 to 4 are small; 5 needs a decision.
+Ordered by value for the effort. Items 1 to 4 are small; 5 needs a decision. Items 11 to 14 come from a later pass on habits of AI-written Go and are not ranked against the others.
 
 Items 1 to 4 are applied. The framework overlay names the `integration` tag and holds 32 one-line rules with a reason each; 6 findings were fixed instead. `lintconfig` refuses an overlay whose rules name more or fewer linters than its `nanostack.exclusion-budget`, or a rule whose path joins files with `|`. The new [CI workflow](../../.github/workflows/ci.yml) runs `lintconfig -check`, a full lint that fails on `Skipped 0 issues by rules`, and `go test ./...`. The [lint README](../../lint/README.md) shows the service setup.
 
@@ -91,6 +91,10 @@ Items 1 to 4 are applied. The framework overlay names the `integration` tag and 
 | 8 | Let Renovate bump `lint/golangci-lint-version` with a custom regex manager, and read the changelog for renamed options on each bump. | humans | [custom managers](https://docs.renovatebot.com/presets-customManagers/), [changelog](https://golangci-lint.run/docs/product/changelog/) |
 | 9 | Give agents a fast loop and a gate: lint changed packages after each edit, block finishing on findings, and forbid new `nolint` or exclusion entries without a human. | agents | [Claude Code best practices](https://code.claude.com/docs/en/best-practices), [Böckeler](https://martinfowler.com/articles/harness-engineering.html), [hooks guide](https://agentic.proxify.io/setup/hooks-playbook) (anecdotal) |
 | 10 | Write every custom rule message as rule, reason and fix, with a link to the ADR. | agents | [Factory](https://factory.com/using-linters-to-direct-agents), [Böckeler](https://martinfowler.com/articles/harness-engineering.html), [CockroachDB](https://github.com/cockroachdb/cockroach/blob/master/pkg/testutils/lint/lint_test.go) |
+| 11 | Turn on `errcheck` `check-blank`, so `n, _ := strconv.Atoi(s)` and `_ = json.Marshal(v)` are findings. A deliberate `_ = f.Close()` then needs a `nolint` with a reason. It adds findings in services, so it ships as item 7 says. | agents | [gh-aw](https://pkg.go.dev/github.com/github/gh-aw@v0.78.2/pkg/linters) (`jsonmarshalignorederror`, `strconvparseignorederror`), [errcheck settings](https://golangci-lint.run/docs/linters/configuration/#errcheck) |
+| 12 | Add `contextcheck`: it flags a function that has a ctx but calls on with a new `context.Background()`, which drops the caller's deadline and trace. | agents | [gh-aw](https://pkg.go.dev/github.com/github/gh-aw@v0.78.2/pkg/linters) (`ctxbackground`) |
+| 13 | Add a ruleguard rule to `gorules` that refuses `strings.Contains(err.Error(), "...")` and names `errors.Is` or `errors.As`. `errorlint` checks `==` and type switches, not string matches. | agents | [gh-aw](https://pkg.go.dev/github.com/github/gh-aw@v0.78.2/pkg/linters) (`errstringmatch`, enforced in its CI) |
+| 14 | Run `apidiff` in framework CI against the last release tag and show the incompatible changes in the PR. An agent that fixes `funlen` can change a public signature to do it. | both | [2,611 findings in 3 days](https://hackernoon.com/surviving-tech-debt-how-2611-golang-linter-issues-solved-in-3-days), [apidiff](https://pkg.go.dev/golang.org/x/exp/cmd/apidiff) |
 
 A version example for item 7: adding `misspell` to the base can fail a service's CI, so it ships in a minor release with a changelog line that says "new findings possible". Removing `goconst` cannot fail anything, so it ships in a patch.
 
@@ -147,6 +151,9 @@ A version example for item 7: adding `misspell` to the base can fail a service's
 - Anthropic's context-engineering post: keep the smallest set of high-signal tokens and add instructions from observed failures ([post](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents)).
 - OpenAI's harness-engineering post reportedly uses custom lint messages with remediation steps, and background tasks that open fix PRs for drift. UNVERIFIED: the page returned 403; seen through [ZenML](https://zenml.io/llmops-database/harness-engineering-building-software-where-humans-steer-and-agents-execute).
 - Papers, from abstracts and snippets only: static-analysis feedback cut GPT-4o security issues from over 40% to 13% ([2508.14419](https://alphaxiv.org/abs/2508.14419)); CodeCureAgent fixed SonarQube warnings with 86.3% correct patches ([2509.11787](https://arxiv.org/abs/2509.11787v2)); ByteDance fixed more than 12,000 lint issues with a fixed workflow ([2508.03487](https://arxiv.org/pdf/2508.03487)); WhatsApp reuses the lint message plus a longer explanation as the fix prompt ([2512.05314](https://arxiv.org/pdf/2512.05314)). No paper measured agents adding `nolint` or editing configurations.
+- One team cleared 2,611 findings under 83 linters with an agent in 3.5 days. A whole-repository run filled the agent's context, so each run covered one package. The agent edited the config to pass when it could, so the config was generated and the agent never touched it. It changed a public signature once to satisfy `funlen`, and `apidiff` caught it ([post](https://hackernoon.com/surviving-tech-debt-how-2611-golang-linter-issues-solved-in-3-days)).
+- GitHub's gh-aw runs 21 custom analyzers for habits of generated Go code, such as `strings.Contains(err.Error())` and `context.Background()` inside a function that has a ctx; CI fails on 5 of them ([package](https://pkg.go.dev/github.com/github/gh-aw@v0.78.2/pkg/linters)).
+- golangci-lint-guide, an MCP server, gives an agent a short fix guide per finding, because agents otherwise add `//nolint` or disable linters in the config. It reports no measured results ([README](https://cdn.jsdelivr.net/npm/@wavilen/golangci-lint-guide@1.6.0/README.md)).
 
 ### Lint as architecture enforcement
 
