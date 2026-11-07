@@ -54,7 +54,7 @@ An overlay cannot remove a base linter. To silence one in some files, add an exc
 
 ## Adding the standard to existing code
 
-Each finding that predates the standard is fixed or listed in the overlay's exclusion rules, by linter and path. `warn-unused` reports a rule with nothing left to exclude, so the list only shrinks; nothing new joins it. The framework's own [`.golangci.local.yml`](../.golangci.local.yml) shows the shape.
+Each finding that predates the standard is fixed or listed in the overlay's exclusion rules, by linter and path. `warn-unused` prints a warning on a full `./...` run for a rule that no longer matches anything; delete that rule. The warning does not fail the run, and nothing blocks a new entry, so review exclusion changes like code. The framework's own [`.golangci.local.yml`](../.golangci.local.yml) shows the shape.
 
 ## Changing the standard
 
