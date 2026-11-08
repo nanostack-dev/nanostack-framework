@@ -25,6 +25,7 @@ func TestBrokenProjectSkipsItsSteps(t *testing.T) {
 	wantRun(t, "nano gen with a broken declaration", code, 1, stdout, "", stderr,
 		`nanogen/project.go:14: cannot use 1 (untyped int constant) as string value in struct literal
   fix: make nanogen/project.go compile
+nano gen api: skipped: needs nanogen/project.go
 nano gen validate: skipped: needs nanogen/project.go
 nano gen config: skipped: needs nanogen/project.go
 nano gen wire: skipped: needs config
@@ -37,8 +38,8 @@ nano gen wire: skipped: needs config
 	}
 }
 
-// A declaration without an API makes validate's output an orphan. A module
-// without a declaration keeps it: validate did not run.
+// A declaration without an API makes the outputs of api and validate
+// orphans. A module without a declaration keeps them: neither step ran.
 func TestOrphanAfterRemovedAPI(t *testing.T) {
 	t.Parallel()
 	dir := copyFixture(t)
@@ -49,7 +50,8 @@ import "github.com/nanostack-dev/nanostack-framework/core/nano/project"
 var Project = project.Project{}
 `)
 	stdout, stderr, code := nano(t, dir, "-check")
-	wantRun(t, "nano gen -check", code, 1, stdout, "", stderr, `orphan api/validate.gen.go
+	wantRun(t, "nano gen -check", code, 1, stdout, "", stderr, `orphan api/api.gen.go
+orphan api/validate.gen.go
   fix: run nano gen without -check, then commit the result
 `)
 
@@ -198,8 +200,8 @@ func TestServerDirOutside(t *testing.T) {
 	edit(t, dir, "nanogen/project.go", `Server: project.Package{Dir: "api"}`, `Server: project.Package{Dir: "../api"}`)
 	_, stderr, code := nano(t, dir, "-check", "-only", "validate")
 	want := "nanogen/project.go:12: API.Server.Dir ../api is outside the directory nano gen runs on\n" +
-		"  fix: keep the server package inside the directory nano gen runs on, or run nano gen on a directory " +
-		"that holds it\nnano gen validate: skipped: needs nanogen/project.go\n"
+		"  fix: generate under the directory nano gen runs on; " +
+		"a module beside it declares its own nanogen/project.go\nnano gen validate: skipped: needs nanogen/project.go\n"
 	if code != 1 || stderr != want {
 		t.Fatalf("exit %d, stderr:\n%s\nwant:\n%s", code, stderr, want)
 	}

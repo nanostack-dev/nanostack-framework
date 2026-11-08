@@ -318,7 +318,10 @@ func TestJSONEvents(t *testing.T) {
 func TestList(t *testing.T) {
 	t.Parallel()
 	stdout, stderr, code := nano(t, fixture, "-list")
-	wantRun(t, "nano gen -list", code, 0, stdout, `validate  api
+	wantRun(t, "nano gen -list", code, 0, stdout, `api       api
+  in   api/openapi.yaml
+  out  api/api.gen.go
+validate  api
   in   api/openapi.yaml
   out  api/validate.gen.go
 errors    greeterr

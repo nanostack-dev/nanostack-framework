@@ -12,6 +12,9 @@
 //		API: &project.OpenAPI{
 //			Spec:   "cmd/http/openapi.yaml",
 //			Server: project.Package{Dir: "internal/api"},
+//			Clients: []project.Client{
+//				{Dir: "cmd/it/client", Package: "client", PlainTypes: true},
+//			},
 //		},
 //		Env: "../../.env.example",
 //	}
@@ -34,26 +37,53 @@ package project
 // Project is the declaration of one module's generation inputs. Every path is
 // relative to the directory nano gen runs on, the module root by default.
 type Project struct {
-	// API is the OpenAPI document and the oapi-codegen server package. Nil
-	// when the module serves no OpenAPI document; the validate step then
-	// does not run.
+	// API is the OpenAPI document and the packages generated from it. Nil
+	// when the module has no OpenAPI document; the api and validate steps
+	// then have nothing to run on.
 	API *OpenAPI
 	// Env is the .env.example file that nano gen config writes. Empty
 	// writes .env.example next to the Config type.
 	Env string
 }
 
-// OpenAPI is the API contract and the Go package generated from it.
+// OpenAPI is the API contract and the Go packages generated from it. nano
+// gen api runs oapi-codegen v2.8.2 in-process on Spec, with the framework's
+// server templates, and writes the server and each client.
 type OpenAPI struct {
-	// Spec is the OpenAPI 3.0 or 3.1 document.
+	// Spec is the OpenAPI 3.0 or 3.1 document. It may sit outside the
+	// directory nano gen runs on, such as the spec of a service in a client
+	// module: "../../apps/anchor/cmd/http/openapi.yaml".
 	Spec string
-	// Server is the package oapi-codegen generates the strict server and
-	// the models into. nano gen validate writes validate.gen.go there.
+	// Server is the package that holds the models and the strict server on
+	// net/http's ServeMux. nano gen validate writes validate.gen.go there.
+	// Its package name is the one its Go files declare, or the directory
+	// name when it has none. Zero in a module that holds only clients.
 	Server Package
+	// Clients are the Go clients generated from Spec, after the server.
+	Clients []Client
 }
 
-// Package is a Go package directory.
+// Package is a Go package directory and the file generated into it.
 type Package struct {
 	// Dir is the package directory.
 	Dir string
+	// File is the generated file in Dir. Default api.gen.go.
+	File string
+}
+
+// Client is a Go client of the API: models and a client type, in one file.
+type Client struct {
+	// Dir is the package directory. nano gen creates it when it is missing.
+	Dir string
+	// Package is the package name. A directory such as clients/go has no
+	// usable name, so the declaration states it.
+	Package string
+	// File is the generated file in Dir. Default client.gen.go.
+	File string
+	// PlainTypes drops the server's Go type hints from the client: every
+	// x-go-type except "string", every x-go-type-import, and the
+	// x-go-type-skip-optional-pointer next to an x-go-type of the
+	// nullable package. The client then uses plain types and the
+	// pointers that can send null.
+	PlainTypes bool
 }
