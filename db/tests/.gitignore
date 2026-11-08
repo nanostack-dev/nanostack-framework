@@ -1,0 +1,13 @@
+# The generated models are committed so the suites compile without a pre-step
+# (db/.gitignore, inherited from go-jet, ignores every .gentestdata).
+!/.gentestdata/
+
+# Symlink to the cached go-jet/jet-test-data checkout, created by the testenv harness.
+/testdata
+
+# Written by the generator suites. The harness runs them in a per-run directory under the
+# user cache, so these appear here only when a suite runs without the harness.
+.gentestdata2/
+.gentestdata3/
+.tempTestDir/
+.gen/
