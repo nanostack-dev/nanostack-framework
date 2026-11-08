@@ -52,7 +52,7 @@ func TestEachFailureIsLoggedOnce(t *testing.T) {
 			func(context.Context) error { return errors.New("close failed") })
 		app.OnStart("cache", func(context.Context) error { return errors.New("dial refused") })
 		return app, nil
-	}, logger)
+	}, func() *slog.Logger { return logger })
 	if code != ExitFailure {
 		t.Fatalf("exit = %d, want %d", code, ExitFailure)
 	}
@@ -105,7 +105,7 @@ func TestInvalidDrainDelayIsLogged(t *testing.T) {
 		app := NewApp("test", AppConfig{DrainDelay: 15 * time.Second, StopTimeout: 15 * time.Second})
 		app.SetLogger(logger)
 		return app, nil
-	}, logger)
+	}, func() *slog.Logger { return logger })
 	if code != ExitFailure {
 		t.Fatalf("exit = %d, want %d", code, ExitFailure)
 	}

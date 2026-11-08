@@ -11,7 +11,7 @@ import (
 )
 
 func TestRunExitCodes(t *testing.T) {
-	quiet := slog.New(slog.NewTextHandler(io.Discard, nil))
+	quiet := func() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
 	blockUntilDone := func(ctx context.Context) error { <-ctx.Done(); return ctx.Err() }
 
 	t.Run("build failure", func(t *testing.T) {

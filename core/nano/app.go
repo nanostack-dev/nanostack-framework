@@ -136,7 +136,7 @@ type App struct {
 	cfg  AppConfig
 
 	mu      sync.Mutex
-	log     *slog.Logger
+	log     *slog.Logger // nil: slog.Default() at the time of each line
 	state   state
 	hooks   []*hook
 	runners []runner
@@ -171,7 +171,6 @@ func NewApp(name string, cfg AppConfig) *App {
 	return &App{
 		name:     name,
 		cfg:      cfg.withDefaults(),
-		log:      slog.Default(),
 		running:  map[string]int{},
 		exited:   make(chan struct{}),
 		stopping: make(chan struct{}),
@@ -182,9 +181,12 @@ func NewApp(name string, cfg AppConfig) *App {
 func (a *App) Name() string { return a.name }
 
 // SetLogger replaces the logger the App writes lifecycle events to. The
-// default is slog.Default(). Lifecycle lines carry no service name of their
-// own: unless the handler is core/log's with Config.Service set, pass a
-// logger that carries it, such as logger.With(log.KeyService, "billing").
+// default is slog.Default() at the time of each line, so a logger the service
+// installs with slog.SetDefault after NewApp, as the generated Build's
+// providers do, receives every line at its own level. Lifecycle lines carry
+// no service name of their own: unless the handler is core/log's with
+// Config.Service set, pass a logger that carries it, such as
+// logger.With(log.KeyService, "billing").
 func (a *App) SetLogger(logger *slog.Logger) {
 	if logger == nil {
 		return
@@ -197,6 +199,9 @@ func (a *App) SetLogger(logger *slog.Logger) {
 func (a *App) logger() *slog.Logger {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if a.log == nil {
+		return slog.Default()
+	}
 	return a.log
 }
 
