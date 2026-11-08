@@ -12,7 +12,7 @@
 
 ```mermaid
 flowchart LR
-  base["lint/base.golangci.yml<br/>(framework, 33 linters)"] --> gen
+  base["lint/base.golangci.yml<br/>(framework, 34 linters)"] --> gen
   overlay[".golangci.local.yml<br/>(service: module path, rules, exclusions)"] --> gen
   gen["go tool lintconfig"] --> out[".golangci.yml + .golangci-lint-version<br/>(committed, DO NOT EDIT)"]
   out --> run["golangci-lint run"]

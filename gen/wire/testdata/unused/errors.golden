@@ -1,0 +1,4 @@
+nano.go:10: unused provider unused.NewMetrics: no Runner, Starter or nano.Invoke depends on *unused.Metrics; remove it from nano.Providers
+nano.go:11: unused provider unused.NewMemStore: no Runner, Starter or nano.Invoke depends on *unused.MemStore; remove it from nano.Providers
+nano.go:13: unused binding nano.Bind[unused.Store, *unused.MemStore]: no Runner, Starter or nano.Invoke depends on unused.Store; remove it
+nano.go:14: unused collection nano.Collect[unused.Store]: no Runner, Starter or nano.Invoke depends on []unused.Store; remove it

@@ -1,0 +1,23 @@
+openapi: 3.0.3
+info: {title: golden, version: "1"}
+paths:
+  /envs/{environment}/items:
+    parameters:
+      - name: environment
+        in: path
+        required: true
+        schema: {type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_-]*$'}
+    get:
+      operationId: listItems
+      parameters:
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 100}
+        - name: sort
+          in: query
+          schema: {type: string, enum: [asc, desc]}
+        - name: X-Request-Tag
+          in: header
+          schema: {type: string, maxLength: 8}
+      responses:
+        "204": {description: ok}

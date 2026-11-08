@@ -1,5 +1,7 @@
 package oapi
 
+import "github.com/nanostack-dev/nanostack-framework/http/nanohttp/oapitemplates"
+
 // Config describes oapi-codegen inputs and outputs without hiding oapi-codegen itself.
 type Config struct {
 	SpecPath      string
@@ -11,15 +13,38 @@ type Config struct {
 	CleanSpecPath string
 }
 
-// ServerCodegenYAML returns a minimal oapi-codegen server config.
+// Packages the generated server imports through the template override.
+const (
+	nanohttpPackage = "github.com/nanostack-dev/nanostack-framework/http/nanohttp"
+	problemPackage  = "github.com/nanostack-dev/nanostack-framework/http/problem"
+)
+
+// ServerCodegenYAML returns the oapi-codegen server config of the HTTP
+// boundary: models and a strict server on net/http's ServeMux
+// (std-http-server), with the strict template replaced by the override in
+// package oapitemplates. The override decodes bodies strictly through
+// nanohttp, runs the validators nano gen validate writes, and sends every
+// error through problem as RFC 9457 application/problem+json.
+//
+// The override is pinned to oapitemplates.OapiCodegenVersion; run that
+// oapi-codegen release, then nano gen validate on the same package.
 func (c Config) ServerCodegenYAML() map[string]any {
 	return map[string]any{
 		"package": c.ServerPackage,
 		"output":  c.ServerOutput,
 		"generate": map[string]bool{
-			"models":        true,
-			"chi-server":    true,
-			"strict-server": true,
+			"models":          true,
+			"std-http-server": true,
+			"strict-server":   true,
+		},
+		"additional-imports": []map[string]string{
+			{"package": nanohttpPackage},
+			{"package": problemPackage},
+		},
+		"output-options": map[string]any{
+			// Inline, so the config does not depend on where the framework
+			// module sits on disk.
+			"user-templates": oapitemplates.UserTemplates(),
 		},
 	}
 }

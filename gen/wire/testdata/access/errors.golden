@@ -1,0 +1,3 @@
+nano.go:10: access.NewServer needs string, which more than one Config field provides (Config.Region and Config.Bucket); take Config and pick a field, or give each field its own type
+nano.go:9: access.newClient is unexported, so package wire cannot use it; export it, or generate into the manifest package with -out .
+nano.go:9: *access.client is unexported, so package wire cannot use it; export it, or generate into the manifest package with -out .

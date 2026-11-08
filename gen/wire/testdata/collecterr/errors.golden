@@ -1,0 +1,1 @@
+nano.go:9: nano.Collect[collecterr.Route]: collecterr.NewNotARoute returns *collecterr.NotARoute, which is not assignable to collecterr.Route

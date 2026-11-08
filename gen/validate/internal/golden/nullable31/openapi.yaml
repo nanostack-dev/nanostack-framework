@@ -1,0 +1,32 @@
+openapi: 3.1.0
+info: {title: golden, version: "1"}
+paths:
+  /check:
+    post:
+      operationId: check
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Body'}
+      responses:
+        "204": {description: ok}
+components:
+  schemas:
+    Inner:
+      type: object
+      required: [v]
+      properties:
+        v: {type: integer, minimum: 1}
+    Body:
+      type: object
+      required: [maybe, must]
+      properties:
+        maybe: {type: [string, "null"], minLength: 2}
+        must: {type: string, minLength: 2}
+        count: {type: [integer, "null"], maximum: 3}
+        inner:
+          anyOf:
+            - $ref: '#/components/schemas/Inner'
+            - type: "null"
+        tags: {type: [array, "null"], items: {type: string, minLength: 1}}

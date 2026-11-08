@@ -4,7 +4,7 @@ import "testing"
 
 func TestPtr(t *testing.T) {
 	value := new("value")
-	if value == nil || *value != "value" {
+	if *value != "value" {
 		t.Fatalf("expected pointer to value, got %#v", value)
 	}
 }

@@ -37,6 +37,12 @@ jobs:
             code=1
           fi
           exit "$code"
+      # Packages with Go 1.27 generic methods, one loaded from export data. The
+      # test fails on a linter crash, and on a hang after 3 minutes with a
+      # goroutine dump. lint/README.md explains it.
+      - name: Lint smoke, generic methods neither crash nor hang the linters
+        timeout-minutes: 10
+        run: go test -tags lintsmoke -count=1 -v ./lint/smoke/
 
   test:
     runs-on: ubuntu-latest

@@ -1,0 +1,73 @@
+openapi: 3.0.3
+info: {title: golden, version: "1"}
+paths:
+  /check:
+    post:
+      operationId: check
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Body'}
+      responses:
+        "204": {description: ok}
+components:
+  schemas:
+    Basic:
+      type: object
+      required: [type, user]
+      properties:
+        type: {type: string, enum: [basic]}
+        user: {type: string, minLength: 1}
+    Bearer:
+      type: object
+      required: [type, token]
+      properties:
+        type: {type: string, enum: [bearer]}
+        token: {type: string, minLength: 8}
+    Auth:
+      oneOf:
+        - $ref: '#/components/schemas/Basic'
+        - $ref: '#/components/schemas/Bearer'
+      discriminator:
+        propertyName: type
+        mapping:
+          basic: '#/components/schemas/Basic'
+          bearer: '#/components/schemas/Bearer'
+    Cat:
+      type: object
+      required: [meows]
+      properties:
+        meows: {type: boolean}
+    Dog:
+      type: object
+      required: [barks]
+      properties:
+        barks: {type: boolean}
+    ByPath:
+      type: object
+      required: [path]
+      properties:
+        path: {type: string, minLength: 1}
+    ByHeader:
+      type: object
+      required: [header]
+      properties:
+        header: {type: string, minLength: 1}
+    Body:
+      type: object
+      required: [auth]
+      properties:
+        auth: {$ref: '#/components/schemas/Auth'}
+        pet:
+          oneOf:
+            - $ref: '#/components/schemas/Cat'
+            - $ref: '#/components/schemas/Dog'
+        source:
+          anyOf:
+            - $ref: '#/components/schemas/ByPath'
+            - $ref: '#/components/schemas/ByHeader'
+        prim:
+          oneOf:
+            - {type: string}
+            - {type: integer}

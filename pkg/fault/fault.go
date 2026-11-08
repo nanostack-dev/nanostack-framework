@@ -281,6 +281,12 @@ func (e *Error) HTTPStatus() int {
 	return e.Status
 }
 
+// ProblemStatus returns the HTTP status, as core/fault's Described errors do.
+// core/log.LevelFor reads it to log a 4xx at Debug.
+func (e *Error) ProblemStatus() int {
+	return e.HTTPStatus()
+}
+
 // StatusCode preserves compatibility with existing HTTP-status-based error handling.
 func (e *Error) StatusCode() int {
 	return e.HTTPStatus()

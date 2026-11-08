@@ -4,17 +4,35 @@ The repository is a Go module consumed by applications; it does not deploy a pro
 
 | Area | Implemented responsibility | Reference |
 | --- | --- | --- |
-| `app` | Fx service composition | [Assembly API](../../app/app.go) |
+| `core/nano` | Runtime of generated wiring: `App` (start in dependency order, Runners, stop in reverse under one deadline with a per-Stopper grace), lifecycle interfaces, `/livez` and `/readyz`, `Main`, manifest declarations | [Wiring guide](../generation.md#wiring-nano-gen-wire) |
+| `app` | Fx service composition, until services move to `nano gen wire` | [Assembly API](../../app/app.go) |
 | `modules` | Config, logging, tracing, PostgreSQL, cache, migrations, locks, HTTP, security, profiling and transaction lifecycle wiring | [Module boundaries](../boundaries.md#module-rules) |
 | `pkg` | Functional values, transaction/query helpers, SQL error classification, health, logs, tracing, validation, IDs, secrets, HTTP helpers and generic test infrastructure | [Package boundary](../../pkg/README.md) |
-| `gen/oapi`, `gen/jet` | Generation configuration conventions | [Generation](../generation.md) |
+| `core/validate`, `core/fault` | Runtime of generated request validators and error catalogues | [HTTP boundary](../http-boundary.md) |
+| `http/nanohttp`, `http/problem` | Strict request decoding, generated validation and RFC 9457 problem responses | [HTTP boundary](../http-boundary.md) |
+| `gen` | Generator contract: `gen.File`, `gen.ErrStale`, `gen.Sync`, `gen.Command` | [Generator contract](../../gen/README.md) |
+| `gen/wire` | `nano gen wire`: manifest to `wire.gen.go` with `Build`, `BuildComponents`, typed `Overrides`, `-check` | [Wiring guide](../generation.md#wiring-nano-gen-wire) |
+| `gen/config`, `gen/errors` | `nano gen config` (binder, `CONFIG.md`, `.env.example`) and `nano gen errors` (typed errors, `ERRORS.md`) | [Generation](../generation.md) |
+| `cmd/nano` | The one CLI: `nano gen config\|errors\|validate\|wire`, each with `-check` | [Checking generated files](../generation.md#checking-generated-files) |
+| `core/config`, `core/log`, `core/secret` | Configuration runtime, slog logging and redaction, and the one secret type both use | [core/log](../../core/log/README.md), [Generation](../generation.md) |
+| `gen/oapi`, `gen/validate`, `gen/jet` | Generation configuration conventions; `nano gen validate` writes request validators from the OpenAPI document | [Generation](../generation.md) |
 | `gorules` | Ruleguard rules consumed by application lint configuration | [Functional rules](../../gorules/functional.go), [transaction rules](../../gorules/transactor.go) |
 
-`cli/` and `starter/` currently contain design documents, rather than a complete runnable scaffolder. The [original architecture](../architecture.md) and [roadmap](../roadmap.md) describe planned scope and should not be read as shipped commands.
+`cli/` and `starter/` currently contain design documents, rather than a complete runnable scaffolder. The [original architecture](../architecture.md) (history) and [roadmap](../roadmap.md) describe planned scope and should not be read as shipped commands.
+
+## Layers
+
+New code lives in three layers. A package imports only its own layer and the layers below (plan section 06):
+
+1. `core/`: the runtime that services and generated code call. It imports the standard library, small libraries and other `core/` packages.
+2. `http/`: the HTTP boundary. It imports `core/`.
+3. `gen/` and `cmd/nano`: the generators and the CLI. They may import tooling such as `golang.org/x/tools`. No runtime package imports them.
+
+No layered package imports the legacy trees `pkg/`, `modules/` or `app/`, which carry Fx and zerolog. The [`internal/layers`](../../internal/layers/layers.go) test checks the import graph, test files included, and the depguard rules in [`.golangci.local.yml`](../../.golangci.local.yml) give the same rules in editors and in lint.
 
 ## Runtime boundaries
 
-Applications combine framework modules with their own adapters through Fx. Infrastructure lifecycle hooks own start/stop behavior; products retain authorization, tenant resolution, queue payloads, retries and transport policies. Core packages should be usable without requiring an application's Fx graph.
+Applications combine framework modules with their own adapters through Fx today. Generated wiring (`core/nano` and `nano gen wire`) replaces it: modules move from `fx.Lifecycle` hooks to the `Starter`, `Stopper`, `Runner` and `HealthChecker` interfaces, then services move one Fx module at a time into a manifest. Infrastructure lifecycle hooks own start/stop behavior; products retain authorization, tenant resolution, queue payloads, retries and transport policies. Core packages should be usable without requiring an application's Fx graph.
 
 Database execution follows the context-carried [transactor](../../pkg/db/transactor/README.md). The outer transaction owns commit/rollback, query results allow caller-specific constraint translation, and row-lock helpers require a transaction. Scan destinations must match go-jet column prefixes. `jetx` supplies expressions and filters rather than a competing query executor.
 

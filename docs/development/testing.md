@@ -8,9 +8,10 @@ go vet ./...
 go build ./...
 go run ./lint/cmd/lintconfig -check
 golangci-lint run ./...
+go test -tags lintsmoke -count=1 ./lint/smoke/
 ```
 
-Run the golangci-lint release named in `.golangci-lint-version`. The [lint standard](../../lint/README.md) explains the generated `.golangci.yml`.
+Run the golangci-lint release named in `.golangci-lint-version`. The [lint standard](../../lint/README.md) explains the generated `.golangci.yml` and the `lintsmoke` test, which fails when the linters crash or hang on Go 1.27 generic methods.
 
 Select affected packages for iteration, such as `go test -race -count=1 ./pkg/functional ./pkg/db/transactor`. Database tests use the `integration` build tag and skip if their DSN is absent; skipped tests are not database verification.
 
@@ -47,6 +48,6 @@ Failure tests use `redistest.StartServer`, which always starts a container of it
 
 Regenerate functional families with `go generate ./pkg/functional`, then review the generated diff and rerun that package's tests. Keep application-generated files in their owning repository.
 
-The current framework tree has no tracked CI. Its golangci-lint configuration is generated from [`lint/`](../../lint/README.md), and `gorules/` is loaded by the framework's own and each application's lint configuration. Do not claim a missing framework CI gate passed. Public changes also need affected consumer lint, integration/contract checks and builds.
+Framework CI ([workflow](../../.github/workflows/ci.yml)) runs `lintconfig -check`, the full lint, the lint smoke test and `go test ./...`; it does not run the `integration` suites. The golangci-lint configuration is generated from [`lint/`](../../lint/README.md), and `gorules/` is loaded by the framework's own and each application's lint configuration. Do not claim a missing framework CI gate passed. Public changes also need affected consumer lint, integration/contract checks and builds.
 
 Documentation-only changes use local link validation and `git diff --check`; do not add runtime tests merely to mirror prose.

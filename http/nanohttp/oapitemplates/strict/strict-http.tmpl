@@ -1,0 +1,220 @@
+{{/*
+  nanostack override of oapi-codegen v2.8.2 strict/strict-http.tmpl.
+  Differences from upstream, and nothing else:
+  - JSON bodies are read by nanohttp.Decode: strict json/v2 decoding plus the
+    Validate method nano gen validate generates. Errors are RFC 9457 problems.
+  - Path, query, header and cookie parameters run the generated
+    validateParams method after binding.
+  - The default request and response error handlers are problem writers, so
+    no error text reaches a client unless the error chose it.
+  - paramProblem and, for std-http, NewHTTPHandler wire the router's
+    parameter-binding errors to the same writer.
+  The generated file must import nanohttp and problem: list them under
+  additional-imports in the oapi-codegen config.
+*/}}
+type StrictHandlerFunc func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error)
+type StrictMiddlewareFunc func(f StrictHandlerFunc, operationID string) StrictHandlerFunc
+
+type StrictHTTPServerOptions struct {
+    RequestErrorHandlerFunc  func(w http.ResponseWriter, r *http.Request, err error)
+    ResponseErrorHandlerFunc func(w http.ResponseWriter, r *http.Request, err error)
+}
+
+func NewStrictHandler(ssi StrictServerInterface, middlewares []StrictMiddlewareFunc) ServerInterface {
+    return &strictHandler{ssi: ssi, middlewares: middlewares, options: StrictHTTPServerOptions {
+        RequestErrorHandlerFunc: nanohttp.RequestError,
+        ResponseErrorHandlerFunc: nanohttp.ResponseError,
+    }}
+}
+
+func NewStrictHandlerWithOptions(ssi StrictServerInterface, middlewares []StrictMiddlewareFunc, options StrictHTTPServerOptions) ServerInterface {
+    if options.RequestErrorHandlerFunc == nil {
+        options.RequestErrorHandlerFunc = nanohttp.RequestError
+    }
+    if options.ResponseErrorHandlerFunc == nil {
+        options.ResponseErrorHandlerFunc = nanohttp.ResponseError
+    }
+    return &strictHandler{ssi: ssi, middlewares: middlewares, options: options}
+}
+
+type strictHandler struct {
+    ssi StrictServerInterface
+    middlewares []StrictMiddlewareFunc
+    options StrictHTTPServerOptions
+}
+
+{{range .}}
+    {{$opid := .OperationId}}
+    {{if not .IsAlias}}
+    // {{$opid}} operation middleware
+    func (sh *strictHandler) {{.OperationId}}(w http.ResponseWriter, r *http.Request{{genParamArgs .PathParams}}{{if .RequiresParamObject}}, params {{.OperationId}}Params{{end}}) {
+        var request {{$opid | ucFirst}}RequestObject
+
+        {{range .PathParams -}}
+            request.{{.GoName}} = {{.GoVariableName}}
+        {{end -}}
+
+        {{if .RequiresParamObject -}}
+            request.Params = params
+        {{end -}}
+
+        {{if or .RequiresParamObject (gt (len .PathParams) 0) -}}
+            if errs := request.validateParams(); len(errs) > 0 {
+                sh.options.RequestErrorHandlerFunc(w, r, problem.InvalidParameters(errs))
+                return
+            }
+        {{end -}}
+
+        {{ if .HasMaskedRequestContentTypes -}}
+            request.ContentType = r.Header.Get("Content-Type")
+        {{end -}}
+
+        {{$multipleBodies := gt (len .Bodies) 1 -}}
+        {{range .Bodies -}}
+            {{if $multipleBodies}}if strings.HasPrefix(r.Header.Get("Content-Type"), {{.ContentType | toGoString}}) { {{end}}
+                {{if .IsJSON }}
+                    var body {{$opid}}{{.NameTag}}RequestBody
+                    if err := nanohttp.Decode(r, &body); err != nil {
+                        {{if not .Required -}}
+                        if !errors.Is(err, nanohttp.ErrNoBody) {
+                            sh.options.RequestErrorHandlerFunc(w, r, err)
+                            return
+                        }
+                        {{else -}}
+                        sh.options.RequestErrorHandlerFunc(w, r, err)
+                        return
+                        {{end -}}
+                    } {{if not .Required -}} else { {{end}}
+                    request.{{if $multipleBodies}}{{.NameTag}}{{end}}Body = &body
+                    {{if not .Required -}} } {{end}}
+                {{else if eq .NameTag "Formdata" -}}
+                    if err := r.ParseForm(); err != nil {
+                        sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode formdata: %w", err))
+                        return
+                    }
+                    var body {{$opid}}{{.NameTag}}RequestBody
+                    if err := runtime.BindForm(&body, r.Form, nil, nil); err != nil {
+                        sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't bind formdata: %w", err))
+                        return
+                    }
+                    request.{{if $multipleBodies}}{{.NameTag}}{{end}}Body = &body
+                {{else if eq .NameTag "Multipart" -}}
+                    {{if eq .ContentType "multipart/form-data" -}}
+                    if reader, err := r.MultipartReader(); err != nil {
+                        sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode multipart body: %w", err))
+                        return
+                    } else {
+                        request.{{if $multipleBodies}}{{.NameTag}}{{end}}Body = reader
+                    }
+                    {{else -}}
+                    if _, params, err := mime.ParseMediaType(r.Header.Get("Content-Type")); err != nil {
+                        sh.options.RequestErrorHandlerFunc(w, r, err)
+                        return
+                    } else if boundary := params["boundary"]; boundary == "" {
+                        sh.options.RequestErrorHandlerFunc(w, r, http.ErrMissingBoundary)
+                        return
+                    } else {
+                        request.{{if $multipleBodies}}{{.NameTag}}{{end}}Body = multipart.NewReader(r.Body, boundary)
+                    }
+                    {{end -}}
+                {{else if eq .NameTag "Text" -}}
+                    data, err := io.ReadAll(r.Body)
+                    if err != nil {
+                        sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't read body: %w", err))
+                        return
+                    }
+                    {{if not .Required -}}
+                    if len(data) > 0 {
+                    {{end -}}
+                    body := {{$opid}}{{.NameTag}}RequestBody(data)
+                    request.{{if $multipleBodies}}{{.NameTag}}{{end}}Body = &body
+                    {{if not .Required -}}
+                    }
+                    {{end -}}
+                {{else -}}
+                    request.{{if $multipleBodies}}{{.NameTag}}{{end}}Body = r.Body
+                {{end}}{{/* if eq .NameTag "JSON" */ -}}
+            {{if $multipleBodies}}}{{end}}
+        {{end}}{{/* range .Bodies */}}
+
+        handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+            return sh.ssi.{{.OperationId}}(ctx, request.({{$opid | ucFirst}}RequestObject))
+        }
+        for _, middleware := range sh.middlewares {
+            handler = middleware(handler, "{{.OperationId}}")
+        }
+
+        response, err := handler(r.Context(), w, r, request)
+
+        if err != nil {
+            sh.options.ResponseErrorHandlerFunc(w, r, err)
+        } else if validResponse, ok := response.({{$opid | ucFirst}}ResponseObject); ok {
+            if err := validResponse.Visit{{$opid}}Response(w); err != nil {
+                sh.options.ResponseErrorHandlerFunc(w, r, err)
+            }
+        } else if response != nil {
+            sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+        }
+    }
+    {{end}}
+{{end}}
+
+// paramProblem converts a parameter-binding error of the generated router
+// into a problem that names the parameter and does not echo its value.
+func paramProblem(err error) error {
+    var (
+        invalidFormat *InvalidParamFormatError
+        unmarshaling *UnmarshalingParamError
+        required *RequiredParamError
+        requiredHeader *RequiredHeaderError
+        tooMany *TooManyValuesForParamError
+        unescapedCookie *UnescapedCookieParamError
+    )
+    switch {
+    case errors.As(err, &invalidFormat):
+        return problem.InvalidParameter(invalidFormat.ParamName, err)
+    case errors.As(err, &unmarshaling):
+        return problem.InvalidParameter(unmarshaling.ParamName, err)
+    case errors.As(err, &required):
+        return problem.InvalidParameter(required.ParamName, nil)
+    case errors.As(err, &requiredHeader):
+        return problem.InvalidParameter(requiredHeader.ParamName, nil)
+    case errors.As(err, &tooMany):
+        return problem.InvalidParameter(tooMany.ParamName, err)
+    case errors.As(err, &unescapedCookie):
+        return problem.InvalidParameter(unescapedCookie.ParamName, err)
+    }
+    return err
+}
+
+{{if opts.Generate.StdHTTPServer -}}
+// HTTPHandlerOptions configures NewHTTPHandler.
+type HTTPHandlerOptions struct {
+    // BaseRouter receives the routes; a new http.ServeMux when nil.
+    BaseRouter ServeMux
+    // BaseURL prefixes every route.
+    BaseURL string
+    // Middlewares wrap each route's net/http handler, after parameter binding.
+    Middlewares []MiddlewareFunc
+    // StrictMiddlewares wrap each strict handler with its operation ID.
+    StrictMiddlewares []StrictMiddlewareFunc
+}
+
+// NewHTTPHandler serves ssi on net/http with one error path: parameter
+// binding, parameter and body validation, and handler errors all render as
+// RFC 9457 problems through problem.Write.
+func NewHTTPHandler(ssi StrictServerInterface, options HTTPHandlerOptions) http.Handler {
+    strict := NewStrictHandlerWithOptions(ssi, options.StrictMiddlewares, StrictHTTPServerOptions{
+        RequestErrorHandlerFunc: nanohttp.RequestError,
+        ResponseErrorHandlerFunc: nanohttp.ResponseError,
+    })
+    return HandlerWithOptions(strict, StdHTTPServerOptions{
+        BaseURL: options.BaseURL,
+        BaseRouter: options.BaseRouter,
+        Middlewares: options.Middlewares,
+        ErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
+            problem.Write(w, r, paramProblem(err))
+        },
+    })
+}
+{{- end}}

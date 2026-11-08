@@ -1,0 +1,22 @@
+openapi: 3.0.3
+info: {title: golden, version: "1"}
+paths:
+  /check:
+    post:
+      operationId: check
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Body'}
+      responses:
+        "204": {description: ok}
+components:
+  schemas:
+    Body:
+      type: object
+      required: [maybe]
+      properties:
+        maybe: {type: string, nullable: true, minLength: 2}
+        opt: {type: integer, nullable: true, maximum: 3}
+        flag: {type: boolean, nullable: true}
