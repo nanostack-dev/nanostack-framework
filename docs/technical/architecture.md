@@ -13,9 +13,9 @@ The repository is a Go module consumed by applications; it does not deploy a pro
 | `gen` | Generator contract: `gen.File`, `gen.Error`, `gen.ErrStale`, `gen.ErrEnvironment`, `gen.Sync`, `gen.Report`, `gen.Command` | [Generator contract](../../gen/README.md) |
 | `gen/wire` | `nano gen wire`: manifest to `wire.gen.go` with `Build`, `BuildComponents`, typed `Overrides`, `-check` | [Wiring guide](../generation.md#wiring-nano-gen-wire) |
 | `gen/config`, `gen/errors` | `nano gen config` (binder, `CONFIG.md`, `.env.example`) and `nano gen errors` (typed errors, `ERRORS.md`) | [Generation](../generation.md) |
-| `gen/cmd/nano` | The one CLI: `nano gen config\|errors\|validate\|wire`, each with `-check`. Services run it as a `tool` | [Checking generated files](../generation.md#checking-generated-files) |
+| `gen/cmd/nano` | The one CLI: `nano gen` runs the pipeline; `nano gen api\|config\|errors\|validate\|wire` runs one generator, each with `-check`. Services run it as a `tool` | [Checking generated files](../generation.md#checking-generated-files) |
 | `core/config`, `core/log`, `core/secret` | Configuration runtime, slog logging and redaction, and the one secret type both use | [core/log](../../core/log/README.md), [Generation](../generation.md) |
-| `gen/oapi`, `gen/validate`, `gen/jet` | Generation configuration conventions; `nano gen validate` writes request validators from the OpenAPI document | [Generation](../generation.md) |
+| `gen/api`, `gen/validate`, `gen/jet` | `nano gen api` runs oapi-codegen v2.8.2 in-process for the server and the clients; `nano gen validate` writes request validators from the OpenAPI document; go-jet conventions | [Generation](../generation.md) |
 | `gorules` | Ruleguard rules consumed by application lint configuration | [Functional rules](../../gorules/functional.go), [transaction rules](../../gorules/transactor.go) |
 
 `cli/` and `starter/` currently contain design documents, rather than a complete runnable scaffolder. The [original architecture](../architecture.md) (history) and [roadmap](../roadmap.md) describe planned scope and should not be read as shipped commands.

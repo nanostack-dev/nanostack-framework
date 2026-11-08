@@ -34,6 +34,10 @@ var (
 	// nanoGenPattern matches a go:generate command that runs nano gen, and
 	// captures what follows.
 	nanoGenPattern = regexp.MustCompile(`(?:^|[\s/])nano\s+gen\b(.*)`)
+	// oapiCodegenPattern matches a go:generate command that runs
+	// oapi-codegen: a word whose last path element is oapi-codegen, with or
+	// without a version, such as go run .../cmd/oapi-codegen@v2.8.2.
+	oapiCodegenPattern = regexp.MustCompile(`(?:^|[\s/])oapi-codegen(?:@\S*)?(?:\s|$)`)
 )
 
 // discovery is what a walk of the root found.
@@ -188,7 +192,7 @@ func syntaxProblems(path string, err error) []error {
 }
 
 // guard reports the unknown //nano: directives in f and the //go:generate
-// lines that run nano gen.
+// lines that run nano gen or oapi-codegen.
 func (d *discovery) guard(fset *token.FileSet, path string, f *ast.File) {
 	for _, group := range f.Comments {
 		for _, c := range group.List {
@@ -217,11 +221,17 @@ func directiveProblem(path string, line int, text string) error {
 		"unknown directive //nano:%s", name)
 }
 
-// generateProblem reports a //go:generate line that runs nano gen.
+// generateProblem reports a //go:generate line that runs nano gen or
+// oapi-codegen.
 func generateProblem(path string, line int, text string) error {
 	cmd, ok := strings.CutPrefix(text, "//go:generate ")
 	if !ok {
 		return nil
+	}
+	if oapiCodegenPattern.MatchString(cmd) {
+		return gen.Errorf(path, line,
+			"delete the line; declare the spec in API of nanogen/project.go and run go tool nano gen",
+			"//go:generate runs oapi-codegen; the pipeline's api step generates the server and the clients")
 	}
 	m := nanoGenPattern.FindStringSubmatch(cmd)
 	if m == nil {

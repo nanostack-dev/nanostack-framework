@@ -24,6 +24,7 @@ func TestBrokenProjectSkipsItsSteps(t *testing.T) {
 	wantRun(t, "nano gen with a broken declaration", code, 1, stdout, "", stderr,
 		`nanogen/project.go:14: cannot use 1 (untyped int constant) as string value in struct literal
   fix: make nanogen/project.go compile
+nano gen api: skipped: needs nanogen/project.go
 nano gen validate: skipped: needs nanogen/project.go
 nano gen config: skipped: needs nanogen/project.go
 nano gen wire: skipped: needs config
@@ -36,8 +37,8 @@ nano gen wire: skipped: needs config
 	}
 }
 
-// A declaration without an API makes validate's output an orphan. A module
-// without a declaration keeps it: validate did not run.
+// A declaration without an API makes the outputs of api and validate
+// orphans. A module without a declaration keeps them: neither step ran.
 func TestOrphanAfterRemovedAPI(t *testing.T) {
 	t.Parallel()
 	dir := copyFixture(t)
@@ -48,7 +49,8 @@ import "github.com/nanostack-dev/nanostack-framework/core/nano/project"
 var Project = project.Project{}
 `)
 	stdout, stderr, code := nano(t, dir, "-check")
-	wantRun(t, "nano gen -check", code, 1, stdout, "", stderr, `orphan api/validate.gen.go
+	wantRun(t, "nano gen -check", code, 1, stdout, "", stderr, `orphan api/api.gen.go
+orphan api/validate.gen.go
   fix: run nano gen without -check, then commit the result
 `)
 

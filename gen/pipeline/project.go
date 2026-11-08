@@ -19,6 +19,7 @@ import (
 
 	"github.com/nanostack-dev/nanostack-framework/core/nano/project"
 	"github.com/nanostack-dev/nanostack-framework/gen"
+	genapi "github.com/nanostack-dev/nanostack-framework/gen/api"
 	"github.com/nanostack-dev/nanostack-framework/gen/internal/gopkg"
 )
 
@@ -224,45 +225,117 @@ func (d *decoder) notLiteral(expr ast.Expr, path, want string) {
 		"project values must be literals or constants; %s is %s", path, b.String()))
 }
 
-// checkProject reports the declared paths that do not exist.
+// checkProject reports the declared paths that do not exist, and the
+// outputs that would leave the directory nano gen runs on.
 func checkProject(root string, p project.Project, d *decoder) error {
-	var errs []error
-	at := func(field string) int { return d.lines[field] }
-	relative := func(field, path string) bool {
-		if filepath.IsAbs(path) {
-			errs = append(errs, gen.Errorf(projectFile, at(field),
-				"write the path relative to the directory nano gen runs on", "%s %s is absolute", field, path))
-			return false
-		}
-		return true
-	}
+	c := &projectCheck{root: root, d: d}
 	if p.API != nil {
-		switch {
-		case p.API.Spec == "":
-			errs = append(errs, gen.Errorf(projectFile, at("API"), "set API.Spec to the OpenAPI document",
-				"API.Spec is empty"))
-		case relative("API.Spec", p.API.Spec):
-			if fi, err := os.Stat(filepath.Join(root, p.API.Spec)); err != nil || fi.IsDir() {
-				errs = append(errs, gen.Errorf(projectFile, at("API.Spec"), specFix(root),
-					"API.Spec %s does not exist", p.API.Spec))
-			}
-		}
-		switch dir := p.API.Server.Dir; {
-		case dir == "":
-			errs = append(errs, gen.Errorf(projectFile, at("API"), "set API.Server.Dir to the oapi-codegen package",
-				"API.Server.Dir is empty"))
-		case relative("API.Server.Dir", dir):
-			if !dirExists(filepath.Join(root, dir)) {
-				errs = append(errs, gen.Errorf(projectFile, at("API.Server.Dir"),
-					"set API.Server.Dir to the directory of the oapi-codegen package",
-					"API.Server.Dir %s is not a directory", dir))
-			}
-		}
+		c.api(p.API)
 	}
 	if p.Env != "" {
-		relative("Env", p.Env)
+		c.relative("Env", p.Env)
 	}
-	return errors.Join(errs...)
+	return errors.Join(c.errs...)
+}
+
+// projectCheck collects the problems of one declaration.
+type projectCheck struct {
+	root string
+	d    *decoder
+	errs []error
+}
+
+// at returns the line of the first of fields that the declaration sets.
+func (c *projectCheck) at(fields ...string) int {
+	for _, f := range fields {
+		if line := c.d.lines[f]; line > 0 {
+			return line
+		}
+	}
+	return 0
+}
+
+func (c *projectCheck) add(line int, fix, format string, args ...any) {
+	c.errs = append(c.errs, gen.Errorf(projectFile, line, fix, format, args...))
+}
+
+func (c *projectCheck) relative(field, path string) bool {
+	if filepath.IsAbs(path) {
+		c.add(c.at(field), "write the path relative to the directory nano gen runs on", "%s %s is absolute",
+			field, path)
+		return false
+	}
+	return true
+}
+
+// inside reports an output directory outside the directory nano gen runs
+// on (design P10). An input, such as the spec, may sit outside it.
+func (c *projectCheck) inside(field, path string) bool {
+	if rel := filepath.Clean(path); rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		c.add(c.at(field, "API.Clients"),
+			"generate under the directory nano gen runs on; a module beside it declares its own nanogen/project.go",
+			"%s %s is outside the directory nano gen runs on", field, path)
+		return false
+	}
+	return true
+}
+
+func (c *projectCheck) fileName(field, name string) {
+	if name != "" && (name != filepath.Base(name) || !strings.HasSuffix(name, ".go")) {
+		c.add(c.at(field, "API.Clients"), "set "+field+" to a file name such as api.gen.go",
+			"%s %s is not a .go file name", field, name)
+	}
+}
+
+func (c *projectCheck) api(api *project.OpenAPI) {
+	switch {
+	case api.Spec == "":
+		c.add(c.at("API"), "set API.Spec to the OpenAPI document", "API.Spec is empty")
+	case c.relative("API.Spec", api.Spec):
+		if fi, err := os.Stat(filepath.Join(c.root, api.Spec)); err != nil || fi.IsDir() {
+			c.add(c.at("API.Spec"), specFix(c.root), "API.Spec %s does not exist", api.Spec)
+		}
+	}
+	outputs := map[string]string{} // output path -> the field that writes it
+	switch dir := api.Server.Dir; {
+	case dir != "":
+		if c.relative("API.Server.Dir", dir) && c.inside("API.Server.Dir", dir) &&
+			!dirExists(filepath.Join(c.root, dir)) {
+			c.add(c.at("API.Server.Dir"), "set API.Server.Dir to the directory of the oapi-codegen package",
+				"API.Server.Dir %s is not a directory", dir)
+		}
+		outputs[filepath.Join(dir, orDefault(api.Server.File, genapi.DefaultServerFile))] = "API.Server"
+	case len(api.Clients) == 0:
+		c.add(c.at("API"), "set API.Server.Dir to the server package, or add a client to API.Clients",
+			"API declares neither a server nor a client")
+	}
+	c.fileName("API.Server.File", api.Server.File)
+	for i, cl := range api.Clients {
+		c.client(fmt.Sprintf("API.Clients[%d]", i), cl, outputs)
+	}
+}
+
+// client checks one client; outputs holds the outputs of the server and the
+// clients before it.
+func (c *projectCheck) client(field string, cl project.Client, outputs map[string]string) {
+	switch {
+	case cl.Dir == "":
+		c.add(c.at(field+".Package", "API.Clients"), "set "+field+".Dir to the client package directory",
+			"%s.Dir is empty", field)
+	case c.relative(field+".Dir", cl.Dir):
+		c.inside(field+".Dir", cl.Dir)
+	}
+	if !token.IsIdentifier(cl.Package) {
+		c.add(c.at(field+".Package", field+".Dir", "API.Clients"), "set "+field+".Package to a Go package name",
+			"%s.Package %q is not a Go package name", field, cl.Package)
+	}
+	c.fileName(field+".File", cl.File)
+	out := filepath.Join(cl.Dir, orDefault(cl.File, genapi.DefaultClientFile))
+	if other, dup := outputs[out]; dup {
+		c.add(c.at(field+".Dir", field+".Package", "API.Clients"), "give "+field+" its own Dir or File",
+			"%s and %s both write %s", other, field, filepath.ToSlash(out))
+	}
+	outputs[out] = field
 }
 
 // specFix names the OpenAPI documents under root, when there are some.

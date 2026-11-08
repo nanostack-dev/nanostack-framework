@@ -1,0 +1,18 @@
+# The configuration of nano gen api's server, for oapi-codegen's command.
+# api.gen.go is its output, the golden that nano gen api must match byte for
+# byte after its own header. Regenerate it from this directory with:
+#
+#   go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.8.2 -config oapi-codegen.yaml openapi.yaml
+package: example
+output: api.gen.go
+generate:
+  models: true
+  std-http-server: true
+  strict-server: true
+additional-imports:
+  - package: github.com/nanostack-dev/nanostack-framework/http/nanohttp
+  - package: github.com/nanostack-dev/nanostack-framework/http/problem
+output-options:
+  user-templates:
+    strict/strict-http.tmpl: ../../../../http/nanohttp/oapitemplates/strict/strict-http.tmpl
+    union.tmpl: ../../../../http/nanohttp/oapitemplates/union.tmpl
