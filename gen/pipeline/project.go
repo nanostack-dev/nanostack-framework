@@ -19,6 +19,7 @@ import (
 
 	"github.com/nanostack-dev/nanostack-framework/core/nano/project"
 	"github.com/nanostack-dev/nanostack-framework/gen"
+	genapi "github.com/nanostack-dev/nanostack-framework/gen/api"
 	"github.com/nanostack-dev/nanostack-framework/gen/internal/gopkg"
 )
 
@@ -346,9 +347,16 @@ func (c *projectCheck) api(api *project.OpenAPI) {
 			"API declares neither a server nor a client")
 	}
 	c.fileName("API.Server.File", api.Server.File)
-	if api.Server.Dir != "" && api.Server.File == validateOut {
-		c.add(c.at("API.Server.File", "API.Server"), "set API.Server.File to another name, such as api.gen.go",
-			"API.Server.File %s is the file nano gen validate writes", validateOut)
+	if api.Server.Dir != "" {
+		switch api.Server.File {
+		case validateOut:
+			c.add(c.at("API.Server.File", "API.Server"), "set API.Server.File to another name, such as api.gen.go",
+				"API.Server.File %s is the file nano gen validate writes", validateOut)
+		case genapi.HandlersFile:
+			c.add(c.at("API.Server.File", "API.Server"), "set API.Server.File to another name, such as api.gen.go",
+				"API.Server.File %s is the file of the tag split, which nano gen api writes next to the server",
+				genapi.HandlersFile)
+		}
 	}
 	for i, cl := range api.Clients {
 		c.client(fmt.Sprintf("API.Clients[%d]", i), cl, outputs)

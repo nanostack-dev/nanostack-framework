@@ -1,0 +1,2 @@
+testdata/tags/noname/openapi.yaml:4: tag "2FA" has no Go name: it becomes "2FAServer"
+  fix: rename the tag so that it starts with a letter

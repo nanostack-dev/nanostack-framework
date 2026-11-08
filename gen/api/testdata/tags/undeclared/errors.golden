@@ -1,0 +1,2 @@
+testdata/tags/undeclared/openapi.yaml:15: tag Billing is used by 2 operations but not declared
+  fix: add "- name: Billing" under the top-level tags

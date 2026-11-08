@@ -1,0 +1,30 @@
+openapi: 3.0.3
+info: {title: collision, version: "1"}
+tags:
+  - name: Status pages
+  - name: StatusPages
+  - name: API keys
+  - name: ApiKeys
+paths:
+  /status-pages:
+    get:
+      operationId: listStatusPages
+      tags: [Status pages]
+      responses:
+        "204": {description: ok}
+    post:
+      operationId: createStatusPage
+      tags: [StatusPages]
+      responses:
+        "204": {description: ok}
+  /api-keys:
+    get:
+      operationId: listAPIKeys
+      tags: [API keys]
+      responses:
+        "204": {description: ok}
+    post:
+      operationId: createAPIKey
+      tags: [ApiKeys]
+      responses:
+        "204": {description: ok}

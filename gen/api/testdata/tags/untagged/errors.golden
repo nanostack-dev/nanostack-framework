@@ -1,0 +1,2 @@
+testdata/tags/untagged/openapi.yaml:13: operation sendEmail has no tag
+  fix: add one of the declared tags: Email, Licensing

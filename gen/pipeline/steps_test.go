@@ -51,6 +51,7 @@ var Project = project.Project{}
 `)
 	stdout, stderr, code := nano(t, dir, "-check")
 	wantRun(t, "nano gen -check", code, 1, stdout, "", stderr, `orphan api/api.gen.go
+orphan api/handlers.gen.go
 orphan api/validate.gen.go
   fix: run nano gen without -check, then commit the result
 `)

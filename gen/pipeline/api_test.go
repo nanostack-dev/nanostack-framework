@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -67,6 +68,7 @@ func TestClient(t *testing.T) {
 	wantRun(t, "nano gen -list -only api", code, 0, stdout, `api       api
   in   api/openapi.yaml
   out  api/api.gen.go
+  out  api/handlers.gen.go
   out  clients/go/client.gen.go
 `, stderr, "")
 
@@ -150,6 +152,10 @@ func TestAPIDeclarationErrors(t *testing.T) {
 		{"server file is validate's", `Server: project.Package{Dir: "api", File: "validate.gen.go"},`,
 			"nanogen/project.go:12: API.Server.File validate.gen.go is the file nano gen validate writes\n" +
 				"  fix: set API.Server.File to another name, such as api.gen.go\n"},
+		{"server file is the tag split's", `Server: project.Package{Dir: "api", File: "handlers.gen.go"},`,
+			"nanogen/project.go:12: API.Server.File handlers.gen.go is the file of the tag split, " +
+				"which nano gen api writes next to the server\n" +
+				"  fix: set API.Server.File to another name, such as api.gen.go\n"},
 		{"client in a nested module", `Server: project.Package{Dir: "api"},
 		Clients: []project.Client{{Dir: "nested/client", Package: "client"}},`,
 			"nanogen/project.go:13: API.Clients[0].Dir nested/client is in the nested module nested, " +
@@ -210,6 +216,108 @@ func TestGenerateGuardPatterns(t *testing.T) {
 		got := oapiCodegenPattern.MatchString(tt.cmd)
 		if got != tt.oapi {
 			t.Errorf("oapi-codegen match of %q = %v, want %v", tt.cmd, got, tt.oapi)
+		}
+	}
+}
+
+// An operation without a tag fails the api step at its spec line, before
+// anything is generated, and skips the steps that need api.
+func TestTagRuleFailsTheAPIStep(t *testing.T) {
+	t.Parallel()
+	dir := copyFixture(t)
+	edit(t, dir, "api/openapi.yaml", "      tags: [Check]\n", "")
+	stdout, stderr, code := nano(t, dir, "-check")
+	wantRun(t, "nano gen -check", code, 1, stdout, "", stderr,
+		`api/openapi.yaml:4: tag Check is declared but no operation uses it
+  fix: delete it, or tag an operation with it
+api/openapi.yaml:7: operation check has no tag
+  fix: add one of the declared tags: Check
+nano gen validate: skipped: needs api
+nano gen config: skipped: needs validate
+nano gen wire: skipped: needs config
+`)
+}
+
+// The tag split of a spec with every naming case compiles with the server
+// and the validators the pipeline writes, and *Handlers satisfies
+// StrictServerInterface (the assertion is in handlers.gen.go). A handler
+// that lacks a method of its tag interface is reported by wire, which loads
+// the handler package as a dependency, with the method to add.
+func TestTagSplitCompiles(t *testing.T) {
+	t.Parallel()
+	dir := copyFixture(t)
+	spec, err := os.ReadFile(filepath.Join("..", "api", "testdata", "tags", "split", "openapi.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, dir, "api/openapi.yaml", string(spec))
+	if _, stderr, code := nano(t, dir); code != 0 {
+		t.Fatalf("nano gen: exit %d\n%s", code, stderr)
+	}
+	goBuild(t, dir)
+
+	write(t, dir, "api/types_api.go", `package api
+
+type typesHandler struct{}
+
+// NewTypesHandler returns the Type handler, which lacks ListTypes.
+func NewTypesHandler() TypeServer { return &typesHandler{} }
+`)
+	write(t, dir, "cmd/app/manifest.go", `//go:build nanogen
+
+package app
+
+import (
+	"example.com/pipelineapp/api"
+	"github.com/nanostack-dev/nanostack-framework/core/nano"
+)
+
+var App = nano.Manifest("app", nano.Providers(NewGreeter, api.NewTypesHandler))
+`)
+	stdout, stderr, code := nano(t, dir, "-check", "-only", "wire")
+	wantRun(t, "nano gen -check -only wire", code, 1, stdout, "", stderr,
+		`api/types_api.go:6: *typesHandler does not implement TypeServer (missing method ListTypes)
+  fix: add the method of TypeServer: func (t *typesHandler) ListTypes(ctx context.Context, request ListTypesRequestObject) (ListTypesResponseObject, error)
+`)
+
+	// A handler in another package, as in echopoint's feature packages, with
+	// a method of the wrong signature: the fix qualifies the server's types
+	// by package name, as the handler's file writes them.
+	if err = os.Remove(filepath.Join(dir, "api", "types_api.go")); err != nil {
+		t.Fatal(err)
+	}
+	write(t, dir, "feature/types.go", `package feature
+
+import (
+	"context"
+
+	"example.com/pipelineapp/api"
+)
+
+type typesHandler struct{}
+
+func (h *typesHandler) ListTypes(context.Context, int) {}
+
+// NewTypesHandler returns the Type handler, whose ListTypes is wrong.
+func NewTypesHandler() api.TypeServer { return &typesHandler{} }
+`)
+	edit(t, dir, "cmd/app/manifest.go", `"example.com/pipelineapp/api"`, `"example.com/pipelineapp/feature"`)
+	edit(t, dir, "cmd/app/manifest.go", "api.NewTypesHandler", "feature.NewTypesHandler")
+	stdout, stderr, code = nano(t, dir, "-check", "-only", "wire")
+	wantRun(t, "nano gen -check -only wire", code, 1, stdout, "", stderr,
+		`feature/types.go:14: *typesHandler does not implement api.TypeServer (wrong type for method ListTypes)
+  fix: give ListTypes the signature of api.TypeServer: func (h *typesHandler) ListTypes(ctx context.Context, request api.ListTypesRequestObject) (api.ListTypesResponseObject, error)
+`)
+}
+
+// goBuild runs go build ./... and go vet ./... in dir.
+func goBuild(t *testing.T, dir string) {
+	t.Helper()
+	for _, args := range [][]string{{"build", "./..."}, {"vet", "./..."}} {
+		cmd := exec.CommandContext(t.Context(), "go", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("go %s: %v\n%s", strings.Join(args, " "), err, out)
 		}
 	}
 }

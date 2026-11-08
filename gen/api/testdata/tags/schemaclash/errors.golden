@@ -1,0 +1,4 @@
+testdata/tags/schemaclash/openapi.yaml: the server declares Handlers, a name that handlers.gen.go declares
+  fix: rename the schema or operation that oapi-codegen turns into Handlers, for example with x-go-name
+testdata/tags/schemaclash/openapi.yaml:4: tag Email becomes EmailServer, which the server already declares
+  fix: rename the tag, or the schema or operation that oapi-codegen turns into EmailServer

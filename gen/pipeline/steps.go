@@ -72,7 +72,8 @@ func (r *runner) unitsOf(s *step) []*unit {
 		u := &unit{step: s, inputs: []string{r.abs(api.Spec)}}
 		if api.Server.Dir != "" {
 			u.dir = r.abs(api.Server.Dir)
-			u.outputs = append(u.outputs, filepath.Join(u.dir, orDefault(api.Server.File, genapi.DefaultServerFile)))
+			u.outputs = append(u.outputs, filepath.Join(u.dir, orDefault(api.Server.File, genapi.DefaultServerFile)),
+				filepath.Join(u.dir, genapi.HandlersFile))
 		}
 		for _, c := range api.Clients {
 			dir := r.abs(c.Dir)

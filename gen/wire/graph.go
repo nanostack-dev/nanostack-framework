@@ -3,7 +3,10 @@ package wire
 import (
 	"fmt"
 	"go/types"
+	"path/filepath"
 	"strings"
+
+	"github.com/nanostack-dev/nanostack-framework/gen/internal/gopkg"
 )
 
 type nodeKind int
@@ -271,20 +274,8 @@ func (g *graph) suggest(t types.Type) string {
 	if n := g.nodes[key(types.NewSlice(t))]; n != nil && n.kind == nodeCollect {
 		return fmt.Sprintf("take %s; %s collects %s values", m.typeString(n.typ), m.providerLabel(n.p), m.typeString(t))
 	}
-	if types.IsInterface(t) {
-		var binds []string
-		for _, p := range m.items {
-			if p.kind == kindFunc && !types.IsInterface(p.out) && types.AssignableTo(p.out, t) {
-				binds = append(binds, fmt.Sprintf("nano.Bind[%s, %s]()", m.typeString(t), m.typeString(p.out)))
-			}
-		}
-		if len(binds) > 0 {
-			return "bind an implementation with " + strings.Join(binds, " or ")
-		}
-		return fmt.Sprintf(
-			"add a provider of an implementation and bind it with nano.Bind[%s, Impl]()",
-			m.typeString(t),
-		)
+	if iface, ok := t.Underlying().(*types.Interface); ok {
+		return g.suggestInterface(t, iface)
 	}
 	var alt types.Type
 	if ptr, ok := t.(*types.Pointer); ok {
@@ -399,4 +390,88 @@ func (g *graph) reportUnused() {
 			}
 		}
 	}
+}
+
+// suggestInterface is the fix for an interface that no provider returns. A
+// provider whose type implements it can be bound. A provider whose type has
+// some of its methods lacks the others: the fix names the first, in full.
+// A tag interface of nano gen api (ADR 0024) is returned by its handler's
+// constructor, so its fix is that provider, not a Bind.
+func (g *graph) suggestInterface(t types.Type, iface *types.Interface) string {
+	m := g.m
+	var binds, returns []string
+	near := ""
+	for _, p := range m.items {
+		if p.kind != kindFunc || types.IsInterface(p.out) || g.isHandlers(p.out) {
+			continue
+		}
+		if types.AssignableTo(p.out, t) {
+			binds = append(binds, fmt.Sprintf("nano.Bind[%s, %s]()", m.typeString(t), m.typeString(p.out)))
+			returns = append(returns, funcName(p.fn))
+			continue
+		}
+		if near == "" && hasSomeMethod(p.out, iface) {
+			if method, _ := types.MissingMethod(p.out, iface, true); method != nil {
+				near = fmt.Sprintf("give %s the method %s", m.typeString(p.out), methodDecl(p.out, method))
+			}
+		}
+	}
+	if named, ok := t.(*types.Named); ok && gopkg.IsTagServer(m.fset, named.Obj()) {
+		if len(returns) > 0 {
+			return fmt.Sprintf("make %s return %s", strings.Join(returns, " or "), m.typeString(t))
+		}
+		fix := fmt.Sprintf("add a provider that returns %s to nano.Providers in %s", m.typeString(t),
+			m.relFile(m.file))
+		if near != "" {
+			fix += "; " + near
+		}
+		return fix
+	}
+	if len(binds) > 0 {
+		return "bind an implementation with " + strings.Join(binds, " or ")
+	}
+	if near != "" {
+		return near + ", then bind it with nano.Bind[" + m.typeString(t) + ", Impl]()"
+	}
+	return fmt.Sprintf("add a provider of an implementation and bind it with nano.Bind[%s, Impl]()", m.typeString(t))
+}
+
+// isHandlers reports whether t is *Handlers of a tag split: it implements
+// every tag interface by passing each call on, so it is never their
+// handler.
+func (g *graph) isHandlers(t types.Type) bool {
+	if p, ok := t.(*types.Pointer); ok {
+		t = p.Elem()
+	}
+	named, ok := t.(*types.Named)
+	if !ok || named.Obj().Name() != "Handlers" {
+		return false
+	}
+	return filepath.Base(g.m.fset.Position(named.Obj().Pos()).Filename) == gopkg.HandlersFile
+}
+
+// hasSomeMethod reports whether t has at least one method of iface.
+func hasSomeMethod(t types.Type, iface *types.Interface) bool {
+	for method := range iface.Methods() {
+		if obj, _, _ := types.LookupFieldOrMethod(t, true, method.Pkg(), method.Name()); obj != nil {
+			if _, isFunc := obj.(*types.Func); isFunc {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// methodDecl is the declaration t needs for method, written as code in t's
+// own package writes it.
+func methodDecl(t types.Type, method *types.Func) string {
+	base := t
+	if p, ok := base.(*types.Pointer); ok {
+		base = p.Elem()
+	}
+	var pkg *types.Package
+	if named, ok := base.(*types.Named); ok {
+		pkg = named.Obj().Pkg()
+	}
+	return gopkg.MethodDecl(t, method, pkg)
 }

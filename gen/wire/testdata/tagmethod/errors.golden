@@ -1,0 +1,2 @@
+api/authors.go:9: *authorsHandler does not implement AuthorsServer (missing method ListAuthors)
+  fix: add the method of AuthorsServer: func (a *authorsHandler) ListAuthors(ctx context.Context, request string) (string, error)

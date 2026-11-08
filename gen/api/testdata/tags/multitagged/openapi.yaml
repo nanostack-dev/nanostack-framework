@@ -1,0 +1,12 @@
+openapi: 3.0.3
+info: {title: multitagged, version: "1"}
+tags:
+  - name: Email
+  - name: Product
+paths:
+  /emails:
+    get:
+      operationId: listEmailSends
+      tags: [Email, Product]
+      responses:
+        "204": {description: ok}

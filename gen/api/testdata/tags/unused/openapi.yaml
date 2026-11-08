@@ -1,0 +1,12 @@
+openapi: 3.0.3
+info: {title: unused, version: "1"}
+tags:
+  - name: Email
+  - name: Membership
+paths:
+  /emails:
+    get:
+      operationId: listEmails
+      tags: [Email]
+      responses:
+        "204": {description: ok}
