@@ -17,7 +17,7 @@ This guide covers every file the framework generates, or will generate, for a se
 | **designed** | Specified in the design. No code yet. |
 | **prototype** | Throwaway code in the workspace `reports/prototypes/`. Not for merge. |
 
-PR 2 of the pipeline (#69) merged at `4b6c468`. PR 3 (pipeline core) is **in progress** on the unpushed branch `feat/gen-pipeline`. It has started with the project declaration and with validate waivers as `x-nano-unenforced`. Mapper (PRs 7-8) and the tag split (PR 5) have no code yet.
+PR 2 of the pipeline (#69) merged at `4b6c468`. PR 3 (pipeline core) is **in progress** on a framework branch, not yet pushed. It has started with the project declaration and with validate waivers as `x-nano-unenforced`. Mapper (PRs 7-8) and the tag split (PR 5) have no code yet.
 
 ## Summary
 
@@ -469,7 +469,7 @@ type declarations interface {
 `gen/errors/testdata/billing/errors.gen.go` (268 lines), lines 95-151 with their doc comments trimmed. Every error gets the same block:
 
 ```go
-// … the header, the imports, the list of kinds, and the InvoiceNotFound block
+// … the header, the imports, the kind list and interface assertions, and the InvoiceNotFound block
 var ErrInvoiceAlreadyPaid = fault.NewKind("billing.invoice_already_paid", 409, "Invoice is already paid", "https://errors.nanostack.dev/billing/invoice_already_paid")
 
 type InvoiceAlreadyPaidError struct {
