@@ -1,5 +1,7 @@
 # Architecture
 
+> **History.** This page is the original direction, kept for context. It is not updated as code lands. The current packages, the three layers (`core/`, `http/`, `gen/` with `cmd/nano`) and their import rules are in [Implemented architecture](technical/architecture.md) and [Boundaries](boundaries.md).
+
 ## Framework Areas
 
 ```text

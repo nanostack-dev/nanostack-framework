@@ -13,9 +13,22 @@ It aims to standardize the parts that are repeatedly rebuilt across services:
 
 This repository is private while the architecture, naming, and boundaries are being defined.
 
+## Layout
+
+New code lives in four trees and three layers: `core/`, then `http/`, then `gen/` with `cmd/nano`. A package imports only its own layer and the layers below:
+
+1. `core/`: runtime: `nano` (lifecycle, Main), `config`, `log`, `fault`, `validate`, `secret`.
+2. `http/`: the HTTP boundary: `problem`, `nanohttp`.
+3. `gen/`: generators behind `nano gen` (`wire`, `config`, `errors`, `validate`).
+4. `cmd/nano`: the CLI.
+
+`pkg/` and `modules/` hold the legacy Fx stack until services migrate.
+
 ## Initial Direction
 
-The framework is expected to cover six explicit areas:
+This list is historical: the original plan, kept for context. The layout above is current.
+
+The framework was expected to cover six explicit areas:
 
 1. `app/`: fluent service composition API.
 2. `modules/`: lifecycle and dependency-injection integrations.
@@ -32,7 +45,7 @@ For standalone development, start with [AGENTS.md](AGENTS.md), [CONTEXT.md](CONT
 
 - `docs/vision.md`: framework intent and goals
 - `docs/common-work-inventory.md`: repeated work currently done by apps
-- `docs/architecture.md`: proposed framework component boundaries
-- `docs/boundaries.md`: rules for deciding what belongs in `modules/`, `pkg/`, or app code
+- `docs/architecture.md`: the original component direction, kept as history
+- `docs/boundaries.md`: which tree owns what, and what stays in app code
 - `docs/privacy.md`: repository history and publication strategy
 - `docs/roadmap.md`: phased execution plan

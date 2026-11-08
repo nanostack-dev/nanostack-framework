@@ -20,6 +20,16 @@
 3. Extract standard `go-jet` generation flow.
 4. Reduce duplicated shell scripts and `dbgen.go` logic.
 
+### Deferred generator outputs
+
+1. `nano gen errors`: an OpenAPI `components/responses` fragment per catalogue, once `http/problem` owns the problem schema it references ([ADR 0022](adr/0022-error-catalogue-from-go-interface.md)).
+2. `nano gen` and `nano gen -check` with no generator name: run every generator in a fixed order (config, errors, validate, wire), as plan section 20 and [ADR 0013](adr/0013-generated-wiring-replaces-fx.md) describe. It needs a per-project file that gives each generator its inputs (`-spec`, `-dir`, `-out`), which does not exist yet. Until then CI runs `nano gen <name> -check` once per output.
+3. Move the generators into their own nested `gen` module with the nested-module split, so `golang.org/x/tools` (needed by `gen/config` and `gen/errors`) leaves the root module that runtime consumers resolve.
+
+### Deferred runtime features
+
+1. `core/nano` admin endpoint `/infoz` (build info, module versions, redacted config), which plan section 06 lists next to `/livez` and `/readyz`.
+
 ## Phase 3: Starter Service
 
 1. Define canonical folder layout for a Nanostack service.
