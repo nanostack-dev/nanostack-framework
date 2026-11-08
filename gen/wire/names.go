@@ -57,21 +57,25 @@ func (e *emitter) assignNames() {
 		taken[e.imports.Add(p, names[p])] = true
 	}
 
+	// The variables follow the fields, so a value's variable reads as its
+	// field does and two values of one type name never fall back to a number.
+	assignFields(e.g.order)
 	local := maps.Clone(taken)
 	for _, n := range e.g.order {
-		n.varName = uniqueName(lowerCamel(nodeBase(n)), local)
-		n.needName = uniqueName("need"+upperFirst(n.varName), local)
+		n.varName = uniqueName(lowerCamel(n.field), local)
+		n.needName = uniqueName("need"+n.field, local)
 	}
-	assignFields(e.g.order)
 }
 
 // assignFields names the Overrides and Components fields. A name does not
 // depend on the order of the graph; a new provider whose type shares a base
 // name qualifies both fields. Every value whose type shares its base name
-// with another one is qualified by its package (*nanopg.DB and *sql.DB give
-// NanopgDB and SQLDB), and values that still collide, from two packages of
-// one name, are numbered in the order of their full type names. Collection
-// members, named after their functions, come last.
+// with another one is qualified by its package name (*nanopg.DB and *sql.DB
+// give NanopgDB and SQLDB). Values whose packages also share a name are
+// qualified by their import paths instead (see pathQualifiers). Values that
+// still collide, such as *T and T, or two instances of one generic type, are
+// numbered in the order of their full type names. Collection members, named
+// after their functions, come last.
 func assignFields(order []*node) {
 	byBase := map[string][]*node{}
 	var members []*node
@@ -86,12 +90,12 @@ func assignFields(order []*node) {
 	taken := map[string]bool{}
 	byName := map[string][]*node{}
 	for base, group := range byBase {
-		for _, n := range group {
-			name := base
-			if len(group) > 1 {
-				name = qualifier(n.typ) + base
-			}
-			byName[name] = append(byName[name], n)
+		if len(group) == 1 {
+			byName[base] = append(byName[base], group[0])
+			continue
+		}
+		for n, q := range qualifiers(group) {
+			byName[q+base] = append(byName[q+base], n)
 		}
 	}
 	for _, name := range slices.Sorted(maps.Keys(byName)) {
@@ -108,6 +112,31 @@ func assignFields(order []*node) {
 	}
 }
 
+// qualifiers qualifies each node of a group whose types share a base name:
+// by its package name, or by its import path when another node's package has
+// that name too.
+func qualifiers(group []*node) map[*node]string {
+	byQualifier := map[string][]*node{}
+	for _, n := range group {
+		q := qualifier(n.typ)
+		byQualifier[q] = append(byQualifier[q], n)
+	}
+	out := map[*node]string{}
+	for q, same := range byQualifier {
+		paths := map[string]string{}
+		for _, n := range same {
+			paths[pkgPath(n.typ)] = q
+		}
+		if len(paths) > 1 {
+			paths = pathQualifiers(slices.Collect(maps.Keys(paths)))
+		}
+		for _, n := range same {
+			out[n] = paths[pkgPath(n.typ)]
+		}
+	}
+	return out
+}
+
 // qualifier is the package name of t's named type, capitalised as a Go
 // identifier: sql gives SQL, nanopg gives Nanopg. It is empty for a type
 // without a package.
@@ -116,11 +145,96 @@ func qualifier(t types.Type) string {
 	if named == nil || named.Obj().Pkg() == nil {
 		return ""
 	}
-	name := named.Obj().Pkg().Name()
-	if initialisms[name] {
-		return strings.ToUpper(name)
+	return identPart(named.Obj().Pkg().Name())
+}
+
+// pkgPath is the import path of t's named type, or "" for a type without a
+// package.
+func pkgPath(t types.Type) string {
+	named := namedOf(sliceElem(t))
+	if named == nil || named.Obj().Pkg() == nil {
+		return ""
 	}
-	return upperFirst(name)
+	return named.Obj().Pkg().Path()
+}
+
+// pathQualifiers qualifies packages that share a name by their import paths.
+// Each path gets the fewest last elements that no other path ends with (a
+// version element counts with the one before it):
+// example.com/billing/repository and example.com/invoice/repository give
+// BillingRepository and InvoiceRepository; with example.com/repository too,
+// that one gets ExampleComRepository. A path's qualifier depends only on the
+// set of paths, never on their order. Two paths that give one identifier
+// (a-b and a_b) are left to the numbering that follows.
+func pathQualifiers(paths []string) map[string]string {
+	split := map[string][]string{}
+	for _, p := range paths {
+		split[p] = pathElems(p)
+	}
+	out := map[string]string{}
+	for _, p := range paths {
+		elems := split[p]
+		for k := 1; k <= len(elems); k++ {
+			end := strings.Join(elems[len(elems)-k:], "/")
+			if !slices.ContainsFunc(paths, func(o string) bool {
+				oe := split[o]
+				return o != p && strings.Join(oe[max(0, len(oe)-k):], "/") == end
+			}) || k == len(elems) {
+				out[p] = pathIdent(elems[len(elems)-k:])
+				break
+			}
+		}
+	}
+	return out
+}
+
+// pathElems splits an import path at its slashes, keeping a version element
+// (v2) with the one before it: example.com/kv/v2 gives example.com and kv/v2,
+// so the major version of a module never stands for its package alone.
+func pathElems(p string) []string {
+	var elems []string
+	for e := range strings.SplitSeq(p, "/") {
+		if len(elems) > 0 && isVersion(e) {
+			elems[len(elems)-1] += "/" + e
+			continue
+		}
+		elems = append(elems, e)
+	}
+	return elems
+}
+
+// isVersion reports whether a path element is a version such as v2.
+func isVersion(e string) bool {
+	rest, ok := strings.CutPrefix(e, "v")
+	return ok && rest != "" && strings.Trim(rest, "0123456789") == ""
+}
+
+// pathIdent joins import path elements into a Go identifier: each run of
+// letters and digits starts with a capital, and an initialism is written in
+// capitals (example.com/api/v2 gives ExampleComAPIV2).
+func pathIdent(elems []string) string {
+	var b strings.Builder
+	for _, e := range elems {
+		for _, part := range strings.FieldsFunc(e, func(r rune) bool {
+			return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+		}) {
+			b.WriteString(identPart(part))
+		}
+	}
+	s := b.String()
+	if r := []rune(s); len(r) == 0 || !unicode.IsLetter(r[0]) {
+		s = "Pkg" + s // a path element that starts with a digit
+	}
+	return s
+}
+
+// identPart capitalises a package name or path element as part of a Go
+// identifier: sql gives SQL, nanopg gives Nanopg.
+func identPart(s string) string {
+	if initialisms[strings.ToLower(s)] {
+		return strings.ToUpper(s)
+	}
+	return upperFirst(s)
 }
 
 // sliceElem is the element type of a slice or array type, else t.

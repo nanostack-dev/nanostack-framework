@@ -35,6 +35,8 @@ var okCases = []struct {
 	{"example", ""},
 	{"adapter", ""},
 	{"collect", ""},
+	{"clashtwo", ""},
+	{"clashthree", ""},
 }
 
 // errCases fail generation; errors.golden holds the expected diagnostics.
@@ -126,10 +128,16 @@ func TestGoldenErrors(t *testing.T) {
 }
 
 func TestOutputIsDeterministic(t *testing.T) {
-	opts := caseOptions(t, "signatures", "")
-	first, second := generate(t, opts), generate(t, opts)
-	if string(first.Data) != string(second.Data) {
-		t.Fatal("two runs produced different bytes")
+	for _, name := range []string{"signatures", "clashtwo", "clashthree"} {
+		t.Run(name, func(t *testing.T) {
+			opts := caseOptions(t, name, "")
+			first := generate(t, opts)
+			for range 5 {
+				if again := generate(t, opts); string(again.Data) != string(first.Data) {
+					t.Fatal("two runs produced different bytes")
+				}
+			}
+		})
 	}
 }
 
