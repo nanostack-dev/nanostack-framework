@@ -103,6 +103,10 @@ func Generate(opts Options) ([]gen.File, error) {
 	}
 	var files []gen.File
 	if opts.Server.Dir != "" {
+		if opts.Server.File == HandlersFile {
+			return nil, gen.Errorf("", 0, "set the server file to another name, such as "+DefaultServerFile,
+				"the server file %s is the file of the tag split", HandlersFile)
+		}
 		pkg, pkgErr := packageName(opts.Server.Dir)
 		if pkgErr != nil {
 			return nil, pkgErr

@@ -141,6 +141,8 @@ func TestErrorsNameTheirFix(t *testing.T) {
 		{"client package", Options{Spec: spec, Clients: []project.Client{{Dir: tmp, Package: "go"}}},
 			"not a Go identifier"},
 		{"client dir", Options{Spec: spec, Clients: []project.Client{{Package: "client"}}}, "has no Dir"},
+		{"server file is the tag split's", Options{Spec: spec,
+			Server: project.Package{Dir: server.Dir, File: HandlersFile}}, "file of the tag split"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
