@@ -53,11 +53,14 @@ type setting struct {
 	list     bool
 	def      string
 	defEnv   string // defaultenv tag: the variable read before def
-	optional bool
-	checks   []check
-	rawCheck string // validate tag as written, for the reference doc
-	doc      string
-	at       pos // where the field is declared, for generator errors
+	// derivedEnv is the env the path gives. It differs from env when an env
+	// tag names another variable.
+	derivedEnv string
+	optional   bool
+	checks     []check
+	rawCheck   string // validate tag as written, for the reference doc
+	doc        string
+	at         pos // where the field is declared, for generator errors
 }
 
 func (s *setting) secret() bool { return s.kind == kindSecret }

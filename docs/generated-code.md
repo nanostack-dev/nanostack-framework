@@ -816,6 +816,7 @@ One root `Config` of named sections. Each section is a struct owned by its modul
 | `config:"name[,optional]"` | A lower snake case path segment. A nested struct adds a segment (`core.auth.x`). `config:"-"` skips the field. |
 | `env:"NAME"` | Overrides the env var, which is otherwise derived from the path (`CORE_AUTH_X`). |
 | `default:"v"` | Parsed and validated at generation time. A setting with no default is required unless it is `optional`. A secret cannot have a default. |
+| `defaultenv:"NAME"` | Reads `NAME` when the setting's own env and the config files leave it unset, before `default`. See [One variable, two settings](#one-variable-two-settings). A secret cannot have one. |
 | `validate:"min=,max=,oneof=,scheme="` | Becomes typed `Between`, `Min`, `OneOf` or `Scheme` calls. On a slice, the rule applies to each element. |
 
 A field is secret by type: `secret.Secret`. The grammar is in `gen/config/run.go`.

@@ -179,6 +179,7 @@ type fieldTag struct {
 	optional bool
 	path     string
 	env      string
+	derived  string // the env the path gives, before an env tag
 }
 
 // walk visits one struct level and returns its group of settings.
@@ -234,7 +235,7 @@ func (l *loader) field(f *types.Var, tag reflect.StructTag, sc scope, seen map[*
 		return l.nested(f, tag, ft, inner, goSel, at, seen)
 	}
 	s := &setting{
-		path: ft.path, env: ft.env, name: ft.name, goExpr: goSel, typ: f.Type(),
+		path: ft.path, env: ft.env, derivedEnv: ft.derived, name: ft.name, goExpr: goSel, typ: f.Type(),
 		optional: ft.optional, doc: l.fieldDoc(f), at: at,
 		def: tag.Get(tagDefault), defEnv: tag.Get(tagDefaultEnv), rawCheck: tag.Get(tagValidate),
 	}
@@ -253,6 +254,7 @@ func (l *loader) parseTag(f *types.Var, tag reflect.StructTag, cfgTag string, sc
 		path: joinNonEmpty(".", sc.path, name),
 		env:  joinNonEmpty("_", sc.env, strings.ToUpper(name)),
 	}
+	ft.derived = ft.env
 	switch {
 	case !keyPattern.MatchString(name):
 		l.problemf(at, "write the name in lower snake case, for example config:\"due_days\"",
@@ -308,10 +310,7 @@ func (l *loader) leaf(f *types.Var, tag reflect.StructTag, s *setting) bool {
 		return false
 	}
 	if prev, clash := l.envs[s.env]; clash {
-		l.problemf(s.at,
-			fmt.Sprintf("give one of them another env, or tag it defaultenv:\"%s\" instead of env:\"%s\" "+
-				"to read %s after its own env and the config files", s.env, s.env, s.env),
-			"%s: env %s is already used by %s", f.Name(), s.env, prev.path)
+		l.problemf(s.at, clashFix(s, prev), "%s: env %s is already used by %s", f.Name(), s.env, prev.path)
 		return false
 	}
 	l.envs[s.env] = s

@@ -1,6 +1,7 @@
 package genconfig
 
 import (
+	"fmt"
 	"go/types"
 	"reflect"
 )
@@ -37,4 +38,18 @@ func (l *loader) checkDefaultEnvs() {
 				"%s: defaultenv %s is the env of secret setting %s", lastSegment(s.goExpr), s.defEnv, owner.path)
 		}
 	}
+}
+
+// clashFix is the fix for s, whose env is already prev's. defaultenv is an
+// option only for a setting whose env tag can go: without it, the setting
+// reads the env its path gives, which must differ from the shared one.
+func clashFix(s, prev *setting) string {
+	for _, t := range []*setting{s, prev} {
+		if t.derivedEnv != t.env {
+			return fmt.Sprintf("give one of them another env, or tag %s defaultenv:%q instead of env:%q "+
+				"to read %s after its own env (%s) and the config files", t.path, t.env, t.env, t.env, t.derivedEnv)
+		}
+	}
+	return fmt.Sprintf("give one of them another env with an env tag; tag that one defaultenv:%q as well "+
+		"to read %s after its own env and the config files", s.env, s.env)
 }

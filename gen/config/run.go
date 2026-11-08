@@ -33,6 +33,12 @@
 //     them, so they are checked when Bind runs, and a bad one fails every
 //     start-up. Bind the defaults in a test of the configuration package to
 //     catch that before deploying.
+//   - defaultenv:"NAME" takes the default from another environment variable
+//     first: the setting reads NAME only when its own env and the config
+//     files leave it unset, then default. One variable so feeds two settings,
+//     as the env of one and the default of the other. NAME must not be the
+//     setting's own env nor a secret setting's env; secrets and nested
+//     structs take none.
 //   - validate:"rule,rule" with min=, max= (numbers, durations), oneof=a b c
 //     (strings, integers) and scheme=https http (URLs). On a slice the rules
 //     apply to every element.
