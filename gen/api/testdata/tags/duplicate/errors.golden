@@ -1,0 +1,2 @@
+testdata/tags/duplicate/openapi.yaml:5: tag Email is declared twice
+  fix: delete one of them

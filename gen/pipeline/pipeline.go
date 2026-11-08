@@ -18,7 +18,8 @@
 //     nano.Manifest. config reads that package's Config; wire writes
 //     wire.gen.go into the package;
 //   - api: the Project's API, when it declares one: oapi-codegen writes the
-//     server and each client (package gen/api);
+//     server and each client, and the step splits the server by OpenAPI tag
+//     into handlers.gen.go (package gen/api);
 //   - validate: the server of the Project's API.
 //
 // The steps run one after another in the order api, validate, errors,

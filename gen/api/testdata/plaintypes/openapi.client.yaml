@@ -8,10 +8,13 @@
 # generated from openapi.client.yaml.
 openapi: 3.0.3
 info: {title: plaintypes, version: "1"}
+tags:
+  - name: Roles
 paths:
   /roles:
     get:
       operationId: listRoles
+      tags: [Roles]
       parameters:
         - name: sort
           in: query
@@ -35,6 +38,7 @@ paths:
   /roles/{id}:
     patch:
       operationId: updateRole
+      tags: [Roles]
       parameters:
         - name: id
           in: path

@@ -55,7 +55,9 @@ type OpenAPI struct {
 	// module: "../../apps/anchor/cmd/http/openapi.yaml".
 	Spec string
 	// Server is the package that holds the models and the strict server on
-	// net/http's ServeMux. nano gen validate writes validate.gen.go there.
+	// net/http's ServeMux. nano gen api also writes handlers.gen.go there,
+	// the split of the server by OpenAPI tag, and nano gen validate writes
+	// validate.gen.go. A spec with a server tags every operation (ADR 0024).
 	// Its package name is the one its Go files declare, or the directory
 	// name when it has none. Zero in a module that holds only clients.
 	Server Package
@@ -67,7 +69,8 @@ type OpenAPI struct {
 type Package struct {
 	// Dir is the package directory.
 	Dir string
-	// File is the generated file in Dir. Default api.gen.go.
+	// File is the generated file in Dir. Default api.gen.go. It may not be
+	// handlers.gen.go or validate.gen.go, which other outputs use.
 	File string
 }
 

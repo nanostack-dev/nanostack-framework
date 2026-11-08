@@ -1,0 +1,4 @@
+testdata/tags/collision/openapi.yaml:5: tags "Status pages" and "StatusPages" both become StatusPagesServer
+  fix: rename one tag
+testdata/tags/collision/openapi.yaml:7: tags "API keys" and "ApiKeys" both become the Handlers field apiKeys
+  fix: rename one tag

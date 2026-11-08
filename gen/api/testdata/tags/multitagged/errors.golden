@@ -1,0 +1,2 @@
+testdata/tags/multitagged/openapi.yaml:10: operation listEmailSends has 2 tags (Email, Product); a tag is a handler boundary
+  fix: keep one tag
