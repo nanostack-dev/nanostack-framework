@@ -3,10 +3,12 @@ package pgerr_test
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"testing"
 
 	"github.com/lib/pq"
 
+	"github.com/nanostack-dev/nanostack-framework/core/log"
 	"github.com/nanostack-dev/nanostack-framework/pkg/db/pgerr"
 )
 
@@ -168,5 +170,29 @@ func TestIsQueryCanceled(t *testing.T) {
 				t.Fatalf("IsQueryCanceled(%v) = %v, want %v", tc.err, got, tc.want)
 			}
 		})
+	}
+}
+
+// TestCoreLogTreatsClientCancelAsContextError pins that core/log, which
+// imports no driver, classifies lib/pq's cancelled statement as pgerr does:
+// a cancel the client asked for is a context error (logged at Warn), a
+// statement_timeout is not.
+func TestCoreLogTreatsClientCancelAsContextError(t *testing.T) {
+	t.Parallel()
+	canceled := fmt.Errorf("jet: %w",
+		&pq.Error{Code: pgerr.QueryCanceled, Message: "canceling statement due to user request"})
+	timeout := fmt.Errorf("jet: %w",
+		&pq.Error{Code: pgerr.QueryCanceled, Message: "canceling statement due to statement timeout"})
+	for err, want := range map[error]bool{canceled: true, timeout: false} {
+		if got := log.IsContextError(err); got != want || got != pgerr.IsQueryCanceled(err) {
+			t.Errorf("log.IsContextError(%v) = %v, want %v as pgerr.IsQueryCanceled", err, got, want)
+		}
+		wantLevel := slog.LevelError
+		if want {
+			wantLevel = slog.LevelWarn
+		}
+		if log.LevelFor(err) != wantLevel {
+			t.Errorf("log.LevelFor(%v) = %v, want %v", err, log.LevelFor(err), wantLevel)
+		}
 	}
 }

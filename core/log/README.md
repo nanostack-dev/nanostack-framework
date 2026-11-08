@@ -51,11 +51,29 @@ Every Go service writes to one log collector, and one set of alerts and dashboar
 | message | `msg` | `message` | `body` |
 | source | `source` group `{function,file,line}` | `caller`: `/abs/path/file.go:64` | `code.file.path`, `code.line.number` |
 | durations | nanoseconds, integer | milliseconds, float, at any group depth | the `duration:>1000` alert, the p95 panels |
-| time | RFC 3339 with nanoseconds | unchanged | not parsed from the line |
+| time | RFC 3339 with nanoseconds | RFC 3339 in whole seconds, zerolog's default `TimeFieldFormat`: the line's `time` and every `time.Time` attribute, at any group depth | the contract suites, which pin the layout |
 
 `Wire` applies to `FormatJSON` only; a terminal is not parsed. It is a bridge: when the collector normalises the level and maps `source.*`, and the alerts read the slog shape, services switch to `WireSlog` and `WireLegacy` is deleted. The slog shape stays the default, because the pipeline is what changes in the end.
 
-`HTTPOptions.LegacySummary` is the second half, the policy of the request summary line. With it, a request the client cancelled takes the level of its status (Info below 500) instead of Warn, so a client cancel does not count twice in the warn alert, and `query` is one string: the raw query with each secret parameter value replaced by `[REDACTED]`, and without the pairs that `url.ParseQuery` rejects (a malformed name, a semicolon). The request body is still never logged. With both options, the summary line has the keys of the `pkg/httputil/requestlog` line plus `route`, and `client_canceled` on a cancelled request. It has no `caller`: the zerolog line's caller always named `requestlog.go` itself. The message stays `http request`; no alert or dashboard reads the message text.
+`HTTPOptions.LegacySummary` is the second half: the summary line of the zerolog request log (`pkg/httputil/requestlog`). With it:
+
+- The message is `METHOD /path -> STATUS (duration)`, such as `GET /flows/123 -> 200 (2.315ms)`: the raw path, the final status, and the duration rounded to the microsecond in `time.Duration` notation. The contract suites read the duration unit against this message.
+- The line has a `caller`, which names `core/log/http.go`, as the zerolog line's named `requestlog.go`.
+- The level is Error for a status from 500 to 599 and Info otherwise. A request the client cancelled takes the level of its status too, not Warn, so a client cancel does not count twice in the warn alert.
+- `query` is one string: the raw query with each secret parameter value replaced by `[REDACTED]`, and without the pairs that `url.ParseQuery` rejects (a malformed name, a semicolon).
+
+With both options, the line has every key of the zerolog line, with the same names, units and time layout. It differs in these points only:
+
+| | zerolog request log | `HTTPMiddleware` with `LegacySummary` |
+|---|---|---|
+| extra keys | none | `route` when the router sets `r.Pattern`; `client_canceled`, `hijacked` and `panic` when they apply |
+| `caller` | `.../requestlog.go:<line>` | `.../core/log/http.go:<line>` |
+| `client_ip` | the first `X-Forwarded-For` hop, whoever sent it | the rightmost hop not from `HTTPOptions.TrustedProxies` |
+| a secret or malformed query parameter | written as sent | `[REDACTED]`, or left out |
+| a handler panic | no line | an Error line with `panic` and status 500 |
+| a hijacked connection | status 200 | status 101, `hijacked=true` |
+| `request_body` (`LOG_REQUEST_BODY`) | optional | never |
+| where the line is written | where the service mounted the middleware | where `HTTPMiddleware` sits, outside the router: a request refused before routing or auth also gets a line, unless `SkipSummary` drops it |
 
 Middleware order, outermost first:
 
@@ -109,7 +127,7 @@ The guard reads keys, never values. These reach the log line verbatim:
 - **Slices of maps or structs.** `slog.Any("hops", []map[string]string{...})` is encoded whole; only a map at an attribute's top level, or nested in maps and groups, is converted.
 - **Request bodies.** Never logged.
 
-Context attributes stay at the top level under `Logger.WithGroup`, so a query on `request_id` finds every line. When a call site logs a key that the context also carries, the call site's value wins and the key appears once. A key set with `Logger.With` is not checked against the context; do not put context keys on loggers.
+Context attributes stay at the top level under `Logger.WithGroup`, so a query on `request_id` finds every line. When a call site logs a key that the context also carries, the call site's value wins and the key appears once. When a key set with `Logger.With` (before any `WithGroup`) is also on the context, the logger's value wins and the key appears once: a repository logger built with `logger.With(slog.String(log.KeyComponent, "repository"))` keeps its component inside a cron that puts its own on the context, as a zerolog logger did. The logger's attributes are formatted when the logger is built, so they cannot give way per record. A key that both `Logger.With` and the call site set is written twice, as slog and zerolog both do.
 
 ### Scope or branch
 
@@ -133,7 +151,7 @@ The left column lists every zerolog and `pkg/log` idiom in echopoint at `c6f1cb2
 | `.Int(k, v)` / `.Int64` / `.Int32` / `.Bool` / `.Float64` | `slog.Int` / `slog.Int64` / `slog.Int(k, int(v))` / `slog.Bool` / `slog.Float64` | slog has no `Int32`. |
 | `.Err(err)` (201) | `log.Err(err)` | Key stays `error`. |
 | `.Dur(k, d)` | `slog.Duration(k, d)` | JSON unit changes from milliseconds (float) to nanoseconds (integer), unless `Config.Wire` is `WireLegacy`. |
-| `.Time(k, t)` | `slog.Time(k, t)` | |
+| `.Time(k, t)` | `slog.Time(k, t)` | RFC 3339 in whole seconds under `WireLegacy`, with nanoseconds otherwise. |
 | `.Interface(k, v)` | `slog.Any(k, v)` | |
 | `.Msgf(format, args...)` (8) | `slog.InfoContext(ctx, "fixed message", slog.String(...))` | Put the variable parts in attributes so the message stays constant and groupable. |
 | `.Send()` | a real message | slog always takes a message. |
@@ -153,10 +171,10 @@ The left column lists every zerolog and `pkg/log` idiom in echopoint at `c6f1cb2
 | `log.LevelFor(err)` | `log.LevelFor(err)`, now a `slog.Level` |
 | `log.IsContextError(err)` | `log.IsContextError(err)` |
 
-`LevelFor` applies these rules in order: cancellation and deadline are Warn; an error with a `Level() slog.Level` method anywhere in its chain picks its own level; an error with a `ProblemStatus()` from 400 to 499 (the status method of `core/fault`'s `Described`, which `pkg/fault.Error` also has) is Debug; everything else is Error. Two points differ from `pkg/log`, which made every `ProblemStatus() < 500` Debug: the `Level()` method is new, and a status below 400, such as 200 or 302, is now Error, because only 400 to 599 counts as an HTTP error status (`fault.IsErrorStatus`). A `core/fault` `Described` with an empty `ProblemType()` also counts as no status (`fault.Valid`), as the problem writer renders it as a 500; the legacy `pkg/fault.Error`, which has no `ProblemType()`, needs only the status. `LevelFor` does not import `pkg/search` or `pkg/db/pgerr`; such errors choose their level with `Level()`. Two changes follow before the migration:
+`LevelFor` applies these rules in order: cancellation and deadline are Warn, and so is a PostgreSQL statement cancelled at the client's request (see below); an error with a `Level() slog.Level` method anywhere in its chain picks its own level; an error with a `ProblemStatus()` from 400 to 499 (the status method of `core/fault`'s `Described`, which `pkg/fault.Error` also has) is Debug; everything else is Error. Two points differ from `pkg/log`, which made every `ProblemStatus() < 500` Debug: the `Level()` method is new, and a status below 400, such as 200 or 302, is now Error, because only 400 to 599 counts as an HTTP error status (`fault.IsErrorStatus`). A `core/fault` `Described` with an empty `ProblemType()` also counts as no status (`fault.Valid`), as the problem writer renders it as a 500; the legacy `pkg/fault.Error`, which has no `ProblemType()`, needs only the status. `LevelFor` imports neither `pkg/search` nor a database driver, and still keeps the two rules of `pkg/log`:
 
-- `pkg/search` client errors (`ErrInvalidCursor`, `ErrCursorWithOffset`, `ErrUnknownSort`) get a `Level()` method that returns `slog.LevelDebug`, or a `ProblemStatus()` method that returns 400.
-- The data layer wraps lib/pq's "canceling statement due to user request" (SQLSTATE 57014) with `context.Canceled`, so `IsContextError` matches it.
+- `pkg/search` client errors (`ErrInvalidCursor`, `ErrCursorWithOffset`, `ErrUnknownSort`) have a `Level()` method that returns `slog.LevelDebug`, so they log at Debug through any wrapping. They carry no status: the transport maps each to its own 400 code.
+- `IsContextError` matches a statement that PostgreSQL cancelled at the client's request: an error anywhere in the chain with a `SQLState() string` method (`*pq.Error`, `*pgconn.PgError`) that returns `57014`, and whose text says "due to user request". lib/pq and pgx report a cancelled query context this way, without wrapping `context.Canceled`. A `statement_timeout` kill has the same code but is a server fault, so it stays Error; only the message tells the two apart, as `pgerr.IsQueryCanceled` does.
 
 ### Context and loggers
 
@@ -200,7 +218,7 @@ Do not call `slog.SetDefault` in a test package that uses `logtest.Capture`.
 
 ## Output changes that affect dashboards and alerts
 
-Update the Grafana queries, alert rules and gate flows that parse log lines in the same change that migrates a product, or set `WireLegacy` and `LegacySummary` (see [Legacy wire](#legacy-wire)), which keep the message, level, caller, duration, summary level and `query` rows of the zerolog column.
+Update the Grafana queries, alert rules and gate flows that parse log lines in the same change that migrates a product, or set `WireLegacy` and `LegacySummary` (see [Legacy wire](#legacy-wire)), which keep the message, level, caller, duration, time, summary message, summary level and `query` rows of the zerolog column.
 
 | Field | zerolog | slog |
 |---|---|---|
@@ -208,7 +226,8 @@ Update the Grafana queries, alert rules and gate flows that parse log lines in t
 | level | `"level":"info"` | `"level":"INFO"` |
 | caller | `"caller":"/app/x.go:42"` | `"source":{"function":…,"file":…,"line":42}` |
 | durations | milliseconds, float | nanoseconds, integer |
-| request summary message | `GET /flows/123 -> 200 (2.5ms)` | `http request`, a constant; the details are attributes, and the new `route` attribute holds the pattern |
+| request summary message | `GET /flows/123 -> 200 (2.5ms)` | `http request`, a constant; the details are attributes, and the new `route` attribute holds the pattern. `LegacySummary` keeps the zerolog message |
+| time | RFC 3339 in whole seconds | RFC 3339 with nanoseconds, unless `WireLegacy` |
 | request summary level | Error on 5xx | also Warn, with `client_canceled=true`, when the client disconnected |
 | `operation` | from `log.Op` | gone; use `source.function` |
 | request summary `query` | the raw query string | a group, one attribute per parameter (`query.page`), secret parameters `[REDACTED]` |
@@ -224,9 +243,8 @@ Update the Grafana queries, alert rules and gate flows that parse log lines in t
 - **A zerolog event without `.Msg`.** `dbgen.go:164` calls `log.Fatal().Err(err)` without `.Msg`, so it never logged and never exited. The slog version logs and exits; check that this is the intended behaviour.
 - **`.Msgf`.** A formatted message works with `fmt.Sprintf`, but it defeats message grouping. Move the variable parts to attributes.
 - **`.Int32`, `.Uint` sizes.** slog has `Int`, `Int64`, `Uint64` and `Float64`; convert.
-- **Duplicate keys.** zerolog wrote every `.Str` call. slog's JSON handler also writes duplicates from `Logger.With`. This package removes duplicates between context attributes and call-site attributes only.
+- **Duplicate keys.** zerolog wrote every `.Str` call. slog's JSON handler also writes duplicates from `Logger.With`. This package removes a context attribute whose key the call site or `Logger.With` also sets; a key set by both `Logger.With` and the call site is written twice.
 - **Enrichers that read product context lazily.** The handler cannot read a product's context types. The product sets attributes where it sets its context. This is explicit and also covers background paths, which `log.Bind` covered only when someone remembered to call it.
-- **Error classification that needs a driver.** `LevelFor` cannot recognise lib/pq's cancelled statement without importing the driver. The data layer must wrap it (see Errors).
 - **Request body logging.** Removed on purpose; see HTTP.
 
 ## Banning zerolog

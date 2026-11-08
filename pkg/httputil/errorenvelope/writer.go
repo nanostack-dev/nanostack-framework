@@ -42,9 +42,7 @@ func New(opts Options) *Writer {
 // RequestError writes the request-hook error err (body decoding, generated
 // validation, parameter binding) as ResolveRequest maps it.
 func (w *Writer) RequestError(rw http.ResponseWriter, r *http.Request, err error) {
-	resp := ResolveRequest(r, err, w.opts)
-	w.log(r, err, resp)
-	resp.Write(rw)
+	w.write(rw, r, err, SourceRequest, ResolveRequest(r, err, w.opts))
 }
 
 // ResponseError writes the error that a handler returned as Resolve maps it.
@@ -52,19 +50,7 @@ func (w *Writer) RequestError(rw http.ResponseWriter, r *http.Request, err error
 // For a stream that already sent its status, the failure line reports the
 // status the client received, not the one of the error.
 func (w *Writer) ResponseError(rw http.ResponseWriter, r *http.Request, err error) {
-	resp := Resolve(r, err, w.opts)
-	logged := resp
-	if resp.Stream {
-		if sent, written, known := log.ResponseStatus(rw); known && written {
-			logged.Status = sent
-		}
-	}
-	w.log(r, err, logged)
-	if !resp.Write(rw) {
-		w.logger().
-			DebugContext(r.Context(), "the stream error frame is not sent: the response started with another content type",
-				slog.String("content_type", rw.Header().Get("Content-Type")))
-	}
+	w.write(rw, r, err, SourceResponse, Resolve(r, err, w.opts))
 }
 
 // Handler returns a handler that writes apiErr and logs it. A router passes
@@ -76,9 +62,7 @@ func (w *Writer) ResponseError(rw http.ResponseWriter, r *http.Request, err erro
 //	})
 func (w *Writer) Handler(apiErr *fault.Error) http.Handler {
 	return http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
-		resp := Response{Status: apiErr.HTTPStatus(), Body: apiErr}
-		w.log(r, apiErr, resp)
-		resp.Write(rw)
+		w.write(rw, r, apiErr, SourceRouter, Response{Status: apiErr.HTTPStatus(), Body: apiErr})
 	})
 }
 
@@ -102,12 +86,36 @@ func (w *Writer) logger() *slog.Logger {
 	return slog.Default()
 }
 
+// write writes resp, then logs the failure through Options.Log or log.
+func (w *Writer) write(rw http.ResponseWriter, r *http.Request, err error, source Source, resp Response) {
+	f := Failure{Err: err, Source: source, Response: resp, SentStatus: resp.Status}
+	if resp.Stream {
+		// Read before Write, which marks the response as started.
+		if sent, written, known := log.ResponseStatus(rw); known && written {
+			f.SentStatus = sent
+		}
+	}
+	f.Written = resp.Write(rw)
+	if w.opts.Log != nil {
+		w.opts.Log(r, f)
+		return
+	}
+	w.log(r, f)
+	if !f.Written {
+		w.logger().
+			DebugContext(r.Context(), "the stream error frame is not sent: the response started with another content type",
+				slog.String("content_type", rw.Header().Get("Content-Type")))
+	}
+}
+
 // log writes one "request failed" line with the request context, under the
 // keys of http/problem.Write: error, status and route. core/log picks the
-// level from the error and the status (log.LevelFor): Debug for a 4xx, Warn
-// for an abandoned request, Error for a 5xx. An unmodelled error also carries
-// its Go type and its verbose form, the only record of a 5xx cause.
-func (w *Writer) log(r *http.Request, err error, resp Response) {
+// level from the error and the status the client received (log.LevelFor):
+// Debug for a 4xx, Warn for an abandoned request, Error for a 5xx. An
+// unmodelled error also carries its Go type and its verbose form, the only
+// record of a 5xx cause.
+func (w *Writer) log(r *http.Request, f Failure) {
+	err, resp := f.Err, f.Response
 	if resp.Stream && resp.Abandoned {
 		w.logger().DebugContext(r.Context(), "stream closed by client", log.Err(err))
 		return
@@ -127,7 +135,70 @@ func (w *Writer) log(r *http.Request, err error, resp Response) {
 			slog.String(KeyErrorType, fmt.Sprintf("%T", err)),
 			slog.String(KeyErrorDetail, fmt.Sprintf("%+v", err)))
 	}
-	log.ErrorStatusTo(ctx, w.logger(), err, resp.Status, "request failed", attrs...)
+	log.ErrorStatusTo(ctx, w.logger(), err, f.SentStatus, "request failed", attrs...)
+}
+
+// StrictErrorHandlerLog returns an Options.Log that writes the lines of
+// modules/httpserver.StrictErrorHandler, which the alerts and contract suites
+// of the services that used it read, through logger (nil means slog.Default()
+// at each error):
+//
+//   - a request-hook error (SourceRequest): no line; the request summary
+//     records the 400;
+//   - a request the client abandoned: Warn "Request abandoned by client";
+//   - an unmodelled error: Error "Unhandled error returned by strict handler";
+//   - another 5xx: Error "Internal server error";
+//   - another status: Info "Request error", the router's answers included;
+//   - on a stream: Debug "SSE stream closed by client" when the client left,
+//     Error "SSE stream error" for a 5xx, Info "SSE stream warning" otherwise,
+//     then Debug "SSE stream headers already written, cannot modify response"
+//     when the frame was not written.
+//
+// Each line but the stream's Debug lines carries error and status, the status
+// of the error rather than the one a started stream sent; Error lines also
+// carry error_type and error_detail. The level is fixed by the case, not
+// picked by log.LevelFor.
+func StrictErrorHandlerLog(logger *slog.Logger) func(*http.Request, Failure) {
+	return func(r *http.Request, f Failure) {
+		l := logger
+		if l == nil {
+			l = slog.Default()
+		}
+		ctx, resp := r.Context(), f.Response
+		status := slog.Int(log.KeyStatus, resp.Status)
+		switch {
+		case f.Source == SourceRequest:
+		case resp.Stream && resp.Abandoned:
+			l.DebugContext(ctx, "SSE stream closed by client")
+		case resp.Stream && resp.Status >= http.StatusInternalServerError:
+			l.ErrorContext(ctx, "SSE stream error", append(internalErrorAttrs(f.Err), status)...)
+		case resp.Stream:
+			l.InfoContext(ctx, "SSE stream warning", log.Err(f.Err), status)
+		case resp.Abandoned:
+			l.WarnContext(ctx, "Request abandoned by client", log.Err(f.Err), status)
+		case resp.Unmodelled:
+			l.ErrorContext(ctx, "Unhandled error returned by strict handler",
+				append(internalErrorAttrs(f.Err), status)...)
+		case resp.Status >= http.StatusInternalServerError:
+			l.ErrorContext(ctx, "Internal server error", append(internalErrorAttrs(f.Err), status)...)
+		default:
+			l.InfoContext(ctx, "Request error", log.Err(f.Err), status)
+		}
+		if resp.Stream && !resp.Abandoned && !f.Written {
+			l.DebugContext(ctx, "SSE stream headers already written, cannot modify response")
+		}
+	}
+}
+
+// internalErrorAttrs are the attributes of a server error line: the error,
+// its Go type and its verbose form, which surfaces the wrapped chain and any
+// stack trace.
+func internalErrorAttrs(err error) []any {
+	return []any{
+		log.Err(err),
+		slog.String(KeyErrorType, fmt.Sprintf("%T", err)),
+		slog.String(KeyErrorDetail, fmt.Sprintf("%+v", err)),
+	}
 }
 
 // PlainRequestError answers 400 text/plain, as http.Error does, with the

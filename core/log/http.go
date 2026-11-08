@@ -2,12 +2,14 @@ package log
 
 import (
 	"bufio"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
 	"net/http"
 	"net/netip"
 	"net/url"
+	"runtime"
 	"slices"
 	"strings"
 	"time"
@@ -41,11 +43,19 @@ type HTTPOptions struct {
 	// non-nil empty slice trusts no proxy, so client_ip is always the
 	// connection address.
 	TrustedProxies []netip.Prefix
-	// LegacySummary makes the summary line follow the policy of the zerolog
-	// request log (pkg/httputil/requestlog) that the alerts were written for:
-	//   - A request the client cancelled is logged at the level of its status
-	//     (Info below 500), not at Warn. Otherwise each client cancel counts
-	//     a second time in the warn alert, next to the handler's own line.
+	// LegacySummary makes the summary line follow the zerolog request log
+	// (pkg/httputil/requestlog) that the alerts, dashboards and contract
+	// suites were written for:
+	//   - The message is "METHOD /path -> STATUS (duration)", such as
+	//     "GET /flows/123 -> 200 (2.315ms)", with the duration rounded to the
+	//     microsecond, not the constant "http request".
+	//   - The line has a source location, which Config.Wire = WireLegacy
+	//     writes as caller. It names this package, as the zerolog line's named
+	//     requestlog.go.
+	//   - The level is Error for a status from 500 to 599 and Info otherwise.
+	//     A request the client cancelled takes the level of its status too,
+	//     not Warn: otherwise each client cancel counts a second time in the
+	//     warn alert, next to the handler's own line.
 	//   - query is one string, the raw query with the value of every
 	//     secret-looking parameter replaced by secret.Redacted, not a group.
 	// It changes no key name or unit: Config.Wire does that. It is a bridge,
@@ -79,8 +89,8 @@ var defaultTrustedProxies = []netip.Prefix{ //nolint:gochecknoglobals // read-on
 // client_ip, query and user_agent. The level is Warn when the client
 // cancelled the request, whatever the status, because the client went away
 // rather than the service failing; Error for a 5xx; Info otherwise.
-// HTTPOptions.LegacySummary drops the cancellation rule and writes query as
-// one string.
+// HTTPOptions.LegacySummary writes the zerolog request log's line instead:
+// its message, a caller, its level rule and query as one string.
 //
 // query is a group with one attribute per parameter. The value of a parameter
 // whose name secret.IsKey matches ("token", "api_key", "X-Amz-Signature", ...) is
@@ -159,6 +169,7 @@ func writeSummary(
 	logger *slog.Logger, r *http.Request, recorder *statusRecorder, start time.Time, trusted []netip.Prefix,
 	legacy bool,
 ) {
+	duration := time.Since(start)
 	ctx := r.Context()
 	status := recorder.finalStatus()
 	level := summaryLevel(r, recorder, status, legacy)
@@ -172,7 +183,7 @@ func writeSummary(
 	attrs = append(attrs,
 		slog.Int(KeyStatus, status),
 		slog.Int(KeyBytesOut, recorder.bytes),
-		slog.Duration(KeyDuration, time.Since(start)),
+		slog.Duration(KeyDuration, duration),
 		slog.String(KeyClientIP, clientIP(r, trusted)),
 	)
 	switch {
@@ -194,8 +205,16 @@ func writeSummary(
 	if recorder.panicked {
 		attrs = append(attrs, slog.Any(KeyPanic, recorder.panicValue))
 	}
-	// pc 0: the source would always be this file, which says nothing.
-	record := slog.NewRecord(time.Now(), level, "http request", 0)
+	// pc 0: the source would always be this file, which says nothing. The
+	// legacy line keeps one, as zerolog's caller field did.
+	message, pc := "http request", uintptr(0)
+	if legacy {
+		message = fmt.Sprintf("%s %s -> %d (%s)", r.Method, r.URL.Path, status, duration.Round(time.Microsecond))
+		var pcs [1]uintptr
+		runtime.Callers(1, pcs[:])
+		pc = pcs[0]
+	}
+	record := slog.NewRecord(time.Now(), level, message, pc)
 	record.AddAttrs(attrs...)
 	_ = logger.Handler().Handle(ctx, record) // like slog.Logger, a failed write is not the request's error
 }
@@ -302,7 +321,8 @@ func redactedQuery(rawQuery string) string {
 // request context means the client disconnected; that is checked before the
 // status, because a handler that gives up on a cancelled context often
 // answers 5xx. With legacy (HTTPOptions.LegacySummary) a cancelled request
-// takes the level of its status, as the zerolog request log did.
+// takes the level of its status, and only a status from 500 to 599 is Error,
+// as the zerolog request log did.
 func summaryLevel(r *http.Request, recorder *statusRecorder, status int, legacy bool) slog.Level {
 	switch {
 	case recorder.panicked && recorder.panicValue == http.ErrAbortHandler: //nolint:errorlint // net/http compares it the same way
@@ -311,12 +331,18 @@ func summaryLevel(r *http.Request, recorder *statusRecorder, status int, legacy 
 		return slog.LevelError
 	case !legacy && r.Context().Err() != nil:
 		return slog.LevelWarn
+	case legacy && status > maxServerErrorStatus:
+		return slog.LevelInfo
 	case status >= http.StatusInternalServerError:
 		return slog.LevelError
 	default:
 		return slog.LevelInfo
 	}
 }
+
+// maxServerErrorStatus is the last 5xx status. The zerolog request log
+// logged a status above it at Info.
+const maxServerErrorStatus = 599
 
 // inboundRequestID returns id when it is a usable request id: 1 to 128
 // printable ASCII characters. It returns "" otherwise.

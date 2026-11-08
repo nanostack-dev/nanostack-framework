@@ -153,6 +153,61 @@ func TestCallSiteKeyWinsOverContextKey(t *testing.T) {
 	}
 }
 
+// TestLoggerKeyWinsOverContextKey pins that a key set with Logger.With is
+// written once, with the logger's value, when the context carries the same
+// key: a component logger keeps its component inside a cron that puts its own
+// on the context. A key set after WithGroup sits in the group and does not
+// hide the context's top-level key.
+func TestLoggerKeyWinsOverContextKey(t *testing.T) {
+	t.Parallel()
+	for _, wire := range []log.Wire{log.WireSlog, log.WireLegacy} {
+		var out syncBuffer
+		logger := log.New(log.Config{Output: &out, Wire: wire, ContextAttrs: fakeTraceAttrs}).
+			With(slog.String(log.KeyComponent, "repository"), slog.Group("", slog.String(log.KeyTraceID, "logger")))
+
+		ctx := log.WithScope(withSpan(t.Context()))
+		log.SetAttrs(ctx, slog.String(log.KeyRequestID, "req_1"), slog.String(log.KeyComponent, "cron"))
+		logger.InfoContext(ctx, "plain")
+		logger.WithGroup("g").With(slog.String(log.KeyRequestID, "grouped")).InfoContext(ctx, "grouped")
+
+		lines := jsonLines(t, out.String())
+		if len(lines) != 2 {
+			t.Fatalf("%v: want 2 lines, got %s", wire, out.String())
+		}
+		for i, raw := range strings.Split(strings.TrimSpace(out.String()), "\n") {
+			if strings.Count(raw, `"component"`) != 1 || strings.Count(raw, `"trace_id"`) != 1 {
+				t.Errorf("%v: line %d writes a key twice: %s", wire, i, raw)
+			}
+			line := lines[i]
+			if line[log.KeyComponent] != "repository" || line[log.KeyTraceID] != "logger" ||
+				line[log.KeyRequestID] != "req_1" || line[log.KeySpanID] != testSpanID {
+				t.Errorf("%v: line %d = %v", wire, i, line)
+			}
+		}
+		if group, _ := lines[1]["g"].(map[string]any); group[log.KeyRequestID] != "grouped" {
+			t.Errorf("%v: g = %v", wire, lines[1]["g"])
+		}
+	}
+}
+
+// TestLoggerKeyDoesNotChangeTheScope checks that dropping a context key for
+// a logger does not write into the scope that other lines read.
+func TestLoggerKeyDoesNotChangeTheScope(t *testing.T) {
+	t.Parallel()
+	var out syncBuffer
+	base := log.New(log.Config{Output: &out})
+	ctx := log.WithScope(t.Context())
+	log.SetAttrs(ctx, slog.String(log.KeyComponent, "cron"), slog.String(log.KeyRequestID, "req_1"))
+
+	base.With(slog.String(log.KeyComponent, "repository")).InfoContext(ctx, "first")
+	base.InfoContext(ctx, "second")
+
+	lines := jsonLines(t, out.String())
+	if lines[1][log.KeyComponent] != "cron" || lines[1][log.KeyRequestID] != "req_1" {
+		t.Fatalf("second line = %v", lines[1])
+	}
+}
+
 func TestExportGetsContextAttrsButNotTraceOrIdentity(t *testing.T) {
 	t.Parallel()
 	var out syncBuffer
