@@ -12,8 +12,8 @@ A nano module is the generated-wiring replacement of an fx module in `modules/`.
 | [`pg/nanomigrate`](../pg/nanomigrate/README.md) | `modules/migrations` | `NewMigrator(Config, *sql.DB, *slog.Logger) *Migrator`; `nano.Invoke(Run)` | none: `Run` is an Invoke | `migrations`: `enabled` (true), `base_path` (migrations), `validate` (true), `auto_fix_dirty` (false), `force_version` |
 | [`pg/nanolock`](../pg/nanolock/README.md) | `modules/pglock` | `NewClient(ctx, Config, *sql.DB, *slog.Logger) (*pglock.Client, error)` | none | `pglock`: `table_name` (pglock_locks), `auto_create_table` (true), `lease_duration` (10s), `heartbeat_frequency` (1s), `test_on_startup` (true) |
 | [`redis/nanocache`](../redis/nanocache/README.md) | `modules/cache` | `NewStore(ctx, Config, *slog.Logger) Store`; `New[T](Store, prefix, ttl, *slog.Logger) (Cache[T], error)` | Redis store: `Stopper` (close), `HealthChecker` (ping) | `redis` for echopoint: `address`, `password` (secret), `db` |
-| [`http/nanoserver`](../http/nanoserver/README.md) | server part of `modules/httpserver` | `NewServer(Config, http.Handler, *slog.Logger) *Server`; `NewReadiness(*nano.App) Readiness` for `/health` | `Runner` (listen, then drain) | `http`: `host`, `port` (8080), `read_header_timeout` (30s), `read_timeout` (60s), `write_timeout` (60s), `idle_timeout` (120s), `shutdown_timeout` (5s) |
-| [`http/nanoapisec`](../http/nanoapisec/README.md) | `modules/apisec` | `NewResolver(Document) (*apisec.Resolver, error)`; the service provides `Document` (its embedded spec) | none | none |
+| [`http/nanoserver`](../http/nanoserver/README.md) | server part of `modules/httpserver` | `NewServer(Config, http.Handler, *slog.Logger) *Server`; `NewReadiness(*nano.App) Readiness` or `ReadinessMiddleware(*nano.App)` for `/health` | `Runner` (listen, then drain) | `http`: `host`, `port` (8080), `read_header_timeout` (30s), `read_timeout` (60s), `write_timeout` (60s), `idle_timeout` (120s), `shutdown_timeout` (5s) |
+| [`http/nanoapisec`](../http/nanoapisec/README.md) | `modules/apisec`: list `ChiModule` | `ChiModule`: `NewChiResolver(Document) (*apisec.Resolver, error)`, matched as chi, as `modules/apisec` did. `Module`: `NewResolver(Document)`, matched as `http.ServeMux` and `nanohttp.NewRouter`. The service provides `Document` (its embedded spec) | none | none |
 | [`http/nanopprof`](../http/nanopprof/README.md) | `modules/pprof` | `NewServer(Config, *slog.Logger) *Server` | `Runner` (serves only when enabled) | `pprof`: `enabled` (env `ENABLE_PPROF`, false), `addr` (127.0.0.1:6060), the timeouts of `nanoserver` |
 | [`modules/nanofx`](../modules/nanofx) | none: the bridge | `Lifecycle[T](name) fx.Option` | registers the nano lifecycle of `T` in fx | none |
 
@@ -77,6 +77,14 @@ mux.Handle("GET /health", health.NewHandler(health.Config{Service: "billing", Ve
 
 The body keeps `status`, `service`, `environment`, `version`, `commit_sha` and `build_date`. It has `"readiness": "HEALTHY"` instead of the per-dependency keys, such as `"postgres"`, of the fx modules. While the App starts or stops, it answers 503.
 
+A service whose `/health` body is pinned, such as by a gate flow, wraps its handler in `nanoserver.ReadinessMiddleware` instead. The middleware sets the status and leaves the body byte for byte the same:
+
+```go
+router.With(nanoserver.ReadinessMiddleware(app)).Get("/health", healthHandler)
+```
+
+While the App runs and every `HealthChecker` passes, the response is the handler's own. While the App starts or drains, or a check fails, a 2xx or 3xx status becomes 503. An error status of the handler stays. The body still says `"status": "HEALTHY"`: the status code is the readiness signal. The Docker `HEALTHCHECK` (`health.Probe`) and the load balancer read only the code.
+
 ## Differences from the fx modules
 
 Each service migration PR lists the rows that apply to it.
@@ -96,6 +104,7 @@ Each service migration PR lists the rows that apply to it.
 | `nanocache` | `EvictPattern` walks keys with `SCAN` and unlinks each page | `KEYS` blocks Redis on a large keyspace, and one `DEL` of every match is unbounded. |
 | `nanocache` | A key part's `:` and `\` are escaped (`a:b` is stored as `a\:b`), and `EvictPrefix` escapes the glob characters | A free-text part could collide with another key or evict another scope. Keys of fixed-format parts (UUIDs, hashes) do not change; other keys start cold after the deploy. |
 | `nanocache` | `nanocache.ErrCacheKeyNotFound` is a different value from `cache.ErrCacheKeyNotFound` | The fx package cannot alias the nano one in the beta. Do not mix the stores of the two packages. |
+| `nanoapisec` | `Module` matches a request as `http.ServeMux` does. `modules/apisec` matched as chi, so its drop-in replacement is `ChiModule` | The two routers disagree on an escaped path (`/files/%61dmin`) and on sibling precedence. A resolver that disagrees with the router checks the wrong operation's security. |
 | `nanoserver` | A listen failure stops the App | The fx module logged the failure and kept a process that took no traffic. |
 | `nanoserver` | No CORS, OpenAPI validator, `/openapi.yaml` or tracing middleware | The service owns its router and middleware order. |
 | `nanopprof` | A listen failure stops the App | The same reason as `nanoserver`. |

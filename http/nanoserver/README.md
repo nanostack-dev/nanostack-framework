@@ -17,4 +17,12 @@ registry.Register(nanoserver.NewReadiness(app))
 mux.Handle("GET /health", health.NewHandler(health.Config{Service: "billing", Registry: registry}))
 ```
 
+The body then gets a `"readiness"` key. A service whose `/health` body is pinned, such as by a gate flow, uses `ReadinessMiddleware` instead. It sets the status and leaves the body byte for byte the same:
+
+```go
+router.With(nanoserver.ReadinessMiddleware(app)).Get("/health", healthHandler)
+```
+
+While the App starts or drains, or a `HealthChecker` fails, a 2xx or 3xx status of the handler becomes 503. An error status of the handler stays.
+
 See [docs/modules.md](../../docs/modules.md) for the migration from fx.
