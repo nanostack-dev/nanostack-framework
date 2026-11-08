@@ -109,3 +109,9 @@ components:
           x-go-type-import:
             path: example.com/anchor/internal/domain/role
         page: {$ref: '#/components/schemas/Pagination'}
+        owner:
+          # A hint next to a $ref: oapi-codegen reads it from the reference.
+          $ref: '#/components/schemas/Pagination'
+          x-go-type: role.Owner
+          x-go-type-import:
+            path: example.com/anchor/internal/domain/role

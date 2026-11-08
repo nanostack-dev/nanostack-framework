@@ -90,3 +90,6 @@ components:
           type: string
           enum: [system, custom]
         page: {$ref: '#/components/schemas/Pagination'}
+        owner:
+          # A hint next to a $ref: oapi-codegen reads it from the reference.
+          $ref: '#/components/schemas/Pagination'
