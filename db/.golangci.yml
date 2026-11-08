@@ -48,7 +48,8 @@ linters:
     - sqlclosecheck
     - testifylint
     - usetesting
-    # Conventions: ADR 0010 and 0012 in docs/adr.
+    # Conventions: ADR 0012 "Conventions are enforced by lint", proposed in
+    # nanostack-framework PR #59 and not yet in docs/adr.
     - depguard
     - exhaustruct_v5
     - forbidigo
@@ -59,6 +60,7 @@ linters:
     - modernize
     - nolintlint
     - revive
+    - sloglint
     - unconvert
     - unparam
     - usestdlibvars
@@ -75,6 +77,9 @@ linters:
               desc: Use github.com/google/uuid instead, satori's package is not maintained
             - pkg: github.com/gofrs/uuid$
               desc: Use github.com/gofrs/uuid/v5 or later, it was not a go module before v5
+            # A prefix: also bans zerolog/log, zerolog/pkgerrors and the rest.
+            - pkg: github.com/rs/zerolog
+              desc: log/slog is the only logging API; see core/log/README.md in nanostack-framework
         non-test files:
           files:
             - "!$test"
@@ -86,9 +91,7 @@ linters:
             - "!$test"
           deny:
             - pkg: log$
-              desc: Use nanostack-framework/pkg/log, which carries the request context
-            - pkg: github.com/rs/zerolog/log$
-              desc: Use nanostack-framework/pkg/log, the zerolog global carries no request context
+              desc: Use log/slog with a context (slog.InfoContext); nanostack-framework/core/log wires the handler
     errcheck:
       check-type-assertions: true
     exhaustive:
@@ -96,8 +99,9 @@ linters:
         - switch
         - mapliteral
       default-signifies-exhaustive: true
-    # Only Deps structs: a dependency left out compiles as nil (ADR 0010). A
-    # field that New defaults takes a `//exhaustruct:optional` comment.
+    # Only Deps structs: a dependency left out compiles as nil. PR #59 ADR
+    # 0012 sets the rule; docs/adr/0013 keeps it for Deps literals written by
+    # hand. A field that New defaults takes a `//exhaustruct:optional` comment.
     exhaustruct_v5:
       enforce-patterns:
         - .+\.Deps$
@@ -129,6 +133,13 @@ linters:
       enable-all: true
       disable:
         - fieldalignment
+        # TEMP(golang/go#81188): Go 1.27.0 to 1.27.3 write export data that
+        # loses the order of generic methods, so analyzers misread facts on
+        # packages that import them. Enable again once go.mod pins Go 1.27.4
+        # (CL 855582) and a full lint of the framework and of each service
+        # passes with it. lint/smoke does not reproduce the bug, so its pass
+        # proves nothing here; see lint/README.md.
+        - nilness
       settings:
         shadow:
           strict: true
@@ -146,7 +157,7 @@ linters:
         - name: context-as-argument # test helpers take t first, then ctx
           arguments:
             - allow-types-before: "*testing.T"
-        - name: file-length-limit # ADR 0012 file budget
+        - name: file-length-limit # file budget of PR #59 ADR 0012
           arguments:
             - max: 400
               skip-comments: true
@@ -160,9 +171,23 @@ linters:
                 - github.com/nanostack-dev/nanostack-framework/db/mysql
                 - github.com/nanostack-dev/nanostack-framework/db/postgres
                 - github.com/nanostack-dev/nanostack-framework/db/sqlite
+    # One shape for slog calls; see core/log/README.md in nanostack-framework.
+    sloglint:
+      attr-only: true # slog.String(k, v), never "k", v pairs
+      context: scope # pass ctx wherever one is in scope
+      static-msg: true # no fmt.Sprintf messages
+      key-naming-case: snake
+      forbidden-keys:
+        - time
+        - level
+        - msg
+        - source
     staticcheck:
       checks:
         - all
+        # TEMP(golang/go#81188): disabled with govet nilness above, for the
+        # same export data bug, and enabled again under the same rule.
+        - -SA4023
         - -ST1000
         - -ST1016
         - -QF1008
@@ -188,6 +213,9 @@ linters:
           - gocognit
           - gosec
           - noctx
+          # Tests log odd shapes on purpose (key-value pairs, header names)
+          # and assert on dotted group paths such as "query.api_key".
+          - sloglint
     paths-except:
       - ^cmd/jet/nanostack_version(_test)?\.go$
       - ^cmd/jet/nullable(_test)?\.go$
