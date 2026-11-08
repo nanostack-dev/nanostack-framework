@@ -61,7 +61,7 @@ Every nano module has the same shape, so a service migrates each one the same wa
    For migrations, call `nanomigrate.Run` from an `fx.Invoke`, as `modules/migrations` does: `fx.Invoke(func(m *nanomigrate.Migrator) error { return nanomigrate.Run(signalCtx, m) })`. Use a context that a SIGTERM cancels, so a stop during a migration ends clean.
 
 3. **Repeat** for each module. Run the golden HTTP suite before and after each step.
-4. **Replace `fx.New`** with a manifest and `nano gen wire` when every module is nano-shaped (see [generation](generation.md#wiring-nano-gen-wire)). `nano.Main` replaces the service's signal handling and its `Fatal` calls. Before this step, move every constructor that reads the database out of the constructor (see [Construction order](#construction-order)).
+4. **Replace `fx.New`** with a manifest and `nano gen wire` when every module is nano-shaped (see [generation](generation.md#wiring-nano-gen-wire)). `nano.Main` replaces the service's signal handling and its `Fatal` calls. Before this step, move every database read out of the constructors (see [Construction order](#construction-order)).
 
 A service that moves its logging to `core/logging` gets the slog default, and the standard library `log` package then writes JSON through it. Set `LOG_WIRE=legacy` (or `wire: legacy` in the committed YAML layer) until the collector and the alerts read the slog shape.
 
