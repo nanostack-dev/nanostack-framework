@@ -1,9 +1,11 @@
 // Package nanoapisec is the nano module that builds the security-requirement
 // resolver of pkg/apisec from the service's OpenAPI document.
 //
-// It replaces the deprecated fx module modules/apisec. A service lists Module
-// in its manifest and provides its embedded contract as a Document, where it
-// supplied apisec.Document with fx.Supply before:
+// It replaces the deprecated fx module modules/apisec. A service lists the
+// module that matches its router in its manifest: ChiModule for chi, as
+// modules/apisec matched, or Module for http.ServeMux and
+// nanohttp.NewRouter. It provides its embedded contract as a Document, where
+// it supplied apisec.Document with fx.Supply before:
 //
 //	//go:embed openapi.yaml
 //	var openapiSpec []byte

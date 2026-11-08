@@ -127,12 +127,12 @@ func TestResolverAgreesWithNewRouter(t *testing.T) {
 }
 
 // echopoint and anchor still route with chi, which matches the escaped path:
-// MatchChi makes the resolver agree with it.
+// ChiModule's resolver agrees with it.
 func TestChiResolverAgreesWithChi(t *testing.T) {
 	t.Parallel()
 	for _, publicTemplate := range []bool{true, false} {
 		doc, operations := contractFor(publicTemplate)
-		rr, err := nanoapisec.NewResolverWith(nanoapisec.Document(doc), apisec.MatchChi())
+		rr, err := nanoapisec.NewChiResolver(nanoapisec.Document(doc))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -146,17 +146,26 @@ func TestChiResolverAgreesWithChi(t *testing.T) {
 }
 
 // The default resolver matches the decoded path, so under chi it picks the
-// literal sibling of /files/%61dmin while chi runs the template: a service
-// that routes with chi must pass MatchChi.
+// public literal sibling of /files/%61dmin while chi runs the protected
+// template: a service that routes with chi must list ChiModule. The chi
+// resolver picks the template, as chi does.
 func TestDecodedPathResolverDisagreesWithChi(t *testing.T) {
 	t.Parallel()
 	doc, _ := contractFor(false)
+	r := httptest.NewRequest(http.MethodGet, "/files/%61dmin", nil)
 	rr, err := nanoapisec.NewResolver(nanoapisec.Document(doc))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if public, ok := resolved(rr, httptest.NewRequest(http.MethodGet, "/files/%61dmin", nil)); !ok || !public {
+	if public, ok := resolved(rr, r); !ok || !public {
 		t.Fatalf("decoded resolver on /files/%%61dmin: public=%v ok=%v, want the public literal", public, ok)
+	}
+	chiRR, err := nanoapisec.NewChiResolver(nanoapisec.Document(doc))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if public, ok := resolved(chiRR, r); !ok || public {
+		t.Fatalf("chi resolver on /files/%%61dmin: public=%v ok=%v, want the protected template", public, ok)
 	}
 }
 

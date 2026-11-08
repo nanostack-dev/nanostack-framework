@@ -12,7 +12,7 @@ The framework owns reusable service infrastructure shared by Nanostack applicati
 
 **fx bridge:** `modules/nanofx`. It registers the lifecycle of a nano module in an fx graph, so a service moves one module at a time.
 
-**Readiness:** Whether the App is started and every `HealthChecker` passes, as `nano.App` evaluates it. `nanoserver.Readiness` reports it in the legacy `/health` body. Liveness (`/livez`) is a different check.
+**Readiness:** Whether the App is started and every `HealthChecker` passes, as `nano.App` evaluates it. `nanoserver.Readiness` reports it in the legacy `/health` body. `nanoserver.ReadinessMiddleware` reports it as the `/health` status only, for a pinned body. Liveness (`/livez`) is a different check.
 
 **Nanostack DB:** The `db` module: the framework's fork of go-jet with native `functional.Option` support. Say "Nanostack DB", not "go-jet", for the code in `db/`; [db/UPSTREAM.md](db/UPSTREAM.md) records what differs.
 

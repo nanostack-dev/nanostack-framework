@@ -15,7 +15,7 @@ Every fx module in this tree is deprecated and is removed with fx (ADR 0013). Ea
 | `modules/httpserver` | `http/nanoserver` |
 | `modules/pprof` | `http/nanopprof` |
 | `modules/config` | `core/config` and `nano gen config` |
-| `modules/apisec` | `http/nanoapisec` (the fx module wraps it) |
+| `modules/apisec` | `http/nanoapisec`: `ChiModule` for a chi router, `Module` for `nanohttp.NewRouter` (the fx module wraps it) |
 | `modules/pgqueue` | pgkit (see its README) |
 
 `modules/nanofx` runs a nano component in an fx graph, so a service moves one module at a time. [docs/modules.md](../docs/modules.md) has the migration steps and the differences of each module.

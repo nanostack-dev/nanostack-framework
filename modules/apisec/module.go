@@ -26,8 +26,8 @@ type Document []byte
 
 // NewModule provides an *apisec.Resolver built from the supplied Document.
 // It matches requests as chi does (apisec.MatchChi), since an fx service
-// routes with chi; a service that moves to nanohttp.NewRouter lists the nano
-// module http/nanoapisec instead.
+// routes with chi. Its nano replacement is nanoapisec.ChiModule; a service
+// that moves to nanohttp.NewRouter lists nanoapisec.Module instead.
 //
 // Construction happens at startup, so a contract the resolver cannot index
 // fails the application rather than silently leaving routes unguarded at
@@ -37,7 +37,7 @@ func NewModule() fx.Option {
 		"apisec",
 		fx.Provide(
 			func(doc Document) (*apisec.Resolver, error) {
-				return nanoapisec.NewResolverWith(nanoapisec.Document(doc), apisec.MatchChi())
+				return nanoapisec.NewChiResolver(nanoapisec.Document(doc))
 			},
 		),
 	)
