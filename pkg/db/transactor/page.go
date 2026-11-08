@@ -5,9 +5,8 @@ import (
 	"errors"
 	"fmt"
 
-	jet "github.com/go-jet/jet/v2/postgres"
-	"github.com/go-jet/jet/v2/qrm"
-
+	jet "github.com/nanostack-dev/nanostack-framework/db/postgres"
+	"github.com/nanostack-dev/nanostack-framework/db/qrm"
 	"github.com/nanostack-dev/nanostack-framework/pkg/jetx"
 	"github.com/nanostack-dev/nanostack-framework/pkg/search"
 )
@@ -93,7 +92,7 @@ func (b *PageBuilder[T, R]) OrderBy(clauses ...jet.OrderByClause) *PageBuilder[T
 //
 // T must scan one SQL row into one value. Run fetches limit+1 rows and
 // reads the next cursor off the last kept one, so a destination that groups
-// rows (a go-jet model with a nested slice of joined children) or a join that
+// rows (a Nanostack DB model with a nested slice of joined children) or a join that
 // repeats a parent would cut pages short and end the walk early. Page the
 // parent rows flat, then load children for the page in a second statement.
 func (b *PageBuilder[T, R]) Keyset(order Order[T]) *PageBuilder[T, R] {

@@ -13,24 +13,19 @@ import (
 
 // Exit codes returned by Main.
 const (
-	ExitOK      = 0 // clean shutdown after SIGINT or SIGTERM, even during start
+	ExitOK      = 0 // clean shutdown after SIGINT or SIGTERM, even during build or start
 	ExitFailure = 1 // build, start, Runner or stop failure
 )
 
 // Main is a service's whole entry point: it cancels a context on SIGINT or
 // SIGTERM, calls build, runs the App until that signal or a Runner failure,
-// stops it, and exits with ExitOK or ExitFailure. A second signal during
-// shutdown kills the process immediately.
+// stops it, and exits with ExitOK or ExitFailure. A signal during build or
+// start is a clean shutdown (ExitOK) when the only error is the
+// cancellation. A second signal during shutdown kills the process
+// immediately.
 //
-//	func main() {
-//		nano.Main(func(ctx context.Context) (*nano.App, error) {
-//			cfg, err := config.Load()
-//			if err != nil {
-//				return nil, err
-//			}
-//			return wire.Build(ctx, cfg, wire.Overrides{})
-//		})
-//	}
+// build binds the configuration and calls the generated Build; ExampleMain
+// shows it.
 func Main(build func(context.Context) (*App, error)) {
 	os.Exit(run(context.Background(), build, slog.Default()))
 }
@@ -47,6 +42,14 @@ func run(parent context.Context, build func(context.Context) (*App, error), logg
 
 	app, err := build(ctx)
 	if err != nil {
+		// A signal during build, such as during a migration or the ping of a
+		// server, is a requested shutdown, as it is during start. The
+		// generated Build has already stopped what it built; a failure of
+		// that stop is not a cancellation and keeps the exit code at 1.
+		if ctx.Err() != nil && onlyCancellation(err) {
+			logger.InfoContext(ctx, "nano: shutdown requested while building", nanolog.Err(err))
+			return ExitOK
+		}
 		logger.ErrorContext(ctx, "nano: build failed", nanolog.Err(err))
 		return ExitFailure
 	}
@@ -57,6 +60,29 @@ func run(parent context.Context, build func(context.Context) (*App, error), logg
 		return ExitFailure
 	}
 	return ExitOK
+}
+
+// onlyCancellation reports whether every error joined in err ends in
+// context.Canceled, which the cause of a signal context also matches: each
+// branch of a join must, and a wrapping chain must end in one. A component
+// that annotates the cancellation (nanomigrate's ErrStopped) keeps it in one
+// chain, so a sibling failure is never mistaken for the shutdown.
+func onlyCancellation(err error) bool {
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		errs := joined.Unwrap()
+		for _, e := range errs {
+			if !onlyCancellation(e) {
+				return false
+			}
+		}
+		return len(errs) > 0
+	}
+	if wrapper, ok := err.(interface{ Unwrap() error }); ok {
+		if inner := wrapper.Unwrap(); inner != nil {
+			return onlyCancellation(inner)
+		}
+	}
+	return errors.Is(err, context.Canceled)
 }
 
 // onlyShutdownDuringStart reports whether every error joined in err is

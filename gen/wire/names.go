@@ -58,12 +58,88 @@ func (e *emitter) assignNames() {
 	}
 
 	local := maps.Clone(taken)
-	fields := map[string]bool{}
 	for _, n := range e.g.order {
 		n.varName = uniqueName(lowerCamel(nodeBase(n)), local)
 		n.needName = uniqueName("need"+upperFirst(n.varName), local)
-		n.field = e.fieldName(n, fields)
 	}
+	assignFields(e.g.order)
+}
+
+// assignFields names the Overrides and Components fields. A name does not
+// depend on the order of the graph; a new provider whose type shares a base
+// name qualifies both fields. Every value whose type shares its base name
+// with another one is qualified by its package (*nanopg.DB and *sql.DB give
+// NanopgDB and SQLDB), and values that still collide, from two packages of
+// one name, are numbered in the order of their full type names. Collection
+// members, named after their functions, come last.
+func assignFields(order []*node) {
+	byBase := map[string][]*node{}
+	var members []*node
+	for _, n := range order {
+		if n.p != nil && n.p.kind == kindMember {
+			members = append(members, n)
+			continue
+		}
+		base := upperFirst(nodeBase(n))
+		byBase[base] = append(byBase[base], n)
+	}
+	taken := map[string]bool{}
+	byName := map[string][]*node{}
+	for base, group := range byBase {
+		for _, n := range group {
+			name := base
+			if len(group) > 1 {
+				name = qualifier(n.typ) + base
+			}
+			byName[name] = append(byName[name], n)
+		}
+	}
+	for _, name := range slices.Sorted(maps.Keys(byName)) {
+		group := byName[name]
+		slices.SortFunc(group, func(a, b *node) int {
+			return strings.Compare(types.TypeString(a.typ, nil), types.TypeString(b.typ, nil))
+		})
+		for _, n := range group {
+			n.field = uniqueName(name, taken)
+		}
+	}
+	for _, n := range members {
+		n.field = uniqueName(upperFirst(nodeBase(n)), taken)
+	}
+}
+
+// qualifier is the package name of t's named type, capitalised as a Go
+// identifier: sql gives SQL, nanopg gives Nanopg. It is empty for a type
+// without a package.
+func qualifier(t types.Type) string {
+	named := namedOf(sliceElem(t))
+	if named == nil || named.Obj().Pkg() == nil {
+		return ""
+	}
+	name := named.Obj().Pkg().Name()
+	if initialisms[name] {
+		return strings.ToUpper(name)
+	}
+	return upperFirst(name)
+}
+
+// sliceElem is the element type of a slice or array type, else t.
+func sliceElem(t types.Type) types.Type {
+	switch tt := types.Unalias(t).(type) {
+	case *types.Slice:
+		return tt.Elem()
+	case *types.Array:
+		return tt.Elem()
+	}
+	return t
+}
+
+// initialisms are the package names that Go writes in capitals inside an
+// identifier.
+var initialisms = map[string]bool{ //nolint:gochecknoglobals // A constant lookup table.
+	"acl": true, "api": true, "dns": true, "grpc": true, "html": true, "http": true, "id": true, "ip": true,
+	"json": true, "rpc": true, "sql": true, "ssh": true, "tcp": true, "tls": true, "udp": true, "ui": true,
+	"uri": true, "url": true, "uuid": true, "xml": true,
 }
 
 // nodeBase is the identifier a node's names derive from: its type's name,
@@ -80,26 +156,6 @@ func nodeBase(n *node) string {
 		}
 	}
 	return name
-}
-
-func (e *emitter) fieldName(n *node, taken map[string]bool) string {
-	base := upperFirst(nodeBase(n))
-	if n.p != nil && n.p.kind == kindMember {
-		return uniqueName(base, taken)
-	}
-	if !taken[base] {
-		taken[base] = true
-		return base
-	}
-	if named := namedOf(n.typ); named != nil && named.Obj().Pkg() != nil {
-		qualified := upperFirst(named.Obj().Pkg().Name()) + base
-		if !taken[qualified] {
-			taken[qualified] = true
-			return qualified
-		}
-		base = qualified
-	}
-	return uniqueName(base, taken)
 }
 
 func uniqueName(base string, taken map[string]bool) string {
@@ -139,7 +195,8 @@ func namedOf(t types.Type) *types.Named {
 }
 
 // baseName derives an identifier from a type: *invoice.PGStore -> PGStore,
-// []http.Handler -> Handlers.
+// []http.Handler -> Handlers, and []log.ContextAttrs -> ContextAttrsList, as
+// a plural of a name that ends in s reads as a typo.
 func baseName(t types.Type) string {
 	switch tt := types.Unalias(t).(type) {
 	case *types.Named:
@@ -147,9 +204,9 @@ func baseName(t types.Type) string {
 	case *types.Pointer:
 		return baseName(tt.Elem())
 	case *types.Slice:
-		return baseName(tt.Elem()) + "s"
+		return plural(baseName(tt.Elem()))
 	case *types.Array:
-		return baseName(tt.Elem()) + "s"
+		return plural(baseName(tt.Elem()))
 	case *types.Map:
 		return baseName(tt.Elem()) + "Map"
 	case *types.Chan:
@@ -160,6 +217,13 @@ func baseName(t types.Type) string {
 		return tt.Name()
 	}
 	return "Value"
+}
+
+func plural(name string) string {
+	if strings.HasSuffix(name, "s") {
+		return name + "List"
+	}
+	return name + "s"
 }
 
 // lowerCamel lowercases a leading initialism: PGStore -> pgStore, DB -> db,

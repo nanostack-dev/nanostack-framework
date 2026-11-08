@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"io"
 	"log/slog"
-	"maps"
 	"net"
 	"net/http"
 	"net/netip"
@@ -42,6 +41,16 @@ type HTTPOptions struct {
 	// non-nil empty slice trusts no proxy, so client_ip is always the
 	// connection address.
 	TrustedProxies []netip.Prefix
+	// LegacySummary makes the summary line follow the policy of the zerolog
+	// request log (pkg/httputil/requestlog) that the alerts were written for:
+	//   - A request the client cancelled is logged at the level of its status
+	//     (Info below 500), not at Warn. Otherwise each client cancel counts
+	//     a second time in the warn alert, next to the handler's own line.
+	//   - query is one string, the raw query with the value of every
+	//     secret-looking parameter replaced by secret.Redacted, not a group.
+	// It changes no key name or unit: Config.Wire does that. It is a bridge,
+	// to delete when the alerts read the slog shape.
+	LegacySummary bool
 }
 
 // defaultTrustedProxies are the networks HTTPOptions.TrustedProxies defaults to.
@@ -70,6 +79,8 @@ var defaultTrustedProxies = []netip.Prefix{ //nolint:gochecknoglobals // read-on
 // client_ip, query and user_agent. The level is Warn when the client
 // cancelled the request, whatever the status, because the client went away
 // rather than the service failing; Error for a 5xx; Info otherwise.
+// HTTPOptions.LegacySummary drops the cancellation rule and writes query as
+// one string.
 //
 // query is a group with one attribute per parameter. The value of a parameter
 // whose name secret.IsKey matches ("token", "api_key", "X-Amz-Signature", ...) is
@@ -117,7 +128,7 @@ func HTTPMiddleware(opts HTTPOptions) func(http.Handler) http.Handler {
 				if logger == nil {
 					logger = slog.Default()
 				}
-				writeSummary(logger, inner, recorder, start, trusted)
+				writeSummary(logger, inner, recorder, start, trusted, opts.LegacySummary)
 			}()
 			next.ServeHTTP(recorder, inner)
 		})
@@ -136,8 +147,8 @@ func openRequest(w http.ResponseWriter, r *http.Request) (*http.Request, *status
 	ctx := WithScope(r.Context())
 	SetAttrs(ctx,
 		slog.String(KeyRequestID, requestID),
-		slog.String("method", r.Method),
-		slog.String("path", r.URL.Path),
+		slog.String(KeyMethod, r.Method),
+		slog.String(KeyPath, r.URL.Path),
 	)
 	return r.WithContext(ctx), &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 }
@@ -146,10 +157,11 @@ func openRequest(w http.ResponseWriter, r *http.Request) (*http.Request, *status
 // received, with the scope attributes its context carries.
 func writeSummary(
 	logger *slog.Logger, r *http.Request, recorder *statusRecorder, start time.Time, trusted []netip.Prefix,
+	legacy bool,
 ) {
 	ctx := r.Context()
 	status := recorder.finalStatus()
-	level := summaryLevel(r, recorder, status)
+	level := summaryLevel(r, recorder, status, legacy)
 	if !logger.Enabled(ctx, level) {
 		return
 	}
@@ -159,24 +171,28 @@ func writeSummary(
 	}
 	attrs = append(attrs,
 		slog.Int(KeyStatus, status),
-		slog.Int("bytes_out", recorder.bytes),
-		slog.Duration("duration", time.Since(start)),
-		slog.String("client_ip", clientIP(r, trusted)),
+		slog.Int(KeyBytesOut, recorder.bytes),
+		slog.Duration(KeyDuration, time.Since(start)),
+		slog.String(KeyClientIP, clientIP(r, trusted)),
 	)
-	if r.URL.RawQuery != "" {
+	switch {
+	case r.URL.RawQuery == "":
+	case legacy:
+		attrs = append(attrs, slog.String(KeyQuery, redactedQuery(r.URL.RawQuery)))
+	default:
 		attrs = append(attrs, queryAttr(r.URL.RawQuery))
 	}
 	if ua := r.UserAgent(); ua != "" {
-		attrs = append(attrs, slog.String("user_agent", ua))
+		attrs = append(attrs, slog.String(KeyUserAgent, ua))
 	}
 	if ctx.Err() != nil {
-		attrs = append(attrs, slog.Bool("client_canceled", true))
+		attrs = append(attrs, slog.Bool(KeyClientCanceled, true))
 	}
 	if recorder.hijacked {
-		attrs = append(attrs, slog.Bool("hijacked", true))
+		attrs = append(attrs, slog.Bool(KeyHijacked, true))
 	}
 	if recorder.panicked {
-		attrs = append(attrs, slog.Any("panic", recorder.panicValue))
+		attrs = append(attrs, slog.Any(KeyPanic, recorder.panicValue))
 	}
 	// pc 0: the source would always be this file, which says nothing.
 	record := slog.NewRecord(time.Now(), level, "http request", 0)
@@ -191,33 +207,109 @@ func writeSummary(
 // percent-encoding) is left out; the others are kept. The raw query is never
 // logged, since it would carry the secret values.
 func queryAttr(rawQuery string) slog.Attr {
-	values, _ := url.ParseQuery(rawQuery) // on error, the parameters that parsed are still worth logging
-	attrs := make([]slog.Attr, 0, len(values))
-	for _, name := range slices.Sorted(maps.Keys(values)) {
-		switch v := values[name]; {
+	if strings.Count(rawQuery, "&") >= maxQueryParams {
+		// url.ParseQuery refuses such a query as a whole; so does the log.
+		return slog.Attr{Key: KeyQuery, Value: slog.GroupValue()}
+	}
+	// One pass in place of url.ParseQuery, its map and its sorted keys: the
+	// same pairs are kept (a pair with ';' or a bad escape is left out), a
+	// stable sort by name keeps the values of a repeated name in order.
+	pairs := make([]queryPair, 0, strings.Count(rawQuery, "&")+1)
+	for pair := range strings.SplitSeq(rawQuery, "&") {
+		if pair == "" || strings.Contains(pair, ";") {
+			continue
+		}
+		rawName, rawValue, _ := strings.Cut(pair, "=")
+		name, err := url.QueryUnescape(rawName)
+		if err != nil {
+			continue
+		}
+		value, err := url.QueryUnescape(rawValue)
+		if err != nil {
+			continue
+		}
+		pairs = append(pairs, queryPair{name: name, value: value})
+	}
+	slices.SortStableFunc(pairs, func(a, b queryPair) int { return strings.Compare(a.name, b.name) })
+	attrs := make([]slog.Attr, 0, len(pairs))
+	for i := 0; i < len(pairs); {
+		j := i + 1
+		for j < len(pairs) && pairs[j].name == pairs[i].name {
+			j++
+		}
+		name := pairs[i].name
+		switch {
 		case secret.IsKey(name):
 			attrs = append(attrs, slog.String(name, secret.Redacted))
-		case len(v) == 1:
-			attrs = append(attrs, slog.String(name, v[0]))
+		case j-i == 1:
+			attrs = append(attrs, slog.String(name, pairs[i].value))
 		default:
-			attrs = append(attrs, slog.Any(name, v))
+			values := make([]string, 0, j-i)
+			for _, p := range pairs[i:j] {
+				values = append(values, p.value)
+			}
+			attrs = append(attrs, slog.Any(name, values))
 		}
+		i = j
 	}
-	return slog.Attr{Key: "query", Value: slog.GroupValue(attrs...)}
+	return slog.Attr{Key: KeyQuery, Value: slog.GroupValue(attrs...)}
+}
+
+// maxQueryParams is url.ParseQuery's default limit on the parameters of a
+// query (GODEBUG urlmaxqueryparams).
+const maxQueryParams = 10_000
+
+type queryPair struct{ name, value string }
+
+// redactedQuery returns rawQuery as one string for HTTPOptions.LegacySummary:
+// each name=value pair as the client sent it, in its order and encoding, with
+// the value of a parameter whose name secret.IsKey matches replaced by
+// secret.Redacted. A pair is left out when its name does not unescape, so it
+// cannot be checked, or when it contains a semicolon: url.ParseQuery rejects
+// such a pair, and "x=1;api_key=..." would carry a secret inside the value of
+// a public name. So the string equals the raw query whenever it carries no
+// secret, no malformed name and no semicolon, as the zerolog request log
+// wrote it.
+func redactedQuery(rawQuery string) string {
+	var b strings.Builder
+	b.Grow(len(rawQuery))
+	for pair := range strings.SplitSeq(rawQuery, "&") {
+		if pair == "" {
+			continue
+		}
+		if strings.Contains(pair, ";") {
+			continue
+		}
+		rawName, _, _ := strings.Cut(pair, "=")
+		name, err := url.QueryUnescape(rawName)
+		if err != nil {
+			continue
+		}
+		if b.Len() > 0 {
+			b.WriteByte('&')
+		}
+		if secret.IsKey(name) {
+			b.WriteString(rawName + "=" + secret.Redacted)
+			continue
+		}
+		b.WriteString(pair)
+	}
+	return b.String()
 }
 
 // summaryLevel picks the summary line's level. A panic is Error, except
 // http.ErrAbortHandler, which aborts a response on purpose. A cancelled
 // request context means the client disconnected; that is checked before the
 // status, because a handler that gives up on a cancelled context often
-// answers 5xx.
-func summaryLevel(r *http.Request, recorder *statusRecorder, status int) slog.Level {
+// answers 5xx. With legacy (HTTPOptions.LegacySummary) a cancelled request
+// takes the level of its status, as the zerolog request log did.
+func summaryLevel(r *http.Request, recorder *statusRecorder, status int, legacy bool) slog.Level {
 	switch {
 	case recorder.panicked && recorder.panicValue == http.ErrAbortHandler: //nolint:errorlint // net/http compares it the same way
 		return slog.LevelWarn
 	case recorder.panicked:
 		return slog.LevelError
-	case r.Context().Err() != nil:
+	case !legacy && r.Context().Err() != nil:
 		return slog.LevelWarn
 	case status >= http.StatusInternalServerError:
 		return slog.LevelError
@@ -379,4 +471,24 @@ func (rec *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 // can still clear its write deadline or flush with an error result.
 func (rec *statusRecorder) Unwrap() http.ResponseWriter {
 	return rec.ResponseWriter
+}
+
+// ResponseStatus reports what HTTPMiddleware recorded on w or on a writer
+// that w wraps (through Unwrap): written is true once the handler wrote a
+// status, a byte or a flush, and status is the status sent then. known is
+// false when no writer of the chain is the middleware's, so the caller cannot
+// tell whether the response started. An error writer uses it so it does not
+// write a status after a stream started.
+func ResponseStatus(w http.ResponseWriter) (status int, written, known bool) {
+	for w != nil {
+		if rec, ok := w.(*statusRecorder); ok {
+			return rec.status, rec.wroteHeader, true
+		}
+		unwrapper, ok := w.(interface{ Unwrap() http.ResponseWriter })
+		if !ok {
+			break
+		}
+		w = unwrapper.Unwrap()
+	}
+	return 0, false, false
 }

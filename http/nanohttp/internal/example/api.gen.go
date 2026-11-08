@@ -87,10 +87,16 @@ type Webhook struct {
 	Url  string `json:"url"`
 }
 
+// AddNoteTextBody defines parameters for AddNote.
+type AddNoteTextBody = string
+
 // ListEventsParams defines parameters for ListEvents.
 type ListEventsParams struct {
 	Limit *int `form:"limit,omitempty" json:"limit,omitempty"`
 }
+
+// AddNoteTextRequestBody defines body for AddNote for text/plain ContentType.
+type AddNoteTextRequestBody = AddNoteTextBody
 
 // CreateWebhookJSONRequestBody defines body for CreateWebhook for application/json ContentType.
 type CreateWebhookJSONRequestBody = CreateWebhookRequest
@@ -202,6 +208,9 @@ func (t *Auth) UnmarshalJSON(b []byte) error {
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
 
+	// (POST /notes)
+	AddNote(w http.ResponseWriter, r *http.Request)
+
 	// (POST /webhooks)
 	CreateWebhook(w http.ResponseWriter, r *http.Request)
 
@@ -223,6 +232,20 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(http.Handler) http.Handler
+
+// AddNote operation middleware
+func (siw *ServerInterfaceWrapper) AddNote(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AddNote(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
 
 // CreateWebhook operation middleware
 func (siw *ServerInterfaceWrapper) CreateWebhook(w http.ResponseWriter, r *http.Request) {
@@ -456,8 +479,25 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/webhooks/{id}", wrapper.GetWebhook)
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/webhooks/{id}", wrapper.UpdateWebhook)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/webhooks/{id}/events", wrapper.ListEvents)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/notes", wrapper.AddNote)
 
 	return m
+}
+
+type AddNoteRequestObject struct {
+	Body *AddNoteTextRequestBody
+}
+
+type AddNoteResponseObject interface {
+	VisitAddNoteResponse(w http.ResponseWriter) error
+}
+
+type AddNote204Response struct {
+}
+
+func (response AddNote204Response) VisitAddNoteResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
 }
 
 type CreateWebhookRequestObject struct {
@@ -553,6 +593,9 @@ func (response ListEvents200JSONResponse) VisitListEventsResponse(w http.Respons
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
 
+	// (POST /notes)
+	AddNote(ctx context.Context, request AddNoteRequestObject) (AddNoteResponseObject, error)
+
 	// (POST /webhooks)
 	CreateWebhook(ctx context.Context, request CreateWebhookRequestObject) (CreateWebhookResponseObject, error)
 
@@ -595,6 +638,38 @@ type strictHandler struct {
 	ssi         StrictServerInterface
 	middlewares []StrictMiddlewareFunc
 	options     StrictHTTPServerOptions
+}
+
+// AddNote operation middleware
+func (sh *strictHandler) AddNote(w http.ResponseWriter, r *http.Request) {
+	var request AddNoteRequestObject
+
+	data, err := nanohttp.ReadText(r)
+	if err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, err)
+		return
+	}
+	body := AddNoteTextRequestBody(data)
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AddNote(ctx, request.(AddNoteRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AddNote")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AddNoteResponseObject); ok {
+		if err := validResponse.VisitAddNoteResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
 }
 
 // CreateWebhook operation middleware
@@ -730,7 +805,8 @@ func (sh *strictHandler) ListEvents(w http.ResponseWriter, r *http.Request, id s
 }
 
 // paramProblem converts a parameter-binding error of the generated router
-// into a problem that names the parameter and does not echo its value.
+// into a problem that names the parameter and does not echo its value. The
+// binding error stays the problem's cause, so errors.As still finds it.
 func paramProblem(err error) error {
 	var (
 		invalidFormat   *InvalidParamFormatError
@@ -746,9 +822,9 @@ func paramProblem(err error) error {
 	case errors.As(err, &unmarshaling):
 		return problem.InvalidParameter(unmarshaling.ParamName, err)
 	case errors.As(err, &required):
-		return problem.InvalidParameter(required.ParamName, nil)
+		return problem.MissingParameter(required.ParamName, err)
 	case errors.As(err, &requiredHeader):
-		return problem.InvalidParameter(requiredHeader.ParamName, nil)
+		return problem.MissingParameter(requiredHeader.ParamName, err)
 	case errors.As(err, &tooMany):
 		return problem.InvalidParameter(tooMany.ParamName, err)
 	case errors.As(err, &unescapedCookie):
@@ -767,22 +843,35 @@ type HTTPHandlerOptions struct {
 	Middlewares []MiddlewareFunc
 	// StrictMiddlewares wrap each strict handler with its operation ID.
 	StrictMiddlewares []StrictMiddlewareFunc
+	// RequestErrorHandlerFunc answers every request error: parameter binding
+	// (as a problem.InvalidParameter that names the parameter), parameter and
+	// body validation, and body decoding. Nil means nanohttp.RequestError.
+	RequestErrorHandlerFunc func(w http.ResponseWriter, r *http.Request, err error)
+	// ResponseErrorHandlerFunc answers the error a handler returns, or a
+	// failure to write its response. Nil means nanohttp.ResponseError.
+	ResponseErrorHandlerFunc func(w http.ResponseWriter, r *http.Request, err error)
 }
 
-// NewHTTPHandler serves ssi on net/http with one error path: parameter
-// binding, parameter and body validation, and handler errors all render as
-// RFC 9457 problems through problem.Write.
+// NewHTTPHandler serves ssi on net/http with one error path per kind:
+// parameter binding, parameter and body validation, and body decoding go to
+// RequestErrorHandlerFunc, and handler errors to ResponseErrorHandlerFunc. By
+// default both render RFC 9457 problems through problem.Write; a service
+// that keeps another error shape passes its own writers.
 func NewHTTPHandler(ssi StrictServerInterface, options HTTPHandlerOptions) http.Handler {
+	requestError := options.RequestErrorHandlerFunc
+	if requestError == nil {
+		requestError = nanohttp.RequestError
+	}
 	strict := NewStrictHandlerWithOptions(ssi, options.StrictMiddlewares, StrictHTTPServerOptions{
-		RequestErrorHandlerFunc:  nanohttp.RequestError,
-		ResponseErrorHandlerFunc: nanohttp.ResponseError,
+		RequestErrorHandlerFunc:  requestError,
+		ResponseErrorHandlerFunc: options.ResponseErrorHandlerFunc,
 	})
 	return HandlerWithOptions(strict, StdHTTPServerOptions{
 		BaseURL:     options.BaseURL,
 		BaseRouter:  options.BaseRouter,
 		Middlewares: options.Middlewares,
 		ErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
-			problem.Write(w, r, paramProblem(err))
+			requestError(w, r, paramProblem(err))
 		},
 	})
 }

@@ -8,11 +8,13 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/nanostack-dev/nanostack-framework/gen/validate/internal/oas"
 )
 
 // singleVariant returns X for a oneOf or anyOf of X and null.
-func (g *generator) singleVariant(sc *Schema) *Schema {
-	var only *Schema
+func (g *generator) singleVariant(sc *oas.Schema) *oas.Schema {
+	var only *oas.Schema
 	for _, v := range append(slices.Clone(sc.OneOf), sc.AnyOf...) {
 		r := g.resolve(v)
 		if len(r.Types) == 1 && r.Types[0] == "null" {
@@ -47,7 +49,7 @@ func isUnion(st *types.Struct) bool {
 }
 
 // union checks an oapi-codegen union type against its oneOf or anyOf.
-func (g *generator) union(sc *Schema, x string, t types.Type, p string, c ctx) string {
+func (g *generator) union(sc *oas.Schema, x string, t types.Type, p string, c ctx) string {
 	variants, code, verb := sc.OneOf, "validate.CodeOneOf", "exactly one"
 	if len(variants) == 0 {
 		variants, code, verb = sc.AnyOf, "validate.CodeAnyOf", "at least one"
@@ -64,7 +66,7 @@ func (g *generator) union(sc *Schema, x string, t types.Type, p string, c ctx) s
 		return ""
 	}
 	goVariants := asMethods(n)
-	var nonNull []*Schema
+	var nonNull []*oas.Schema
 	for _, v := range variants {
 		r := g.resolve(v)
 		if len(r.Types) == 1 && r.Types[0] == "null" {
@@ -87,7 +89,7 @@ func (g *generator) union(sc *Schema, x string, t types.Type, p string, c ctx) s
 	names := make([]string, len(nonNull))
 	for i, v := range nonNull {
 		if v.Ref != "" {
-			names[i] = RefName(v.Ref)
+			names[i] = oas.RefName(v.Ref)
 		} else {
 			names[i] = types.TypeString(goVariants[i], func(*types.Package) string { return "" })
 		}
@@ -114,7 +116,7 @@ func (g *generator) union(sc *Schema, x string, t types.Type, p string, c ctx) s
 		}
 		fmt.Fprintf(
 			&b,
-			"if %s, verrs := validate.Variant[%s](%s.union, %s); verrs == nil {\nvar errs validate.Errors\n%sif len(errs) == 0 {\n%s++\n}\n}\n",
+			"if %s, verrs := validate.Variant[%s](%s.union, %s); verrs == nil {\nerrs := new(validate.Errors)\n%sif len(*errs) == 0 {\n%s++\n}\n}\n",
 			bindOrBlank(inner, val),
 			g.typeString(goVariants[i]),
 			x,
@@ -140,8 +142,8 @@ func (g *generator) union(sc *Schema, x string, t types.Type, p string, c ctx) s
 }
 
 func (g *generator) discriminated(
-	d *Discriminator,
-	variants []*Schema,
+	d *oas.Discriminator,
+	variants []*oas.Schema,
 	goVariants []types.Type,
 	x, p string,
 	c ctx,
@@ -170,7 +172,7 @@ func (g *generator) discriminated(
 }
 
 // variantCase decodes the selected variant strictly and validates it.
-func (g *generator) variantCase(v *Schema, t types.Type, x, p string, c ctx) string {
+func (g *generator) variantCase(v *oas.Schema, t types.Type, x, p string, c ctx) string {
 	val := g.fresh("v")
 	inner := g.value(v, val, t, p, c.deeper())
 	if inner == "" {
@@ -188,7 +190,7 @@ func (g *generator) variantCase(v *Schema, t types.Type, x, p string, c ctx) str
 // discriminatorValues lists, per variant, the discriminator values that
 // select it: the explicit mapping, then the component name of each $ref
 // variant the mapping does not name.
-func (g *generator) discriminatorValues(d *Discriminator, variants []*Schema) [][]string {
+func (g *generator) discriminatorValues(d *oas.Discriminator, variants []*oas.Schema) [][]string {
 	values := make([][]string, len(variants))
 	mapped := map[string]bool{}
 	for _, m := range d.Mapping {
@@ -209,7 +211,7 @@ func (g *generator) discriminatorValues(d *Discriminator, variants []*Schema) []
 	}
 	for i, v := range variants {
 		if v.Ref != "" && !mapped[v.Ref] {
-			values[i] = append(values[i], RefName(v.Ref))
+			values[i] = append(values[i], oas.RefName(v.Ref))
 		}
 	}
 	return values

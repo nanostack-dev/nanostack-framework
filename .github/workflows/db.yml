@@ -29,6 +29,26 @@ env:
   GOWORK: "off"
 
 jobs:
+  # A known advisory that the code reaches fails the pull request (see ci.yml).
+  vulncheck:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        dir: [db, db/tests]
+    defaults:
+      run:
+        working-directory: ${{ matrix.dir }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: ${{ matrix.dir }}/go.mod
+      # The db/tests suites import the pinned jet-test-data, fetched before they compile.
+      - name: Fetch the test data
+        if: matrix.dir == 'db/tests'
+        run: go run ./tools/fetchtestdata
+      - run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+
   unit:
     runs-on: ubuntu-latest
     defaults:
@@ -83,12 +103,24 @@ jobs:
             db/tests/go.sum
       - name: Generated lint config is current
         run: go run ./lint/cmd/lintconfig -check -dir db
+      # The files taken from go-jet keep upstream's style (UPSTREAM.md, rule 1). The formatter
+      # exclusions in db/.golangci.local.yml list them from their go-jet header.
+      - name: Formatter exclusions list every go-jet file
+        working-directory: db
+        run: go run ./tools/upstreamfmt
       - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
           version-file: db/.golangci-lint-version
           install-only: true
       - name: Create the workspace
         run: go work init . ./db ./db/tests ./pkg/functional
+      # `golangci-lint fmt --diff` exits 1 and prints the diff when a formatter would change
+      # a file. The db/ command fails on a misformatted Nanostack file. The root command makes
+      # sure the root configuration keeps its formatters off db/.
+      - name: Formatters leave db unchanged
+        run: |
+          (cd db && golangci-lint fmt --diff ./...)
+          golangci-lint fmt --diff ./db/...
       - name: Lint db
         working-directory: db
         run: golangci-lint run ./...

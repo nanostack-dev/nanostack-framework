@@ -10,6 +10,8 @@ Apps can still provide narrow hooks for app-owned legacy error adapters or SSE r
 
 A strict handler that fails because the client disconnected (`context.Canceled` in the error chain, or a cancelled request context) is logged at warn and answered with `499` (`StatusClientClosedRequest`), so the access log does not record a 500. `context.DeadlineExceeded` is not treated this way: the framework sets no request deadline, so an expired one is the service's own timeout and stays a 500.
 
+`StrictErrorHandler` takes its statuses and bodies from [`pkg/httputil/errorenvelope`](../../pkg/httputil/errorenvelope/README.md) (`Resolve`, `ResolveRequest`) and logs through zerolog. A service that moves its logging to `core/log` uses `errorenvelope.Writer` instead: same envelope, and its cause line carries `request_id`.
+
 ## Tracing
 
 The final handler is wrapped by `tracing.Middleware` outermost, around `Options.Middlewares`, so the server span exists before application middleware such as `requestlog.Contextualize` runs. `tracing.RouteMiddleware` is the router's first middleware and names the span `"METHOD <chi route pattern>"` after routing. `/health` is not traced. `Params.TracerProvider` is optional and defaults to the global provider installed by `modules/tracing`; without that module the provider is a no-op that still propagates the incoming `traceparent`. See [tracing](../../pkg/tracing/README.md).

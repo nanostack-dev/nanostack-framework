@@ -11,8 +11,14 @@ import (
 // Validate checks r against #/components/schemas/Body.
 func (r Body) Validate(p validate.Path) validate.Errors {
 	var errs validate.Errors
+	r.validateInto(p, &errs)
+	return errs
+}
+
+// validateInto records the violations of r at p in errs.
+func (r Body) validateInto(p validate.Path, errs *validate.Errors) {
 	if !errs.NotNull(p) {
-		return errs
+		return
 	}
 	if f1 := p.Field("maybe"); errs.Required(f1, r.Maybe.IsSpecified()) && !r.Maybe.IsNull() {
 		v2 := r.Maybe.MustGet()
@@ -26,5 +32,4 @@ func (r Body) Validate(p validate.Path) validate.Errors {
 			errs.Add(f4, validate.CodeMaximum, "must be at most 3")
 		}
 	}
-	return errs
 }

@@ -268,7 +268,8 @@ func (sh *strictHandler) Check(w http.ResponseWriter, r *http.Request) {
 }
 
 // paramProblem converts a parameter-binding error of the generated router
-// into a problem that names the parameter and does not echo its value.
+// into a problem that names the parameter and does not echo its value. The
+// binding error stays the problem's cause, so errors.As still finds it.
 func paramProblem(err error) error {
 	var (
 		invalidFormat   *InvalidParamFormatError
@@ -284,9 +285,9 @@ func paramProblem(err error) error {
 	case errors.As(err, &unmarshaling):
 		return problem.InvalidParameter(unmarshaling.ParamName, err)
 	case errors.As(err, &required):
-		return problem.InvalidParameter(required.ParamName, nil)
+		return problem.MissingParameter(required.ParamName, err)
 	case errors.As(err, &requiredHeader):
-		return problem.InvalidParameter(requiredHeader.ParamName, nil)
+		return problem.MissingParameter(requiredHeader.ParamName, err)
 	case errors.As(err, &tooMany):
 		return problem.InvalidParameter(tooMany.ParamName, err)
 	case errors.As(err, &unescapedCookie):
@@ -305,22 +306,35 @@ type HTTPHandlerOptions struct {
 	Middlewares []MiddlewareFunc
 	// StrictMiddlewares wrap each strict handler with its operation ID.
 	StrictMiddlewares []StrictMiddlewareFunc
+	// RequestErrorHandlerFunc answers every request error: parameter binding
+	// (as a problem.InvalidParameter that names the parameter), parameter and
+	// body validation, and body decoding. Nil means nanohttp.RequestError.
+	RequestErrorHandlerFunc func(w http.ResponseWriter, r *http.Request, err error)
+	// ResponseErrorHandlerFunc answers the error a handler returns, or a
+	// failure to write its response. Nil means nanohttp.ResponseError.
+	ResponseErrorHandlerFunc func(w http.ResponseWriter, r *http.Request, err error)
 }
 
-// NewHTTPHandler serves ssi on net/http with one error path: parameter
-// binding, parameter and body validation, and handler errors all render as
-// RFC 9457 problems through problem.Write.
+// NewHTTPHandler serves ssi on net/http with one error path per kind:
+// parameter binding, parameter and body validation, and body decoding go to
+// RequestErrorHandlerFunc, and handler errors to ResponseErrorHandlerFunc. By
+// default both render RFC 9457 problems through problem.Write; a service
+// that keeps another error shape passes its own writers.
 func NewHTTPHandler(ssi StrictServerInterface, options HTTPHandlerOptions) http.Handler {
+	requestError := options.RequestErrorHandlerFunc
+	if requestError == nil {
+		requestError = nanohttp.RequestError
+	}
 	strict := NewStrictHandlerWithOptions(ssi, options.StrictMiddlewares, StrictHTTPServerOptions{
-		RequestErrorHandlerFunc:  nanohttp.RequestError,
-		ResponseErrorHandlerFunc: nanohttp.ResponseError,
+		RequestErrorHandlerFunc:  requestError,
+		ResponseErrorHandlerFunc: options.ResponseErrorHandlerFunc,
 	})
 	return HandlerWithOptions(strict, StdHTTPServerOptions{
 		BaseURL:     options.BaseURL,
 		BaseRouter:  options.BaseRouter,
 		Middlewares: options.Middlewares,
 		ErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
-			problem.Write(w, r, paramProblem(err))
+			requestError(w, r, paramProblem(err))
 		},
 	})
 }

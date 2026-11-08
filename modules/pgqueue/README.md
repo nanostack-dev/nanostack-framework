@@ -1,22 +1,17 @@
 # pgqueue
 
-Design home for pgqueue lifecycle integration.
+This directory has no code, and the framework has no queue module.
 
-The framework should own:
+pgkit owns the lifecycle of its queue, its workflows and its admin UI. Its fx wiring is in pgkit (`pgkit/fx/queue`, `pgkit/fx/workflow`, `pgkit/fx/adminui`). For generated wiring, the pgkit types implement the `core/nano` lifecycle by method shape (`Start`, `Stop`, `Run`). The `core/nano` interfaces are structural, so pgkit does not import the framework. A service lists the pgkit constructors in its manifest with `nano.Providers`. While a service is still on fx, `modules/nanofx.Lifecycle[T]` runs a pgkit type in the fx graph (see [docs/modules.md](../../docs/modules.md)).
 
-- queue client construction and schema ensure hooks when wrapping pgkit directly
-- worker lifecycle start/stop helpers
-- standard failed/stuck job logging hooks
-- dashboard lifecycle wiring when enabled
-
-Applications still own:
+The service owns:
 
 - queue names
 - payload schemas
 - handler logic
 - retry policy and max attempts
-- idempotency and external side-effect decisions
+- idempotency and decisions about external side effects
 
-Trace context across the queue (enqueue context → stored `traceparent` → handler context) is owned by pgkit itself, not by a framework hook. Once a handler's context carries the span, `log.TraceEnricher` adds `trace_id`/`span_id` on `log.Bind` and PostgreSQL queries become child spans with no further framework wiring.
+pgkit carries the trace context across the queue: the enqueue context, then the stored `traceparent`, then the handler context. When the handler context has the span, `otel/nanotrace` adds `trace_id` and `span_id` to each log line, and PostgreSQL queries become child spans. No framework hook is necessary.
 
-Low-level worker lifecycle primitives currently live in `pkg/queueworker` so they can be reused without depending on FX.
+`pkg/queueworker` keeps the low-level worker lifecycle primitives, which have no fx dependency.

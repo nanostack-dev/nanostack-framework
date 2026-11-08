@@ -6,6 +6,8 @@ Prefer explicit transaction parameters where they keep repository boundaries cle
 
 Its two result types are built on [`pkg/functional`](../../functional): `Result[T]` wraps `functional.Result[T]` and adds SQL-specific error translation; `Optional[T]` is a type alias for `functional.Option[T]` outright, since absence has no SQL-specific behavior to add on top.
 
+Statements and row mapping come from [Nanostack DB](../../../db/README.md), the framework's go-jet fork: `jet.Statement` is `github.com/nanostack-dev/nanostack-framework/db/postgres` and `qrm.DB` is `github.com/nanostack-dev/nanostack-framework/db/qrm`. Build statements and generate models with the same module. Types from upstream `github.com/go-jet/jet/v2` do not satisfy these signatures, so a service moves all its go-jet imports at once (see [RELEASING.md](../../../RELEASING.md), "Upgrade from v0.22.0").
+
 ## Composing transactions
 
 `InTx` runs the callback in the transaction the context already carries, and begins one otherwise. A service composing another service's write into a larger unit calls the same method as a service that owns the transaction, and the outermost call owns the commit and the rollback:
@@ -72,7 +74,7 @@ template, err := templates.Find(transactor.ForShare(txCtx), templateID)
 - `ForShare` lets other readers take the same lock and blocks writers. `ForUpdate` blocks both.
 - `ForNoKeyUpdate` is the write lock for a change that keeps the key: other transactions may still insert rows whose foreign keys point at the locked rows. Use it instead of `ForUpdate` unless the transaction deletes the rows or changes their key.
 - `ForKeyShare` is the lock a foreign key takes: it keeps the rows alive, refusing a delete or a key change, and lets updates of other columns through.
-- `WithRowLock` takes any go-jet clause, such as `postgres.UPDATE().NOWAIT()`.
+- `WithRowLock` takes any Nanostack DB clause, such as `postgres.UPDATE().NOWAIT()`.
 - Pass the locked context inline, to one call. Every query run with it is locked, so assigning it to `txCtx` locks every later read in the transaction.
 - A locked query outside a transaction returns `ErrRowLockOutsideTx`: the lock would end with the statement. A locked context on a statement that is not a SELECT returns `ErrRowLockNotSelect`.
 - Postgres refuses a lock on an aggregate, `GROUP BY` or `DISTINCT` query, so a locked `PageBuilder` count fails.
@@ -106,7 +108,7 @@ return transactor.Page(r.db, r.mapper.ToDomain, table.Workspaces.AllColumns).
 - A cursor that does not decode, or was issued for another sort, fails with `search.ErrInvalidCursor`. Map both errors to HTTP 400. `search.IsClientError` matches all three search refusals; log them through `log.Error(ctx, err)` or `log.Event`, which pick debug level for them as for any 4xx. A direct `.Error().Err(err)` logs a client's bad cursor as a service error.
 - The tiebreak must be unique and NOT NULL, normally the primary key. It sorts in the direction of the last requested field.
 - Pick the key constructor that matches the column: `StringKey` (text, varchar), `UUIDKey` (uuid), `InetKey` (inet), `EnumKey` (a Postgres enum: pass its type name and labels), `TimeKey` (timestamptz), `LocalTimeKey` (timestamp), `IntKey`, `FloatKey` (double precision), `RealKey` (real; compares as real so an inexact value cannot repeat), never numeric, and a `Nullable*` variant for each nullable column. Each rejects a cursor value its column cannot hold with `search.ErrInvalidCursor` before querying, so a forged cursor is a 400, never a database error. NULLs sort last ascending and first descending, the Postgres defaults; call `.NullsLast()` or `.NullsFirst()` on a key to pin the placement in both directions (for example "unlicensed last"). The seek predicate follows whichever placement the key declares.
-- `T` must scan one SQL row into one value. A go-jet destination with a nested slice of joined children groups rows, and a join that repeats the parent multiplies them; both cut pages short. Page the parent rows flat and load children for the page in a second statement.
+- `T` must scan one SQL row into one value. A Nanostack DB destination with a nested slice of joined children groups rows, and a join that repeats the parent multiplies them; both cut pages short. Page the parent rows flat and load children for the page in a second statement.
 - Sort only on bounded columns. A cursor holds the last row's sort values and may be at most `search.MaxCursorLength` (8 KiB) long; issuing a longer one fails.
 - When every key is NOT NULL and shares a direction, the seek is one row comparison, `(created_at, id) < ($1, $2)`, which a composite index on `(tenant, created_at, id)` answers with one range scan. Add that index for large tables.
 - A query that does not fit `Page` uses the same `Order` directly: `OrderBy()` for the clauses, `Seek(cursor)` for the predicate, `LIMIT limit+1`, then `Trim(rows, limit)` for the page and its next cursor.
@@ -145,7 +147,7 @@ Translation targets should be repository or domain sentinels, not HTTP faults. M
 
 ## Integration tests
 
-The translation rests on facts only a real database confirms — the SQLSTATE and constraint name the driver reports, and that go-jet's `fmt.Errorf("jet: %w", err)` wrapping survives `errors.As`. Those tests sit behind the `integration` build tag and skip without a DSN:
+The translation rests on facts only a real database confirms — the SQLSTATE and constraint name the driver reports, and that Nanostack DB's `fmt.Errorf("jet: %w", err)` wrapping survives `errors.As`. Those tests sit behind the `integration` build tag and skip without a DSN:
 
 ```
 docker run --rm -d -p 55432:5432 -e POSTGRES_PASSWORD=itpass -e POSTGRES_DB=pgerrit postgres:16

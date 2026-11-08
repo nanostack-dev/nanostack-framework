@@ -1,5 +1,7 @@
 package secret
 
+import "strings"
+
 // secretSuffixes are the key endings that mark a credential. A key matches when,
 // ignoring case and the separators '_', '-', '.' and ' ', it ends with one of
 // them: "password", "access_token", "X-Api-Key", "Set-Cookie", "clientSecret",
@@ -24,7 +26,20 @@ var secretSuffixes = []string{ //nolint:gochecknoglobals // read-only table.
 	"hmackey", "clientkey", "sessionkey", "masterkey",
 	// Connection strings, which usually embed a password.
 	"dsn", "connectionstring", "databaseurl", "dburl",
+	// Short names: the signature of a signed URL (Azure SAS, many CDNs), a
+	// password field, a bearer JWT, a one-time code. Not a bare "code",
+	// "auth" or "key": "status_code", "oauth" and "cache_key" are not secrets.
+	"sig", "pwd", "jwt", "passcode",
 }
+
+// suffixesByLastByte groups secretSuffixes by their last byte, so IsKey
+// compares a key only with the suffixes that can end it.
+var suffixesByLastByte = func() (t [256][]string) { //nolint:gochecknoglobals // read-only table.
+	for _, s := range secretSuffixes {
+		t[s[len(s)-1]] = append(t[s[len(s)-1]], s)
+	}
+	return t
+}()
 
 // IsKey reports whether a name looks like it names a credential: a log
 // attribute key, a URL query parameter or a DSN keyword. core/log redacts the
@@ -32,13 +47,62 @@ var secretSuffixes = []string{ //nolint:gochecknoglobals // read-only table.
 // parameter in the request summary; RedactURL redacts such query parameters.
 // It is a guard against mistakes, not the primary control: hold secrets as
 // Secret.
+//
+// A name in bracket notation, as qs, PHP and Rails encode arrays and nested
+// objects, is judged by its last named segment: user[password],
+// access_token[0] and token[] match, tokens[0] and user[name] do not.
 func IsKey(key string) bool {
-	for _, suffix := range secretSuffixes {
+	if strings.IndexByte(key, ']') >= 0 {
+		key = lastSegment(key)
+	}
+	i := len(key) - 1
+	for i >= 0 && isKeySeparator(key[i]) {
+		i--
+	}
+	if i < 0 {
+		return false
+	}
+	c := key[i]
+	if 'A' <= c && c <= 'Z' {
+		c += 'a' - 'A'
+	}
+	for _, suffix := range suffixesByLastByte[c] {
 		if hasFoldedSuffix(key, suffix) {
 			return true
 		}
 	}
 	return false
+}
+
+// lastSegment returns the last segment of a bracket-notation name that is
+// neither empty nor an index: "password" for user[password][0].
+func lastSegment(key string) string {
+	end := len(key)
+	for end > 0 {
+		for end > 0 && isBracket(key[end-1]) {
+			end--
+		}
+		start := end
+		for start > 0 && !isBracket(key[start-1]) {
+			start--
+		}
+		if seg := key[start:end]; seg != "" && !allDigits(seg) {
+			return seg
+		}
+		end = start
+	}
+	return ""
+}
+
+func isBracket(c byte) bool { return c == '[' || c == ']' }
+
+func allDigits(s string) bool {
+	for i := range len(s) {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // hasFoldedSuffix reports whether key, with separators removed and ASCII

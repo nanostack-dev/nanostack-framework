@@ -1,4 +1,4 @@
-package genvalidate
+package oas
 
 import (
 	"fmt"
@@ -56,7 +56,7 @@ func (s *Spec) parseSchema(n *yaml.Node, loc string) *Schema {
 		}
 		sib := &Schema{Loc: loc}
 		s.fill(sib, n, loc)
-		if hasConstraints(sib) {
+		if HasConstraints(sib) {
 			sc.siblings = sib
 		}
 		return sc
@@ -123,11 +123,11 @@ func (s *Spec) fillScalar(sc *Schema, k string, v *yaml.Node, loc string) bool {
 		sc.MultipleOf = s.number(v, loc)
 	case "enum":
 		sc.Enum = []Value{} // non-nil: an empty enum rejects everything
-		for _, e := range v.Content {
-			sc.Enum = append(sc.Enum, value(e))
+		for i, e := range v.Content {
+			sc.Enum = append(sc.Enum, s.value(e, loc+"/enum/"+strconv.Itoa(i)))
 		}
 	case "const":
-		c := value(v)
+		c := s.value(v, loc+"/const")
 		sc.Const = &c
 	case "readOnly":
 		sc.ReadOnly = v.Value == "true"
@@ -249,7 +249,7 @@ func (s *Spec) exclusive(sc *Schema, n *yaml.Node, loc string) {
 	}
 }
 
-func hasConstraints(sc *Schema) bool {
+func HasConstraints(sc *Schema) bool {
 	return len(sc.Types) > 0 || sc.Nullable || sc.Format != "" || sc.Pattern != "" || sc.MinLength != nil ||
 		sc.MaxLength != nil || sc.Minimum != nil || sc.Maximum != nil || sc.ExclusiveMinimum != nil ||
 		sc.ExclusiveMaximum != nil || sc.MultipleOf != nil || sc.Enum != nil || sc.Const != nil ||
@@ -277,7 +277,11 @@ func (s *Spec) number(n *yaml.Node, loc string) *Number {
 	return &Number{Lit: n.Value, Rat: r}
 }
 
-func value(n *yaml.Node) Value {
+// value reads an enum or const value. Generated code compares against it, so
+// a boolean or a number is decoded, never copied: Str holds the canonical
+// literal ("true", or the number as written once it parsed). A node whose
+// explicit tag does not fit its text, such as !!bool "x()", is a spec error.
+func (s *Spec) value(n *yaml.Node, loc string) Value {
 	if n.Kind != yaml.ScalarNode {
 		return Value{Kind: "other"}
 	}
@@ -285,8 +289,17 @@ func value(n *yaml.Node) Value {
 	case "!!null":
 		return Value{Kind: "null"}
 	case "!!bool":
-		return Value{Kind: "boolean", Str: n.Value}
+		var b bool
+		if err := n.Decode(&b); err != nil {
+			s.errs = append(s.errs, fmt.Errorf("%s: %q is not a boolean", loc, n.Value))
+			return Value{Kind: "other"}
+		}
+		return Value{Kind: "boolean", Str: strconv.FormatBool(b)}
 	case "!!int", "!!float":
+		if _, ok := new(big.Rat).SetString(n.Value); !ok {
+			s.errs = append(s.errs, fmt.Errorf("%s: %q is not a number", loc, n.Value))
+			return Value{Kind: "other"}
+		}
 		return Value{Kind: "number", Str: n.Value}
 	}
 	return Value{Kind: "string", Str: n.Value}

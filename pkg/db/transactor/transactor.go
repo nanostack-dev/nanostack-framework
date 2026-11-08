@@ -5,9 +5,8 @@ import (
 	"database/sql"
 	"errors"
 
-	jet "github.com/go-jet/jet/v2/postgres"
-	"github.com/go-jet/jet/v2/qrm"
-
+	jet "github.com/nanostack-dev/nanostack-framework/db/postgres"
+	"github.com/nanostack-dev/nanostack-framework/db/qrm"
 	"github.com/nanostack-dev/nanostack-framework/pkg/functional"
 )
 
@@ -154,7 +153,7 @@ func QueryOptionalMap[T any, R any](
 
 // isNoRows reports whether err is the "statement matched zero rows" sentinel,
 // in either form a caller can see it: sql.ErrNoRows from database/sql, or
-// qrm.ErrNoRows from go-jet's row-mapping layer. QueryOptional and Result's
+// qrm.ErrNoRows from Nanostack DB's row-mapping layer. QueryOptional and Result's
 // OnNoRows both treat these as the same condition.
 func isNoRows(err error) bool {
 	return errors.Is(err, sql.ErrNoRows) || errors.Is(err, qrm.ErrNoRows)

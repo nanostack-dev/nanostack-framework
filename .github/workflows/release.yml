@@ -1,0 +1,305 @@
+name: Release
+
+# Release checks for the three released modules: the root module, db and
+# pkg/functional (RELEASING.md). They are tagged leaves first, one commit each:
+# pkg/functional/vX.Y.Z, then db/vX.Y.Z, then vX.Y.Z.
+#
+# - Every pull request: a branch may develop the modules together. A released
+#   go.mod may require another module of this repository at the placeholder
+#   v0.0.0 with a replace to its relative directory; the two always go
+#   together (error otherwise). Any other replace is an error. A requirement
+#   on a pseudo-version or on a version that is not tagged yet is a warning.
+#   At a tag, no replace and no v0.0.0 is allowed (see below).
+# - A pushed release tag: the same check as an error for the tagged module, the
+#   leaves-first order (each required intra-repository version is a tag in the
+#   history of this tag), then a scratch consumer builds against the tag, read
+#   from git (GONOPROXY), not from the proxy cache.
+# - workflow_dispatch with a tag: a dry run before the tag exists (check only),
+#   or the full verification again when it exists.
+
+on:
+  pull_request:
+  push:
+    tags:
+      - "v*"
+      - "db/v*"
+      - "pkg/functional/v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release tag, for example pkg/functional/v0.23.0-beta.1, db/v0.23.0-beta.1 or v0.23.0-beta.1"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+# One group per release tag. A dispatch runs on a branch ref (main), so a group
+# keyed on github.ref would put the dispatches of three tags in one group, and
+# GitHub cancels a pending run when the next one is queued.
+concurrency:
+  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref }}
+  cancel-in-progress: false
+
+# A release builds each module from its go.mod alone; go.work is for development only.
+env:
+  GOWORK: "off"
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.select.outputs.tag }}
+      exists: ${{ steps.select.outputs.exists }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The order check reads the tags and the history.
+          fetch-depth: 0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Select the tag and its commit
+        id: select
+        env:
+          EVENT: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          case "$EVENT" in
+            push) tag="$REF_NAME" ;;
+            workflow_dispatch) tag="$INPUT_VERSION" ;;
+            *) tag="" ;;
+          esac
+          exists=false
+          if [ -n "$tag" ] && git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            exists=true
+            # Check the tagged commit, not the branch the dispatch ran on.
+            git checkout -q --detach "refs/tags/$tag^{commit}"
+          fi
+          echo "tag=$tag" >>"$GITHUB_OUTPUT"
+          echo "exists=$exists" >>"$GITHUB_OUTPUT"
+          echo "tag=${tag:-<none>} exists=$exists commit=$(git rev-parse HEAD)"
+      # RELEASE_TAG empty: check all three modules, pull request rules.
+      # RELEASE_TAG set: check the tagged module, release rules.
+      - name: Check the released go.mod files
+        env:
+          RELEASE_TAG: ${{ steps.select.outputs.tag }}
+        run: |
+          set -euo pipefail
+          repo=github.com/nanostack-dev/nanostack-framework
+          errors=0
+          fail() { echo "::error::$*"; errors=$((errors + 1)); }
+          warn() { echo "::warning::$*"; }
+          # A requirement that blocks a tag is an error with RELEASE_TAG, else a warning.
+          blocker() { if [ -n "$RELEASE_TAG" ]; then fail "$*"; else warn "$*"; fi; }
+          tag_prefix() {
+            case "$1" in
+              "$repo") echo "" ;;
+              "$repo/db") echo "db/" ;;
+              "$repo/pkg/functional") echo "pkg/functional/" ;;
+              *) return 1 ;;
+            esac
+          }
+          module_path() {
+            case "$1" in
+              .) echo "$repo" ;;
+              db) echo "$repo/db" ;;
+              pkg/functional) echo "$repo/pkg/functional" ;;
+            esac
+          }
+          semver='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$'
+          pseudo='[0-9]{14}-[0-9a-f]{12}$'
+
+          if [ -n "$RELEASE_TAG" ]; then
+            case "$RELEASE_TAG" in
+              pkg/functional/v*) dirs=pkg/functional ;;
+              db/v*) dirs=db ;;
+              v*) dirs=. ;;
+              *) fail "$RELEASE_TAG is not a release tag (vX.Y.Z, db/vX.Y.Z or pkg/functional/vX.Y.Z)"; exit 1 ;;
+            esac
+            version="${RELEASE_TAG##*/}"
+            if ! [[ "$version" =~ $semver ]]; then
+              fail "$RELEASE_TAG: $version is not a semantic version vMAJOR.MINOR.PATCH[-PRERELEASE]"
+            elif ! [[ "$version" =~ ^v[01]\. ]]; then
+              fail "$RELEASE_TAG: the module paths have no /vN suffix, so the major version must be 0 or 1"
+            fi
+          else
+            dirs=". db pkg/functional"
+          fi
+
+          if [ -n "$(git ls-files go.work go.work.sum)" ]; then
+            fail "go.work is committed; it is for development only (.gitignore)"
+          fi
+
+          for dir in $dirs; do
+            mod="$dir/go.mod"
+            json="$(go mod edit -json "$mod")"
+            want="$(module_path "$dir")"
+            got="$(jq -r '.Module.Path' <<<"$json")"
+            [ "$got" = "$want" ] || fail "$mod: module $got, want $want"
+
+            # Development form: an intra-repository module required at v0.0.0 and
+            # replaced by its relative directory. Allowed on a branch, never at a
+            # tag: consumers ignore replace, and `go install module@version`
+            # refuses a go.mod that has one.
+            replaced=" "
+            while read -r old new newver; do
+              [ -n "$old" ] || continue
+              if [ -n "$RELEASE_TAG" ]; then
+                fail "$mod: replace $old => $new. A tagged go.mod has no replace (RELEASING.md, step for this module)"
+              elif ! tag_prefix "$old" >/dev/null || [ -n "$newver" ] || ! [[ "$new" == ./* || "$new" == ../* ]]; then
+                fail "$mod: replace $old => $new $newver. Only an intra-repository module may be replaced, and only by its relative directory"
+              else
+                replaced+="$old "
+              fi
+            done < <(jq -r '.Replace // [] | .[] | "\(.Old.Path) \(.New.Path) \(.New.Version // "")"' <<<"$json")
+
+            while read -r path version; do
+              [ -n "$path" ] || continue
+              if ! prefix="$(tag_prefix "$path")"; then
+                fail "$mod: requires $path, which is not a released module"
+                continue
+              fi
+              if [ "$version" = "v0.0.0" ]; then
+                if [ -n "$RELEASE_TAG" ]; then
+                  fail "$mod: requires $path v0.0.0. A tagged go.mod requires the tag of each intra-repository module"
+                elif [[ "$replaced" != *" $path "* ]]; then
+                  fail "$mod: requires $path v0.0.0 without a replace to its directory"
+                fi
+                continue
+              fi
+              if [[ "$replaced" == *" $path "* ]]; then
+                fail "$mod: replaces $path but requires $version. The development form is v0.0.0 with a replace"
+                continue
+              fi
+              if [[ "$version" =~ $pseudo ]]; then
+                blocker "$mod: requires $path $version, a pseudo-version. Release $path first and require its tag"
+                continue
+              fi
+              need="$prefix$version"
+              if ! git rev-parse -q --verify "refs/tags/$need" >/dev/null; then
+                blocker "$mod: requires $path $version, but tag $need does not exist. Tag it first (leaves first)"
+                continue
+              fi
+              if [ -n "$RELEASE_TAG" ] && ! git merge-base --is-ancestor "refs/tags/$need^{commit}" HEAD; then
+                fail "$mod: requires tag $need, which is not in the history of $RELEASE_TAG"
+              fi
+            done < <(jq -r --arg repo "$repo" '.Require // [] | .[] | select(.Path == $repo or (.Path | startswith($repo + "/"))) | "\(.Path) \(.Version)"' <<<"$json")
+          done
+
+          if [ "$errors" -gt 0 ]; then
+            echo "$errors error(s). RELEASING.md lists the go.mod rules."
+            exit 1
+          fi
+          echo "ok: ${RELEASE_TAG:-pull request rules}"
+
+  # A released module must not ship a known advisory that its code reaches. On a
+  # pull request every released module is checked; at a tag, the tagged one.
+  vulncheck:
+    needs: check
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ needs.check.outputs.tag }}
+      TAG_EXISTS: ${{ needs.check.outputs.exists }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: govulncheck the released modules
+        run: |
+          set -euo pipefail
+          if [ "$TAG_EXISTS" = "true" ]; then
+            git fetch -q --depth=1 origin "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
+            git checkout -q --detach "refs/tags/$RELEASE_TAG^{commit}"
+          fi
+          case "$RELEASE_TAG" in
+            pkg/functional/v*) dirs=pkg/functional ;;
+            db/v*) dirs=db ;;
+            v*) dirs=. ;;
+            *) dirs=". db pkg/functional" ;;
+          esac
+          for dir in $dirs; do
+            echo "== $dir"
+            (cd "$dir" && go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...)
+          done
+
+  # Builds a scratch module against the published tag, as a consumer does.
+  # GONOPROXY reads this repository's modules from git, so the proxy cache cannot
+  # hide a bad tag. Third-party modules still come from the proxy: fetching every
+  # module from git (GOPROXY=direct) takes minutes and tests nothing more.
+  consumer:
+    needs: [check, vulncheck]
+    if: needs.check.outputs.exists == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GOPROXY: https://proxy.golang.org,direct
+      GONOPROXY: github.com/nanostack-dev/nanostack-framework
+      GOFLAGS: -mod=mod
+      # The checksum database may not know a tag pushed seconds ago.
+      GONOSUMDB: github.com/nanostack-dev/nanostack-framework
+      RELEASE_TAG: ${{ needs.check.outputs.tag }}
+    steps:
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.3"
+          cache: false
+      - name: Build a consumer of the tag
+        working-directory: ${{ runner.temp }}
+        run: |
+          set -euo pipefail
+          repo=github.com/nanostack-dev/nanostack-framework
+          version="${RELEASE_TAG##*/}"
+          case "$RELEASE_TAG" in
+            pkg/functional/v*)
+              module="$repo/pkg/functional"
+              imports=("$repo/pkg/functional")
+              ;;
+            db/v*)
+              module="$repo/db"
+              imports=("$repo/pkg/functional" "$repo/db/postgres" "$repo/db/qrm")
+              ;;
+            *)
+              module="$repo"
+              imports=("$repo/pkg/functional" "$repo/db/postgres" "$repo/pkg/db/transactor")
+              ;;
+          esac
+          mkdir consumer
+          cd consumer
+          go mod init example.com/releaseconsumer
+          for attempt in 1 2 3 4 5 6; do
+            go list -m "$module@$version" && break
+            [ "$attempt" = 6 ] && { echo "::error::$module@$version is not available"; exit 1; }
+            sleep 10
+          done
+          go get "$module@$version"
+          {
+            echo "package main"
+            echo
+            echo "import ("
+            for imp in "${imports[@]}"; do echo "	_ \"$imp\""; done
+            echo ")"
+            echo
+            echo "func main() {}"
+          } >main.go
+          go mod tidy
+          cat go.mod
+          go build ./...
+          go vet ./...
+          # The intra-repository versions the consumer resolved: the tag itself, and
+          # tags (never pseudo-versions) for the nested modules it requires.
+          resolved="$(go list -m all | grep "^$repo")"
+          echo "$resolved"
+          if [ "$(go list -m -f '{{.Version}}' "$module")" != "$version" ]; then
+            echo "::error::the consumer resolved $(go list -m "$module"), want $module $version"
+            exit 1
+          fi
+          if grep -Eq '[0-9]{14}-[0-9a-f]{12}$' <<<"$resolved"; then
+            echo "::error::the consumer resolved an intra-repository pseudo-version"
+            exit 1
+          fi

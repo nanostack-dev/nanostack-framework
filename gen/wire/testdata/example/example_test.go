@@ -30,7 +30,7 @@ func (f *fakeStore) Stop(context.Context) error              { f.stopped = true;
 
 func config() example.Config {
 	return example.Config{
-		HTTP:     httpapi.Config{Addr: "127.0.0.1:0"},
+		HTTP:     httpapi.Config{Addr: "127.0.0.1:0", AdminAddr: "127.0.0.1:0"},
 		Greeting: greeter.Config{Greeting: "Hi"},
 	}
 }

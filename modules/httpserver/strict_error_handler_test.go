@@ -13,6 +13,9 @@ import (
 
 	"github.com/rs/zerolog"
 
+	corefault "github.com/nanostack-dev/nanostack-framework/core/fault"
+	"github.com/nanostack-dev/nanostack-framework/core/validate"
+	"github.com/nanostack-dev/nanostack-framework/http/problem"
 	"github.com/nanostack-dev/nanostack-framework/pkg/fault"
 	"github.com/nanostack-dev/nanostack-framework/pkg/search"
 )
@@ -408,5 +411,56 @@ func TestStrictErrorHandlerMapsUnknownSortToBadRequest(t *testing.T) {
 	}
 	if resp.Code != http.StatusBadRequest || len(body.Errors) != 1 || body.Errors[0].Code != CodeInvalidSort {
 		t.Fatalf("status %d errors %+v, want 400 %s", resp.Code, body.Errors, CodeInvalidSort)
+	}
+}
+
+// TestStrictErrorHandlerRendersACatalogueErrorWithItsStatus checks the design
+// C3 row for core/fault.Described: its status, and its code in upper case.
+func TestStrictErrorHandlerRendersACatalogueErrorWithItsStatus(t *testing.T) {
+	handler := NewStrictErrorHandler(StrictErrorHandlerOptions{Logger: zerolog.Nop()})
+	rec := httptest.NewRecorder()
+	notFound := corefault.NewKind("webhook_not_found", http.StatusNotFound, "Webhook not found",
+		corefault.DefaultTypeBase+"/webhooks/webhook_not_found")
+
+	handler.HandleResponseError(rec, httptest.NewRequest(http.MethodGet, "/webhooks/wh_2", nil), notFound)
+
+	want := `{"errors":[{"code":"WEBHOOK_NOT_FOUND","message":"Webhook not found"}]}` + "\n"
+	if rec.Code != http.StatusNotFound || rec.Body.String() != want {
+		t.Fatalf("got %d %s, want 404 %s", rec.Code, rec.Body.String(), want)
+	}
+}
+
+// TestStrictErrorHandlerRendersNanoBoundaryErrors checks the request errors
+// of the nanohttp generated server: the message names the location and the
+// detail, never the internal problem code or the decoder text.
+func TestStrictErrorHandlerRendersNanoBoundaryErrors(t *testing.T) {
+	handler := NewStrictErrorHandler(StrictErrorHandlerOptions{Logger: zerolog.Nop()})
+	tests := []struct {
+		name   string
+		err    error
+		status int
+		body   string
+	}{
+		{"validation", problem.Validation(validate.Errors{{Pointer: "/name", Code: validate.CodeMinLength,
+			Detail: "must be at least 1 character long"}}), 400,
+			`{"errors":[{"code":"BAD_REQUEST","message":"/name: must be at least 1 character long",` +
+				`"metadata":{"field":"/name","rule":"minLength"}}]}`},
+		{
+			"unsupported media type", problem.UnsupportedMediaType("text/plain"), 415,
+			`{"errors":[{"code":"UNSUPPORTED_MEDIA_TYPE",` +
+				`"message":"The request body must be application/json, not \"text/plain\"."}]}`,
+		},
+		{"chi strict server error keeps its text", errors.New("can't decode JSON body: unexpected EOF"), 400,
+			`{"errors":[{"code":"BAD_REQUEST","message":"can't decode JSON body: unexpected EOF"}]}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			handler.HandleRequestError(rec, httptest.NewRequest(http.MethodPost, "/webhooks", nil), tt.err)
+			if rec.Code != tt.status || rec.Body.String() != tt.body+"\n" ||
+				!strings.HasPrefix(rec.Header().Get("Content-Type"), "application/json") {
+				t.Fatalf("got %d %s, want %d %s", rec.Code, rec.Body.String(), tt.status, tt.body)
+			}
+		})
 	}
 }

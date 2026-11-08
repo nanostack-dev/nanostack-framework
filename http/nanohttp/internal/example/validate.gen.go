@@ -17,8 +17,14 @@ var (
 // Validate checks r against #/components/schemas/Auth.
 func (r Auth) Validate(p validate.Path) validate.Errors {
 	var errs validate.Errors
+	r.validateInto(p, &errs)
+	return errs
+}
+
+// validateInto records the violations of r at p in errs.
+func (r Auth) validateInto(p validate.Path, errs *validate.Errors) {
 	if !errs.NotNull(p) {
-		return errs
+		return
 	}
 	if d22, ok := errs.Discriminator(r.union, p, "type"); ok {
 		switch d22 {
@@ -26,26 +32,31 @@ func (r Auth) Validate(p validate.Path) validate.Errors {
 			v23, verrs := validate.Variant[BasicAuth](r.union, p)
 			errs.Append(verrs)
 			if verrs == nil {
-				errs.Append(v23.Validate(p))
+				v23.validateInto(p, errs)
 			}
 		case "bearer":
 			v24, verrs := validate.Variant[BearerAuth](r.union, p)
 			errs.Append(verrs)
 			if verrs == nil {
-				errs.Append(v24.Validate(p))
+				v24.validateInto(p, errs)
 			}
 		default:
 			errs.Add(p.Field("type"), validate.CodeDiscriminator, "must be one of: basic, bearer")
 		}
 	}
-	return errs
 }
 
 // Validate checks r against #/components/schemas/BasicAuth.
 func (r BasicAuth) Validate(p validate.Path) validate.Errors {
 	var errs validate.Errors
+	r.validateInto(p, &errs)
+	return errs
+}
+
+// validateInto records the violations of r at p in errs.
+func (r BasicAuth) validateInto(p validate.Path, errs *validate.Errors) {
 	if !errs.NotNull(p) {
-		return errs
+		return
 	}
 	if f25 := p.Field("type"); errs.Required(f25, r.Type != nil) && errs.NotNull(f25) {
 		if r.Type != "basic" {
@@ -62,14 +73,19 @@ func (r BasicAuth) Validate(p validate.Path) validate.Errors {
 			errs.Add(f28, validate.CodeMinLength, "must be at least 1 character long")
 		}
 	}
-	return errs
 }
 
 // Validate checks r against #/components/schemas/BearerAuth.
 func (r BearerAuth) Validate(p validate.Path) validate.Errors {
 	var errs validate.Errors
+	r.validateInto(p, &errs)
+	return errs
+}
+
+// validateInto records the violations of r at p in errs.
+func (r BearerAuth) validateInto(p validate.Path, errs *validate.Errors) {
 	if !errs.NotNull(p) {
-		return errs
+		return
 	}
 	if f30 := p.Field("type"); errs.Required(f30, r.Type != nil) && errs.NotNull(f30) {
 		if r.Type != "bearer" {
@@ -81,14 +97,19 @@ func (r BearerAuth) Validate(p validate.Path) validate.Errors {
 			errs.Add(f31, validate.CodeMinLength, "must be at least 16 characters long")
 		}
 	}
-	return errs
 }
 
 // Validate checks r against #/components/schemas/CreateWebhookRequest.
 func (r CreateWebhookRequest) Validate(p validate.Path) validate.Errors {
 	var errs validate.Errors
+	r.validateInto(p, &errs)
+	return errs
+}
+
+// validateInto records the violations of r at p in errs.
+func (r CreateWebhookRequest) validateInto(p validate.Path, errs *validate.Errors) {
 	if !errs.NotNull(p) {
-		return errs
+		return
 	}
 	if f6 := p.Field("name"); errs.Required(f6, true) && errs.NotNull(f6) {
 		if n7 := utf8.RuneCountInString(r.Name); n7 < 1 {
@@ -113,18 +134,22 @@ func (r CreateWebhookRequest) Validate(p validate.Path) validate.Errors {
 	if f12 := p.Field("headers"); f12.Present(r.Headers != nil) && errs.NotNull(f12) && r.Headers != nil {
 		if len((*r.Headers)) > 20 {
 			errs.Add(f12, validate.CodeMaxItems, "must have at most 20 items")
-		}
-		for i13 := range *r.Headers {
-			if f14 := f12.Index(i13); errs.NotNull(f14) {
-				errs.Append((*r.Headers)[i13].Validate(f14))
+		} else {
+			for i13 := range *r.Headers {
+				if errs.Full() {
+					break
+				}
+				if f14 := f12.Index(i13); errs.NotNull(f14) {
+					(*r.Headers)[i13].validateInto(f14, errs)
+				}
 			}
 		}
 	}
 	if f15 := p.Field("auth"); f15.Present(r.Auth != nil) && errs.NotNull(f15) && r.Auth != nil {
-		errs.Append(r.Auth.Validate(f15))
+		r.Auth.validateInto(f15, errs)
 	}
 	if f16 := p.Field("run_when"); f16.Present(r.RunWhen != nil) && errs.NotNull(f16) && r.RunWhen != nil {
-		errs.Append(r.RunWhen.Validate(f16))
+		r.RunWhen.validateInto(f16, errs)
 	}
 	if f17 := p.Field("retries"); f17.Present(r.Retries != nil) && errs.NotNull(f17) && r.Retries != nil {
 		if *r.Retries < 0 {
@@ -134,14 +159,19 @@ func (r CreateWebhookRequest) Validate(p validate.Path) validate.Errors {
 			errs.Add(f17, validate.CodeMaximum, "must be at most 10")
 		}
 	}
-	return errs
 }
 
 // Validate checks r against #/components/schemas/Header.
 func (r Header) Validate(p validate.Path) validate.Errors {
 	var errs validate.Errors
+	r.validateInto(p, &errs)
+	return errs
+}
+
+// validateInto records the violations of r at p in errs.
+func (r Header) validateInto(p validate.Path, errs *validate.Errors) {
 	if !errs.NotNull(p) {
-		return errs
+		return
 	}
 	if f18 := p.Field("name"); errs.Required(f18, true) && errs.NotNull(f18) {
 		if n19 := utf8.RuneCountInString(r.Name); n19 > 64 {
@@ -157,28 +187,38 @@ func (r Header) Validate(p validate.Path) validate.Errors {
 		}
 	}
 	errs.OnlyMembers(p, "name", "value")
-	return errs
 }
 
 // Validate checks r against #/components/schemas/RunWhen.
 func (r RunWhen) Validate(p validate.Path) validate.Errors {
 	var errs validate.Errors
+	r.validateInto(p, &errs)
+	return errs
+}
+
+// validateInto records the violations of r at p in errs.
+func (r RunWhen) validateInto(p validate.Path, errs *validate.Errors) {
 	if !errs.NotNull(p) {
-		return errs
+		return
 	}
 	switch string(r) {
 	case "always", "on_failure":
 	default:
 		errs.Add(p, validate.CodeEnum, "must be one of: always, on_failure")
 	}
-	return errs
 }
 
 // Validate checks r against #/components/schemas/UpdateWebhookRequest.
 func (r UpdateWebhookRequest) Validate(p validate.Path) validate.Errors {
 	var errs validate.Errors
+	r.validateInto(p, &errs)
+	return errs
+}
+
+// validateInto records the violations of r at p in errs.
+func (r UpdateWebhookRequest) validateInto(p validate.Path, errs *validate.Errors) {
 	if !errs.NotNull(p) {
-		return errs
+		return
 	}
 	if f1 := p.Field("name"); f1.Present(r.Name != nil) && errs.NotNull(f1) && r.Name != nil {
 		if n2 := utf8.RuneCountInString(*r.Name); n2 < 1 {
@@ -192,27 +232,27 @@ func (r UpdateWebhookRequest) Validate(p validate.Path) validate.Errors {
 			errs.Add(f3, validate.CodeMaxLength, "must be at most 1000 characters long")
 		}
 	}
-	if n5, ok := p.MemberCount(); ok {
-		if n5 < 1 {
+	{
+		n5, ok := p.MemberCount()
+		if ok && n5 < 1 {
 			errs.Add(p, validate.CodeMinProperties, "must have at least 1 property")
 		}
 	}
-	return errs
 }
 
 // validateParams checks the parameters of GET /webhooks/{id}.
 func (r GetWebhookRequestObject) validateParams() validate.Errors {
-	var errs validate.Errors
+	errs := new(validate.Errors)
 	p := validate.Root
 	if !pattern1.MatchString(r.Id) {
 		errs.Add(p.Field("id"), validate.CodePattern, "must match the pattern ^wh_[a-z0-9]+$")
 	}
-	return errs
+	return *errs
 }
 
 // validateParams checks the parameters of GET /webhooks/{id}/events.
 func (r ListEventsRequestObject) validateParams() validate.Errors {
-	var errs validate.Errors
+	errs := new(validate.Errors)
 	p := validate.Root
 	if r.Params.Limit != nil {
 		if *r.Params.Limit < 1 {
@@ -225,15 +265,15 @@ func (r ListEventsRequestObject) validateParams() validate.Errors {
 	if !pattern1.MatchString(r.Id) {
 		errs.Add(p.Field("id"), validate.CodePattern, "must match the pattern ^wh_[a-z0-9]+$")
 	}
-	return errs
+	return *errs
 }
 
 // validateParams checks the parameters of PATCH /webhooks/{id}.
 func (r UpdateWebhookRequestObject) validateParams() validate.Errors {
-	var errs validate.Errors
+	errs := new(validate.Errors)
 	p := validate.Root
 	if !pattern1.MatchString(r.Id) {
 		errs.Add(p.Field("id"), validate.CodePattern, "must match the pattern ^wh_[a-z0-9]+$")
 	}
-	return errs
+	return *errs
 }

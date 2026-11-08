@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/nanostack-dev/nanostack-framework/gen/validate/internal/oas"
 )
 
 // ctx carries the state of one walk down a schema and a Go type.
@@ -25,7 +27,7 @@ const validatePathType = "github.com/nanostack-dev/nanostack-framework/core/vali
 // value returns the statements that check the Go expression x, of type t,
 // against sc, recording violations at the path expression p into errs. The
 // caller has dealt with presence; x may still be a pointer or a Nullable.
-func (g *generator) value(sc *Schema, x string, t types.Type, p string, c ctx) string {
+func (g *generator) value(sc *oas.Schema, x string, t types.Type, p string, c ctx) string {
 	if sc == nil {
 		return ""
 	}
@@ -74,7 +76,7 @@ func (g *generator) value(sc *Schema, x string, t types.Type, p string, c ctx) s
 
 // unwrap handles a pointer or a nullable.Nullable around the value: the
 // checks run on the element when it is set.
-func (g *generator) unwrap(sc *Schema, x string, t types.Type, p string, c ctx) (string, bool) {
+func (g *generator) unwrap(sc *oas.Schema, x string, t types.Type, p string, c ctx) (string, bool) {
 	if ptr, ok := t.(*types.Pointer); ok {
 		inner := g.value(sc, "(*"+x+")", ptr.Elem(), p, c)
 		if inner == "" {
@@ -99,16 +101,16 @@ func (g *generator) unwrap(sc *Schema, x string, t types.Type, p string, c ctx) 
 
 // reference handles a $ref: a call to the Validate method of the named type
 // that checks the target, or, when the caller must inline, the target.
-func (g *generator) reference(sc *Schema, x string, t types.Type, p string, c ctx) (string, *Schema) {
+func (g *generator) reference(sc *oas.Schema, x string, t types.Type, p string, c ctx) (string, *oas.Schema) {
 	if sib := sc.Siblings(); sib != nil {
-		return g.value(&Schema{Loc: sc.Loc, Ref: sc.Ref}, x, t, p, c) + g.value(sib, x, t, p, c), nil
+		return g.value(&oas.Schema{Loc: sc.Loc, Ref: sc.Ref}, x, t, p, c) + g.value(sib, x, t, p, c), nil
 	}
 	target := g.spec.Resolve(sc)
 	if target == nil {
 		return "", nil
 	}
 	if n := g.localNamed(t); n != nil && g.claim(n, target) {
-		return fmt.Sprintf("errs.Append(%s.Validate(%s))\n", recv(x), p), nil
+		return fmt.Sprintf("%s.validateInto(%s, errs)\n", recv(x), p), nil
 	}
 	return "", target
 }
@@ -116,7 +118,7 @@ func (g *generator) reference(sc *Schema, x string, t types.Type, p string, c ct
 // foreign handles a named type of another package: its own Validate method,
 // or a type whose format decoding already enforced. done is false when the
 // caller should inline the checks over the type's structure.
-func (g *generator) foreign(sc *Schema, x string, n *types.Named, p string) (code string, done bool) {
+func (g *generator) foreign(sc *oas.Schema, x string, n *types.Named, p string) (code string, done bool) {
 	if hasValidateMethod(n) {
 		return fmt.Sprintf("errs.Append(%s.Validate(%s))\n", recv(x), p), true
 	}
@@ -127,7 +129,7 @@ func (g *generator) foreign(sc *Schema, x string, n *types.Named, p string) (cod
 	return "", false
 }
 
-func (g *generator) byKind(sc *Schema, x string, t types.Type, p string, c ctx) string {
+func (g *generator) byKind(sc *oas.Schema, x string, t types.Type, p string, c ctx) string {
 	switch u := t.Underlying().(type) {
 	case *types.Struct:
 		return g.object(sc, x, t, u, p, c)
@@ -157,7 +159,7 @@ var opaqueTypes = map[string]string{
 	"encoding/json.RawMessage":                   "",
 }
 
-func (g *generator) opaque(sc *Schema, n *types.Named, implied string) {
+func (g *generator) opaque(sc *oas.Schema, n *types.Named, implied string) {
 	var lost []string
 	if sc.Format != "" && sc.Format != implied {
 		lost = append(lost, "format "+sc.Format)

@@ -71,11 +71,12 @@ func (e *Error) FieldErrors() []FieldError { return e.errs }
 func (e *Error) problemErrors() []FieldError { return e.errs }
 
 // Validation is the 422 problem for a body that decoded but violates the
-// schema. It lists every violation.
+// schema. It lists the violations, at most validate.MaxErrors of them; the
+// detail says when there are more.
 func Validation(errs validate.Errors) error {
 	return &Error{
 		typ: TypeValidation, title: "Request validation failed", status: http.StatusUnprocessableEntity,
-		code: "http.validation_failed", detail: plural(len(errs), "violation") + " in the request body.",
+		code: "http.validation_failed", detail: violations(errs, "request body"),
 		errs: fieldErrors(errs, inBody),
 	}
 }
@@ -143,6 +144,28 @@ func BadRequest(cause error) error {
 	}
 }
 
+// NotFound is the 404 problem for a request whose path matches no route.
+// nanohttp.NewRouter writes it when RouterOptions.NotFound is nil.
+func NotFound() error {
+	return &Error{
+		typ: TypeNotFound, title: "Not found", status: http.StatusNotFound,
+		code: "http.not_found", detail: "No route matches the request path.",
+	}
+}
+
+// MethodNotAllowed is the 405 problem for a request whose path matches a
+// route only for other methods. The caller sets the Allow header.
+// nanohttp.NewRouter writes it when RouterOptions.MethodNotAllowed is nil.
+func MethodNotAllowed() error {
+	return &Error{
+		typ:    TypeMethodNotAllowed,
+		title:  "Method not allowed",
+		status: http.StatusMethodNotAllowed,
+		code:   "http.method_not_allowed",
+		detail: "The route does not accept this method; the Allow header lists those it accepts.",
+	}
+}
+
 // BodyTooLarge is the 413 problem for a body over limit bytes.
 func BodyTooLarge(limit int64) error {
 	return &Error{
@@ -163,17 +186,22 @@ func UnsupportedMediaType(mediaType string) error {
 }
 
 // InvalidParameter is the 400 problem for a path, query, header or cookie
-// parameter that is missing or cannot be parsed. The cause is logged, not
-// sent.
+// parameter that cannot be parsed. The cause is logged, not sent, and
+// errors.Unwrap returns it.
 func InvalidParameter(name string, cause error) error {
-	detail := "is invalid"
-	if cause == nil {
-		detail = "is required"
-	}
-	code := validate.CodeType
-	if cause == nil {
-		code = validate.CodeRequired
-	}
+	return parameterProblem(name, validate.CodeType, "is invalid", cause)
+}
+
+// MissingParameter is the 400 problem for a required parameter that the
+// request does not send. The cause, such as the binding error of the
+// generated router, is logged, not sent, and errors.Unwrap returns it: a
+// renderer can tell a missing query parameter from a missing header, and
+// write the binding error's own text.
+func MissingParameter(name string, cause error) error {
+	return parameterProblem(name, validate.CodeRequired, "is required", cause)
+}
+
+func parameterProblem(name, code, detail string, cause error) error {
 	return &Error{
 		typ: TypeInvalidParameter, title: "Invalid request parameter", status: http.StatusBadRequest,
 		code: "http.invalid_parameter", detail: "A request parameter is missing or invalid.",
@@ -183,11 +211,12 @@ func InvalidParameter(name string, cause error) error {
 
 // InvalidParameters is the 400 problem for parameters that parsed but
 // violate their schema, such as limit=500 with maximum 100. The violations'
-// pointers name the parameters ("/limit").
+// pointers name the parameters ("/limit"). Like Validation, it lists at most
+// validate.MaxErrors violations.
 func InvalidParameters(errs validate.Errors) error {
 	return &Error{
 		typ: TypeInvalidParameter, title: "Invalid request parameter", status: http.StatusBadRequest,
-		code: "http.invalid_parameter", detail: plural(len(errs), "violation") + " in the request parameters.",
+		code: "http.invalid_parameter", detail: violations(errs, "request parameters"),
 		errs: fieldErrors(errs, inParameters),
 	}
 }
@@ -210,12 +239,24 @@ func fieldError(v validate.Error, at location) FieldError {
 	return FieldError{Pointer: v.Pointer, Code: v.Code, Detail: v.Detail}
 }
 
+// fieldErrors converts the violations a client is shown, the first
+// validate.MaxErrors.
 func fieldErrors(errs validate.Errors, at location) []FieldError {
-	fields := make([]FieldError, len(errs))
-	for i, v := range errs {
+	listed := errs.Listed()
+	fields := make([]FieldError, len(listed))
+	for i, v := range listed {
 		fields[i] = fieldError(v, at)
 	}
 	return fields
+}
+
+// violations is the detail of a problem that lists errs, found in where.
+func violations(errs validate.Errors, where string) string {
+	if errs.Truncated() {
+		limit := strconv.Itoa(validate.MaxErrors)
+		return "More than " + limit + " violations in the " + where + "; the first " + limit + " are listed."
+	}
+	return plural(len(errs), "violation") + " in the " + where + "."
 }
 
 func plural(n int, noun string) string {

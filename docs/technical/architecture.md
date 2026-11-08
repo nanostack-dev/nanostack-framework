@@ -25,10 +25,10 @@ The repository is a Go module consumed by applications; it does not deploy a pro
 New code lives in three layers. A package imports only its own layer and the layers below (plan section 06):
 
 1. `core/`: the runtime that services and generated code call. It imports the standard library, small libraries and other `core/` packages.
-2. `http/`: the HTTP boundary. It imports `core/`.
+2. The integrations: `http/` (the HTTP boundary) and the nano modules in `pg/`, `redis/` and `otel/`. They import `core/` and each other.
 3. `gen/` and `cmd/nano`: the generators and the CLI. They may import tooling such as `golang.org/x/tools`. No runtime package imports them.
 
-No layered package imports the legacy trees `pkg/`, `modules/` or `app/`, which carry Fx and zerolog. The [`internal/layers`](../../internal/layers/layers.go) test checks the import graph, test files included, and the depguard rules in [`.golangci.local.yml`](../../.golangci.local.yml) give the same rules in editors and in lint.
+No layered package imports the legacy trees `modules/` or `app/`, Fx or zerolog. No layered package imports `pkg/` either, with one listed exception (design B1): an integration package may import the primitives in `internal/layers.AllowedLegacy`, which carry no Fx and no zerolog, until each one moves to its layered home. The [`internal/layers`](../../internal/layers/layers.go) test checks the import graph, test and integration files included, and that no runtime layer depends on Fx or zerolog. The depguard rules in [`.golangci.local.yml`](../../.golangci.local.yml) give the same rules in editors and in lint.
 
 ## Runtime boundaries
 

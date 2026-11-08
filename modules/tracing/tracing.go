@@ -1,6 +1,14 @@
 // Package tracing wires pkg/tracing into an fx application: it builds the
 // tracer provider from the standard OTEL_* environment, installs it and the W3C
 // propagator globally, and flushes it on stop.
+//
+// This package is deprecated and is removed with fx (ADR 0013). It keeps
+// working, with its fx signatures, through the beta. New code uses
+// otel/nanotrace. See docs/modules.md for the migration, one module at a
+// time with modules/nanofx.
+//
+// Deprecated: removed with fx (ADR 0013). Use otel/nanotrace; see
+// docs/modules.md.
 package tracing
 
 import (

@@ -20,8 +20,11 @@ package nano
 import "context"
 
 // Starter is implemented by a component that must do work before the
-// service takes traffic, such as warming a cache or running migrations.
-// Start runs once, in dependency order, under the App's start timeout.
+// service takes traffic, such as warming a cache or installing a global
+// provider. Start runs once, in dependency order, under the App's start
+// timeout. Work that can outlast StartTimeout, such as database migrations,
+// belongs in a nano.Invoke, which Build runs without that bound (see
+// pg/nanomigrate).
 type Starter interface {
 	Start(ctx context.Context) error
 }

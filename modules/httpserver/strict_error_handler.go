@@ -1,30 +1,27 @@
 package httpserver
 
 import (
-	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 
 	"github.com/rs/zerolog"
 
 	"github.com/nanostack-dev/nanostack-framework/pkg/fault"
-	"github.com/nanostack-dev/nanostack-framework/pkg/search"
+	"github.com/nanostack-dev/nanostack-framework/pkg/httputil/errorenvelope"
 )
 
 // CodeInvalidCursor is the API error code for a pagination cursor that cannot
 // continue the search: malformed, issued for another sort, or sent with an
 // offset.
-const CodeInvalidCursor = "INVALID_CURSOR"
+const CodeInvalidCursor = errorenvelope.CodeInvalidCursor
 
 // CodeInvalidSort is the API error code for a sort field the search cannot
 // order by.
-const CodeInvalidSort = "INVALID_SORT"
+const CodeInvalidSort = errorenvelope.CodeInvalidSort
 
 // StatusClientClosedRequest is the nginx convention for a request the client
 // abandoned before the response was written. net/http has no constant for it.
-const StatusClientClosedRequest = 499
+const StatusClientClosedRequest = errorenvelope.StatusClientClosedRequest
 
 // isServerError reports whether status is a 5xx the boundary should log with
 // full diagnostic detail.
@@ -49,6 +46,16 @@ type StrictErrorHandlerOptions struct {
 // in which case its carried status, code and message are returned, or it is an
 // unmodelled error, in which case the response is a generic 500 and the error
 // is logged with as much detail as possible for diagnosis.
+//
+// The status and the body come from errorenvelope.Resolve and
+// errorenvelope.ResolveRequest, the resolution that errorenvelope.Writer
+// uses too. StrictErrorHandler logs through zerolog; a service that logs
+// through core/log uses errorenvelope.Writer, whose lines carry the request
+// scope of log.HTTPMiddleware (request_id).
+//
+// Deprecated: removed with fx (ADR 0013). Use errorenvelope.Writer
+// (errorenvelope.New), whose RequestError and ResponseError have the same
+// responses.
 type StrictErrorHandler struct {
 	logger        zerolog.Logger
 	adaptError    APIErrorAdapter
@@ -64,117 +71,59 @@ func NewStrictErrorHandler(options StrictErrorHandlerOptions) *StrictErrorHandle
 	}
 }
 
-// HandleRequestError writes malformed request errors as a structured 400 response.
-func (h *StrictErrorHandler) HandleRequestError(w http.ResponseWriter, _ *http.Request, err error) {
-	message := http.StatusText(http.StatusBadRequest)
-	if err != nil {
-		message = err.Error()
+// HandleRequestError writes request errors (body decoding, validation,
+// parameter binding) as a structured 400 response, as
+// errorenvelope.ResolveRequest maps them: an http/problem boundary error from
+// the nanohttp generated server gets one detail per field error, and any other
+// error keeps its text as the message.
+func (h *StrictErrorHandler) HandleRequestError(w http.ResponseWriter, r *http.Request, err error) {
+	errorenvelope.ResolveRequest(r, err, h.envelopeOptions()).Write(w)
+}
+
+// envelopeOptions are the resolution options of h.
+func (h *StrictErrorHandler) envelopeOptions() errorenvelope.Options {
+	if h == nil {
+		return errorenvelope.Options{}
 	}
-	fault.WriteJSON(w, fault.BadRequest("BAD_REQUEST", message))
+	opts := errorenvelope.Options{IsStream: h.isSSEEndpoint}
+	if h.adaptError != nil {
+		opts.Adapter = h.adaptError
+	}
+	return opts
 }
 
 // HandleResponseError writes handler errors using the framework default response shape.
 func (h *StrictErrorHandler) HandleResponseError(w http.ResponseWriter, r *http.Request, err error) {
-	if h != nil && h.isSSEEndpoint != nil && h.isSSEEndpoint(r) {
-		h.handleSSEError(w, r, err)
+	resp := errorenvelope.Resolve(r, err, h.envelopeOptions())
+	if resp.Stream {
+		h.handleSSEError(w, r, err, resp)
 		return
 	}
 
 	logger := h.requestLogger(r)
 
-	// Checked before resolve: a cancelled request often also carries a fault
-	// wrapper from the layer that gave up, and the cancellation is the truer
-	// story. The client is gone, so nothing reads the response; the 499 exists
-	// so the access log records an abandoned request instead of a 500.
-	if clientAbandoned(r, err) {
-		logger.Warn().Err(err).Int("status", StatusClientClosedRequest).
-			Msg("Request abandoned by client")
-		w.WriteHeader(StatusClientClosedRequest)
-		return
-	}
-
-	apiErr, modelled := h.resolve(err)
-
 	switch {
-	case !modelled:
+	case resp.Abandoned:
+		// The client is gone, so nothing reads the response; the 499 exists
+		// so the access log records an abandoned request instead of a 500.
+		logger.Warn().Err(err).Int("status", resp.Status).
+			Msg("Request abandoned by client")
+	case resp.Unmodelled:
 		// Unmodelled error: never guess a status from the message. The generic
 		// 500 keeps internal detail off the wire; this boundary log is the
 		// safety net for failures a source layer forgot to log.
-		h.logInternalError(logger, err).Int("status", apiErr.HTTPStatus()).
+		h.logInternalError(logger, err).Int("status", resp.Status).
 			Msg("Unhandled error returned by strict handler")
-	case isServerError(apiErr.HTTPStatus()):
-		h.logInternalError(logger, err).Int("status", apiErr.HTTPStatus()).
+	case isServerError(resp.Status):
+		h.logInternalError(logger, err).Int("status", resp.Status).
 			Msg("Internal server error")
 	default:
 		// Modelled client error: expected, low-severity. Info keeps it visible
 		// without the noise of warn/error.
-		logger.Info().Err(err).Int("status", apiErr.HTTPStatus()).Msg("Request error")
+		logger.Info().Err(err).Int("status", resp.Status).Msg("Request error")
 	}
 
-	fault.WriteJSON(w, apiErr)
-}
-
-// clientAbandoned reports whether the request failed because its context was
-// cancelled, which net/http does when the client disconnects.
-//
-// DeadlineExceeded is deliberately excluded. The framework puts no deadline on
-// the request context, so an expired deadline is a timeout the service set on
-// its own work — a real failure that stays on the unmodelled 500 path.
-func clientAbandoned(r *http.Request, err error) bool {
-	if errors.Is(err, context.Canceled) {
-		return true
-	}
-	return r != nil && errors.Is(r.Context().Err(), context.Canceled)
-}
-
-// resolve maps err to the fault.Error to write and reports whether err was a
-// modelled fault (true) or an unmodelled failure (false). Unmodelled failures
-// collapse to a generic 500 so internal detail never reaches the client.
-func (h *StrictErrorHandler) resolve(err error) (*fault.Error, bool) {
-	if resolved, ok := h.faultFrom(err); ok {
-		return resolved, true
-	}
-	return fault.ErrUnexpected, false
-}
-
-// faultFrom recovers a framework error from err, directly or via the
-// app-supplied adapter for legacy error types.
-func (h *StrictErrorHandler) faultFrom(err error) (*fault.Error, bool) {
-	if apiErr, ok := fault.As(err); ok {
-		return apiErr, true
-	}
-	if apiErr, ok := cursorFault(err); ok {
-		return apiErr, true
-	}
-	if h != nil && h.adaptError != nil {
-		return h.adaptError(err)
-	}
-	return nil, false
-}
-
-// cursorFault maps the search package's cursor and sort errors to a 400, so every
-// search endpoint answers a bad cursor the same way without per-handler code.
-// The repository returns the sentinel; the transport mapping lives here.
-func cursorFault(err error) (*fault.Error, bool) {
-	var message string
-	code, field := CodeInvalidCursor, "pagination.cursor"
-	switch {
-	case errors.Is(err, search.ErrUnknownSort):
-		code, field = CodeInvalidSort, "sort_by"
-		message = "The search cannot sort by this field."
-	case errors.Is(err, search.ErrCursorWithOffset):
-		message = "A cursor cannot be combined with an offset."
-	case errors.Is(err, search.ErrInvalidCursor):
-		message = "The cursor is invalid for this search. Restart without a cursor, " +
-			"or send back the next_cursor of the previous page with the same sort."
-	default:
-		return nil, false
-	}
-	apiErr := &fault.Error{
-		Details: []fault.Detail{{Code: code, Message: message, Field: field}},
-		Status:  http.StatusBadRequest,
-	}
-	return apiErr.Wrap(err), true
+	resp.Write(w)
 }
 
 // logInternalError starts an error-level log event carrying every detail we can
@@ -223,49 +172,25 @@ func (h *StrictErrorHandler) requestLogger(r *http.Request) zerolog.Logger {
 	return ctx.Logger()
 }
 
-func (h *StrictErrorHandler) handleSSEError(w http.ResponseWriter, r *http.Request, err error) {
+func (h *StrictErrorHandler) handleSSEError(
+	w http.ResponseWriter,
+	r *http.Request,
+	err error,
+	resp errorenvelope.Response,
+) {
 	logger := h.requestLogger(r)
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+	if resp.Abandoned {
 		logger.Debug().Msg("SSE stream closed by client")
 		return
 	}
 
-	apiErr, _ := h.resolve(err)
-	status := apiErr.HTTPStatus()
-
-	if isServerError(status) {
-		h.logInternalError(logger, err).Int("status", status).Msg("SSE stream error")
+	if isServerError(resp.Status) {
+		h.logInternalError(logger, err).Int("status", resp.Status).Msg("SSE stream error")
 	} else {
-		logger.Info().Err(err).Int("status", status).Msg("SSE stream warning")
+		logger.Info().Err(err).Int("status", resp.Status).Msg("SSE stream warning")
 	}
 
-	contentType := w.Header().Get("Content-Type")
-	if contentType != "text/event-stream" && contentType != "" {
+	if !resp.Write(w) {
 		logger.Debug().Msg("SSE stream headers already written, cannot modify response")
-		return
 	}
-
-	if contentType == "" {
-		w.Header().Set("Content-Type", "text/event-stream")
-		w.Header().Set("Cache-Control", "no-cache")
-		w.Header().Set("Connection", "keep-alive")
-	}
-
-	w.WriteHeader(status)
-	writeSSEError(w, apiErr.Message())
-	if flusher, ok := w.(http.Flusher); ok {
-		flusher.Flush()
-	}
-}
-
-// writeSSEError emits a single API-safe SSE error event. The payload is
-// JSON-encoded so a message containing quotes can never break the frame.
-func writeSSEError(w http.ResponseWriter, message string) {
-	payload, err := json.Marshal(struct {
-		Error string `json:"error"`
-	}{Error: message})
-	if err != nil {
-		payload = []byte(`{"error":"Unexpected error"}`)
-	}
-	_, _ = fmt.Fprintf(w, "event: error\ndata: %s\n\n", payload)
 }

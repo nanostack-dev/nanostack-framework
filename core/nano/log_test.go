@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"strings"
 	"testing"
+	"time"
 
 	nanolog "github.com/nanostack-dev/nanostack-framework/core/log"
 	"github.com/nanostack-dev/nanostack-framework/core/log/logtest"
@@ -93,4 +94,23 @@ func TestStarterFailureDuringShutdownIsAFailure(t *testing.T) {
 		t.Errorf("start failed error = %q, want the migration error", got)
 	}
 	rec.AssertNotLogged(t, "nano: shutdown requested while starting")
+}
+
+// TestInvalidDrainDelayIsLogged runs Main's loop with a DrainDelay that
+// leaves no StopGrace: Start fails before any Starter, and the reason is
+// logged at Error, or the process would exit 1 with no reason.
+func TestInvalidDrainDelayIsLogged(t *testing.T) {
+	logger, rec := logtest.New()
+	code := run(t.Context(), func(context.Context) (*App, error) {
+		app := NewApp("test", AppConfig{DrainDelay: 15 * time.Second, StopTimeout: 15 * time.Second})
+		app.SetLogger(logger)
+		return app, nil
+	}, logger)
+	if code != ExitFailure {
+		t.Fatalf("exit = %d, want %d", code, ExitFailure)
+	}
+	entry := rec.AssertLogged(t, slog.LevelError, "nano: start failed")
+	if got := entry.String(nanolog.KeyError); !strings.Contains(got, "drain_delay") {
+		t.Errorf("start failed error = %q, want the drain_delay error", got)
+	}
 }

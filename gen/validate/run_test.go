@@ -23,8 +23,8 @@ func TestAllowCoversALocationAndItsSubtree(t *testing.T) {
 		{[]string{"#/components/schemas/Other", "#/components/schemas/Body"}, true},
 	}
 	for _, c := range cases {
-		if got := Allowed(d, c.allow); got != c.want {
-			t.Errorf("Allowed(%v) = %v, want %v", c.allow, got, c.want)
+		if got := allowed(d, c.allow); got != c.want {
+			t.Errorf("allowed(%v) = %v, want %v", c.allow, got, c.want)
 		}
 	}
 }

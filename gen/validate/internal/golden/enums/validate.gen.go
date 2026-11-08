@@ -11,16 +11,25 @@ import (
 // Validate checks r against #/components/schemas/Body.
 func (r Body) Validate(p validate.Path) validate.Errors {
 	var errs validate.Errors
+	r.validateInto(p, &errs)
+	return errs
+}
+
+// validateInto records the violations of r at p in errs.
+func (r Body) validateInto(p validate.Path, errs *validate.Errors) {
 	if !errs.NotNull(p) {
-		return errs
+		return
 	}
 	if f1 := p.Field("status"); f1.Present(r.Status != nil) && errs.NotNull(f1) && r.Status != nil {
-		errs.Append(r.Status.Validate(f1))
+		r.Status.validateInto(f1, errs)
 	}
 	if f2 := p.Field("statuses"); f2.Present(r.Statuses != nil) && errs.NotNull(f2) && r.Statuses != nil {
 		for i3 := range *r.Statuses {
+			if errs.Full() {
+				break
+			}
 			if f4 := f2.Index(i3); errs.NotNull(f4) {
-				errs.Append((*r.Statuses)[i3].Validate(f4))
+				(*r.Statuses)[i3].validateInto(f4, errs)
 			}
 		}
 	}
@@ -52,21 +61,25 @@ func (r Body) Validate(p validate.Path) validate.Errors {
 			errs.Add(f8, validate.CodeEnum, "must be one of: true")
 		}
 	}
-	return errs
 }
 
 // Validate checks r against #/components/schemas/Status.
 func (r Status) Validate(p validate.Path) validate.Errors {
 	var errs validate.Errors
+	r.validateInto(p, &errs)
+	return errs
+}
+
+// validateInto records the violations of r at p in errs.
+func (r Status) validateInto(p validate.Path, errs *validate.Errors) {
 	if !errs.NotNull(p) {
-		return errs
+		return
 	}
 	switch string(r) {
 	case "active", "paused":
 	default:
 		errs.Add(p, validate.CodeEnum, "must be one of: active, paused")
 	}
-	return errs
 }
 
 // UnmarshalJSONFrom decodes a JSON number with an integer value, such as 2 or 2.0.

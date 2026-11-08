@@ -212,7 +212,7 @@ func TestExampleService(t *testing.T) {
 	goCmd(t, "build", "-o", bin, "./testdata/example/cmd/example")
 
 	cmd := exec.CommandContext(t.Context(), bin)
-	cmd.Env = append(os.Environ(), "EXAMPLE_ADDR=127.0.0.1:0")
+	cmd.Env = append(os.Environ(), "EXAMPLE_ADDR=127.0.0.1:0", "EXAMPLE_ADMIN_ADDR=127.0.0.1:0")
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
 		t.Fatal(err)
@@ -231,8 +231,8 @@ func TestExampleService(t *testing.T) {
 		close(lines)
 	}()
 	var logs []string
-	addrRe := regexp.MustCompile(`msg=listening addr=(\S+)`)
-	var addr string
+	addrRe := regexp.MustCompile(`msg=listening addr=(\S+) admin_addr=(\S+)`)
+	var addr, adminAddr string
 	timeout := time.After(30 * time.Second)
 	for addr == "" {
 		select {
@@ -242,7 +242,7 @@ func TestExampleService(t *testing.T) {
 			}
 			logs = append(logs, l)
 			if m := addrRe.FindStringSubmatch(l); m != nil {
-				addr = m[1]
+				addr, adminAddr = m[1], m[2]
 			}
 		case <-timeout:
 			t.Fatalf("example did not listen:\n%s", strings.Join(logs, "\n"))
@@ -252,7 +252,8 @@ func TestExampleService(t *testing.T) {
 	if body := get(t, "http://"+addr+"/hello/ada", http.StatusOK); body != "Hello, ada\n" {
 		t.Fatalf("/hello/ada = %q", body)
 	}
-	get(t, "http://"+addr+"/readyz", http.StatusOK)
+	get(t, "http://"+adminAddr+"/readyz", http.StatusOK)
+	get(t, "http://"+addr+"/readyz", http.StatusNotFound) // the probes stay off the API's port
 	get(t, "http://"+addr+"/hello/nobody", http.StatusNotFound)
 
 	if err = cmd.Process.Signal(syscall.SIGTERM); err != nil {

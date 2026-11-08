@@ -19,17 +19,40 @@ const (
 	DefaultHealthTimeout = 5 * time.Second
 )
 
-// AppConfig holds the App's timeouts. A service usually embeds it in its
-// Config as a field; the generated Build passes that field to NewApp.
+// AppConfig holds the App's timeouts. A service embeds it in its Config as a
+// section, App nano.AppConfig `config:"app"`, so nano gen config binds it from
+// APP_START_TIMEOUT, APP_STOP_TIMEOUT and APP_HEALTH_TIMEOUT (or the app
+// section of a YAML layer) with the defaults below, and the generated Build
+// passes it to NewApp. A zero field of an AppConfig built by hand also takes
+// the default.
+//
+// The stop bound of a process is StopTimeout plus StopGrace for each Stopper
+// called after StopTimeout has passed; DrainDelay is counted inside
+// StopTimeout. Set the orchestrator's grace period (Docker's
+// stop_grace_period, Kubernetes' terminationGracePeriodSeconds) above it, or
+// the runtime kills the process before Stop ends. Docker's default is 10s,
+// below the default StopTimeout.
 type AppConfig struct {
 	// StartTimeout bounds the whole start phase: every Starter together.
-	StartTimeout time.Duration `json:"start_timeout" yaml:"start_timeout"`
+	StartTimeout time.Duration `config:"start_timeout" default:"15s" json:"start_timeout" yaml:"start_timeout"`
 	// StopTimeout bounds the stop phase: draining the Runners and every
 	// Stopper share it. A Stopper called after it has passed still gets
 	// StopGrace, so a slow Runner or Stopper never skips a later Stopper.
-	StopTimeout time.Duration `json:"stop_timeout" yaml:"stop_timeout"`
+	StopTimeout time.Duration `config:"stop_timeout" default:"15s" json:"stop_timeout" yaml:"stop_timeout"`
 	// HealthTimeout bounds one readiness evaluation, all checks together.
-	HealthTimeout time.Duration `json:"health_timeout" yaml:"health_timeout"`
+	HealthTimeout time.Duration `config:"health_timeout" default:"5s" json:"health_timeout" yaml:"health_timeout"`
+	// DrainDelay is how long Stop keeps the Runners serving after readiness
+	// turns unavailable, so a load balancer stops routing new requests to
+	// the instance before its listeners close. Set it to at least the load
+	// balancer's discovery refresh plus its health-check interval (about 10s
+	// behind Traefik with a 5s refresh and a 5s check; periodSeconds ×
+	// failureThreshold plus a margin on Kubernetes). It is counted inside
+	// StopTimeout and must leave at least StopGrace of it for the Runners:
+	// Start fails when DrainDelay is above StopTimeout minus StopGrace.
+	// That check only guarantees StopGrace: nanoserver's shutdown_timeout
+	// must fit in StopTimeout minus DrainDelay.
+	// Zero, the default, cancels the Runners at once.
+	DrainDelay time.Duration `config:"drain_delay" default:"0s" json:"drain_delay" yaml:"drain_delay"`
 }
 
 func (c AppConfig) withDefaults() AppConfig {
@@ -43,6 +66,18 @@ func (c AppConfig) withDefaults() AppConfig {
 		c.HealthTimeout = DefaultHealthTimeout
 	}
 	return c
+}
+
+// check reports a configuration that Stop cannot honour: a DrainDelay that
+// leaves the Runners less than StopGrace of StopTimeout to return. Clamping
+// it instead would cut the drain short in silence, and a load balancer would
+// still route to the instance while its listeners close.
+func (c AppConfig) check() error {
+	if c.DrainDelay > 0 && c.StopTimeout-c.DrainDelay < StopGrace {
+		return fmt.Errorf("drain_delay %s leaves less than %s of stop_timeout %s for the Runners to return; "+
+			"raise stop_timeout to at least drain_delay + %s", c.DrainDelay, StopGrace, c.StopTimeout, StopGrace)
+	}
+	return nil
 }
 
 type state int
@@ -119,6 +154,9 @@ type App struct {
 	stopErr  error
 
 	managed []any // values registered through Manage, for identity dedupe
+
+	checkMu    sync.Mutex
+	lastChecks map[string]string // check key -> its last error, "" when it passed
 }
 
 // ErrShutdownDuringStart reports that ctx was cancelled (usually by SIGINT or
@@ -127,7 +165,8 @@ type App struct {
 // ExitOK when nothing else failed.
 var ErrShutdownDuringStart = errors.New("nano: shutdown requested while starting")
 
-// NewApp returns an App named name. Zero fields in cfg take the defaults.
+// NewApp returns an App named name. Zero fields in cfg take the defaults. A
+// DrainDelay above StopTimeout minus StopGrace makes Start fail.
 func NewApp(name string, cfg AppConfig) *App {
 	return &App{
 		name:     name,
@@ -306,6 +345,15 @@ func (a *App) Start(ctx context.Context) error {
 		a.mu.Unlock()
 		return fmt.Errorf("nano: start %s: app is %s", a.name, st)
 	}
+	if err := a.cfg.check(); err != nil {
+		a.mu.Unlock()
+		err = fmt.Errorf("nano: start %s: %w", a.name, err)
+		// Main logs no start error itself: without this line the process
+		// would exit 1 with no reason.
+		a.logger().ErrorContext(ctx, "nano: start failed", nanolog.Err(err))
+		// Stop releases what the constructors acquired.
+		return errors.Join(err, a.Stop(ctx))
+	}
 	a.state = stateStarting
 	hooks := slices.Clone(a.hooks)
 	a.mu.Unlock()
@@ -352,7 +400,7 @@ func (a *App) startHook(ctx, startCtx context.Context, h *hook) error {
 	}
 	logger := a.logger()
 	t := time.Now()
-	if err := call(startCtx, h.start); err != nil {
+	if err := a.callStarter(ctx, startCtx, h); err != nil {
 		if ctx.Err() != nil && (nanolog.IsContextError(err) || errors.Is(err, context.Cause(ctx))) {
 			return a.shutdownDuringStart(ctx, h.name, err) // the shutdown interrupted this Starter
 		}
@@ -387,6 +435,59 @@ func (a *App) startHook(ctx, startCtx context.Context, h *hook) error {
 		slog.Duration("took", time.Since(t)),
 	)
 	return nil
+}
+
+// callStarter runs the Starter of h under startCtx. When a shutdown
+// interrupts it, callStarter waits for it to return, within what is left of
+// StartTimeout: the Starter was handed the cancellation and is expected to
+// unwind, and Stop must not stop its dependencies under it. A Starter that
+// still succeeds is marked active, so Stop stops it in reverse order, and
+// callStarter returns the interruption. A Starter abandoned at the deadline
+// is watched: when it succeeds late, the watcher stops it.
+func (a *App) callStarter(ctx, startCtx context.Context, h *hook) error {
+	pending, err := callTracked(startCtx, h.start)
+	if pending == nil {
+		return err
+	}
+	if ctx.Err() != nil {
+		if deadline, ok := startCtx.Deadline(); ok {
+			timer := time.NewTimer(time.Until(deadline))
+			defer timer.Stop()
+			select {
+			case late := <-pending:
+				if late == nil {
+					a.mu.Lock()
+					h.active = a.state == stateStarting
+					a.mu.Unlock()
+					return err
+				}
+				return late
+			case <-timer.C:
+			}
+		}
+	}
+	go a.watchAbandoned(context.WithoutCancel(ctx), h, pending)
+	return err
+}
+
+// watchAbandoned waits for the result of a Starter the App gave up on, logs
+// it, and stops the component when the Starter succeeded.
+func (a *App) watchAbandoned(ctx context.Context, h *hook, pending <-chan error) {
+	logger := a.logger().With(slog.String(nanolog.KeyComponent, h.name))
+	err := <-pending
+	if err != nil {
+		logger.WarnContext(ctx, "nano: abandoned starter returned", nanolog.Err(err))
+		return
+	}
+	logger.WarnContext(ctx, "nano: abandoned starter succeeded late; stopping it")
+	if h.stop == nil {
+		return
+	}
+	stopCtx, cancel := context.WithTimeout(ctx, StopGrace)
+	defer cancel()
+	if stopErr := call(stopCtx, h.stop); stopErr != nil {
+		logger.ErrorContext(ctx, "nano: stop failed", nanolog.Err(fmt.Errorf("nano: stop %s: %w", h.name, stopErr)))
+	}
 }
 
 // shutdownDuringStart stops what started after a shutdown request reached

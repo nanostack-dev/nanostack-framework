@@ -11,8 +11,14 @@ import (
 // Validate checks r against #/components/schemas/Body.
 func (r Body) Validate(p validate.Path) validate.Errors {
 	var errs validate.Errors
+	r.validateInto(p, &errs)
+	return errs
+}
+
+// validateInto records the violations of r at p in errs.
+func (r Body) validateInto(p validate.Path, errs *validate.Errors) {
 	if !errs.NotNull(p) {
-		return errs
+		return
 	}
 	errs.NotNull(p.Field("name"))
 	if f2 := p.Field("meta"); f2.Present(r.Meta != nil) && errs.NotNull(f2) && r.Meta != nil {
@@ -23,18 +29,17 @@ func (r Body) Validate(p validate.Path) validate.Errors {
 				errs.Add(f5, validate.CodeMinLength, "must be at least 2 characters long")
 			}
 		}
-		errs.OnlyMembers(f2, "a", "b/c", "d~e")
-		if n7, ok := f2.MemberCount(); ok {
-			if n7 > 2 {
-				errs.Add(f2, validate.CodeMaxProperties, "must have at most 2 properties")
-			}
+		if n7, ok := f2.MemberCount(); ok && n7 > 2 {
+			errs.Add(f2, validate.CodeMaxProperties, "must have at most 2 properties")
+		} else {
+			errs.OnlyMembers(f2, "a", "b/c", "d~e")
 		}
 	}
 	errs.OnlyMembers(p, "meta", "name")
-	if n8, ok := p.MemberCount(); ok {
-		if n8 < 1 {
+	{
+		n8, ok := p.MemberCount()
+		if ok && n8 < 1 {
 			errs.Add(p, validate.CodeMinProperties, "must have at least 1 property")
 		}
 	}
-	return errs
 }

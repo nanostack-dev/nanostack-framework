@@ -11,8 +11,14 @@ import (
 // Validate checks r against #/components/schemas/Body.
 func (r Body) Validate(p validate.Path) validate.Errors {
 	var errs validate.Errors
+	r.validateInto(p, &errs)
+	return errs
+}
+
+// validateInto records the violations of r at p in errs.
+func (r Body) validateInto(p validate.Path, errs *validate.Errors) {
 	if !errs.NotNull(p) {
-		return errs
+		return
 	}
 	if f1 := p.Field("maybe"); errs.Required(f1, true) && r.Maybe != nil {
 		if n2 := utf8.RuneCountInString(*r.Maybe); n2 < 2 {
@@ -30,10 +36,13 @@ func (r Body) Validate(p validate.Path) validate.Errors {
 		}
 	}
 	if f7 := p.Field("inner"); f7.Present(r.Inner != nil) && r.Inner != nil {
-		errs.Append(r.Inner.Validate(f7))
+		r.Inner.validateInto(f7, errs)
 	}
 	if f8 := p.Field("list"); f8.Present(r.List != nil) && r.List != nil {
 		for i9 := range *r.List {
+			if errs.Full() {
+				break
+			}
 			if f10 := f8.Index(i9); !f10.IsNull() {
 				if (*r.List)[i9] != nil {
 					if n11 := utf8.RuneCountInString(*(*r.List)[i9]); n11 < 1 {
@@ -43,19 +52,23 @@ func (r Body) Validate(p validate.Path) validate.Errors {
 			}
 		}
 	}
-	return errs
 }
 
 // Validate checks r against #/components/schemas/Inner.
 func (r Inner) Validate(p validate.Path) validate.Errors {
 	var errs validate.Errors
+	r.validateInto(p, &errs)
+	return errs
+}
+
+// validateInto records the violations of r at p in errs.
+func (r Inner) validateInto(p validate.Path, errs *validate.Errors) {
 	if !errs.NotNull(p) {
-		return errs
+		return
 	}
 	if f12 := p.Field("v"); errs.Required(f12, true) && errs.NotNull(f12) {
 		if r.V < 1 {
 			errs.Add(f12, validate.CodeMinimum, "must be at least 1")
 		}
 	}
-	return errs
 }

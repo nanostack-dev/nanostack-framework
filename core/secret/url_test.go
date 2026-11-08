@@ -2,6 +2,7 @@ package secret_test
 
 import (
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/nanostack-dev/nanostack-framework/core/secret"
@@ -31,6 +32,34 @@ func TestRedactURL(t *testing.T) {
 	}
 	if got := secret.RedactURL(nil); got != "" {
 		t.Errorf("RedactURL(nil) = %q, want empty", got)
+	}
+}
+
+// A password that is not percent-encoded can make url.Parse read the
+// authority wrongly: no userinfo, and the password in the host, the path or
+// the fragment. RedactURL then hides everything from the first colon to the
+// last '@', as RedactText does.
+func TestRedactURLHidesAMisparsedPassword(t *testing.T) {
+	t.Parallel()
+	for _, in := range []string{
+		"postgres://app:#hunter2@db:5432/app",
+		"postgres://app:?hunter2@db/app",
+		"postgres://app:/hunter2@db/app",
+		"postgres://app:1234/hunter2@db:5432/app",
+		"redis://:#hunter2@cache",
+	} {
+		u, err := url.Parse(in)
+		if err != nil {
+			t.Fatalf("parse %q: %v", in, err)
+		}
+		if got := secret.RedactURL(u); strings.Contains(got, "hunter2") {
+			t.Errorf("RedactURL(%q) = %q, which shows the password", in, got)
+		}
+	}
+	// An '@' in the query is an ordinary value, not a misparse.
+	u, _ := url.Parse("https://host:8080/x?email=a@b.c")
+	if got := secret.RedactURL(u); got != "https://host:8080/x?email=a@b.c" {
+		t.Errorf("RedactURL = %q, want the URL unchanged", got)
 	}
 }
 

@@ -170,6 +170,33 @@ func TestInvalidParameters(t *testing.T) {
 	}
 }
 
+// TestMissingParameterKeepsCause checks that a missing parameter keeps the
+// binding error as its cause, so a renderer can write the binding error's
+// text, and that the code comes from the constructor, not from a nil cause.
+func TestMissingParameterKeepsCause(t *testing.T) {
+	cause := errors.New("Header parameter X-Organization-ID is required, but not found")
+	err := problem.MissingParameter("X-Organization-ID", cause)
+	if !errors.Is(err, cause) {
+		t.Fatalf("MissingParameter(..., cause): errors.Is = false, Unwrap = %v", errors.Unwrap(err))
+	}
+	got, rec := write(t, err)
+	if rec.Code != http.StatusBadRequest ||
+		got.Errors[0] != (problem.FieldError{Parameter: "X-Organization-ID", Code: "required", Detail: "is required"}) {
+		t.Fatalf("problem = %+v", got)
+	}
+	if strings.Contains(rec.Body.String(), cause.Error()) {
+		t.Fatalf("body %s sends the cause", rec.Body.String())
+	}
+	got, _ = write(t, problem.MissingParameter("limit", nil))
+	if got.Errors[0].Code != "required" {
+		t.Fatalf("MissingParameter without a cause: code %q, want required", got.Errors[0].Code)
+	}
+	got, _ = write(t, problem.InvalidParameter("limit", nil))
+	if got.Errors[0].Code != "type" {
+		t.Fatalf("InvalidParameter without a cause: code %q, want type", got.Errors[0].Code)
+	}
+}
+
 func TestInvalidBodyAndMalformed(t *testing.T) {
 	var v struct {
 		Count int `json:"count"`
@@ -372,9 +399,29 @@ func TestRendersFaultCatalogueErrors(t *testing.T) {
 }
 
 func TestFrameworkTypesUseTheFaultTypeBase(t *testing.T) {
-	for _, typ := range []string{problem.TypeValidation, problem.TypeInternal, problem.TypeBadRequest} {
+	for _, typ := range []string{
+		problem.TypeValidation, problem.TypeInternal, problem.TypeBadRequest,
+		problem.TypeNotFound, problem.TypeMethodNotAllowed,
+	} {
 		if !strings.HasPrefix(typ, fault.DefaultTypeBase+"/http/") || strings.Contains(typ, "//http") {
 			t.Errorf("type %q is not <fault.DefaultTypeBase>/http/<name>", typ)
+		}
+	}
+}
+
+func TestRoutingProblems(t *testing.T) {
+	for _, tt := range []struct {
+		err    error
+		status int
+		typ    string
+		code   string
+	}{
+		{problem.NotFound(), http.StatusNotFound, problem.TypeNotFound, "http.not_found"},
+		{problem.MethodNotAllowed(), http.StatusMethodNotAllowed, problem.TypeMethodNotAllowed, "http.method_not_allowed"},
+	} {
+		p, rec := write(t, tt.err)
+		if rec.Code != tt.status || p.Status != tt.status || p.Type != tt.typ || p.Code != tt.code || p.Detail == "" {
+			t.Errorf("%v: got %d %+v", tt.err, rec.Code, p)
 		}
 	}
 }

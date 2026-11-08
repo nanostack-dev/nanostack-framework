@@ -61,6 +61,17 @@ paths:
           content:
             application/json:
               schema: {type: array, items: {type: string}}
+  /notes:
+    post:
+      operationId: addNote
+      requestBody:
+        required: true
+        content:
+          text/plain:
+            schema: {type: string}
+      responses:
+        "204":
+          description: added
 components:
   schemas:
     Header:

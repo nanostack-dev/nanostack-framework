@@ -10,9 +10,13 @@ import (
 	"github.com/nanostack-dev/nanostack-framework/db/internal/optional"
 )
 
-// optionalType is the field mapping kind of a functional.Option[E] field whose E is a
-// column value (a simple model type or a sql.Scanner).
-const optionalType fieldMappingType = 100 // outside the upstream iota range
+// The field mapping kinds of a functional.Option[E] field whose E is a column value,
+// outside the upstream iota range. classifyOption decides once per field whether E is
+// a sql.Scanner, so assignOption does no per-value type check.
+const (
+	optionalType        fieldMappingType = 100 // E is a simple model type
+	optionalScannerType fieldMappingType = 101 // E or *E implements sql.Scanner
+)
 
 // classifyOption returns the mapping kind of an Option[E] (or *Option[E]) field.
 // Unsupported shapes panic, like other unsupported destinations: they are programming errors that the
@@ -34,7 +38,9 @@ func classifyOption(elem reflect.Type, field reflect.StructField) fieldMappingTy
 		)
 	case isOption(elem):
 		panic(fmt.Sprintf("jet: nested functional.Option is not supported (field %s %s)", field.Name, field.Type))
-	case implementsScannerType(elem) || isSimpleModelType(elem):
+	case implementsScannerType(elem):
+		return optionalScannerType
+	case isSimpleModelType(elem):
 		return optionalType
 	case elem.Kind() == reflect.Struct:
 		return complexType
@@ -58,13 +64,14 @@ func isOption(t reflect.Type) bool {
 
 // assignOption converts a non-NULL scanned value into a fresh E with qrm's existing
 // rules, then stores it with optional.Set. It never calls Option.Scan with a raw driver
-// value, so an Option[E] field reads exactly what a *E field reads.
-func assignOption(scanned reflect.Value, field reflect.Value) error {
+// value, so an Option[E] field reads exactly what a *E field reads. kind is the field's
+// mapping kind, optionalType or optionalScannerType.
+func assignOption(scanned reflect.Value, field reflect.Value, kind fieldMappingType) error {
 	elem, _ := optional.Elem(field.Type())
 	tmp := reflect.New(elem).Elem()
 
 	var err error
-	if implementsScannerType(elem) {
+	if kind == optionalScannerType {
 		err = getScanner(tmp).Scan(scanned.Interface())
 	} else {
 		err = assign(scanned, tmp) // tryAssign + tryConvert, exactly as for a *E field

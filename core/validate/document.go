@@ -47,6 +47,13 @@ type node struct {
 // it a lookup scans the names.
 const indexedMembers = 16
 
+// kindEmptyObject and kindEmptyArray mark an empty container in the kinds
+// of an array, so it needs no entry in nested.
+const (
+	kindEmptyObject = 'o'
+	kindEmptyArray  = 'a'
+)
+
 // Scalars carry nothing but their kind, so every scalar of a kind is one
 // shared node. They are never mutated.
 var (
@@ -55,6 +62,10 @@ var (
 	trueNode   = &node{kind: 't'}
 	stringNode = &node{kind: '"'}
 	numberNode = &node{kind: '0'}
+	// An empty object or array has nothing to index either, so a wide
+	// array of {} costs one byte per element, like an array of scalars.
+	emptyObject = &node{kind: '{'}
+	emptyArray  = &node{kind: '['}
 )
 
 func scalarNode(kind byte) *node {
@@ -114,6 +125,10 @@ func parseValue(dec *jsontext.Decoder) (*node, error) {
 // parseObject reads the members of an object whose '{' has been read, and
 // its closing '}'.
 func parseObject(dec *jsontext.Decoder) (*node, error) {
+	if dec.PeekKind() == '}' {
+		_, err := dec.ReadToken()
+		return emptyObject, err
+	}
 	n := &node{kind: '{'}
 	for dec.PeekKind() != '}' {
 		tok, err := dec.ReadToken()
@@ -143,11 +158,23 @@ func parseObject(dec *jsontext.Decoder) (*node, error) {
 // parseArray reads the elements of an array whose '[' has been read, and
 // its closing ']'.
 func parseArray(dec *jsontext.Decoder) (*node, error) {
+	if dec.PeekKind() == ']' {
+		_, err := dec.ReadToken()
+		return emptyArray, err
+	}
 	n := &node{kind: '['}
 	for i := 0; dec.PeekKind() != ']'; i++ {
 		elem, err := parseValue(dec)
 		if err != nil {
 			return nil, err
+		}
+		switch elem {
+		case emptyObject:
+			n.kinds = append(n.kinds, kindEmptyObject)
+			continue
+		case emptyArray:
+			n.kinds = append(n.kinds, kindEmptyArray)
+			continue
 		}
 		n.kinds = append(n.kinds, elem.kind)
 		if isContainer(elem.kind) {
@@ -208,7 +235,12 @@ func (n *node) elem(tok string) *node {
 	if err != nil || i < 0 || i >= len(n.kinds) || strconv.Itoa(i) != tok {
 		return nil
 	}
-	if kind := n.kinds[i]; !isContainer(kind) {
+	switch kind := n.kinds[i]; {
+	case kind == kindEmptyObject:
+		return emptyObject
+	case kind == kindEmptyArray:
+		return emptyArray
+	case !isContainer(kind):
 		return scalarNode(kind)
 	}
 	j, _ := slices.BinarySearch(n.nestedAt, i)

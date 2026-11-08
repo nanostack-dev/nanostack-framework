@@ -101,3 +101,21 @@ func TestDocumentLookups(t *testing.T) {
 		t.Errorf("a string has no members: %v, %v", names, ok)
 	}
 }
+
+func TestEmptyContainersAreIndexed(t *testing.T) {
+	p := validate.RootOf([]byte(`{"o":{},"a":[],"list":[{},[],{"x":1},null]}`))
+	for _, ptr := range []validate.Path{p.Field("o"), p.Field("a"), p.Field("list").Index(0), p.Field("list").Index(1)} {
+		if !ptr.Present(false) || ptr.IsNull() {
+			t.Errorf("%s: an empty container is present and not null", ptr)
+		}
+	}
+	if names, known := p.Field("list").Index(0).Members(); !known || len(names) != 0 {
+		t.Errorf("members of {} = %v, %v", names, known)
+	}
+	if !p.Field("list").Index(2).Field("x").Present(false) || !p.Field("list").Index(3).IsNull() {
+		t.Error("the elements after empty containers keep their place")
+	}
+	if p.Field("list").Index(1).Field("x").Present(true) {
+		t.Error("an empty array has no member")
+	}
+}

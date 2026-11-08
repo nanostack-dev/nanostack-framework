@@ -34,7 +34,7 @@ func TestIsUniqueViolation(t *testing.T) {
 			want:        true,
 		},
 		{
-			// The shape repositories actually see: go-jet wraps the driver error.
+			// The shape repositories actually see: Nanostack DB wraps the driver error.
 			name:        "jet-wrapped violation is unwrapped",
 			err:         fmt.Errorf("jet: %w", &pq.Error{Code: pgerr.UniqueViolation, Constraint: constraint}),
 			constraints: []string{constraint},
@@ -115,7 +115,7 @@ func TestIsQueryCanceled(t *testing.T) {
 			want: true,
 		},
 		{
-			// The shape repositories actually see: go-jet wraps the driver error.
+			// The shape repositories actually see: Nanostack DB wraps the driver error.
 			name: "jet-wrapped cancellation is unwrapped",
 			err:  fmt.Errorf("jet: %w", &pq.Error{Code: pgerr.QueryCanceled, Message: userRequest}),
 			want: true,

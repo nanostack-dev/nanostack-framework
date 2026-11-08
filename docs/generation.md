@@ -155,7 +155,7 @@ A component opts in by implementing an interface. The generator sees it on the p
 
 | Interface | When the App calls it |
 | --- | --- |
-| `Starter` `Start(ctx) error` | Once, in dependency order, under `StartTimeout`. |
+| `Starter` `Start(ctx) error` | Once, in dependency order, under `StartTimeout`. Work that can outlast it, such as database migrations, belongs in a `nano.Invoke` (see `pg/nanomigrate`). |
 | `Stopper` `Stop(ctx) error` | Once, in reverse order, only if its `Start` succeeded (or it has none). |
 | `Runner` `Run(ctx) error` | After every Starter, until `Stop` cancels `ctx`. Returning earlier shuts the App down and is an error. |
 | `HealthChecker` `CheckHealth(ctx) error` | For `/readyz`. The name is specific so that an unrelated `Check` method is not a probe. |
@@ -164,7 +164,7 @@ A component opts in by implementing an interface. The generator sees it on the p
 
 Stop cancels the Runners, waits for them, then calls the Stoppers one at a time in reverse order. The drain and the Stoppers share `StopTimeout`. A Stopper called after that deadline still gets `nano.StopGrace` (one second), so a slow Runner or Stopper never cuts off a later flush. Stop returns within `StopTimeout` plus at most `StopGrace` per Stopper called after it. A Runner or Stopper that overruns is reported and left running.
 
-`nano.Main` exits `0` after SIGINT or SIGTERM, also when the signal arrives during start (`ErrShutdownDuringStart`) and every stop succeeds. It exits `1` on a build, start, Runner or stop failure.
+`nano.Main` exits `0` after SIGINT or SIGTERM, also when the signal arrives during build (a migration or a ping returns the cancellation) or during start (`ErrShutdownDuringStart`) and every stop succeeds. It exits `1` on a build, start, Runner or stop failure, including a failure next to the cancellation. `AppConfig.DrainDelay` keeps the Runners serving for that long after readiness turns unavailable, so a load balancer stops routing to the instance before its listeners close; it is counted inside `StopTimeout`, and Start fails when it leaves the Runners less than `StopGrace` of it.
 
 ### Overrides and Components
 
@@ -172,7 +172,7 @@ Tests replace any provided value through the generated, typed `Overrides`. A nil
 
 Override a collection as a whole: set the `[]T` field. A non-nil empty slice overrides it with no elements.
 
-`BuildComponents(ctx, cfg, ov)` returns the App and a `Components` struct with a field per value (named like the `Overrides` fields; a collection member is named after its function). A field holds the override when one was set, and the zero value when no built value needed it. This replaces `fx.Populate` in integration suites.
+`BuildComponents(ctx, cfg, ov)` returns the App and a `Components` struct with a field per value (named like the `Overrides` fields; a collection member is named after its function). A field is named after its type (`*billing.Service` gives `Service`). When two values share a type name, both are qualified by their package (`*nanopg.DB` and `*sql.DB` give `NanopgDB` and `SQLDB`), so adding or reordering a provider never renames another field. A slice of a name that ends in `s` gets `List` (`[]log.ContextAttrs` gives `ContextAttrsList`). A field holds the override when one was set, and the zero value when no built value needed it. This replaces `fx.Populate` in integration suites.
 
 ### Migrating from Fx
 
