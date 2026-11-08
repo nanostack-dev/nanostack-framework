@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -194,17 +195,33 @@ func TestLoggerKeyWinsOverContextKey(t *testing.T) {
 // a logger does not write into the scope that other lines read.
 func TestLoggerKeyDoesNotChangeTheScope(t *testing.T) {
 	t.Parallel()
-	var out syncBuffer
-	base := log.New(log.Config{Output: &out})
-	ctx := log.WithScope(t.Context())
-	log.SetAttrs(ctx, slog.String(log.KeyComponent, "cron"), slog.String(log.KeyRequestID, "req_1"))
+	// log.Wrap without contextAttrs hands the handler a view of the scope, not
+	// a copy, so dropping the logger's key must not write into it.
+	for name, newLogger := range map[string]func(*syncBuffer) *slog.Logger{
+		"New": func(out *syncBuffer) *slog.Logger { return log.New(log.Config{Output: out}) },
+		"Wrap": func(out *syncBuffer) *slog.Logger {
+			return slog.New(log.Wrap(slog.NewJSONHandler(out, nil)))
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			var out syncBuffer
+			base := newLogger(&out)
+			ctx := log.WithScope(t.Context())
+			log.SetAttrs(ctx, slog.String(log.KeyComponent, "cron"), slog.String(log.KeyRequestID, "req_1"))
 
-	base.With(slog.String(log.KeyComponent, "repository")).InfoContext(ctx, "first")
-	base.InfoContext(ctx, "second")
+			base.With(slog.String(log.KeyComponent, "repository")).InfoContext(ctx, "first")
 
-	lines := jsonLines(t, out.String())
-	if lines[1][log.KeyComponent] != "cron" || lines[1][log.KeyRequestID] != "req_1" {
-		t.Fatalf("second line = %v", lines[1])
+			want := []slog.Attr{slog.String(log.KeyComponent, "cron"), slog.String(log.KeyRequestID, "req_1")}
+			if got := log.Attrs(ctx); !slices.EqualFunc(got, want, slog.Attr.Equal) {
+				t.Fatalf("scope after the first line = %v, want %v", got, want)
+			}
+			base.InfoContext(ctx, "second")
+			lines := jsonLines(t, out.String())
+			if lines[1][log.KeyComponent] != "cron" || lines[1][log.KeyRequestID] != "req_1" {
+				t.Fatalf("second line = %v", lines[1])
+			}
+		})
 	}
 }
 

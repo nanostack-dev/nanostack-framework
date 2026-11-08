@@ -83,6 +83,34 @@ func TestOptionsLogSeesTheSentStatusAndTheMissingFrame(t *testing.T) {
 	}
 }
 
+// TestStrictErrorHandlerLogKeepsTheErrorStatusOnAStartedStream checks that
+// the stream line carries the status of the error, as StrictErrorHandler
+// logged it, not the 202 the started stream already sent.
+func TestStrictErrorHandlerLogKeepsTheErrorStatusOnAStartedStream(t *testing.T) {
+	t.Parallel()
+	var buf bytes.Buffer
+	envelope := errorenvelope.New(errorenvelope.Options{
+		IsStream: func(*http.Request) bool { return true },
+		Log:      errorenvelope.StrictErrorHandlerLog(newLogger(&buf, log.WireLegacy)),
+	})
+	handler := log.HTTPMiddleware(log.HTTPOptions{SkipSummary: func(*http.Request) bool { return true }})(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.WriteHeader(http.StatusAccepted)
+			envelope.ResponseError(w, r, errors.New("upstream broke"))
+		}))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/events", nil))
+
+	got := lines(t, &buf)
+	if rec.Code != http.StatusAccepted || len(got) != 1 {
+		t.Fatalf("code %d, lines = %s, want 202 and one line", rec.Code, buf.String())
+	}
+	if got[0]["message"] != "SSE stream error" || got[0][log.KeyStatus] != float64(http.StatusInternalServerError) {
+		t.Fatalf("line = %v, want SSE stream error with status 500", got[0])
+	}
+}
+
 // TestStrictErrorHandlerLogWritesTheLegacyLines pins the lines of
 // modules/httpserver.StrictErrorHandler: message, level and attributes.
 func TestStrictErrorHandlerLogWritesTheLegacyLines(t *testing.T) {
