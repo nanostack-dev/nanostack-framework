@@ -183,9 +183,10 @@ func (a *App) Name() string { return a.name }
 // SetLogger replaces the logger the App writes lifecycle events to. The
 // default is slog.Default() at the time of each line, so a logger the service
 // installs with slog.SetDefault after NewApp, as the generated Build's
-// providers do, receives every line at its own level. Lifecycle lines carry no service name of their
-// own: unless the handler is core/log's with Config.Service set, pass a
-// logger that carries it, such as logger.With(log.KeyService, "billing").
+// providers do, receives every line at its own level. Lifecycle lines carry
+// no service name of their own: unless the handler is core/log's with
+// Config.Service set, pass a logger that carries it, such as
+// logger.With(log.KeyService, "billing").
 func (a *App) SetLogger(logger *slog.Logger) {
 	if logger == nil {
 		return
