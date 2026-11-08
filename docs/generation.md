@@ -142,6 +142,8 @@ nano gen config: generated files are stale: config.gen.go
 
 An error with no file starts with `nano gen <name>:` instead of a position.
 
+[Reviewing generated code](generated-code.md) shows what each generator writes and which parts of a generated diff to read by hand.
+
 ## Wiring: `nano gen wire`
 
 `nano gen wire` replaces Fx. It reads a manifest, resolves the provider graph at generation time and writes plain Go: `wire.gen.go` with `Build` and `BuildComponents`. A missing provider, a cycle or a bad signature is a generation error with `file:line` and a fix, not a panic at boot. The runtime is [`core/nano`](../core/nano): the `App`, the lifecycle interfaces and `Main`. It uses no reflection.
