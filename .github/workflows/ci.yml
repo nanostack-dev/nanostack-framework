@@ -37,7 +37,10 @@ jobs:
           code=0
           golangci-lint run ./... 2>lint.log || code=$?
           cat lint.log >&2
-          if grep -q 'Skipped 0 issues by rules' lint.log; then
+          # The root's formatter exclusion of db/ (another module) never matches under run;
+          # it only keeps `golangci-lint fmt` off go-jet's files (.golangci.local.yml).
+          if sed 's/\[Path: \\"\^db\/\\", Linters: \\"goimports, golines\\"\]//' lint.log |
+            grep -q 'Skipped 0 issues by rules: .*\['; then
             echo "::error::An exclusion rule in .golangci.local.yml matches nothing. Delete it and lower nanostack.exclusion-budget."
             code=1
           fi
