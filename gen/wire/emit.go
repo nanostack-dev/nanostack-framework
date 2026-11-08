@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/nanostack-dev/nanostack-framework/gen"
 	"github.com/nanostack-dev/nanostack-framework/gen/internal/importset"
 )
 
@@ -42,11 +43,8 @@ func emit(g *graph) ([]byte, error) {
 	e.render()
 	src, err := format.Source(e.buf.Bytes())
 	if err != nil {
-		return nil, fmt.Errorf(
-			"generated code does not parse (a generator bug): %w\n%s",
-			err,
-			e.buf.Bytes(),
-		)
+		return nil, gen.Errorf("", 0, "report this nano gen wire bug with the manifest",
+			"generated code does not parse: %v\n%s", err, e.buf.Bytes())
 	}
 	return src, nil
 }

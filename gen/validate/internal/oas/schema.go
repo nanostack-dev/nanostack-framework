@@ -1,7 +1,6 @@
 package oas
 
 import (
-	"fmt"
 	"math/big"
 	"strconv"
 	"strings"
@@ -45,12 +44,17 @@ func (s *Spec) parseSchema(n *yaml.Node, loc string) *Schema {
 		return sc
 	}
 	if n.Kind != yaml.MappingNode {
-		s.errs = append(s.errs, fmt.Errorf("%s: schema is not an object", loc))
+		s.errorf(
+			n.Line,
+			"write the schema as a mapping, or as true or false in OpenAPI 3.1",
+			"%s: schema is not an object",
+			loc,
+		)
 		return sc
 	}
 	if ref := scalar(get(n, "$ref")); ref != "" {
 		sc.Ref = ref
-		s.parseRef(ref, loc)
+		s.parseRef(ref, loc, n.Line)
 		if s.Version == "3.0" {
 			return sc // OpenAPI 3.0 ignores the siblings of $ref.
 		}
@@ -65,9 +69,10 @@ func (s *Spec) parseSchema(n *yaml.Node, loc string) *Schema {
 	return sc
 }
 
-func (s *Spec) parseRef(ref, loc string) {
+func (s *Spec) parseRef(ref, loc string, line int) {
 	if !strings.HasPrefix(ref, "#/components/schemas/") {
-		s.errs = append(s.errs, fmt.Errorf("%s: unsupported reference %q (only #/components/schemas/...)", loc, ref))
+		s.errorf(line, "move the schema under #/components/schemas and reference it there",
+			"%s: unsupported reference %q", loc, ref)
 		return
 	}
 	if _, done := s.schemas[ref]; done {
@@ -75,7 +80,7 @@ func (s *Spec) parseRef(ref, loc string) {
 	}
 	target := s.lookup(ref)
 	if target == nil {
-		s.errs = append(s.errs, fmt.Errorf("%s: unresolved reference %q", loc, ref))
+		s.errorf(line, unresolvedFix, "%s: unresolved reference %q", loc, ref)
 		return
 	}
 	s.schemas[ref] = nil // mark before recursing, for cycles
@@ -219,7 +224,7 @@ func (s *Spec) fillComposition(sc *Schema, k string, v *yaml.Node, loc string) b
 		for _, m := range pairs(get(v, "mapping")) {
 			d.Mapping = append(d.Mapping, MappingEntry{Value: m.key, Ref: m.val.Value})
 			if strings.HasPrefix(m.val.Value, "#/") {
-				s.parseRef(m.val.Value, loc+"/mapping")
+				s.parseRef(m.val.Value, loc+"/mapping", m.val.Line)
 			}
 		}
 		sc.Discriminator = d
@@ -262,7 +267,7 @@ func HasConstraints(sc *Schema) bool {
 func (s *Spec) intValue(n *yaml.Node, loc string) *int {
 	i, err := strconv.Atoi(n.Value)
 	if err != nil || i < 0 {
-		s.errs = append(s.errs, fmt.Errorf("%s: want a non-negative integer, got %q", loc, n.Value))
+		s.errorf(n.Line, "write a non-negative integer", "%s: want a non-negative integer, got %q", loc, n.Value)
 		return nil
 	}
 	return &i
@@ -271,7 +276,7 @@ func (s *Spec) intValue(n *yaml.Node, loc string) *int {
 func (s *Spec) number(n *yaml.Node, loc string) *Number {
 	r, ok := new(big.Rat).SetString(n.Value)
 	if !ok || n.Kind != yaml.ScalarNode {
-		s.errs = append(s.errs, fmt.Errorf("%s: want a number, got %q", loc, n.Value))
+		s.errorf(n.Line, "write a number", "%s: want a number, got %q", loc, n.Value)
 		return nil
 	}
 	return &Number{Lit: n.Value, Rat: r}
@@ -291,13 +296,13 @@ func (s *Spec) value(n *yaml.Node, loc string) Value {
 	case "!!bool":
 		var b bool
 		if err := n.Decode(&b); err != nil {
-			s.errs = append(s.errs, fmt.Errorf("%s: %q is not a boolean", loc, n.Value))
+			s.errorf(n.Line, "write true or false, or drop the !!bool tag", "%s: %q is not a boolean", loc, n.Value)
 			return Value{Kind: "other"}
 		}
 		return Value{Kind: "boolean", Str: strconv.FormatBool(b)}
 	case "!!int", "!!float":
 		if _, ok := new(big.Rat).SetString(n.Value); !ok {
-			s.errs = append(s.errs, fmt.Errorf("%s: %q is not a number", loc, n.Value))
+			s.errorf(n.Line, "write a number, or drop the tag", "%s: %q is not a number", loc, n.Value)
 			return Value{Kind: "other"}
 		}
 		return Value{Kind: "number", Str: n.Value}
@@ -346,4 +351,12 @@ func scalar(n *yaml.Node) string {
 		return ""
 	}
 	return n.Value
+}
+
+// lineOf returns the line of n in the spec, 0 for a missing node.
+func lineOf(n *yaml.Node) int {
+	if n == nil {
+		return 0
+	}
+	return n.Line
 }

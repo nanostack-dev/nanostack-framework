@@ -13,6 +13,7 @@ import (
 
 	"golang.org/x/tools/go/packages"
 
+	"github.com/nanostack-dev/nanostack-framework/gen"
 	"github.com/nanostack-dev/nanostack-framework/gen/internal/gopkg"
 )
 
@@ -23,6 +24,11 @@ const (
 	tagEnv      = "env"
 	tagDefault  = "default"
 	tagValidate = "validate"
+	// buildTag is the tag config loads with, as wire does: it drops
+	// wire.gen.go and the files that call Build (//go:build !nanogen), which
+	// read Config fields that may have been renamed since, and keeps the
+	// manifest.
+	buildTag = "nanogen"
 )
 
 var (
@@ -46,7 +52,7 @@ type loader struct {
 	dir      string
 	fset     *token.FileSet
 	model    *model
-	problems []string
+	problems []error
 	docs     map[string]*ast.File // root package syntax, by absolute path
 	ext      map[string]*ast.File // other packages' files, parsed on demand
 	extFset  *token.FileSet
@@ -54,47 +60,56 @@ type loader struct {
 	paths    map[string]bool
 }
 
-func load(dir, typeName, out string) (*model, error) {
-	absDir, err := filepath.Abs(dir)
+func load(opts Options) (*model, error) {
+	typeName, out := opts.Type, opts.Out
+	absDir, err := filepath.Abs(opts.Dir)
 	if err != nil {
-		return nil, fmt.Errorf("resolve %s: %w", dir, err)
+		return nil, gen.EnvErrorf("run from a directory that exists", "resolve %s: %v", opts.Dir, err)
 	}
 	pkgName, err := gopkg.PackageName(absDir, out)
 	if err != nil {
 		return nil, err
 	}
+	// Replace the previous output with stubs of the generated API, so a
+	// stale or broken output never blocks regeneration while hand-written
+	// code in the package can still call Bind or String.
+	overlay, err := gopkg.Overlay(opts.Overlay,
+		map[string][]byte{filepath.Join(absDir, out): stubSource(pkgName, typeName)})
+	if err != nil {
+		return nil, err
+	}
 	fset := token.NewFileSet()
 	cfg := &packages.Config{
-		Mode: packages.NeedName | packages.NeedTypes | packages.NeedSyntax | packages.NeedTypesInfo | packages.NeedFiles,
-		Dir:  absDir,
-		Fset: fset,
-		// Replace the previous output with stubs of the generated API, so a
-		// stale or broken output never blocks regeneration while hand-written
-		// code in the package can still call Bind or String.
-		Overlay: map[string][]byte{filepath.Join(absDir, out): stubSource(pkgName, typeName)},
+		Mode:       packages.NeedName | packages.NeedTypes | packages.NeedSyntax | packages.NeedTypesInfo | packages.NeedFiles,
+		Dir:        absDir,
+		Fset:       fset,
+		BuildFlags: []string{"-tags=" + buildTag},
+		Overlay:    overlay,
 	}
 	pkgs, err := packages.Load(cfg, ".")
 	if err != nil {
-		return nil, fmt.Errorf("load package %s: %w", dir, err)
+		return nil, gopkg.LoadFailed(opts.Dir, err)
 	}
 	if len(pkgs) != 1 {
-		return nil, fmt.Errorf("%s: expected one package, found %d", dir, len(pkgs))
+		return nil, gen.Errorf("", 0, "pass -dir with the directory of one package",
+			"%s holds %d packages", opts.Dir, len(pkgs))
 	}
 	pkg := pkgs[0]
-	if len(pkg.Errors) > 0 {
-		msgs := make([]string, len(pkg.Errors))
-		for i, e := range pkg.Errors {
-			msgs[i] = e.Error()
-		}
-		return nil, fmt.Errorf("package %s does not compile; fix it first:\n%s", pkg.PkgPath, strings.Join(msgs, "\n"))
-	}
+	// The stub of the output names the type, so a missing type also breaks
+	// the build; report the cause, not the symptom.
 	obj, ok := pkg.Types.Scope().Lookup(typeName).(*types.TypeName)
 	if !ok {
-		return nil, fmt.Errorf("%s: no type %s; pass -type with the root configuration struct", pkg.PkgPath, typeName)
+		return nil, missingType(pkg, absDir, typeName)
+	}
+	if len(pkg.Errors) > 0 {
+		return nil, errors.Join(gopkg.CompileErrors(pkg, func(f string) string { return relPath(absDir, f) },
+			"make the package compile under -tags="+buildTag+"; nano gen config replaces "+out+" with a stub")...)
 	}
 	st, ok := obj.Type().Underlying().(*types.Struct)
 	if !ok {
-		return nil, fmt.Errorf("%s: %s must be a struct type", position(fset, absDir, obj.Pos()), typeName)
+		at := position(fset, absDir, obj.Pos())
+		return nil, gen.Errorf(at.file, at.line, "pass -type with a struct type, or make "+typeName+" a struct",
+			"%s must be a struct type", typeName)
 	}
 	l := &loader{
 		dir:     absDir,
@@ -116,14 +131,11 @@ func load(dir, typeName, out string) (*model, error) {
 	}
 	l.model.root = l.walk(st, scope{}, map[*types.Struct]bool{})
 	if len(l.problems) > 0 {
-		return nil, errors.New(strings.Join(l.problems, "\n"))
+		return nil, errors.Join(l.problems...)
 	}
 	if len(l.model.settings) == 0 {
-		return nil, fmt.Errorf(
-			"%s: %s has no settings; tag fields with config:\"name\"",
-			position(fset, absDir, obj.Pos()),
-			typeName,
-		)
+		at := position(fset, absDir, obj.Pos())
+		return nil, gen.Errorf(at.file, at.line, "tag its fields with config:\"name\"", "%s has no settings", typeName)
 	}
 	return l.model, nil
 }
@@ -148,8 +160,8 @@ func (` + typeName + `) GoString() string { panic("nano gen config stub") }
 `)
 }
 
-func (l *loader) problemf(at, format string, args ...any) {
-	l.problems = append(l.problems, at+": "+fmt.Sprintf(format, args...))
+func (l *loader) problemf(at pos, fix, format string, args ...any) {
+	l.problems = append(l.problems, gen.Errorf(at.file, at.line, fix, format, args...))
 }
 
 // scope is the position of one struct level in the configuration tree.
@@ -192,14 +204,24 @@ func (l *loader) field(f *types.Var, tag reflect.StructTag, sc scope, seen map[*
 		return nil
 	case !f.Exported():
 		if hasTag {
-			l.problemf(at, "%s: unexported fields cannot be bound; export it or drop the config tag", f.Name())
+			l.problemf(
+				at,
+				"export the field, or drop its config tag",
+				"%s: unexported fields cannot be bound",
+				f.Name(),
+			)
 		}
 		return nil
 	case !hasTag:
 		if inner, ok := f.Type().Underlying().(*types.Struct); ok && f.Embedded() {
 			return l.walk(inner, scope{path: sc.path, env: sc.env, goSel: goSel}, seen).children
 		}
-		l.problemf(at, "%s: add a config:\"name\" tag, or config:\"-\" to skip the field", f.Name())
+		l.problemf(
+			at,
+			"add a config:\"name\" tag, or config:\"-\" to skip the field",
+			"%s: the field has no config tag",
+			f.Name(),
+		)
 		return nil
 	}
 	ft, ok := l.parseTag(f, tag, cfgTag, sc, at)
@@ -222,7 +244,7 @@ func (l *loader) field(f *types.Var, tag reflect.StructTag, sc scope, seen map[*
 }
 
 // parseTag reads the config and env tags and derives the path and env name.
-func (l *loader) parseTag(f *types.Var, tag reflect.StructTag, cfgTag string, sc scope, at string) (fieldTag, bool) {
+func (l *loader) parseTag(f *types.Var, tag reflect.StructTag, cfgTag string, sc scope, at pos) (fieldTag, bool) {
 	name, opts, _ := strings.Cut(cfgTag, ",")
 	ft := fieldTag{
 		name: name,
@@ -231,19 +253,21 @@ func (l *loader) parseTag(f *types.Var, tag reflect.StructTag, cfgTag string, sc
 	}
 	switch {
 	case !keyPattern.MatchString(name):
-		l.problemf(at, "%s: config name %q must be lower snake case, for example config:\"due_days\"", f.Name(), name)
+		l.problemf(at, "write the name in lower snake case, for example config:\"due_days\"",
+			"%s: config name %q must be lower snake case", f.Name(), name)
 		return ft, false
 	case l.paths[ft.path]:
-		l.problemf(at, "%s: setting %s is declared twice", f.Name(), ft.path)
+		l.problemf(at, "rename one of the two config tags", "%s: setting %s is declared twice", f.Name(), ft.path)
 		return ft, false
 	case opts != "" && opts != "optional":
-		l.problemf(at, "%s: unknown config tag option %q; the only option is optional", f.Name(), opts)
+		l.problemf(at, "remove it; the only option is optional", "%s: unknown config tag option %q", f.Name(), opts)
 		return ft, false
 	}
 	ft.optional = opts == "optional"
 	if e, set := tag.Lookup(tagEnv); set {
 		if !envPattern.MatchString(e) {
-			l.problemf(at, "%s: env %q must be upper snake case, for example env:\"BILLING_FROM\"", f.Name(), e)
+			l.problemf(at, "write the name in upper snake case, for example env:\"BILLING_FROM\"",
+				"%s: env %q must be upper snake case", f.Name(), e)
 			return ft, false
 		}
 		ft.env = e
@@ -256,16 +280,19 @@ func (l *loader) nested(
 	tag reflect.StructTag,
 	ft fieldTag,
 	inner *types.Struct,
-	goSel, at string,
+	goSel string,
+	at pos,
 	seen map[*types.Struct]bool,
 ) []node {
 	for _, t := range []string{tagDefault, tagValidate} {
 		if _, set := tag.Lookup(t); set {
-			l.problemf(at, "%s: %s does not apply to a nested struct; set it on its fields", f.Name(), t)
+			l.problemf(at, "remove it, and set it on the fields of the struct",
+				"%s: %s does not apply to a nested struct", f.Name(), t)
 		}
 	}
 	if ft.optional {
-		l.problemf(at, "%s: optional does not apply to a nested struct; mark its fields optional", f.Name())
+		l.problemf(at, "remove ,optional, and mark the fields of the struct optional",
+			"%s: optional does not apply to a nested struct", f.Name())
 	}
 	l.paths[ft.path] = true
 	sub := l.walk(inner, scope{path: ft.path, env: ft.env, goSel: goSel}, seen)
@@ -279,7 +306,8 @@ func (l *loader) leaf(f *types.Var, tag reflect.StructTag, s *setting) bool {
 		return false
 	}
 	if prev, clash := l.envs[s.env]; clash {
-		l.problemf(s.at, "%s: env %s is already used by %s; set a distinct env tag", f.Name(), s.env, prev)
+		l.problemf(s.at, "set a distinct env tag on one of them", "%s: env %s is already used by %s",
+			f.Name(), s.env, prev)
 		return false
 	}
 	l.envs[s.env] = s.path
@@ -287,19 +315,17 @@ func (l *loader) leaf(f *types.Var, tag reflect.StructTag, s *setting) bool {
 	_, hasDefault := tag.Lookup(tagDefault)
 	switch {
 	case hasDefault && s.def == "":
-		l.problemf(
-			s.at,
-			"%s: default:\"\" is not a default; use config:\"%s,optional\" for a setting that may stay empty",
-			f.Name(),
-			s.name,
-		)
+		l.problemf(s.at, fmt.Sprintf("remove it; use config:\"%s,optional\" for a setting that may stay empty", s.name),
+			"%s: default:\"\" is not a default", f.Name())
 	case s.def != "" && s.optional:
-		l.problemf(s.at, "%s: a setting with a default is never empty; drop ,optional", f.Name())
+		l.problemf(s.at, "drop ,optional, or drop the default",
+			"%s: a setting with a default is never empty, so ,optional has no effect", f.Name())
 	case s.def != "" && s.secret():
-		l.problemf(s.at, "%s: secrets cannot have a default, it would put the secret in source code", f.Name())
+		l.problemf(s.at, "remove the default, and set the secret in the environment",
+			"%s: secrets cannot have a default, it would put the secret in source code", f.Name())
 	default:
-		if err := validateSetting(s); err != nil {
-			l.problemf(s.at, "%s: %v", f.Name(), err)
+		if p := validateSetting(s); p != nil {
+			l.problemf(s.at, p.Fix, "%s: %s", f.Name(), p.Msg)
 			return false
 		}
 		return true
@@ -331,7 +357,8 @@ func (l *loader) classify(s *setting) bool {
 	if !ok {
 		l.problemf(
 			s.at,
-			"%s: type %s is not supported; use a string, bool, number, time.Duration, *url.URL, secret.Secret, a type implementing encoding.TextUnmarshaler, a slice of those, or a nested struct",
+			"use a string, bool, number, time.Duration, *url.URL, secret.Secret, a type implementing encoding.TextUnmarshaler, a slice of those, or a nested struct",
+			"%s: type %s is not supported",
 			lastSegment(s.goExpr),
 			types.TypeString(s.typ, packageNameQualifier),
 		)
@@ -384,13 +411,23 @@ func scalarKind(t types.Type) (kind, bool) {
 	return 0, false
 }
 
-func position(fset *token.FileSet, dir string, p token.Pos) string {
-	pos := fset.Position(p)
-	name := pos.Filename
+// pos is a source position for generator errors, relative to the package.
+type pos struct {
+	file string
+	line int
+}
+
+func position(fset *token.FileSet, dir string, p token.Pos) pos {
+	at := fset.Position(p)
+	return pos{file: relPath(dir, at.Filename), line: at.Line}
+}
+
+// relPath shortens name to a path relative to dir when it is inside dir.
+func relPath(dir, name string) string {
 	if rel, err := filepath.Rel(dir, name); err == nil && !strings.HasPrefix(rel, "..") {
-		name = rel
+		return rel
 	}
-	return fmt.Sprintf("%s:%d", name, pos.Line)
+	return name
 }
 
 func joinNonEmpty(sep, a, b string) string {

@@ -1,6 +1,7 @@
 package generrors
 
 import (
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/token"
@@ -11,6 +12,7 @@ import (
 
 	"golang.org/x/tools/go/packages"
 
+	"github.com/nanostack-dev/nanostack-framework/gen"
 	"github.com/nanostack-dev/nanostack-framework/gen/internal/gopkg"
 )
 
@@ -21,7 +23,31 @@ const loadMode = packages.NeedName | packages.NeedTypes | packages.NeedSyntax | 
 type loaded struct {
 	dir     string // absolute package directory
 	outPath string // absolute path of the generated file
+	overlay map[string][]byte
 	pkg     *packages.Package
+}
+
+// pos is a source position for generator errors, relative to the package.
+type pos struct {
+	file string
+	line int
+}
+
+func (p pos) String() string { return fmt.Sprintf("%s:%d", p.file, p.line) }
+
+// errorf returns a problem at p.
+func (p pos) errorf(fix, format string, args ...any) *gen.Error {
+	return gen.Errorf(p.file, p.line, fix, format, args...)
+}
+
+// wrap places a problem without a position at p, after prefix.
+func (p pos) wrap(prefix string, e *gen.Error) *gen.Error {
+	return gen.Errorf(p.file, p.line, e.Fix, "%s: %s", prefix, e.Msg)
+}
+
+// problem returns a problem without a position; the caller places it.
+func problem(fix, format string, args ...any) *gen.Error {
+	return gen.Errorf("", 0, fix, format, args...)
 }
 
 // loadPackage type-checks the package with the generated file replaced by an
@@ -31,73 +57,69 @@ type loaded struct {
 // declaration file are expected here and ignored; verify reports any that
 // remain once the new output is in place. Errors that stop type checking
 // (go list, syntax) are returned.
-func loadPackage(dir, out string) (*loaded, error) {
-	absDir, err := filepath.Abs(dir)
+func loadPackage(opts Options) (*loaded, error) {
+	absDir, err := filepath.Abs(opts.Dir)
 	if err != nil {
-		return nil, fmt.Errorf("resolve %s: %w", dir, err)
+		return nil, gen.EnvErrorf("run from a directory that exists", "resolve %s: %v", opts.Dir, err)
 	}
-	pkgName, err := gopkg.PackageName(absDir, out)
+	pkgName, err := gopkg.PackageName(absDir, opts.Out)
 	if err != nil {
 		return nil, err
 	}
-	l := &loaded{dir: absDir, outPath: filepath.Join(absDir, out)}
+	l := &loaded{dir: absDir, outPath: filepath.Join(absDir, opts.Out), overlay: opts.Overlay}
 	l.pkg, err = l.load([]byte("package " + pkgName + "\n"))
 	if err != nil {
 		return nil, err
 	}
-	var fatal []string
+	var fatal []packages.Error
 	for _, e := range l.pkg.Errors {
-		if e.Kind != packages.TypeError && !isCompileReport(l.pkg, e) {
-			fatal = append(fatal, l.rel(e.Error()))
+		if e.Kind != packages.TypeError && !gopkg.IsCompileReport(l.pkg, e) {
+			fatal = append(fatal, e)
 		}
 	}
 	if len(fatal) > 0 {
-		return nil, fmt.Errorf(
-			"package %s does not compile; fix it first:\n%s",
-			l.pkg.PkgPath,
-			strings.Join(fatal, "\n"),
-		)
+		return nil, errors.Join(gopkg.Problems(fatal, l.relPath,
+			"make the package compile; nano gen errors replaces "+opts.Out+" with an empty file")...)
 	}
 	return l, nil
 }
 
+// load type-checks the package with generated as the output file, on top of
+// the caller's overlay.
 func (l *loaded) load(generated []byte) (*packages.Package, error) {
+	overlay, err := gopkg.Overlay(l.overlay, map[string][]byte{l.outPath: generated})
+	if err != nil {
+		return nil, err
+	}
 	cfg := &packages.Config{
 		Mode:    loadMode,
 		Dir:     l.dir,
 		Fset:    token.NewFileSet(),
-		Overlay: map[string][]byte{l.outPath: generated},
+		Overlay: overlay,
 	}
 	pkgs, err := packages.Load(cfg, ".")
 	if err != nil {
-		return nil, fmt.Errorf("load package %s: %w", l.dir, err)
+		return nil, gopkg.LoadFailed(l.dir, err)
 	}
 	if len(pkgs) != 1 {
-		return nil, fmt.Errorf("%s: expected one package, found %d", l.dir, len(pkgs))
+		return nil, gen.Errorf("", 0, "pass -dir with the directory of one package",
+			"%s holds %d packages", l.dir, len(pkgs))
 	}
 	return pkgs[0], nil
-}
-
-// isCompileReport reports whether e is the go command's compile output for
-// the package itself. go list compiles the package for export data and
-// reports its type errors as one list error; the type check of the source
-// reports the same errors one by one, with positions.
-func isCompileReport(pkg *packages.Package, e packages.Error) bool {
-	return e.Kind == packages.ListError && strings.HasPrefix(e.Msg, "# "+pkg.PkgPath+"\n")
 }
 
 // errorsWithin returns the type errors located in node, the declaration
 // interface. Errors elsewhere may come from code that calls the generated
 // API; verify checks them once the new output is in place.
-func (l *loaded) errorsWithin(node ast.Node) []string {
+func (l *loaded) errorsWithin(node ast.Node) []error {
 	start, end := l.pkg.Fset.Position(node.Pos()), l.pkg.Fset.Position(node.End())
-	var out []string
+	var within []packages.Error
 	for _, e := range l.pkg.Errors {
-		if file, line := splitPos(e.Pos); file == start.Filename && line >= start.Line && line <= end.Line {
-			out = append(out, l.rel(e.Error()))
+		if file, line := gopkg.SplitPos(e.Pos); file == start.Filename && line >= start.Line && line <= end.Line {
+			within = append(within, e)
 		}
 	}
-	return out
+	return gopkg.Problems(within, l.relPath, "fix the declaration so that it compiles")
 }
 
 // syntax returns the hand-written files of the package with their names
@@ -123,17 +145,17 @@ func (l *loaded) scopeNames() []string {
 }
 
 // lookup returns the package-level object called name and its position.
-func (l *loaded) lookup(name string) (types.Object, string) {
+func (l *loaded) lookup(name string) (types.Object, pos) {
 	obj := l.pkg.Types.Scope().Lookup(name)
 	if obj == nil {
-		return nil, ""
+		return nil, pos{}
 	}
 	return obj, l.position(obj.Pos())
 }
 
-func (l *loaded) position(p token.Pos) string {
-	pos := l.pkg.Fset.Position(p)
-	return fmt.Sprintf("%s:%d", l.relPath(pos.Filename), pos.Line)
+func (l *loaded) position(p token.Pos) pos {
+	at := l.pkg.Fset.Position(p)
+	return pos{file: l.relPath(at.Filename), line: at.Line}
 }
 
 func (l *loaded) relPath(name string) string {
@@ -141,11 +163,6 @@ func (l *loaded) relPath(name string) string {
 		return rel
 	}
 	return name
-}
-
-// rel shortens absolute paths in a message to paths relative to the package.
-func (l *loaded) rel(msg string) string {
-	return strings.ReplaceAll(msg, l.dir+string(filepath.Separator), "")
 }
 
 // verify type-checks the package with src as the generated file. It is the
@@ -162,36 +179,37 @@ func (l *loaded) verify(c *catalogue, src []byte) error {
 	}
 	starts := declLines(c, src)
 	out := filepath.Base(l.outPath)
-	var genErrs, otherErrs []string
+	var genErrs, other []packages.Error
 	for _, e := range pkg.Errors {
-		if isCompileReport(pkg, e) {
+		if gopkg.IsCompileReport(pkg, e) {
 			continue
 		}
-		file, line := splitPos(e.Pos)
-		if file != l.outPath {
-			otherErrs = append(otherErrs, l.rel(e.Error()))
+		if file, _ := gopkg.SplitPos(e.Pos); file != l.outPath {
+			other = append(other, e)
 			continue
 		}
-		at, name := c.at, c.iface
-		for _, s := range starts {
-			if s.line <= line {
-				at, name = s.decl.at, s.decl.name
-			}
-		}
-		genErrs = append(genErrs, fmt.Sprintf("%s: %s: generated code does not compile: %s (%s:%d)",
-			at, name, e.Msg, out, line))
-	}
-	if len(genErrs)+len(otherErrs) == 0 {
-		for _, e := range pkg.Errors {
-			otherErrs = append(otherErrs, l.rel(e.Error()))
-		}
+		genErrs = append(genErrs, e)
 	}
 	if len(genErrs) > 0 {
-		return fmt.Errorf("%s\nthis is a gap in the nano gen errors checks; rename the declaration to work "+
-			"around it and report it", strings.Join(genErrs, "\n"))
+		problems := make([]error, 0, len(genErrs))
+		for _, e := range genErrs {
+			_, line := gopkg.SplitPos(e.Pos)
+			at, name := c.at, c.iface
+			for _, s := range starts {
+				if s.line <= line {
+					at, name = s.decl.at, s.decl.name
+				}
+			}
+			problems = append(problems, at.errorf(
+				"rename the declaration to work around it, and report this gap in the nano gen errors checks",
+				"%s: generated code does not compile: %s (%s:%d)", name, e.Msg, out, line))
+		}
+		return errors.Join(problems...)
 	}
-	return fmt.Errorf("package %s does not compile with the new %s; update the code that uses it:\n%s",
-		pkg.PkgPath, out, strings.Join(otherErrs, "\n"))
+	if len(other) == 0 {
+		other = pkg.Errors
+	}
+	return errors.Join(gopkg.Problems(other, l.relPath, "update the code that uses the generated "+out)...)
 }
 
 type declStart struct {
@@ -214,15 +232,4 @@ func declLines(c *catalogue, src []byte) []declStart {
 		}
 	}
 	return out
-}
-
-// splitPos splits "file:line:col" into the file and the line.
-func splitPos(pos string) (string, int) {
-	parts := strings.Split(pos, ":")
-	if len(parts) < 3 {
-		return pos, 0
-	}
-	var line int
-	_, _ = fmt.Sscanf(parts[len(parts)-2], "%d", &line)
-	return strings.Join(parts[:len(parts)-2], ":"), line
 }

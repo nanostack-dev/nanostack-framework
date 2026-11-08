@@ -35,6 +35,19 @@ func sanitizeIdent(s string) string {
 	return strings.ToLower(b.String())
 }
 
+// at returns the position of p for a problem: the file as relFile names it,
+// and the line.
+func (m *manifest) at(p token.Pos) pos {
+	if !p.IsValid() {
+		return pos{}
+	}
+	at := m.fset.Position(p)
+	if at.Filename == "" {
+		return pos{}
+	}
+	return pos{file: m.relFile(at.Filename), line: at.Line}
+}
+
 // relPos formats a position as file:line relative to Options.Base for files
 // in the main module, and as importpath/file:line otherwise, so messages are
 // the same on every machine.

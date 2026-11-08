@@ -13,8 +13,9 @@
 package genvalidate
 
 import (
-	"fmt"
+	"go/token"
 	"go/types"
+	"os"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -40,6 +41,10 @@ type Options struct {
 	Allow []string
 	// Check makes Run compare instead of writing.
 	Check bool
+	// Overlay replaces Go files in the package load, keyed by absolute
+	// path, as in golang.org/x/tools/go/packages. The output file is always
+	// replaced by an empty one. The spec is an input and is read from disk.
+	Overlay map[string][]byte
 }
 
 // DefaultOutput is the generated file name when Options.Output is empty.
@@ -71,7 +76,7 @@ func Generate(cfg Options) (*Result, error) {
 	if cfg.Output == "" {
 		cfg.Output = DefaultOutput
 	}
-	gp, err := loadPackage(cfg.Dir, cfg.Output)
+	gp, err := loadPackage(cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -168,7 +173,7 @@ func (g *generator) run(specRel string) ([]byte, error) {
 		gop := g.gp.ops[key]
 		op, ok := ops[key]
 		if !ok {
-			g.errorf("StrictServerInterface.%s: no operation %s in the spec", gop.Name, key)
+			g.goErrorf(gop.Pos, regenerateFix, "StrictServerInterface.%s: no operation %s in the spec", gop.Name, key)
 			continue
 		}
 		g.operation(gop, op)
@@ -209,7 +214,7 @@ func (g *generator) methodBody(m *method) string {
 func (g *generator) operation(gop *goOperation, op *oas.Operation) {
 	st, ok := structOf(gop.Request)
 	if !ok {
-		g.errorf("%s: %s is not a struct", op.Loc, gop.Request.Obj().Name())
+		g.goErrorf(gop.Pos, regenerateFix, "%s: %s is not a struct", op.Loc, gop.Request.Obj().Name())
 		return
 	}
 	bodies, hasParams := requestFields(st)
@@ -272,8 +277,9 @@ func (g *generator) body(op *oas.Operation, f *types.Var, mt oas.MediaType) {
 	elem := types.Unalias(ptr.Elem())
 	n := g.localNamed(elem)
 	if n == nil {
-		g.errorf("%s: request body type %s cannot have a Validate method (it is not a type defined in this "+
-			"package); give the body schema a component without x-go-type", op.Loc, types.TypeString(elem, nil))
+		g.errorf("give the body schema a component without x-go-type",
+			"%s: request body type %s cannot have a Validate method (it is not a type defined in this package)",
+			op.Loc, types.TypeString(elem, nil))
 		return
 	}
 	sc := mt.Schema
@@ -281,7 +287,8 @@ func (g *generator) body(op *oas.Operation, f *types.Var, mt oas.MediaType) {
 		sc = &oas.Schema{Loc: op.Loc + "/requestBody"}
 	}
 	if !g.claim(n, g.spec.Resolve(sc)) {
-		g.errorf("%s: Go type %s already validates another schema", op.Loc, n.Obj().Name())
+		g.errorf("give each request body schema a Go type of its own",
+			"%s: Go type %s already validates another schema", op.Loc, n.Obj().Name())
 	}
 	if sc.Siblings() != nil {
 		g.diag(sc.Loc, "constraints next to the request body $ref are not enforced")
@@ -360,8 +367,33 @@ func (g *generator) localNamed(t types.Type) *types.Named {
 	return n
 }
 
-func (g *generator) errorf(format string, args ...any) {
-	g.errs = append(g.errs, fmt.Errorf(format, args...))
+// regenerateFix is the fix when the Go package does not match the spec.
+const regenerateFix = "regenerate the oapi-codegen package from this spec with strict-server: true, " +
+	"or pass the -spec it was generated from"
+
+// errorf records a problem in the spec. Its location is the JSON Pointer at
+// the start of the message; the spec line is not known here.
+func (g *generator) errorf(fix, format string, args ...any) {
+	g.errs = append(g.errs, gen.Errorf(g.spec.Path, 0, fix, format, args...))
+}
+
+// goErrorf records a problem at a position in the Go package.
+func (g *generator) goErrorf(pos token.Pos, fix, format string, args ...any) {
+	at := g.gp.fset.Position(pos)
+	g.errs = append(g.errs, gen.Errorf(relWD(at.Filename), at.Line, fix, format, args...))
+}
+
+// relWD shortens an absolute path to one relative to the working directory,
+// as the paths a caller passes are.
+func relWD(name string) string {
+	wd, err := os.Getwd()
+	if err != nil {
+		return name
+	}
+	if rel, relErr := filepath.Rel(wd, name); relErr == nil && !strings.HasPrefix(rel, "..") {
+		return rel
+	}
+	return name
 }
 
 func (g *generator) diag(loc, msg string) {

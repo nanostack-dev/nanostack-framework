@@ -65,7 +65,7 @@ func TestMainFailsOnUnenforcedFeatures(t *testing.T) {
 	if err = os.WriteFile(spec, []byte(edited), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	const failure = "schema features are not enforced: 1"
+	const failure = "fix: change the schema, or acknowledge the gap with -allow '#/components/schemas/Body/properties/note'"
 	const listed = "not enforced: #/components/schemas/Body/properties/note: not is not enforced"
 
 	var stderr bytes.Buffer

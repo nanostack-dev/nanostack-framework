@@ -48,7 +48,7 @@ components:
 func (s *Spec) lookupSchema(t *testing.T, name string) *Schema {
 	t.Helper()
 	ref := "#/components/schemas/" + name
-	s.parseRef(ref, "test")
+	s.parseRef(ref, "test", 0)
 	sc := s.schemas[ref]
 	if sc == nil {
 		t.Fatalf("schema %s not parsed", name)

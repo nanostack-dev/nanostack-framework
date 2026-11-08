@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/nanostack-dev/nanostack-framework/core/secret"
+	"github.com/nanostack-dev/nanostack-framework/gen"
 	"github.com/nanostack-dev/nanostack-framework/gen/internal/importset"
 )
 
@@ -56,7 +57,8 @@ func renderGo(m *model) ([]byte, error) {
 	file.WriteString(body.String())
 	src, err := format.Source([]byte(file.String()))
 	if err != nil {
-		return nil, fmt.Errorf("format generated code: %w\n%s", err, file.String())
+		return nil, gen.Errorf("", 0, "report this nano gen config bug with the configuration struct",
+			"format generated code: %v\n%s", err, file.String())
 	}
 	return src, nil
 }

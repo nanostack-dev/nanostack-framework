@@ -4,7 +4,10 @@
 //
 // Each generator follows the contract of package gen and documents its flags
 // (nano gen <generator> -h). Every generator takes -check, which writes
-// nothing and exits 1 when its output is stale.
+// nothing and exits 1 when its output is stale. Exit codes: 0 success, 1 a
+// source error or stale output, 2 bad usage, 3 an environment failure (the
+// go command cannot load packages, or a file cannot be read or written).
+// Each error prints as "file:line: message" with an indented "fix:" line.
 package main
 
 import (

@@ -10,7 +10,7 @@ The repository is a Go module consumed by applications; it does not deploy a pro
 | `pkg` | Functional values, transaction/query helpers, SQL error classification, health, logs, tracing, validation, IDs, secrets, HTTP helpers and generic test infrastructure | [Package boundary](../../pkg/README.md) |
 | `core/validate`, `core/fault` | Runtime of generated request validators and error catalogues | [HTTP boundary](../http-boundary.md) |
 | `http/nanohttp`, `http/problem` | Strict request decoding, generated validation and RFC 9457 problem responses | [HTTP boundary](../http-boundary.md) |
-| `gen` | Generator contract: `gen.File`, `gen.ErrStale`, `gen.Sync`, `gen.Command` | [Generator contract](../../gen/README.md) |
+| `gen` | Generator contract: `gen.File`, `gen.Error`, `gen.ErrStale`, `gen.ErrEnvironment`, `gen.Sync`, `gen.Report`, `gen.Command` | [Generator contract](../../gen/README.md) |
 | `gen/wire` | `nano gen wire`: manifest to `wire.gen.go` with `Build`, `BuildComponents`, typed `Overrides`, `-check` | [Wiring guide](../generation.md#wiring-nano-gen-wire) |
 | `gen/config`, `gen/errors` | `nano gen config` (binder, `CONFIG.md`, `.env.example`) and `nano gen errors` (typed errors, `ERRORS.md`) | [Generation](../generation.md) |
 | `gen/cmd/nano` | The one CLI: `nano gen config\|errors\|validate\|wire`, each with `-check`. Services run it as a `tool` | [Checking generated files](../generation.md#checking-generated-files) |

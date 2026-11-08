@@ -14,6 +14,7 @@ import (
 
 	"github.com/nanostack-dev/nanostack-framework/gen/validate/internal/oas"
 
+	"github.com/nanostack-dev/nanostack-framework/gen"
 	"github.com/nanostack-dev/nanostack-framework/gen/internal/importset"
 )
 
@@ -54,8 +55,14 @@ func (g *generator) use(path string) {
 	want := fixedImports[path]
 	if got := g.imports.Add(path, want); got != want && !g.renamed[path] {
 		g.renamed[path] = true
-		g.errorf("package %s declares %s, which the generated file needs as the name of %s; rename it",
-			g.gp.pkg.Path(), want, path)
+		fix := fmt.Sprintf("rename %s in package %s", want, g.gp.pkg.Path())
+		if obj := g.gp.pkg.Scope().Lookup(want); obj != nil {
+			g.goErrorf(obj.Pos(), fix, "package %s declares %s, which the generated file needs as the name of %s",
+				g.gp.pkg.Path(), want, path)
+		} else {
+			g.errorf(fix, "package %s declares %s, which the generated file needs as the name of %s",
+				g.gp.pkg.Path(), want, path)
+		}
 	}
 }
 
@@ -69,7 +76,7 @@ func (g *generator) typeString(t types.Type) string {
 func (g *generator) pattern(loc, p string) (string, bool) {
 	re, err := translatePattern(p)
 	if err != nil {
-		g.errorf("%s: %v", loc, err)
+		g.errorf("rewrite the pattern in the part of ECMA-262 that RE2 supports", "%s: %v", loc, err)
 		return "", false
 	}
 	if name, ok := g.patterns[re]; ok {
@@ -137,7 +144,8 @@ func (g *generator) render(specRel string) ([]byte, error) {
 	}
 	src, err := format.Source(b.Bytes())
 	if err != nil {
-		return nil, fmt.Errorf("format generated code: %w\n%s", err, b.String())
+		return nil, gen.Errorf("", 0, "report this nano gen validate bug with the spec",
+			"format generated code: %v\n%s", err, b.String())
 	}
 	return src, nil
 }
@@ -207,6 +215,7 @@ func (g *generator) paramsBody(pm *paramsMethod) string {
 		if prm.In != "path" {
 			if params == nil {
 				g.errorf(
+					regenerateFix,
 					"%s: %s has no Params field for %s parameter %q",
 					prm.Loc,
 					pm.req.Obj().Name(),
@@ -219,7 +228,8 @@ func (g *generator) paramsBody(pm *paramsMethod) string {
 		}
 		f, ok := fieldByJSON(owner, prm.Name)
 		if !ok {
-			g.errorf("%s: no Go field for %s parameter %q in %s", prm.Loc, prm.In, prm.Name, pm.req.Obj().Name())
+			g.errorf(regenerateFix, "%s: no Go field for %s parameter %q in %s",
+				prm.Loc, prm.In, prm.Name, pm.req.Obj().Name())
 			continue
 		}
 		path := fmt.Sprintf("p.Field(%q)", prm.Name)

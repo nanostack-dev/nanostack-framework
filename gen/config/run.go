@@ -41,6 +41,11 @@
 // those), time.Duration, *url.URL, secret.Secret, any type whose pointer
 // implements encoding.TextUnmarshaler, slices of those, and nested structs.
 //
+// The package loads with -tags=nanogen, as nano gen wire does: wire.gen.go
+// and the files that call Build carry //go:build !nanogen, so a renamed
+// Config field they still read never blocks regeneration. Keep Config in a
+// file without a build tag.
+//
 // The package is named genconfig rather than config so that it never collides
 // with the core/config runtime it generates calls to.
 package genconfig
@@ -70,6 +75,10 @@ type Options struct {
 	// Check compares instead of writing and returns an error wrapping
 	// gen.ErrStale on drift.
 	Check bool
+	// Overlay replaces files in the package load, keyed by absolute path,
+	// as in golang.org/x/tools/go/packages. The output file is always
+	// replaced by a stub of the generated API.
+	Overlay map[string][]byte
 }
 
 func (o Options) withDefaults() Options {
@@ -94,7 +103,7 @@ func (o Options) withDefaults() Options {
 // Generate returns the generated files without touching the disk.
 func Generate(opts Options) ([]gen.File, error) {
 	opts = opts.withDefaults()
-	m, err := load(opts.Dir, opts.Type, opts.Out)
+	m, err := load(opts)
 	if err != nil {
 		return nil, err
 	}
@@ -127,8 +136,8 @@ func run(opts Options) ([]string, error) {
 
 // Main runs `nano gen config [-dir d] [-type T] [-out f] [-doc f] [-env f] [-check]`
 // and returns the process exit code: 0 on success, 1 on stale output or a
-// source error, 2 on bad flags; -h prints the flags and returns 0. It is a
-// gen.Command.
+// source error, 2 on bad flags, 3 when the environment fails; -h prints the
+// flags and returns 0. It is a gen.Command.
 func Main(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("nano gen config", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -144,8 +153,7 @@ func Main(args []string, stdout, stderr io.Writer) int {
 	}
 	written, err := run(opts)
 	if err != nil {
-		_, _ = fmt.Fprintf(stderr, "nano gen config: %v\n", err)
-		return 1
+		return gen.Report(stderr, "config", err)
 	}
 	for _, path := range written {
 		_, _ = fmt.Fprintf(stdout, "nano gen config: wrote %s\n", path)

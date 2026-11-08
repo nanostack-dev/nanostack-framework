@@ -228,7 +228,8 @@ func (g *generator) propertyField(prop oas.Property, owner types.Type, st *types
 			prop.Name, types.TypeString(owner, nil)))
 		return nil, false
 	case !ok:
-		g.errorf("%s: property %q has no field in Go type %s", sc.Loc, prop.Name, types.TypeString(owner, nil))
+		g.errorf(regenerateFix, "%s: property %q has no field in Go type %s",
+			sc.Loc, prop.Name, types.TypeString(owner, nil))
 		return nil, false
 	case !f.Exported() && f.Pkg() != g.gp.pkg:
 		g.diag(sc.Loc, fmt.Sprintf("property %q is not checked: its Go field is unexported", prop.Name))

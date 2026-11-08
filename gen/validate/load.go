@@ -6,7 +6,6 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
-	"os"
 	"path/filepath"
 	"reflect"
 	"regexp"
@@ -14,6 +13,7 @@ import (
 
 	"golang.org/x/tools/go/packages"
 
+	"github.com/nanostack-dev/nanostack-framework/gen"
 	"github.com/nanostack-dev/nanostack-framework/gen/internal/gopkg"
 )
 
@@ -35,23 +35,25 @@ type goOperation struct {
 
 var opComment = regexp.MustCompile(`^\s*\(([A-Z]+) (\S+)\)\s*$`)
 
-// loadPackage type-checks the package in dir without the generated output
-// file, so a stale or missing validate.gen.go never blocks generation.
-// Type errors are expected (the strict template calls methods this
-// generator writes) and are ignored; the types are still complete.
-func loadPackage(dir, output string) (*goPackage, error) {
+// loadPackage type-checks the package in dir with the generated output
+// file replaced by an empty one, so a stale or missing validate.gen.go never
+// blocks generation. Type errors are expected (the strict template calls
+// methods this generator writes) and are ignored; the types are still
+// complete.
+func loadPackage(opts Options) (*goPackage, error) {
+	dir := opts.Dir
 	absDir, err := filepath.Abs(dir)
+	if err != nil {
+		return nil, gen.EnvErrorf("run from a directory that exists", "resolve %s: %v", dir, err)
+	}
+	absOut := filepath.Join(absDir, filepath.Base(opts.Output))
+	name, err := gopkg.PackageName(absDir, filepath.Base(absOut))
 	if err != nil {
 		return nil, err
 	}
-	absOut := filepath.Join(absDir, filepath.Base(output))
-	overlay := map[string][]byte{}
-	if _, statErr := os.Stat(absOut); statErr == nil {
-		name, nameErr := gopkg.PackageName(absDir, filepath.Base(absOut))
-		if nameErr != nil {
-			return nil, nameErr
-		}
-		overlay[absOut] = []byte("package " + name + "\n")
+	overlay, err := gopkg.Overlay(opts.Overlay, map[string][]byte{absOut: []byte("package " + name + "\n")})
+	if err != nil {
+		return nil, err
 	}
 	cfg := &packages.Config{
 		Mode: packages.NeedName | packages.NeedFiles | packages.NeedSyntax |
@@ -62,41 +64,52 @@ func loadPackage(dir, output string) (*goPackage, error) {
 	}
 	pkgs, err := packages.Load(cfg, ".")
 	if err != nil {
-		return nil, fmt.Errorf("load Go package %s: %w", dir, err)
+		return nil, gopkg.LoadFailed(dir, err)
 	}
 	if len(pkgs) != 1 || pkgs[0].Types == nil {
-		return nil, fmt.Errorf("load Go package %s: no package", dir)
+		return nil, gen.Errorf(dir, 0, "pass -dir with the directory of the oapi-codegen package",
+			"not one Go package")
 	}
 	p := pkgs[0]
+	// Type errors, including the compile errors go list reports, are
+	// expected: the strict template calls the methods generated here.
+	var syntax []packages.Error
 	for _, e := range p.Errors {
-		// Type errors, including the compile errors go list reports, are
-		// expected: the strict template calls the methods generated here.
 		if e.Kind == packages.ParseError {
-			return nil, fmt.Errorf("load Go package %s: %w", dir, e)
+			syntax = append(syntax, e)
 		}
 	}
+	if len(syntax) > 0 {
+		return nil, errors.Join(gopkg.Problems(syntax, relWD, "fix the syntax error")...)
+	}
 	gp := &goPackage{pkg: p.Types, fset: p.Fset, ops: map[string]*goOperation{}}
-	if opErr := gp.findOperations(p.Syntax); opErr != nil {
+	if opErr := gp.findOperations(dir, p.Syntax); opErr != nil {
 		return nil, opErr
 	}
 	return gp, nil
 }
 
+// strictFix is the fix when the package lacks what oapi-codegen's strict
+// server writes.
+const strictFix = "generate the package with oapi-codegen and strict-server: true; " +
+	"nano gen validate reads the StrictServerInterface it writes"
+
 // findOperations reads StrictServerInterface: each method is documented
 // with "(METHOD /path)", which joins it to the spec without re-deriving
 // oapi-codegen's names.
-func (gp *goPackage) findOperations(files []*ast.File) error {
+func (gp *goPackage) findOperations(dir string, files []*ast.File) error {
 	obj := gp.pkg.Scope().Lookup("StrictServerInterface")
 	if obj == nil {
-		return errors.New("the package has no StrictServerInterface: generate it with strict-server: true")
+		return gen.Errorf(dir, 0, strictFix, "the package has no StrictServerInterface")
 	}
+	at := gp.fset.Position(obj.Pos())
 	iface, isIface := obj.Type().Underlying().(*types.Interface)
 	if !isIface {
-		return errors.New("StrictServerInterface is not an interface")
+		return gen.Errorf(relWD(at.Filename), at.Line, strictFix, "StrictServerInterface is not an interface")
 	}
 	decl := interfaceDecl(files, "StrictServerInterface")
 	if decl == nil {
-		return errors.New("StrictServerInterface declaration not found")
+		return gen.Errorf(relWD(at.Filename), at.Line, strictFix, "StrictServerInterface declaration not found")
 	}
 	for _, field := range decl.Methods.List {
 		if len(field.Names) != 1 || field.Doc == nil {
@@ -104,12 +117,14 @@ func (gp *goPackage) findOperations(files []*ast.File) error {
 		}
 		name := field.Names[0].Name
 		key := operationKey(field.Doc)
+		fieldAt := gp.fset.Position(field.Pos())
 		if key == "" {
-			return fmt.Errorf("StrictServerInterface.%s has no (METHOD /path) comment", name)
+			return gen.Errorf(relWD(fieldAt.Filename), fieldAt.Line, strictFix,
+				"StrictServerInterface.%s has no (METHOD /path) comment", name)
 		}
-		req, err := requestType(iface, name)
-		if err != nil {
-			return err
+		req, msg := requestType(iface, name)
+		if msg != "" {
+			return gen.Errorf(relWD(fieldAt.Filename), fieldAt.Line, strictFix, "%s", msg)
 		}
 		gp.ops[key] = &goOperation{Name: name, Request: req, Pos: field.Pos()}
 		gp.order = append(gp.order, key)
@@ -140,23 +155,24 @@ func operationKey(doc *ast.CommentGroup) string {
 	return ""
 }
 
-// requestType returns the RequestObject type of an interface method.
-func requestType(iface *types.Interface, name string) (*types.Named, error) {
+// requestType returns the RequestObject type of an interface method, or
+// what is wrong with the method.
+func requestType(iface *types.Interface, name string) (*types.Named, string) {
 	for fn := range iface.Methods() {
 		if fn.Name() != name {
 			continue
 		}
 		sig, _ := fn.Type().(*types.Signature)
 		if sig == nil || sig.Params().Len() != 2 {
-			return nil, fmt.Errorf("StrictServerInterface.%s: unexpected signature", name)
+			return nil, fmt.Sprintf("StrictServerInterface.%s: unexpected signature", name)
 		}
 		req, isNamed := types.Unalias(sig.Params().At(1).Type()).(*types.Named)
 		if !isNamed {
-			return nil, fmt.Errorf("StrictServerInterface.%s: request is not a named type", name)
+			return nil, fmt.Sprintf("StrictServerInterface.%s: request is not a named type", name)
 		}
-		return req, nil
+		return req, ""
 	}
-	return nil, fmt.Errorf("StrictServerInterface.%s: method not found", name)
+	return nil, fmt.Sprintf("StrictServerInterface.%s: method not found", name)
 }
 
 // structOf returns the struct underlying t, if any.

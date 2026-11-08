@@ -18,8 +18,16 @@ func TestRun(t *testing.T) {
 	if code := run(cyclic, &stdout, &stderr); code != 1 {
 		t.Fatalf("check on a cyclic graph: exit %d, want 1", code)
 	}
-	if !strings.Contains(stderr.String(), "dependency cycle") {
-		t.Fatalf("stderr = %q, want the cycle diagnostic", stderr.String())
+	if !strings.Contains(stderr.String(), "dependency cycle") || !strings.Contains(stderr.String(), "\n  fix: ") {
+		t.Fatalf("stderr = %q, want the cycle diagnostic and its fix", stderr.String())
+	}
+
+	// An output path the generator cannot read is the machine's problem,
+	// not the source's: exit 3. httpconf is a directory in the fixture.
+	stderr.Reset()
+	unreadable := []string{"gen", "config", "-dir", "../../config/testdata/app", "-doc", "httpconf", "-check"}
+	if code := run(unreadable, &stdout, &stderr); code != 3 || !strings.Contains(stderr.String(), "fix: ") {
+		t.Fatalf("check with a directory as -doc: exit %d, stderr %q; want 3 and a fix", code, stderr.String())
 	}
 
 	for _, args := range [][]string{{"gen"}, {"gen", "nope"}, {"build", "wire"}} {

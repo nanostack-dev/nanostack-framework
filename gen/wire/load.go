@@ -2,7 +2,6 @@ package wire
 
 import (
 	"errors"
-	"fmt"
 	"go/ast"
 	"go/constant"
 	"go/token"
@@ -13,6 +12,9 @@ import (
 	"strings"
 
 	"golang.org/x/tools/go/packages"
+
+	"github.com/nanostack-dev/nanostack-framework/gen"
+	"github.com/nanostack-dev/nanostack-framework/gen/internal/gopkg"
 )
 
 // NanoPath is the import path of the runtime package the manifest uses.
@@ -98,7 +100,8 @@ func loadManifest(opts Options) (*manifest, error) {
 			}
 		}
 		if len(extra) == before {
-			return nil, fmt.Errorf("cannot load the syntax of %v", extra)
+			return nil, gen.Errorf("", 0, "report this nano gen wire bug with the manifest",
+				"cannot load the syntax of %v", extra)
 		}
 		slices.Sort(extra)
 	}
@@ -106,24 +109,34 @@ func loadManifest(opts Options) (*manifest, error) {
 
 func load(opts Options, extra []string) ([]*packages.Package, error) {
 	tags := append([]string{buildTag}, opts.Tags...)
+	overlay, err := gopkg.Overlay(opts.Overlay, nil)
+	if err != nil {
+		return nil, err
+	}
 	cfg := &packages.Config{
 		Mode: packages.NeedName | packages.NeedFiles | packages.NeedSyntax | packages.NeedTypes |
 			packages.NeedTypesInfo | packages.NeedImports | packages.NeedModule,
 		Dir:        opts.Dir,
 		BuildFlags: []string{"-tags=" + strings.Join(tags, ",")},
+		Overlay:    overlay,
 	}
 	pkgs, err := packages.Load(cfg, append([]string{"."}, extra...)...)
 	if err != nil {
-		return nil, fmt.Errorf("load %s: %w", opts.Dir, err)
+		return nil, gopkg.LoadFailed(opts.Dir, err)
+	}
+	rel := func(file string) string {
+		if r, relErr := filepath.Rel(opts.Base, file); relErr == nil && !strings.HasPrefix(r, "..") {
+			return filepath.ToSlash(r)
+		}
+		return file
 	}
 	var errs []error
 	for _, p := range pkgs {
-		for _, e := range p.Errors {
-			errs = append(errs, errors.New(e.Error()))
-		}
+		errs = append(errs, gopkg.CompileErrors(p, rel,
+			"make the manifest package compile with -tags="+strings.Join(tags, ","))...)
 	}
 	if len(errs) > 0 {
-		return nil, fmt.Errorf("the manifest package does not compile:\n%w", errors.Join(errs...))
+		return nil, errors.Join(errs...)
 	}
 	return pkgs, nil
 }
@@ -162,13 +175,18 @@ func newWalker(opts Options, pkgs []*packages.Package) *walker {
 	return w
 }
 
+// pos returns "file:line" of p, for messages.
 func (w *walker) pos(p token.Pos) string { return w.m.relPos(p) }
+
+// at returns the position of p, for a problem.
+func (w *walker) at(p token.Pos) pos { return w.m.at(p) }
 
 func (w *walker) walk() (*manifest, error) {
 	m := w.m
 	root := m.root
 	if root.Module == nil {
-		return nil, fmt.Errorf("%s is not in a Go module", w.opts.Dir)
+		return nil, gen.Errorf("", 0, "run nano gen wire on a package inside a Go module",
+			"%s is not in a Go module", w.opts.Dir)
 	}
 	m.modDir, m.modPath = root.Module.Dir, root.Module.Path
 
@@ -179,8 +197,9 @@ func (w *walker) walk() (*manifest, error) {
 	}
 	spec, call := w.findManifest()
 	if spec == nil {
-		return nil, fmt.Errorf("no manifest in %s: declare var App = nano.Manifest(\"name\", ...) "+
-			"in a file with the %s build tag", w.opts.Dir, buildTag)
+		return nil, gen.Errorf("", 0,
+			"declare var App = nano.Manifest(\"name\", ...) in a file with the "+buildTag+" build tag",
+			"no manifest in %s", w.opts.Dir)
 	}
 	if err := w.lookupNano(); err != nil {
 		return nil, err
@@ -192,13 +211,15 @@ func (w *walker) walk() (*manifest, error) {
 
 	m.file = m.fset.Position(spec.Pos()).Filename
 	if len(call.Args) == 0 {
-		w.d.add(w.pos(call.Pos()), "nano.Manifest needs the app name as its first argument")
+		w.d.add(w.at(call.Pos()), "pass the app name first: nano.Manifest(\"name\", ...)",
+			"nano.Manifest has no app name")
 		return nil, w.d.err()
 	}
 	if tv, ok := root.TypesInfo.Types[call.Args[0]]; ok && tv.Value != nil && tv.Value.Kind() == constant.String {
 		m.appName = constant.StringVal(tv.Value)
 	} else {
-		w.d.add(w.pos(call.Args[0].Pos()), "the app name passed to nano.Manifest must be a string constant")
+		w.d.add(w.at(call.Args[0].Pos()), "pass a string literal or a string constant",
+			"the app name passed to nano.Manifest must be a string constant")
 	}
 	for _, arg := range call.Args[1:] {
 		w.item(root, arg)
@@ -223,8 +244,9 @@ func (w *walker) findManifest() (*ast.ValueSpec, *ast.CallExpr) {
 			}
 			if spec != nil {
 				w.d.add(
-					w.pos(vs.Pos()),
-					"second nano.Manifest in package %s (first at %s); a package holds one manifest",
+					w.at(vs.Pos()),
+					"keep one manifest per package; move this one to a package of its own",
+					"second nano.Manifest in package %s (first at %s)",
 					root.Name,
 					w.pos(spec.Pos()),
 				)
@@ -239,7 +261,8 @@ func (w *walker) findManifest() (*ast.ValueSpec, *ast.CallExpr) {
 func (w *walker) lookupNano() error {
 	m := w.m
 	if m.nano == nil {
-		return fmt.Errorf("the manifest package does not import %s", NanoPath)
+		return gen.Errorf("", 0, "declare the manifest with nano.Manifest from "+NanoPath,
+			"the manifest package does not import %s", NanoPath)
 	}
 	iface := func(name string) *types.Interface {
 		obj := m.nano.Scope().Lookup(name)
@@ -260,8 +283,8 @@ func (w *walker) lookupNano() error {
 	ifaces := m.ifaces
 	if ifaces.starter == nil || ifaces.stopper == nil || ifaces.runner == nil || ifaces.checker == nil ||
 		appObj == nil || cfgObj == nil {
-		return fmt.Errorf("%s lacks the lifecycle API this generator targets; upgrade the framework",
-			NanoPath)
+		return gen.Errorf("", 0, "upgrade github.com/nanostack-dev/nanostack-framework to the version of this nano",
+			"%s lacks the lifecycle API this generator targets", NanoPath)
 	}
 	m.appType = types.NewPointer(appObj.Type())
 	m.ifaces.appConfig = cfgObj.Type()
@@ -277,13 +300,14 @@ func (w *walker) resolveOutput() error {
 	}
 	rel, err := filepath.Rel(m.modDir, out)
 	if err != nil || strings.HasPrefix(rel, "..") {
-		return fmt.Errorf("output %s is outside module %s", out, m.modPath)
+		return gen.Errorf("", 0, "set -out to a directory inside the module",
+			"output %s is outside module %s", out, m.modPath)
 	}
 	m.outPath = path.Join(m.modPath, filepath.ToSlash(rel))
 	m.outName = sanitizeIdent(filepath.Base(out))
 	if m.root.Name == "main" {
-		return fmt.Errorf("the manifest package is main, which %s cannot import; "+
-			"move the manifest to a library package or set -out to the manifest directory", m.outPath)
+		return gen.Errorf("", 0, "move the manifest to a library package, or set -out to the manifest directory",
+			"the manifest package is main, which %s cannot import", m.outPath)
 	}
 	return nil
 }
@@ -298,7 +322,8 @@ func (w *walker) lookupConfig() {
 		return
 	}
 	if _, isStruct := named.Underlying().(*types.Struct); !isStruct {
-		w.d.add(w.pos(obj.Pos()), "Config must be a struct type; Build provides each of its fields")
+		w.d.add(w.at(obj.Pos()), "make Config a struct; Build provides each of its fields",
+			"Config must be a struct type")
 		return
 	}
 	w.m.config = named
