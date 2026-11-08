@@ -22,5 +22,6 @@ require (
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 )
 
-// Until pkg/functional is tagged (see UPSTREAM.md "Release order"); remove with the first tag.
+// Development form (RELEASING.md, "go.mod rules"): main requires the module of this repository
+// at v0.0.0 and replaces it with its directory. The release commit requires the tag instead.
 replace github.com/nanostack-dev/nanostack-framework/pkg/functional => ../pkg/functional

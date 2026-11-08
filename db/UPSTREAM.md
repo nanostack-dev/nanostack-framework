@@ -47,7 +47,7 @@ Nanostack DB is a fork of [go-jet](https://github.com/go-jet/jet) (Apache-2.0).
 | Test helpers | `AssertOptionParity`, `OptionComparable` (go-cmp), `AssertOptionFields`, `AssertPointerFieldsNil`, `AssertOptLiteral`. | `internal/testutils/option_parity.go` |
 | Option-mode test models | The harness also generates Option-mode models (models only) for `test_sample` and `dvds`/`sakila` on every source into `tests/.gentestdata/option/`; the committed ones are covered by `TestGeneratedModelsUpToDate`. New suites `option_test.go`, `query_test.go` and `generator_option_test.go` in each of `tests/postgres`, `tests/mysql` and `tests/sqlite`, `option_struct_test.go` in `tests/postgres` and `tests/sqlite`, plus `tests/postgres/option_range_test.go` behind the `postgres` tag like upstream's range tests. | `tests/internal/testenv/generate.go`, `tests/internal/testenv/option.go`, `tests/.gentestdata/option/` |
 | Lint | Upstream's `.golangci.yml` (a v1 configuration that golangci-lint v2 rejects) is replaced by the framework's lint standard: `lintconfig` generates `.golangci.yml` and `.golangci-lint-version` from `lint/base.golangci.yml` and `.golangci.local.yml` (from the repository root: `go run ./lint/cmd/lintconfig -dir db`). `linters.exclusions.paths-except` limits findings to Nanostack files, so files taken from go-jet keep upstream's style; a new Nanostack file is added to that list. One configuration serves `db` and `db/tests` (`relative-path-mode: cfg`). The ruleguard rules come from `../gorules`, whose `dsl` import only the root module requires, so lint runs in a workspace of the repository's modules; the `lint` job of `db.yml` creates one. Section 2 of `tools/upstreamsync` shows `.golangci.yml` as changed, and an upstream change to it is a `CONFLICT` on `-apply`: keep ours and regenerate. | `.golangci.yml`, `.golangci.local.yml`, `.golangci-lint-version`, `../.github/workflows/db.yml` |
-| Dependency | `db` requires `pkg/functional` (local `replace` until `pkg/functional` is tagged; see Release order). | `go.mod`, `tests/go.mod`, `examples/go.mod` |
+| Dependency | `db` requires `pkg/functional`. On `main`, `go.mod` is in the development form: `pkg/functional v0.0.0` with a local `replace`. The release commit on a `release/` branch (RELEASING.md, step 2) requires the tag instead. `tests/go.mod` and `examples/go.mod` keep their local `replace` lines. | `go.mod`, `tests/go.mod`, `examples/go.mod` |
 
 Each change adds or updates its row here.
 
@@ -122,5 +122,6 @@ Procedure:
 ## Release order
 
 `db` depends on `pkg/functional`, which is its own module. Tag `pkg/functional/vX.Y.Z` first,
-then bump it in `db/go.mod` and tag `db/vX.Y.Z`. The root module also requires
-`pkg/functional`. `go.work` at the repository root is for development only.
+then require it in `db/go.mod` in a release commit and tag `db/vX.Y.Z`. The root module requires both, and is tagged
+last. [RELEASING.md](../RELEASING.md) has the exact steps. `go.work` at the repository root is
+for development only.
