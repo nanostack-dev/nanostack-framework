@@ -32,6 +32,9 @@ One section per module and version, newest first. Each section uses Added, Chang
 - `http/nanohttp/internal/example` declares its spec in `nanogen/project.go`; `nano gen` writes its `api.gen.go`, and CI runs `nano gen -check` on it. Its `oapi-codegen.yaml` and `//go:generate` lines are gone.
 - `http/nanohttp/internal/example`: its spec tags each operation (`Webhooks`, `Notes`), and `nano gen` writes `handlers.gen.go` with the tag split ([ADR 0024](docs/adr/0024-api-split-by-tag.md)).
 
+### Fixed
+- The doc comments of `transactor.PageBuilder`, `transactor.SortColumns` and `modules/cache.Cache` no longer say that a Go method cannot declare type parameters. They give the reasons that still hold on Go 1.27.
+
 ## v0.23.0-beta.1 (root)
 
 ### Added
