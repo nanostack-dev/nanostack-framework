@@ -431,8 +431,8 @@ func mapRowToStruct(
 			updated = true
 
 			switch fieldMappingInfo.Type {
-			case optionalType: // Nanostack: functional.Option
-				if err := assignOption(scannedValue, fieldValue); err != nil {
+			case optionalType, optionalScannerType: // Nanostack: functional.Option
+				if err := assignOption(scannedValue, fieldValue, fieldMappingInfo.Type); err != nil {
 					return updated, qrmAssignError(scannedValue, field, err)
 				}
 			case implementsScanner:

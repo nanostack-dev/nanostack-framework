@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
+	"github.com/nanostack-dev/nanostack-framework/db/internal/optional"
 	"github.com/nanostack-dev/nanostack-framework/pkg/functional"
 )
 
@@ -347,4 +348,21 @@ func TestOptionStrictFieldMapping(t *testing.T) {
 		"jet: fields never mapped: 'dest.Missing', 'OriginalLanguage Language.LanguageID', 'OriginalLanguage Language.Name'",
 		func() { scanRows(t, sc, &got, []any{int64(1), "A"}) },
 	)
+}
+
+// TestOptionScannerIsClassifiedOnce pins that the Scanner check runs when the field is
+// classified, not for every scanned value: an Option of a Scanner and an Option of a
+// simple type get different mapping kinds.
+func TestOptionScannerIsClassifiedOnce(t *testing.T) {
+	type dest struct {
+		ID    functional.Option[uuid.UUID]
+		Count functional.Option[int64]
+	}
+	typ := reflect.TypeFor[dest]()
+	for name, want := range map[string]fieldMappingType{"ID": optionalScannerType, "Count": optionalType} {
+		field, _ := typ.FieldByName(name)
+		elem, ok := optional.Elem(field.Type)
+		require.True(t, ok)
+		require.Equal(t, want, classifyOption(elem, field), name)
+	}
 }
