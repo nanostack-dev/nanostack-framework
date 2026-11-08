@@ -13,10 +13,11 @@ import (
 	"strings"
 
 	"github.com/nanostack-dev/nanostack-framework/gen"
+	gendb "github.com/nanostack-dev/nanostack-framework/gen/db"
 )
 
-// Main runs `nano gen [-dir d] [-check [-diff]] [-only s,s | -skip s,s]
-// [-list] [-json]` and returns the exit code: 0 on success, 1 on a source
+// Main runs `nano gen [-dir d] [-check [-diff]] [-fresh] [-only s,s | -skip
+// s,s] [-list] [-json]` and returns the exit code: 0 on success, 1 on a source
 // error, a validation gap or a stale, missing or orphaned file, 2 on bad
 // usage, 3 when the environment fails; -h prints the flags and returns 0.
 // It is a gen.Command.
@@ -24,7 +25,7 @@ import (
 // A clean run prints nothing. Otherwise it prints one line per file (wrote,
 // deleted, stale, missing, orphan), then each problem as "file:line: msg"
 // with an indented "fix:" line. With -json it prints one Event per line on
-// stdout instead.
+// stdout instead. The db step reads NANO_GEN_DATABASE_URL.
 func Main(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("nano gen", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -39,6 +40,8 @@ func Main(args []string, stdout, stderr io.Writer) int {
 	fs.StringVar(&skip, "skip", "", "comma-separated steps not to run")
 	fs.BoolVar(&list, "list", false, "print the plan: step, package, inputs, outputs; run nothing")
 	fs.BoolVar(&asJSON, "json", false, "print one JSON event per line: {step, level, file, line, msg, fix}")
+	fs.BoolVar(&opts.Fresh, "fresh", false,
+		"db step: ignore nanogen.sum and generate from a database (CI: -check -fresh)")
 	if exit, ok := gen.ParseFlags(fs, args); !ok {
 		return exit
 	}
@@ -51,6 +54,7 @@ func Main(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	opts.Only, opts.Skip = splitList(only), splitList(skip)
+	opts.DatabaseURL = os.Getenv(gendb.EnvDatabaseURL)
 	var res Result
 	if list {
 		res = List(opts)

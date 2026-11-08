@@ -25,26 +25,9 @@ type DialectQuerySet interface {
 
 // GetSchema retrieves Schema information from database
 func GetSchema(db *sql.DB, querySet DialectQuerySet, schemaName string) (Schema, error) {
-	tablesMetaData, err := querySet.GetTablesMetaData(db, schemaName, BaseTable)
+	ret, err := ReadSchema(db, querySet, schemaName)
 	if err != nil {
-		return Schema{}, fmt.Errorf("failed to get %s tables metadata: %w", schemaName, err)
-	}
-
-	viewMetaData, err := querySet.GetTablesMetaData(db, schemaName, ViewTable)
-	if err != nil {
-		return Schema{}, fmt.Errorf("failed to get %s view metadata: %w", schemaName, err)
-	}
-
-	enumsMetaData, err := querySet.GetEnumsMetaData(db, schemaName)
-	if err != nil {
-		return Schema{}, fmt.Errorf("failed to get %s enum metadata: %w", schemaName, err)
-	}
-
-	ret := Schema{
-		Name:           schemaName,
-		TablesMetaData: tablesMetaData,
-		ViewsMetaData:  viewMetaData,
-		EnumsMetaData:  enumsMetaData,
+		return Schema{}, err
 	}
 
 	fmt.Println("	FOUND", len(ret.TablesMetaData), "table(s),", len(ret.ViewsMetaData), "view(s),",

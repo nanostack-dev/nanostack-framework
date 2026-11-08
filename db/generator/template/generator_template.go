@@ -12,6 +12,8 @@ import (
 type Template struct {
 	Dialect jet.Dialect
 	Schema  func(schemaMetaData metadata.Schema) Schema
+	// Header replaces go-jet's "Code generated" comment at the top of every file (Nanostack, see render.go).
+	Header string
 }
 
 // Default is default generator template implementation

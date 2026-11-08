@@ -8,6 +8,8 @@ type Table struct {
 	Name    string `sql:"primary_key"`
 	Comment string
 	Columns []Column
+	// UniqueIndexes are the unique indexes of a base table, from postgres.ReadSchema (Nanostack, see unique_index.go).
+	UniqueIndexes []UniqueIndex
 }
 
 // MutableColumns returns list of mutable columns for table

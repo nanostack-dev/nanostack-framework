@@ -20,9 +20,9 @@ formatters:
       - ^(doc)\.go$
       - ^cmd/jet/(main|main_test|version)\.go$
       - ^examples/
-      - ^generator/metadata/
+      - ^generator/metadata/(column_meta_data|dialect_query_set|enum_meta_data|schema_meta_data|table_meta_data)\.go$
       - ^generator/mysql/
-      - ^generator/postgres/
+      - ^generator/postgres/(postgres_generator|query_set)\.go$
       - ^generator/sqlite/
       - ^generator/template/(file_templates|format|format_test|generator_template|model_template|model_template_test|process|sql_builder_template|sql_builder_template_test)\.go$
       - ^internal/3rdparty/
@@ -85,6 +85,9 @@ linters:
       - ^cmd/jet/nullable(_test)?\.go$
       - ^filter/
       - ^generator/template/nullable(_test)?\.go$
+      - ^generator/template/(render|unique_keys)(_test)?\.go$
+      - ^generator/metadata/(unique_index|read_schema)\.go$
+      - ^generator/postgres/(unique_keys|read_schema)(_test)?\.go$
       - ^internal/jet/optional_arg(_test)?\.go$
       - ^internal/optional/
       - ^internal/testutils/option_parity\.go$

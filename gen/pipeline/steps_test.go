@@ -25,6 +25,7 @@ func TestBrokenProjectSkipsItsSteps(t *testing.T) {
 	wantRun(t, "nano gen with a broken declaration", code, 1, stdout, "", stderr,
 		`nanogen/project.go:14: cannot use 1 (untyped int constant) as string value in struct literal
   fix: make nanogen/project.go compile
+nano gen db: skipped: needs nanogen/project.go
 nano gen api: skipped: needs nanogen/project.go
 nano gen validate: skipped: needs nanogen/project.go
 nano gen config: skipped: needs nanogen/project.go

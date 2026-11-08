@@ -16,7 +16,8 @@
 //				{Dir: "cmd/it/client", Package: "client", PlainTypes: true},
 //			},
 //		},
-//		Env: "../../.env.example",
+//		Postgres: &project.Postgres{Name: "anchor"},
+//		Env:      "../../.env.example",
 //	}
 //
 // The declaration is plain data, like nano.Manifest: nothing calls it and no
@@ -41,9 +42,37 @@ type Project struct {
 	// when the module has no OpenAPI document; the api and validate steps
 	// then have nothing to run on.
 	API *OpenAPI
+	// Postgres is the database whose go-jet models and table types nano gen
+	// db generates from the migrations. Nil when the module has no database
+	// code to generate; the db step then has nothing to run on.
+	Postgres *Postgres
 	// Env is the .env.example file that nano gen config writes. Empty
 	// writes .env.example next to the Config type.
 	Env string
+}
+
+// Postgres is a PostgreSQL database built from SQL migrations. nano gen db
+// applies the migrations to an empty database, on a container it starts or
+// on the server NANO_GEN_DATABASE_URL names, and writes the go-jet code of
+// Schema to <Out>/<Name>/<Schema>/{model,table,view,enum}, with
+// <Out>/<Name>/nanogen.sum. Each table type also gets a UniqueKeys method:
+// the keys that match at most one row. While the migrations, the image and
+// every generated file match nanogen.sum, a run needs no database.
+type Postgres struct {
+	// Name is the directory under Out, by convention the database name:
+	// "anchor" writes internal/db/gen/anchor. Required.
+	Name string
+	// Migrations is the directory of golang-migrate SQL migrations
+	// (<version>_<title>.up.sql). Default "migrations".
+	Migrations string
+	// Out is the directory that holds Name. Default "internal/db/gen".
+	Out string
+	// Schema is the schema to generate. Default "public".
+	Schema string
+	// Image is the container image that nano gen db starts, such as
+	// "timescale/timescaledb:2.23.0-pg18" when the migrations need an
+	// extension. Default "postgres:18-alpine".
+	Image string
 }
 
 // OpenAPI is the API contract and the Go packages generated from it. nano

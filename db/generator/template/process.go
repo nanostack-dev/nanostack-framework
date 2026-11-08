@@ -12,8 +12,6 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/nanostack-dev/nanostack-framework/db/internal/utils/filesys"
-
 	"github.com/nanostack-dev/nanostack-framework/db/generator/metadata"
 	"github.com/nanostack-dev/nanostack-framework/db/internal/jet"
 )
@@ -33,12 +31,17 @@ func ProcessSchema(dirPath string, schemaMetaData metadata.Schema, generatorTemp
 		return errors.New("failed to cleanup generated files")
 	}
 
-	err := processModel(schemaPath, schemaMetaData, schemaTemplate)
+	return processSchema(diskSink{}, schemaPath, schemaMetaData, generatorTemplate, schemaTemplate)
+}
+
+// processSchema renders the model and SQL builder files of one schema into out.
+func processSchema(out sink, schemaPath string, schemaMetaData metadata.Schema, generatorTemplate Template, schemaTemplate Schema) error {
+	err := processModel(out, schemaPath, schemaMetaData, schemaTemplate, generatorTemplate.header())
 	if err != nil {
 		return fmt.Errorf("failed to generate model types: %w", err)
 	}
 
-	err = processSQLBuilder(schemaPath, generatorTemplate.Dialect, schemaMetaData, schemaTemplate)
+	err = processSQLBuilder(out, schemaPath, generatorTemplate.Dialect, schemaMetaData, schemaTemplate, generatorTemplate.header())
 	if err != nil {
 		return fmt.Errorf("failed to generate sql builder types: %w", err)
 	}
@@ -46,32 +49,32 @@ func ProcessSchema(dirPath string, schemaMetaData metadata.Schema, generatorTemp
 	return nil
 }
 
-func processModel(dirPath string, schemaMetaData metadata.Schema, schemaTemplate Schema) error {
+func processModel(out sink, dirPath string, schemaMetaData metadata.Schema, schemaTemplate Schema, header string) error {
 	modelTemplate := schemaTemplate.Model
 
 	if modelTemplate.Skip {
-		fmt.Println("Skipping the generation of model types.")
+		out.logf("Skipping the generation of model types.\n")
 		return nil
 	}
 
 	modelDirPath := filepath.Join(dirPath, modelTemplate.Path)
 
-	err := filesys.EnsureDirPathExist(modelDirPath)
+	err := out.ensureDir(modelDirPath)
 	if err != nil {
 		return fmt.Errorf("destination dir path does not exist: %w", err)
 	}
 
-	err = processTableModels("table", modelDirPath, schemaMetaData.TablesMetaData, modelTemplate)
+	err = processTableModels(out, header, "table", modelDirPath, schemaMetaData.TablesMetaData, modelTemplate)
 	if err != nil {
 		return fmt.Errorf("failed to generate table model types: %w", err)
 	}
 
-	err = processTableModels("view", modelDirPath, schemaMetaData.ViewsMetaData, modelTemplate)
+	err = processTableModels(out, header, "view", modelDirPath, schemaMetaData.ViewsMetaData, modelTemplate)
 	if err != nil {
 		return fmt.Errorf("failed to generate view model types: %w", err)
 	}
 
-	err = processEnumModels(modelDirPath, schemaMetaData.EnumsMetaData, modelTemplate)
+	err = processEnumModels(out, header, modelDirPath, schemaMetaData.EnumsMetaData, modelTemplate)
 	if err != nil {
 		return fmt.Errorf("failed to process enum types: %w", err)
 	}
@@ -79,27 +82,27 @@ func processModel(dirPath string, schemaMetaData metadata.Schema, schemaTemplate
 	return nil
 }
 
-func processSQLBuilder(dirPath string, dialect jet.Dialect, schemaMetaData metadata.Schema, schemaTemplate Schema) error {
+func processSQLBuilder(out sink, dirPath string, dialect jet.Dialect, schemaMetaData metadata.Schema, schemaTemplate Schema, header string) error {
 	sqlBuilderTemplate := schemaTemplate.SQLBuilder
 
 	if sqlBuilderTemplate.Skip {
-		fmt.Println("Skipping the generation of SQL Builder types.")
+		out.logf("Skipping the generation of SQL Builder types.\n")
 		return nil
 	}
 
 	sqlBuilderPath := filepath.Join(dirPath, sqlBuilderTemplate.Path)
 
-	err := processTableSQLBuilder("table", sqlBuilderPath, dialect, schemaMetaData, schemaMetaData.TablesMetaData, sqlBuilderTemplate)
+	err := processTableSQLBuilder(out, header, "table", sqlBuilderPath, dialect, schemaMetaData, schemaMetaData.TablesMetaData, sqlBuilderTemplate)
 	if err != nil {
 		return fmt.Errorf("failed to process table sql builder types: %w", err)
 	}
 
-	err = processTableSQLBuilder("view", sqlBuilderPath, dialect, schemaMetaData, schemaMetaData.ViewsMetaData, sqlBuilderTemplate)
+	err = processTableSQLBuilder(out, header, "view", sqlBuilderPath, dialect, schemaMetaData, schemaMetaData.ViewsMetaData, sqlBuilderTemplate)
 	if err != nil {
 		return fmt.Errorf("failed to process view sql builder types: %w", err)
 	}
 
-	err = processEnumSQLBuilder(sqlBuilderPath, dialect, schemaMetaData.EnumsMetaData, sqlBuilderTemplate)
+	err = processEnumSQLBuilder(out, header, sqlBuilderPath, dialect, schemaMetaData.EnumsMetaData, sqlBuilderTemplate)
 	if err != nil {
 		return fmt.Errorf("failed to process enum types: %w", err)
 	}
@@ -107,12 +110,12 @@ func processSQLBuilder(dirPath string, dialect jet.Dialect, schemaMetaData metad
 	return nil
 }
 
-func processEnumSQLBuilder(dirPath string, dialect jet.Dialect, enumsMetaData []metadata.Enum, sqlBuilder SQLBuilder) error {
+func processEnumSQLBuilder(out sink, header, dirPath string, dialect jet.Dialect, enumsMetaData []metadata.Enum, sqlBuilder SQLBuilder) error {
 	if len(enumsMetaData) == 0 {
 		return nil
 	}
 
-	fmt.Printf("Generating enum sql builder files\n")
+	out.logf("Generating enum sql builder files\n")
 
 	for _, enumMetaData := range enumsMetaData {
 		enumTemplate := sqlBuilder.Enum(enumMetaData)
@@ -123,13 +126,13 @@ func processEnumSQLBuilder(dirPath string, dialect jet.Dialect, enumsMetaData []
 
 		enumSQLBuilderPath := filepath.Join(dirPath, enumTemplate.Path)
 
-		err := filesys.EnsureDirPathExist(enumSQLBuilderPath)
+		err := out.ensureDir(enumSQLBuilderPath)
 		if err != nil {
 			return fmt.Errorf("failed to create enum sql builder directory - %s: %w", enumSQLBuilderPath, err)
 		}
 
 		text, err := generateTemplate(
-			autoGenWarningTemplate+enumSQLBuilderTemplate,
+			header+enumSQLBuilderTemplate,
 			enumMetaData,
 			template.FuncMap{
 				"package": func() string {
@@ -150,7 +153,7 @@ func processEnumSQLBuilder(dirPath string, dialect jet.Dialect, enumsMetaData []
 			return fmt.Errorf("failed to generete enum type %s: %w", enumTemplate.FileName, err)
 		}
 
-		err = filesys.FormatAndSaveGoFile(enumSQLBuilderPath, enumTemplate.FileName, text)
+		err = out.save(enumSQLBuilderPath, enumTemplate.FileName, text)
 		if err != nil {
 			return fmt.Errorf("failed to format and save '%s' enum type : %w", enumTemplate.FileName, err)
 		}
@@ -159,7 +162,7 @@ func processEnumSQLBuilder(dirPath string, dialect jet.Dialect, enumsMetaData []
 	return nil
 }
 
-func processTableSQLBuilder(fileTypes, dirPath string,
+func processTableSQLBuilder(out sink, header, fileTypes, dirPath string,
 	dialect jet.Dialect,
 	schemaMetaData metadata.Schema,
 	tablesMetaData []metadata.Table,
@@ -169,7 +172,7 @@ func processTableSQLBuilder(fileTypes, dirPath string,
 		return nil
 	}
 
-	fmt.Printf("Generating %s sql builder files\n", fileTypes)
+	out.logf("Generating %s sql builder files\n", fileTypes)
 
 	var generatedBuilders []TableSQLBuilder
 
@@ -188,13 +191,13 @@ func processTableSQLBuilder(fileTypes, dirPath string,
 
 		tableSQLBuilderPath := filepath.Join(dirPath, tableSQLBuilder.Path)
 
-		err := filesys.EnsureDirPathExist(tableSQLBuilderPath)
+		err := out.ensureDir(tableSQLBuilderPath)
 		if err != nil {
 			return fmt.Errorf("failed to create table sql builder directory - %s: %w", tableSQLBuilderPath, err)
 		}
 
 		text, err := generateTemplate(
-			autoGenWarningTemplate+tableSQLBuilderTemplate,
+			header+tableSQLBuilderTemplate,
 			tableMetaData,
 			template.FuncMap{
 				"package": func() string {
@@ -221,6 +224,12 @@ func processTableSQLBuilder(fileTypes, dirPath string,
 					return insertedRowAlias(dialect)
 				},
 				"golangComment": formatGolangComment,
+				"uniqueKeys": func() (string, error) { // Nanostack: see unique_keys.go
+					if fileTypes == "view" || !tableSQLBuilder.UniqueKeys {
+						return "", nil
+					}
+					return uniqueKeysMethod(tableMetaData, tableSQLBuilder)
+				},
 				"columnList": func(columns []metadata.Column) string {
 					names := []string{}
 					for _, col := range columns {
@@ -237,7 +246,7 @@ func processTableSQLBuilder(fileTypes, dirPath string,
 			return fmt.Errorf("failed to generate table sql builder type %s: %w", tableSQLBuilder.TypeName, err)
 		}
 
-		err = filesys.FormatAndSaveGoFile(tableSQLBuilderPath, tableSQLBuilder.FileName, text)
+		err = out.save(tableSQLBuilderPath, tableSQLBuilder.FileName, text)
 		if err != nil {
 			return fmt.Errorf("failed to format and save generated sql builder type '%s': %w", tableSQLBuilder.FileName, err)
 		}
@@ -245,7 +254,7 @@ func processTableSQLBuilder(fileTypes, dirPath string,
 		generatedBuilders = append(generatedBuilders, tableSQLBuilder)
 	}
 
-	err := generateUseSchemaFunc(dirPath, fileTypes, generatedBuilders)
+	err := generateUseSchemaFunc(out, header, dirPath, fileTypes, generatedBuilders)
 	if err != nil {
 		return fmt.Errorf("failed to generate UseSchema function")
 	}
@@ -253,13 +262,13 @@ func processTableSQLBuilder(fileTypes, dirPath string,
 	return nil
 }
 
-func generateUseSchemaFunc(dirPath, fileTypes string, builders []TableSQLBuilder) error {
+func generateUseSchemaFunc(out sink, header, dirPath, fileTypes string, builders []TableSQLBuilder) error {
 	if len(builders) == 0 {
 		return nil
 	}
 
 	text, err := generateTemplate(
-		autoGenWarningTemplate+tableSqlBuilderSetSchemaTemplate,
+		header+tableSqlBuilderSetSchemaTemplate,
 		builders,
 		template.FuncMap{
 			"package": func() string { return builders[0].PackageName() },
@@ -273,7 +282,7 @@ func generateUseSchemaFunc(dirPath, fileTypes string, builders []TableSQLBuilder
 	basePath := filepath.Join(dirPath, builders[0].Path)
 	fileName := fileTypes + "_use_schema"
 
-	err = filesys.FormatAndSaveGoFile(basePath, fileName, text)
+	err = out.save(basePath, fileName, text)
 	if err != nil {
 		return fmt.Errorf("failed to save %s file: %w", fileName, err)
 	}
@@ -289,11 +298,11 @@ func insertedRowAlias(dialect jet.Dialect) string {
 	return "excluded"
 }
 
-func processTableModels(fileTypes, modelDirPath string, tablesMetaData []metadata.Table, modelTemplate Model) error {
+func processTableModels(out sink, header, fileTypes, modelDirPath string, tablesMetaData []metadata.Table, modelTemplate Model) error {
 	if len(tablesMetaData) == 0 {
 		return nil
 	}
-	fmt.Printf("Generating %s model files...\n", fileTypes)
+	out.logf("Generating %s model files...\n", fileTypes)
 
 	for _, tableMetaData := range tablesMetaData {
 		var tableTemplate TableModel
@@ -309,7 +318,7 @@ func processTableModels(fileTypes, modelDirPath string, tablesMetaData []metadat
 		}
 
 		text, err := generateTemplate(
-			autoGenWarningTemplate+tableModelFileTemplate,
+			header+tableModelFileTemplate,
 			tableMetaData,
 			template.FuncMap{
 				"package": func() string {
@@ -333,7 +342,7 @@ func processTableModels(fileTypes, modelDirPath string, tablesMetaData []metadat
 			return fmt.Errorf("failed to generate model type '%s': %w", tableMetaData.Name, err)
 		}
 
-		err = filesys.FormatAndSaveGoFile(modelDirPath, tableTemplate.FileName, text)
+		err = out.save(modelDirPath, tableTemplate.FileName, text)
 		if err != nil {
 			return fmt.Errorf("failed to save '%s' model type: %w", tableTemplate.FileName, err)
 		}
@@ -342,11 +351,11 @@ func processTableModels(fileTypes, modelDirPath string, tablesMetaData []metadat
 	return nil
 }
 
-func processEnumModels(modelDir string, enumsMetaData []metadata.Enum, modelTemplate Model) error {
+func processEnumModels(out sink, header, modelDir string, enumsMetaData []metadata.Enum, modelTemplate Model) error {
 	if len(enumsMetaData) == 0 {
 		return nil
 	}
-	fmt.Print("Generating enum model files...\n")
+	out.logf("Generating enum model files...\n")
 
 	for _, enumMetaData := range enumsMetaData {
 		enumTemplate := modelTemplate.Enum(enumMetaData)
@@ -356,7 +365,7 @@ func processEnumModels(modelDir string, enumsMetaData []metadata.Enum, modelTemp
 		}
 
 		text, err := generateTemplate(
-			autoGenWarningTemplate+enumModelTemplate,
+			header+enumModelTemplate,
 			enumMetaData,
 			template.FuncMap{
 				"package": func() string {
@@ -375,7 +384,7 @@ func processEnumModels(modelDir string, enumsMetaData []metadata.Enum, modelTemp
 			return fmt.Errorf("failed to generate enum type '%s': %w", enumMetaData.Name, err)
 		}
 
-		err = filesys.FormatAndSaveGoFile(modelDir, enumTemplate.FileName, text)
+		err = out.save(modelDir, enumTemplate.FileName, text)
 		if err != nil {
 			return fmt.Errorf("failed to save '%s' enum type: %w", enumTemplate.FileName, err)
 		}

@@ -20,6 +20,13 @@ const fixture = "testdata/app"
 // points its replace directives at this repository.
 func copyFixture(t *testing.T) string {
 	t.Helper()
+	return copyFixtureOf(t, fixture)
+}
+
+// copyFixtureOf copies the fixture module at src to a temporary directory,
+// as copyFixture does.
+func copyFixtureOf(t *testing.T, fixture string) string {
+	t.Helper()
 	repo, err := filepath.Abs("../..")
 	if err != nil {
 		t.Fatal(err)
@@ -358,7 +365,7 @@ func TestUsage(t *testing.T) {
 	t.Parallel()
 	for _, args := range [][]string{
 		{"-only", "config", "-skip", "wire"},
-		{"-only", "db"},
+		{"-only", "mapper"},
 		{"-diff"},
 		{"config"},
 		{"-no-such-flag"},

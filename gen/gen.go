@@ -23,9 +23,8 @@
 // when it has none, then an indented "fix:" line. Generate, Run and Sync add
 // no prefix.
 //
-// gen/api is the one generator whose Options have no Overlay: it reads the
-// spec and loads no Go package. The subpackage jet holds go-jet's
-// conventions and is not a command.
+// gen/api and gen/db are the generators whose Options have no Overlay: api
+// reads the spec, db reads a database, and neither loads a Go package.
 package gen
 
 import (
