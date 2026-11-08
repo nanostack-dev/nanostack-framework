@@ -1,9 +1,11 @@
 # The framework's own additions to lint/base.golangci.yml. Run
 # `go run ./lint/cmd/lintconfig` after changing this file or the base.
 run:
-  # Container tests sit behind this tag; without it they are never linted.
+  # Container tests and the lint smoke test sit behind these tags; without
+  # them they are never linted.
   build-tags:
     - integration
+    - lintsmoke
 
 formatters:
   settings:
@@ -13,6 +15,50 @@ formatters:
 
 linters:
   settings:
+    depguard:
+      rules:
+        # The layers of plan section 06: core, then http, then gen and cmd. A
+        # package imports only its own layer and the layers below it.
+        # internal/layers tests the same rule on the import graph.
+        core imports no upper layer:
+          files:
+            - "**/core/**"
+          deny:
+            - pkg: github.com/nanostack-dev/nanostack-framework/http/
+              desc: core is the lowest layer and must not import http; move the shared code into core
+            - pkg: github.com/nanostack-dev/nanostack-framework/gen$
+              desc: core is the lowest layer and must not import gen
+            - pkg: github.com/nanostack-dev/nanostack-framework/gen/
+              desc: core is the lowest layer and must not import gen
+            - pkg: github.com/nanostack-dev/nanostack-framework/cmd/
+              desc: core is the lowest layer and must not import cmd
+        http imports no upper layer:
+          files:
+            - "**/http/**"
+          deny:
+            - pkg: github.com/nanostack-dev/nanostack-framework/gen$
+              desc: http sits below gen and must not import it; move the shared code into core
+            - pkg: github.com/nanostack-dev/nanostack-framework/gen/
+              desc: http sits below gen and must not import it; move the shared code into core
+            - pkg: github.com/nanostack-dev/nanostack-framework/cmd/
+              desc: http sits below cmd and must not import it
+        # The legacy trees carry Fx and zerolog, which the layers replace.
+        # internal/layers tests the same rule on the import graph.
+        layers import no legacy tree:
+          files:
+            - "**/core/**"
+            - "**/http/**"
+            - "**/gen/**"
+            - "**/cmd/**"
+          deny:
+            - pkg: github.com/nanostack-dev/nanostack-framework/pkg/
+              desc: pkg is legacy; move what the layers need into core
+            - pkg: github.com/nanostack-dev/nanostack-framework/modules/
+              desc: modules is legacy Fx wiring; the layers use core/nano and nano gen wire
+            - pkg: github.com/nanostack-dev/nanostack-framework/app$
+              desc: app is legacy Fx assembly; the layers use core/nano and nano gen wire
+            - pkg: github.com/nanostack-dev/nanostack-framework/app/
+              desc: app is legacy Fx assembly; the layers use core/nano and nano gen wire
     gocritic:
       enabled-checks:
         - ruleguard
@@ -25,6 +71,50 @@ linters:
   # with what it hides. Fix one, delete its line and lower the budget below.
   exclusions:
     rules:
+      - {linters: [depguard], path: ^modules/cache/cache\.go$} # imports zerolog; legacy, deleted after the slog migration
+      - {linters: [depguard], path: ^modules/cache/cache_test\.go$} # imports zerolog; legacy, deleted after the slog migration
+      - {linters: [depguard], path: ^modules/cache/module\.go$} # imports zerolog; legacy, deleted after the slog migration
+      - {linters: [depguard], path: ^modules/cache/redis\.go$} # imports zerolog; legacy, deleted after the slog migration
+      - {linters: [depguard], path: ^modules/cache/redis_test\.go$} # imports zerolog; legacy, deleted after the slog migration
+      - {linters: [depguard], path: ^modules/config/module\.go$} # imports zerolog; legacy, deleted after the slog migration
+      - {linters: [depguard], path: ^modules/httpserver/module\.go$} # imports zerolog; legacy, deleted after the slog migration
+      - {linters: [depguard], path: ^modules/httpserver/strict_error_handler\.go$} # imports zerolog; legacy, deleted after the slog migration
+      - {linters: [depguard], path: ^modules/httpserver/strict_error_handler_test\.go$} # imports zerolog; legacy, deleted after the slog migration
+      - {linters: [depguard], path: ^modules/httpserver/tracing_test\.go$} # imports zerolog; legacy, deleted after the slog migration
+      - {linters: [depguard], path: ^modules/logging/binder\.go$} # imports zerolog; legacy, deleted after the slog migration
+      - {linters: [depguard], path: ^modules/logging/logging\.go$} # imports zerolog; legacy, deleted after the slog migration
+      - {linters: [depguard], path: ^modules/logging/logging_test\.go$} # imports zerolog; legacy, deleted after the slog migration
+      - {linters: [depguard], path: ^modules/migrations/migrations_integration_test\.go$} # imports zerolog; legacy, deleted after the slog migration
+      - {linters: [depguard], path: ^modules/migrations/migrator\.go$} # imports zerolog; legacy, deleted after the slog migration
+      - {linters: [depguard], path: ^modules/migrations/module\.go$} # imports zerolog; legacy, deleted after the slog migration
+      - {linters: [depguard], path: ^modules/pglock/pglock\.go$} # imports zerolog; legacy, deleted after the slog migration
+      - {linters: [depguard], path: ^modules/postgres/postgres\.go$} # imports zerolog; legacy, deleted after the slog migration
+      - {linters: [depguard], path: ^modules/pprof/module\.go$} # imports zerolog; legacy, deleted after the slog migration
+      - {linters: [depguard], path: ^modules/tracing/tracing\.go$} # imports zerolog; legacy, deleted after the slog migration
+      - {linters: [depguard], path: ^modules/tracing/tracing_test\.go$} # imports zerolog; legacy, deleted after the slog migration
+      - {linters: [depguard], path: ^pkg/fxlog/fxlog\.go$} # imports zerolog; legacy, deleted after the slog migration
+      - {linters: [depguard], path: ^pkg/fxlog/fxlog_test\.go$} # imports zerolog; legacy, deleted after the slog migration
+      - {linters: [depguard], path: ^pkg/httputil/requestlog/context\.go$} # imports zerolog; legacy, deleted after the slog migration
+      - {linters: [depguard], path: ^pkg/httputil/requestlog/context_test\.go$} # imports zerolog; legacy, deleted after the slog migration
+      - {linters: [depguard], path: ^pkg/httputil/requestlog/enricher\.go$} # imports zerolog; legacy, deleted after the slog migration
+      - {linters: [depguard], path: ^pkg/httputil/requestlog/enricher_test\.go$} # imports zerolog; legacy, deleted after the slog migration
+      - {linters: [depguard], path: ^pkg/httputil/requestlog/requestlog\.go$} # imports zerolog; legacy, deleted after the slog migration
+      - {linters: [depguard], path: ^pkg/httputil/requestlog/requestlog_test\.go$} # imports zerolog; legacy, deleted after the slog migration
+      - {linters: [depguard], path: ^pkg/httputil/requestlog/stream_test\.go$} # imports zerolog; legacy, deleted after the slog migration
+      - {linters: [depguard], path: ^pkg/httputil/requestlog/trace_test\.go$} # imports zerolog; legacy, deleted after the slog migration
+      - {linters: [depguard], path: ^pkg/log/component\.go$} # imports zerolog; legacy, deleted after the slog migration
+      - {linters: [depguard], path: ^pkg/log/component_test\.go$} # imports zerolog; legacy, deleted after the slog migration
+      - {linters: [depguard], path: ^pkg/log/enricher\.go$} # imports zerolog; legacy, deleted after the slog migration
+      - {linters: [depguard], path: ^pkg/log/log\.go$} # imports zerolog; legacy, deleted after the slog migration
+      - {linters: [depguard], path: ^pkg/log/log_test\.go$} # imports zerolog; legacy, deleted after the slog migration
+      - {linters: [depguard], path: ^pkg/log/severity\.go$} # imports zerolog; legacy, deleted after the slog migration
+      - {linters: [depguard], path: ^pkg/log/severity_test\.go$} # imports zerolog; legacy, deleted after the slog migration
+      - {linters: [depguard], path: ^pkg/log/trace\.go$} # imports zerolog; legacy, deleted after the slog migration
+      - {linters: [depguard], path: ^pkg/log/trace_test\.go$} # imports zerolog; legacy, deleted after the slog migration
+      - {linters: [depguard], path: ^pkg/queueworker/lifecycle\.go$} # imports zerolog; legacy, deleted after the slog migration
+      - {linters: [depguard], path: ^pkg/queueworker/lifecycle_test\.go$} # imports zerolog; legacy, deleted after the slog migration
+      - {linters: [depguard], path: ^pkg/redisx/topic\.go$} # imports zerolog; legacy, deleted after the slog migration
+      - {linters: [depguard], path: ^pkg/testkit/searchtest/searchtest_integration_test\.go$} # imports zerolog; legacy, deleted after the slog migration
       - {linters: [exhaustive], path: ^pkg/db/transactor/keyset\.go$} # 2 switches on nulls skip nullsDefault
       - {linters: [exhaustive], path: ^pkg/db/transactor/keyset_test\.go$} # 4 Key maps list only the sorts a test uses
       - {linters: [funlen], path: ^pkg/testkit/searchtest/searchtest\.go$} # CheckRefusals, 63 statements
@@ -42,7 +132,6 @@ linters:
       - {linters: [govet], path: ^pkg/db/transactor/keyset\.go$} # shadow: ok
       - {linters: [govet], path: ^pkg/db/transactor/keyset_test\.go$} # shadow x6
       - {linters: [govet], path: ^pkg/db/transactor/page\.go$} # shadow: err
-      - {linters: [govet], path: ^pkg/ptr/ptr_test\.go$} # nilness: checks new() for nil
       - {linters: [govet], path: ^pkg/search/cursor\.go$} # shadow: err
       - {linters: [govet], path: ^pkg/search/cursor_test\.go$} # shadow: err
       - {linters: [govet], path: ^pkg/search/search_test\.go$} # shadow: err
@@ -59,4 +148,4 @@ linters:
       - {linters: [unparam], path: ^pkg/tracing/http_test\.go$} # serve always gets GET
 nanostack:
   # One per linter in each rule above; lintconfig fails when they differ.
-  exclusion-budget: 32
+  exclusion-budget: 75
