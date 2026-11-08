@@ -1,6 +1,10 @@
 // Package fxlog adapts Uber Fx lifecycle events onto a zerolog logger, so an
 // application's Fx startup/shutdown output is structured JSON like the rest of
 // its logs instead of Fx's default plain-text console writer.
+//
+// This package is deprecated and is removed with fx (ADR 0013). It keeps
+// working through the beta. A nano application has no fx events to log. See
+// docs/modules.md for the migration.
 package fxlog
 
 import (

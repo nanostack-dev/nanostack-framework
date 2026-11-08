@@ -94,39 +94,54 @@ linters:
           deny:
             - pkg: log$
               desc: Use log/slog with a context (slog.InfoContext); nanostack-framework/core/log wires the handler
-        # The layers of plan section 06: core, then http, then gen and cmd. A
-        # package imports only its own layer and the layers below it.
-        # internal/layers tests the same rule on the import graph.
+        # The layers of plan section 06: core, then the integrations (http, pg,
+        # redis, otel), then gen and cmd. A package imports only its own layer
+        # and the layers below it. internal/layers tests the same rule on the
+        # import graph.
         core imports no upper layer:
           files:
             - "**/core/**"
           deny:
             - pkg: github.com/nanostack-dev/nanostack-framework/http/
               desc: core is the lowest layer and must not import http; move the shared code into core
+            - pkg: github.com/nanostack-dev/nanostack-framework/pg/
+              desc: core is the lowest layer and must not import pg; move the shared code into core
+            - pkg: github.com/nanostack-dev/nanostack-framework/redis/
+              desc: core is the lowest layer and must not import redis; move the shared code into core
+            - pkg: github.com/nanostack-dev/nanostack-framework/otel/
+              desc: core is the lowest layer and must not import otel; move the shared code into core
             - pkg: github.com/nanostack-dev/nanostack-framework/gen$
               desc: core is the lowest layer and must not import gen
             - pkg: github.com/nanostack-dev/nanostack-framework/gen/
               desc: core is the lowest layer and must not import gen
             - pkg: github.com/nanostack-dev/nanostack-framework/cmd/
               desc: core is the lowest layer and must not import cmd
-        http imports no upper layer:
+        integrations import no upper layer:
           files:
             - "**/http/**"
+            - "**/pg/**"
+            - "**/redis/**"
+            - "**/otel/**"
           deny:
             - pkg: github.com/nanostack-dev/nanostack-framework/gen$
-              desc: http sits below gen and must not import it; move the shared code into core
+              desc: the integration layer sits below gen and must not import it; move the shared code into core
             - pkg: github.com/nanostack-dev/nanostack-framework/gen/
-              desc: http sits below gen and must not import it; move the shared code into core
+              desc: the integration layer sits below gen and must not import it; move the shared code into core
             - pkg: github.com/nanostack-dev/nanostack-framework/cmd/
-              desc: http sits below cmd and must not import it
+              desc: the integration layer sits below cmd and must not import it
         # The legacy trees carry Fx and zerolog, which the layers replace.
         # internal/layers tests the same rule on the import graph.
-        layers import no legacy tree:
+        # pkg/functional is the leaf layer (internal/layers.Leaves), not legacy.
+        core and tooling import no legacy tree:
+          # Lax: everything not denied is allowed, and an allow entry wins over
+          # the shorter pkg/ deny.
+          list-mode: lax
           files:
             - "**/core/**"
-            - "**/http/**"
             - "**/gen/**"
             - "**/cmd/**"
+          allow:
+            - github.com/nanostack-dev/nanostack-framework/pkg/functional$
           deny:
             - pkg: github.com/nanostack-dev/nanostack-framework/pkg/
               desc: pkg is legacy; move what the layers need into core
@@ -136,6 +151,52 @@ linters:
               desc: app is legacy Fx assembly; the layers use core/nano and nano gen wire
             - pkg: github.com/nanostack-dev/nanostack-framework/app/
               desc: app is legacy Fx assembly; the layers use core/nano and nano gen wire
+        # Design B1: an integration package may import only the pkg primitives
+        # of internal/layers.AllowedLegacy, which carry no Fx and no zerolog,
+        # and the leaf pkg/functional (internal/layers.Leaves). Keep this list
+        # and those two equal.
+        integrations import no legacy tree but the allow-list:
+          # Lax: everything not denied is allowed, and an allow entry wins over
+          # the shorter pkg/ deny.
+          list-mode: lax
+          files:
+            - "**/http/**"
+            - "**/pg/**"
+            - "**/redis/**"
+            - "**/otel/**"
+          allow:
+            - github.com/nanostack-dev/nanostack-framework/pkg/apisec$
+            - github.com/nanostack-dev/nanostack-framework/pkg/db/pgerr$
+            - github.com/nanostack-dev/nanostack-framework/pkg/db/transactor$
+            - github.com/nanostack-dev/nanostack-framework/pkg/functional$
+            - github.com/nanostack-dev/nanostack-framework/pkg/health$
+            - github.com/nanostack-dev/nanostack-framework/pkg/jetx$
+            - github.com/nanostack-dev/nanostack-framework/pkg/search$
+            - github.com/nanostack-dev/nanostack-framework/pkg/tracing$
+          deny:
+            - pkg: github.com/nanostack-dev/nanostack-framework/pkg/
+              desc: pkg is legacy; only the primitives of internal/layers.AllowedLegacy are allowed
+            - pkg: github.com/nanostack-dev/nanostack-framework/modules/
+              desc: modules is legacy Fx wiring; the layers use core/nano and nano gen wire
+            - pkg: github.com/nanostack-dev/nanostack-framework/app$
+              desc: app is legacy Fx assembly; the layers use core/nano and nano gen wire
+            - pkg: github.com/nanostack-dev/nanostack-framework/app/
+              desc: app is legacy Fx assembly; the layers use core/nano and nano gen wire
+        # zerolog is denied everywhere by the base rules.
+        layers use no fx:
+          files:
+            - "**/core/**"
+            - "**/http/**"
+            - "**/pg/**"
+            - "**/redis/**"
+            - "**/otel/**"
+            - "**/gen/**"
+            - "**/cmd/**"
+          deny:
+            - pkg: go.uber.org/fx
+              desc: the layers replace Fx; use core/nano and nano gen wire (ADR 0013)
+            - pkg: go.uber.org/dig
+              desc: the layers replace Fx; use core/nano and nano gen wire (ADR 0013)
     errcheck:
       check-type-assertions: true
     exhaustive:
@@ -261,6 +322,7 @@ linters:
       - {linters: [depguard], path: ^modules/logging/logging_test\.go$} # imports zerolog; legacy, deleted after the slog migration
       - {linters: [depguard], path: ^modules/migrations/migrations_integration_test\.go$} # imports zerolog; legacy, deleted after the slog migration
       - {linters: [depguard], path: ^modules/migrations/migrator\.go$} # imports zerolog; legacy, deleted after the slog migration
+      - {linters: [depguard], path: ^modules/migrations/migrator_test\.go$} # imports zerolog; legacy, deleted after the slog migration
       - {linters: [depguard], path: ^modules/migrations/module\.go$} # imports zerolog; legacy, deleted after the slog migration
       - {linters: [depguard], path: ^modules/pglock/pglock\.go$} # imports zerolog; legacy, deleted after the slog migration
       - {linters: [depguard], path: ^modules/postgres/postgres\.go$} # imports zerolog; legacy, deleted after the slog migration

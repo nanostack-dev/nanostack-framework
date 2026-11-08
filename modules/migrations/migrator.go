@@ -1,6 +1,7 @@
 package migrations
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -55,7 +56,18 @@ func (m *MigrationProvider) RunMigrations() error {
 		return fmt.Errorf("migrations base path %q is not a directory", m.config.BasePath)
 	}
 
-	driver, err := postgres.WithInstance(m.db, &postgres.Config{MigrationsTable: "schema_migrations"})
+	// golang-migrate keeps the connection it migrates on until it is closed.
+	// Take that connection here and give it back to the pool at the end;
+	// Close of the golang-migrate driver would also close m.db, the
+	// application's pool.
+	conn, err := m.db.Conn(context.Background())
+	if err != nil {
+		return fmt.Errorf("failed to take a migration connection: %w", err)
+	}
+	defer func() { _ = conn.Close() }()
+	driver, err := postgres.WithConnection(
+		context.Background(), conn, &postgres.Config{MigrationsTable: "schema_migrations"},
+	)
 	if err != nil {
 		return fmt.Errorf("failed to create migration driver: %w", err)
 	}
@@ -144,8 +156,10 @@ func (m *MigrationProvider) executeMigrations(migrator *migrate.Migrate) error {
 	return nil
 }
 
+// ValidateMigrations logs a warning for each module migration without its
+// down file. With MigrationConfig.Validate false, it does nothing.
 func (m *MigrationProvider) ValidateMigrations() error {
-	if !m.config.Validate && !m.config.Enabled {
+	if !m.config.Validate {
 		return nil
 	}
 	baseInfo, err := os.Stat(m.config.BasePath)

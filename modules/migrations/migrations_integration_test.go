@@ -143,3 +143,28 @@ func TestRunBeforeStart_ShutdownSignalFinishesTheMigrationInProgress(t *testing.
 		t.Error("the migration after the signal ran")
 	}
 }
+
+// golang-migrate keeps the connection it migrates on until it is closed.
+// RunMigrations must give it back to the pool.
+func TestRunMigrationsGivesItsConnectionBack(t *testing.T) {
+	db := freshDatabase(t)
+	db.SetMaxOpenConns(2)
+	dir := writeMigrations(t, map[string]string{
+		"1_a.up.sql":   "CREATE TABLE it_conn (id int);",
+		"1_a.down.sql": "DROP TABLE it_conn;",
+	})
+	m := migrations.NewMigrationProvider(zerolog.Nop(), db, migrations.MigrationConfig{Enabled: true, BasePath: dir})
+	for i := range 3 {
+		if err := m.RunMigrations(); err != nil {
+			t.Fatalf("RunMigrations %d: %v", i+1, err)
+		}
+		if inUse := db.Stats().InUse; inUse != 0 {
+			t.Fatalf("after RunMigrations %d: %d connections in use, want 0", i+1, inUse)
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := db.PingContext(ctx); err != nil {
+		t.Fatalf("ping after three runs with MaxOpenConns=2: %v", err)
+	}
+}
