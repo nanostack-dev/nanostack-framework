@@ -82,6 +82,9 @@ func renderSetting(b *strings.Builder, im *importset.Set, s *setting) {
 	}
 	w("\n\t// %s\n\t{\n", comment)
 	key := []string{"Path: " + strconv.Quote(s.path), "Env: " + strconv.Quote(s.env)}
+	if s.defEnv != "" {
+		key = append(key, "DefaultEnv: "+strconv.Quote(s.defEnv))
+	}
 	if s.def != "" {
 		key = append(key, "Default: "+strconv.Quote(s.def))
 	}

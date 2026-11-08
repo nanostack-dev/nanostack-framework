@@ -40,6 +40,12 @@ func Bind(ctx context.Context, src *nanoconf.Sources) (Config, error) {
 		c.Service.Debug, _ = nanoconf.Scalar(b, k, nanoconf.ParseBool[bool])
 	}
 
+	// deployment: Stack the deploy renderer names in the config file (prod, dev); the
+	{
+		k := nanoconf.Key{Path: "deployment", Env: "DEPLOYMENT", DefaultEnv: "ENVIRONMENT", Default: "prod"}
+		c.Service.Deployment, _ = nanoconf.Scalar(b, k, nanoconf.ParseString[string])
+	}
+
 	// http.addr: Address the server listens on.
 	{
 		k := nanoconf.Key{Path: "http.addr", Env: "HTTP_ADDR", Default: ":8080"}
@@ -95,6 +101,12 @@ func Bind(ctx context.Context, src *nanoconf.Sources) (Config, error) {
 	{
 		k := nanoconf.Key{Path: "billing.from", Env: "BILLING_FROM"}
 		c.Billing.From, _ = nanoconf.Scalar(b, k, nanoconf.ParseString[string])
+	}
+
+	// billing.reply_to: Reply-To address of invoice mail; the sender's when unset.
+	{
+		k := nanoconf.Key{Path: "billing.reply_to", Env: "BILLING_REPLY_TO", DefaultEnv: "BILLING_FROM", Optional: true}
+		c.Billing.ReplyTo, _ = nanoconf.Scalar(b, k, nanoconf.ParseString[string])
 	}
 
 	// billing.stripe_key: Stripe API key.
@@ -156,6 +168,7 @@ func (c Config) LogValue() slog.Value {
 		slog.String("environment", string(c.Service.Environment)),
 		slog.Any("log_level", c.Service.LogLevel),
 		slog.Bool("debug", c.Service.Debug),
+		slog.String("deployment", c.Service.Deployment),
 		slog.Group("http",
 			slog.String("addr", c.HTTP.Addr),
 			slog.Duration("read_timeout", c.HTTP.ReadTimeout),
@@ -168,6 +181,7 @@ func (c Config) LogValue() slog.Value {
 		slog.Group("billing",
 			slog.Int("due_days", c.Billing.DueDays),
 			slog.String("from", c.Billing.From),
+			slog.String("reply_to", c.Billing.ReplyTo),
 			slog.String("stripe_key", c.Billing.StripeKey.String()),
 			slog.String("webhook_secret", c.Billing.WebhookSecret.String()),
 			slog.Any("cc", c.Billing.CC),

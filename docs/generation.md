@@ -145,6 +145,7 @@ Source: a plain Go struct. Struct tags declare each setting, and the field's doc
 - `config:"name[,optional]"` names the setting in lower snake case. Nested structs add a path segment (`billing.due_days`). Every exported field needs one; `config:"-"` skips a field.
 - `env:"NAME"` overrides the environment variable, derived from the path by default (`BILLING_DUE_DAYS`).
 - `default:"value"` is parsed and validated at generation time. Defaults of `encoding.TextUnmarshaler` types (such as `slog.Level`) are checked only when `Bind` runs; bind the defaults in a test.
+- `defaultenv:"NAME"` takes the default from another environment variable first: the setting reads `NAME` only when its own variable and the config files leave it unset, then the literal `default`. One variable can so feed two settings, as the env of one and the default of the other, while a config file still sets the second apart. `NAME` must not be the setting's own env nor the env of a secret setting, and a secret takes no `defaultenv`. Two settings with the same `env` remain an error. `CONFIG.md` shows the default as ``env `NAME`, else `value` ``.
 - `validate:"min=1,max=365"`, `oneof=a b c` and `scheme=https` are the rules.
 - A setting without a default is required unless it is optional. Secrets (`secret.Secret` from `core/secret`, the framework's one secret type) cannot have a default and are never read from YAML files. Every printing path shows them as `[REDACTED]`.
 

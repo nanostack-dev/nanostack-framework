@@ -50,6 +50,9 @@ func envComment(s *setting) string {
 		status = append(status, "secret")
 	}
 	status = append(status, typeLabel(s))
+	if s.defEnv != "" {
+		status = append(status, "defaults to env "+s.defEnv)
+	}
 	if s.rawCheck != "" {
 		status = append(status, s.rawCheck)
 	}

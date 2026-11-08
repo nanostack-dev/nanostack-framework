@@ -20,6 +20,13 @@ type Key struct {
 	Env string
 	// Default is the raw default value. Empty means no default.
 	Default string
+	// DefaultEnv names an environment variable that supplies the default:
+	// when the setting finds no value in its own sources (Env, the secret
+	// store, the config files), it takes the value of DefaultEnv, then
+	// Default. So one variable can feed two settings: one reads it as Env,
+	// the other as DefaultEnv, and a config file still overrides the second.
+	// A secret cannot have one; Bind reports it as an issue.
+	DefaultEnv string
 	// Optional settings may stay unset; they keep the Go zero value. A setting
 	// with neither a default nor Optional is required.
 	Optional bool
@@ -126,7 +133,9 @@ type resolved struct {
 }
 
 // lookup applies the precedence rules. It reports a missing required setting
-// and returns false for any setting without a usable value.
+// and returns false for any setting without a usable value. DefaultEnv is
+// read after the config files, as the first half of the default, and never
+// for a secret.
 //
 // An empty value counts as unset and the next source is tried. For a list,
 // empty means no elements: env "," and YAML [] are unset, so a required list
@@ -135,6 +144,10 @@ func (b *Binder) lookup(k Key, list bool) (resolved, bool) {
 	b.used[k.Path] = true
 	if k.Secret {
 		b.rejectSecretInFiles(k)
+		if k.DefaultEnv != "" {
+			b.AddIssue(k, "is a secret and cannot default to env "+k.DefaultEnv+
+				"; remove DefaultEnv and set env "+k.Env+" or the secret store")
+		}
 	}
 	if v, ok := b.src.env(k.Env); ok && !isEmpty(v, list) {
 		b.origins[k.Path] = "env " + k.Env
@@ -150,6 +163,13 @@ func (b *Binder) lookup(k Key, list bool) (resolved, bool) {
 		}
 		b.origins[k.Path] = "file " + layer.name
 		return resolved{raw: v.scalar, list: v.list, isList: v.isList}, true
+	}
+	if k.DefaultEnv != "" {
+		if v, ok := b.src.env(k.DefaultEnv); ok && !isEmpty(v, list) {
+			b.origins[k.Path] = "env " + k.DefaultEnv + " (the default)"
+			return resolved{raw: v}, true
+		}
+		return b.fallback(k, list, "set env "+k.Env+", "+k.Path+" in a config file, or env "+k.DefaultEnv)
 	}
 	return b.fallback(k, list, "set env "+k.Env+" or "+k.Path+" in a config file")
 }

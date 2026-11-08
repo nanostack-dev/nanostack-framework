@@ -21,6 +21,13 @@
 // declared default. An empty value counts as unset, and the next source is
 // tried; for a list, a value with no elements (env "," or YAML []) is empty.
 //
+// The default may come from another environment variable first
+// (Key.DefaultEnv, the defaultenv struct tag): the setting reads it only
+// when its own variable and the config files leave it unset, then falls back
+// to the literal default. That is how one variable feeds two settings: one
+// reads it as its env, the other as its default, and a config file can still
+// set the second apart. A secret has no default, so it takes no DefaultEnv.
+//
 // Issues show the rejected raw value so an operator can fix it, with what
 // looks like a credential replaced by secret.Redacted. They show no value for
 // a secret setting, nor for a URL setting whose value does not parse, because

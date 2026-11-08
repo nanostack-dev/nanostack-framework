@@ -124,6 +124,72 @@ func TestFileLayersSecretStoreAndPrecedence(t *testing.T) {
 	}
 }
 
+// TestDefaultEnvPrecedence: a defaultenv variable fills the default slot, so
+// the setting's own env and the config files beat it, and it beats the
+// literal default. One variable feeds two settings: ENVIRONMENT is the env of
+// environment and the default of deployment; BILLING_FROM is the env of
+// billing.from and the default of billing.reply_to.
+func TestDefaultEnvPrecedence(t *testing.T) {
+	env := func(extra map[string]string) nanoconf.Option {
+		m := validEnv()
+		for k, v := range extra {
+			m[k] = v
+		}
+		return nanoconf.EnvMap(m)
+	}
+	cases := map[string]struct {
+		opts       []nanoconf.Option
+		deployment string
+		replyTo    string
+	}{
+		"literal default, and the sender": {
+			opts:       []nanoconf.Option{env(nil)},
+			deployment: "prod", replyTo: "billing@example.com",
+		},
+		"default env": {
+			opts:       []nanoconf.Option{env(map[string]string{"ENVIRONMENT": "staging"})},
+			deployment: "staging", replyTo: "billing@example.com",
+		},
+		"file beats the default env": {
+			opts: []nanoconf.Option{
+				env(map[string]string{"ENVIRONMENT": "staging"}),
+				nanoconf.YAML("base.yaml", []byte("deployment: dev\nbilling:\n  reply_to: help@example.com\n")),
+			},
+			deployment: "dev", replyTo: "help@example.com",
+		},
+		"own env beats the file": {
+			opts: []nanoconf.Option{
+				env(map[string]string{"ENVIRONMENT": "staging", "DEPLOYMENT": "eu", "BILLING_REPLY_TO": "eu@example.com"}),
+				nanoconf.YAML("base.yaml", []byte("deployment: dev\nbilling:\n  reply_to: help@example.com\n")),
+			},
+			deployment: "eu", replyTo: "eu@example.com",
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			cfg, err := bind(t, tc.opts...)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cfg.Deployment != tc.deployment || cfg.Billing.ReplyTo != tc.replyTo {
+				t.Errorf("deployment=%q reply_to=%q, want %q and %q",
+					cfg.Deployment, cfg.Billing.ReplyTo, tc.deployment, tc.replyTo)
+			}
+		})
+	}
+	// A file value of billing.from does not reach billing.reply_to:
+	// defaultenv reads the variable, not the other setting.
+	m := validEnv()
+	delete(m, "BILLING_FROM")
+	cfg, err := bind(t, nanoconf.EnvMap(m), nanoconf.YAML("base.yaml", []byte("billing:\n  from: file@example.com\n")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Billing.From != "file@example.com" || cfg.Billing.ReplyTo != "" {
+		t.Errorf("from=%q reply_to=%q, want the file's sender and no reply-to", cfg.Billing.From, cfg.Billing.ReplyTo)
+	}
+}
+
 func TestSecretInFileAndUnknownKeysAreIssues(t *testing.T) {
 	env := validEnv()
 	_, err := bind(t,

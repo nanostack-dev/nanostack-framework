@@ -28,6 +28,9 @@ type Service struct {
 	LogLevel slog.Level `config:"log_level" default:"info"`
 	// Expose pprof handlers.
 	Debug bool `config:"debug" default:"false"`
+	// Stack the deploy renderer names in the config file (prod, dev); the
+	// process environment when the file leaves it unset.
+	Deployment string `config:"deployment" defaultenv:"ENVIRONMENT" default:"prod"`
 }
 
 // Environment names a deployment environment.
@@ -47,6 +50,8 @@ type BillingConfig struct {
 	DueDays int `config:"due_days" default:"30" validate:"min=1,max=365"`
 	// Sender address for invoice mail.
 	From string `config:"from" env:"BILLING_FROM"`
+	// Reply-To address of invoice mail; the sender's when unset.
+	ReplyTo string `config:"reply_to,optional" defaultenv:"BILLING_FROM"`
 	// Stripe API key.
 	StripeKey secret.Secret `config:"stripe_key" env:"STRIPE_KEY"`
 	// Webhook signing secret; webhooks are disabled when unset.
