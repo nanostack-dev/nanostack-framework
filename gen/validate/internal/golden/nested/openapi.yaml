@@ -1,0 +1,47 @@
+openapi: 3.0.3
+info: {title: golden, version: "1"}
+paths:
+  /check:
+    post:
+      operationId: check
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Body'}
+      responses:
+        "204": {description: ok}
+components:
+  schemas:
+    Address:
+      type: object
+      required: [city]
+      properties:
+        city: {type: string, minLength: 1}
+        zip: {type: string, pattern: '^[0-9]{5}$'}
+    Named:
+      type: object
+      required: [name]
+      properties:
+        name: {type: string, maxLength: 10}
+    Body:
+      allOf:
+        - $ref: '#/components/schemas/Named'
+        - type: object
+          required: [home]
+          properties:
+            home: {$ref: '#/components/schemas/Address'}
+            others:
+              type: array
+              items: {$ref: '#/components/schemas/Address'}
+            inline:
+              type: object
+              required: [code]
+              properties:
+                code: {type: integer, maximum: 9}
+            labels:
+              type: object
+              additionalProperties: {type: string, minLength: 1}
+            byName:
+              type: object
+              additionalProperties: {$ref: '#/components/schemas/Address'}

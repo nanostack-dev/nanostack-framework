@@ -1,0 +1,13 @@
+package: strings
+output: api.gen.go
+generate:
+  models: true
+  std-http-server: true
+  strict-server: true
+additional-imports:
+  - package: github.com/nanostack-dev/nanostack-framework/http/nanohttp
+  - package: github.com/nanostack-dev/nanostack-framework/http/problem
+output-options:
+  user-templates:
+    strict/strict-http.tmpl: ../../../../../http/nanohttp/oapitemplates/strict/strict-http.tmpl
+    union.tmpl: ../../../../../http/nanohttp/oapitemplates/union.tmpl

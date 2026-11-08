@@ -1,0 +1,30 @@
+openapi: 3.0.3
+info: {title: golden, version: "1"}
+paths:
+  /check:
+    post:
+      operationId: check
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Body'}
+      responses:
+        "204": {description: ok}
+components:
+  schemas:
+    Body:
+      type: object
+      properties:
+        id: {type: string, format: uuid, x-go-type: string}
+        email: {type: string, format: email, x-go-type: string}
+        site: {type: string, format: uri}
+        at: {type: string, format: date-time, x-go-type: string}
+        day: {type: string, format: date, x-go-type: string}
+        v4: {type: string, format: ipv4}
+        v6: {type: string, format: ipv6}
+        host: {type: string, format: hostname}
+        typedId: {type: string, format: uuid}
+        typedAt: {type: string, format: date-time}
+        typedDay: {type: string, format: date}
+        typedEmail: {type: string, format: email}

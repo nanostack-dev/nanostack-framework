@@ -1,0 +1,26 @@
+openapi: 3.0.3
+info: {title: required, version: "1"}
+paths:
+  /check:
+    post:
+      operationId: check
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Body'}
+      responses:
+        "204": {description: ok}
+components:
+  schemas:
+    Body:
+      type: object
+      required: [name, count, enabled, tags, nick, id]
+      properties:
+        name: {type: string}
+        count: {type: integer, minimum: 0}
+        enabled: {type: boolean}
+        tags: {type: array, items: {type: string}}
+        nick: {type: string, nullable: true}
+        id: {type: string, readOnly: true}
+        note: {type: string, maxLength: 3}

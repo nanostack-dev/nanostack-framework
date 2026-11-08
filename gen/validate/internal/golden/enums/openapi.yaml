@@ -1,0 +1,27 @@
+openapi: 3.0.3
+info: {title: golden, version: "1"}
+paths:
+  /check:
+    post:
+      operationId: check
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Body'}
+      responses:
+        "204": {description: ok}
+components:
+  schemas:
+    Status:
+      type: string
+      enum: [active, paused]
+    Body:
+      type: object
+      properties:
+        status: {$ref: '#/components/schemas/Status'}
+        statuses: {type: array, items: {$ref: '#/components/schemas/Status'}}
+        mode: {type: string, enum: [fast, slow]}
+        priority: {type: integer, enum: [1, 2, 3]}
+        kind: {type: string, enum: [fixed]}
+        flag: {type: boolean, enum: [true]}

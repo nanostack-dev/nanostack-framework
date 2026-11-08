@@ -1,0 +1,124 @@
+openapi: 3.1.1
+info: {title: webhooks, version: "1"}
+paths:
+  /webhooks:
+    post:
+      operationId: createWebhook
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreateWebhookRequest'}
+      responses:
+        "201":
+          description: created
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Webhook'}
+  /webhooks/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: {type: string, pattern: '^wh_[a-z0-9]+$'}
+    get:
+      operationId: getWebhook
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Webhook'}
+    patch:
+      operationId: updateWebhook
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/UpdateWebhookRequest'}
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Webhook'}
+  /webhooks/{id}/events:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: {type: string, pattern: '^wh_[a-z0-9]+$'}
+    get:
+      operationId: listEvents
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema: {type: integer, minimum: 1, maximum: 100}
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: {type: array, items: {type: string}}
+components:
+  schemas:
+    Header:
+      type: object
+      required: [name, value]
+      additionalProperties: false
+      properties:
+        name: {type: string, pattern: '^[A-Za-z0-9-]+$', maxLength: 64}
+        value: {type: string, maxLength: 1024}
+    BasicAuth:
+      type: object
+      required: [type, username, password]
+      properties:
+        type: {const: basic}
+        username: {type: string, minLength: 1}
+        password: {type: string, minLength: 1}
+    BearerAuth:
+      type: object
+      required: [type, token]
+      properties:
+        type: {const: bearer}
+        token: {type: string, minLength: 16}
+    Auth:
+      oneOf:
+        - $ref: '#/components/schemas/BasicAuth'
+        - $ref: '#/components/schemas/BearerAuth'
+      discriminator:
+        propertyName: type
+        mapping:
+          basic: '#/components/schemas/BasicAuth'
+          bearer: '#/components/schemas/BearerAuth'
+    RunWhen:
+      type: string
+      enum: [always, on_failure]
+    CreateWebhookRequest:
+      type: object
+      required: [name, url]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 255}
+        description: {type: [string, "null"], maxLength: 1000}
+        url: {type: string, format: uri, maxLength: 2048}
+        headers:
+          type: array
+          maxItems: 20
+          items: {$ref: '#/components/schemas/Header'}
+        auth: {$ref: '#/components/schemas/Auth'}
+        run_when: {$ref: '#/components/schemas/RunWhen'}
+        retries: {type: integer, format: int32, minimum: 0, maximum: 10}
+    UpdateWebhookRequest:
+      type: object
+      minProperties: 1
+      properties:
+        name: {type: string, minLength: 1, maxLength: 255}
+        description: {type: [string, "null"], maxLength: 1000}
+    Webhook:
+      type: object
+      required: [id, name, url]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        url: {type: string}
