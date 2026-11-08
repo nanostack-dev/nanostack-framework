@@ -666,7 +666,8 @@ Domain↔entity mappers go in `internal/mapper` (anchor) or the feature package 
 | Field names | Exact match, then initialisms folded (`ID`/`Id`, `URL`). Two candidates for one field is an error. |
 | `*T`→`T`, `Option[T]`→`T` | An error unless `NilAsZero` or `Default` is declared. |
 | string → enum | Fails on an unknown value by default. `Cast(field, why)` opts out. |
-| Nested struct | Needs a declared `Func` for that pair. Nothing is derived implicitly. |
+| Different names | `From(target, source)` maps a source field with another name. `Reverse` swaps it. |
+| Nested struct | Needs a declared `Func` for that pair, or a hand-written function registered once with `Use(fn)`. Nothing is derived implicitly. |
 | A target field with no source, or a source field never used | An error on both sides. Waived only by `Skip(field, why)` or `Unused(field, why)`. |
 | `Reverse` | Inverts renames, casts, `Flatten` and enums. It never inverts `NilAsZero`, `Default`, `Arg`, `Via`, `After`, `Skip` or `Unused`; each needs its own rule. |
 | JSON decode failure | One policy: return the error, with the field path. |
