@@ -19,7 +19,6 @@ import (
 
 	"github.com/nanostack-dev/nanostack-framework/core/nano/project"
 	"github.com/nanostack-dev/nanostack-framework/gen"
-	genapi "github.com/nanostack-dev/nanostack-framework/gen/api"
 	"github.com/nanostack-dev/nanostack-framework/gen/internal/gopkg"
 )
 
@@ -277,6 +276,16 @@ func (c *projectCheck) inside(field, path string) bool {
 			"%s %s is outside the directory nano gen runs on", field, path)
 		return false
 	}
+	if mod := moduleRoot(filepath.Join(c.root, path)); mod != moduleRoot(c.root) {
+		rel, err := filepath.Rel(c.root, mod)
+		if err != nil {
+			rel = mod
+		}
+		c.add(c.at(field, "API.Clients"),
+			"declare the output in "+filepath.ToSlash(filepath.Join(rel, projectFile))+" and run nano gen there",
+			"%s %s is in the nested module %s, which runs its own nano gen", field, path, filepath.ToSlash(rel))
+		return false
+	}
 	return true
 }
 
@@ -296,7 +305,9 @@ func (c *projectCheck) api(api *project.OpenAPI) {
 			c.add(c.at("API.Spec"), specFix(c.root), "API.Spec %s does not exist", api.Spec)
 		}
 	}
-	outputs := map[string]string{} // output path -> the field that writes it
+	// Each api output holds the models of the whole spec, so two outputs in
+	// one package declare every type twice: one directory, one output.
+	outputs := map[string]string{} // output directory -> the field that writes into it
 	switch dir := api.Server.Dir; {
 	case dir != "":
 		if c.relative("API.Server.Dir", dir) && c.inside("API.Server.Dir", dir) &&
@@ -304,12 +315,16 @@ func (c *projectCheck) api(api *project.OpenAPI) {
 			c.add(c.at("API.Server.Dir"), "set API.Server.Dir to the directory of the oapi-codegen package",
 				"API.Server.Dir %s is not a directory", dir)
 		}
-		outputs[filepath.Join(dir, orDefault(api.Server.File, genapi.DefaultServerFile))] = "API.Server"
+		outputs[filepath.Clean(dir)] = "API.Server"
 	case len(api.Clients) == 0:
 		c.add(c.at("API"), "set API.Server.Dir to the server package, or add a client to API.Clients",
 			"API declares neither a server nor a client")
 	}
 	c.fileName("API.Server.File", api.Server.File)
+	if api.Server.Dir != "" && api.Server.File == validateOut {
+		c.add(c.at("API.Server.File", "API.Server"), "set API.Server.File to another name, such as api.gen.go",
+			"API.Server.File %s is the file nano gen validate writes", validateOut)
+	}
 	for i, cl := range api.Clients {
 		c.client(fmt.Sprintf("API.Clients[%d]", i), cl, outputs)
 	}
@@ -330,12 +345,17 @@ func (c *projectCheck) client(field string, cl project.Client, outputs map[strin
 			"%s.Package %q is not a Go package name", field, cl.Package)
 	}
 	c.fileName(field+".File", cl.File)
-	out := filepath.Join(cl.Dir, orDefault(cl.File, genapi.DefaultClientFile))
-	if other, dup := outputs[out]; dup {
-		c.add(c.at(field+".Dir", field+".Package", "API.Clients"), "give "+field+" its own Dir or File",
-			"%s and %s both write %s", other, field, filepath.ToSlash(out))
+	if cl.Dir == "" {
+		return
 	}
-	outputs[out] = field
+	dir := filepath.Clean(cl.Dir)
+	if other, dup := outputs[dir]; dup {
+		c.add(c.at(field+".Dir", field+".Package", "API.Clients"), "give "+field+" a directory of its own",
+			"%s and %s both generate into %s, so its models would be declared twice", other, field,
+			filepath.ToSlash(dir))
+		return
+	}
+	outputs[dir] = field
 }
 
 // specFix names the OpenAPI documents under root, when there are some.

@@ -57,6 +57,11 @@ paths:
                   type: array
                   items: {type: string}
                   x-go-type-skip-optional-pointer: true
+                member_ids:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
       responses:
         "200":
           description: ok

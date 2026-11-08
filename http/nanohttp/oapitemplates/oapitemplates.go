@@ -2,7 +2,9 @@
 // connect the generated std-http strict server to nanohttp and problem, and
 // make union types decode as strictly as the request body.
 //
-// Use it from an oapi-codegen v2.8.2 config:
+// nano gen api (package gen/api in the gen module) runs oapi-codegen v2.8.2
+// in-process with these overrides. Its configuration, written for
+// oapi-codegen's command, is:
 //
 //	package: api
 //	output: api.gen.go
@@ -18,9 +20,10 @@
 //	    strict/strict-http.tmpl: <path to strict/strict-http.tmpl>
 //	    union.tmpl: <path to union.tmpl>
 //
-// Then run nano gen validate on the same package: the overridden template
-// calls the Validate and validateParams methods it generates, so the package
-// does not compile until they exist and match the spec.
+// The pipeline then runs nano gen validate on the same package: the
+// overridden template calls the Validate and validateParams methods it
+// generates, so the package does not compile until they exist and match the
+// spec.
 //
 // union.tmpl makes the As<Variant> methods of a oneOf or anyOf type decode
 // with nanohttp.Unmarshal, the strict json/v2 options the validators use.

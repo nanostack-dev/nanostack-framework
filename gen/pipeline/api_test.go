@@ -109,8 +109,8 @@ func TestClientOnlyModule(t *testing.T) {
 }
 
 // The declaration of the API is checked before any step runs: outputs stay
-// inside the run's directory, a client names its package, and two outputs
-// never share a path.
+// inside the run's directory and its module, a client names its package, and
+// two outputs never share a package.
 func TestAPIDeclarationErrors(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -134,8 +134,27 @@ func TestAPIDeclarationErrors(t *testing.T) {
 				"  fix: set API.Clients[0].Package to a Go package name\n"},
 		{"same output", `Server: project.Package{Dir: "api", File: "gen.go"},
 		Clients: []project.Client{{Dir: "api", Package: "api", File: "gen.go"}},`,
-			"nanogen/project.go:13: API.Server and API.Clients[0] both write api/gen.go\n" +
-				"  fix: give API.Clients[0] its own Dir or File\n"},
+			"nanogen/project.go:13: API.Server and API.Clients[0] both generate into api, " +
+				"so its models would be declared twice\n" +
+				"  fix: give API.Clients[0] a directory of its own\n"},
+		{"client in the server package", `Server: project.Package{Dir: "api"},
+		Clients: []project.Client{{Dir: "./api/", Package: "api", File: "client.gen.go"}},`,
+			"nanogen/project.go:13: API.Server and API.Clients[0] both generate into api, " +
+				"so its models would be declared twice\n" +
+				"  fix: give API.Clients[0] a directory of its own\n"},
+		{"two clients in one package", `Server: project.Package{Dir: "api"},
+		Clients: []project.Client{{Dir: "client", Package: "client"}, {Dir: "client", Package: "client", File: "b.go"}},`,
+			"nanogen/project.go:13: API.Clients[0] and API.Clients[1] both generate into client, " +
+				"so its models would be declared twice\n" +
+				"  fix: give API.Clients[1] a directory of its own\n"},
+		{"server file is validate's", `Server: project.Package{Dir: "api", File: "validate.gen.go"},`,
+			"nanogen/project.go:12: API.Server.File validate.gen.go is the file nano gen validate writes\n" +
+				"  fix: set API.Server.File to another name, such as api.gen.go\n"},
+		{"client in a nested module", `Server: project.Package{Dir: "api"},
+		Clients: []project.Client{{Dir: "nested/client", Package: "client"}},`,
+			"nanogen/project.go:13: API.Clients[0].Dir nested/client is in the nested module nested, " +
+				"which runs its own nano gen\n" +
+				"  fix: declare the output in nested/nanogen/project.go and run nano gen there\n"},
 		{"file name", `Server: project.Package{Dir: "api", File: "gen/api.go"},`,
 			"nanogen/project.go:12: API.Server.File gen/api.go is not a .go file name\n" +
 				"  fix: set API.Server.File to a file name such as api.gen.go\n"},
@@ -144,6 +163,7 @@ func TestAPIDeclarationErrors(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			dir := copyFixture(t)
+			write(t, dir, "nested/go.mod", "module example.com/nested\n\ngo 1.27\n")
 			edit(t, dir, "nanogen/project.go", `Server: project.Package{Dir: "api"},`, tt.server)
 			stdout, stderr, code := nano(t, dir, "-check", "-only", "api")
 			wantRun(t, "nano gen -check -only api", code, 1, stdout, "", stderr,
