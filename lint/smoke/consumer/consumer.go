@@ -1,6 +1,9 @@
 // Package consumer is a lint smoke fixture. It calls the generic and ordinary
 // methods of listx.List from another package, so the linters load listx from
 // export data. That importer side is where golang/go#81188 crashes analyzers.
+// It also calls the generic pkg/ptr.Ptr, so a //go:fix inline directive on a
+// generic function fails the lint: the inline analyzer reports "cannot inline"
+// at every caller in another package.
 package consumer
 
 import (
@@ -8,6 +11,7 @@ import (
 	"strconv"
 
 	"github.com/nanostack-dev/nanostack-framework/lint/smoke/listx"
+	"github.com/nanostack-dev/nanostack-framework/pkg/ptr"
 )
 
 // Lengths returns the decimal length of each even number in values.
@@ -50,4 +54,10 @@ func ProbeCount() (int, error) {
 		return 0, err
 	}
 	return probe.Echo(count), nil
+}
+
+// Name returns a pointer to name through the generic ptr.Ptr, as a service
+// does from another module.
+func Name(name string) *string {
+	return ptr.Ptr(name)
 }

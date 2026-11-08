@@ -185,7 +185,7 @@ go mod tidy
 
 ## Upgrade from v0.22.0
 
-This is the minimum upgrade. fx modules, zerolog and the legacy HTTP stack keep working.
+This is the minimum upgrade. fx modules, zerolog and the legacy HTTP stack keep working at run time. The lint standard of the new version refuses zerolog and the deprecated packages, so step 5 adds exclusions for them.
 
 1. Upgrade the root module. `go mod tidy` adds `pkg/functional` and `db`:
 
@@ -195,6 +195,8 @@ This is the minimum upgrade. fx modules, zerolog and the legacy HTTP stack keep 
    ```
 
    Upgrade the root and `pkg/functional` together. A module graph that keeps root v0.22.0 (which contains `pkg/functional`) next to the `pkg/functional` module fails with "ambiguous import". The `pkg/functional` import path does not change.
+
+   The root module requires `github.com/testcontainers/testcontainers-go` v0.45.0 (for `pkg/testkit/redistest`), so `go mod tidy` raises the service's requirement to v0.45.0. Echopoint and anchor moved from v0.43.0. Their `testcontainers-go/modules/*` requirements stayed at v0.43.0 and their suites passed. Raise the modules to v0.45.0 in the same change, so core and modules come from one release, and run the container suites (step 7).
 2. Change every go-jet import to Nanostack DB. `pkg/db/transactor` and `pkg/jetx` now take Nanostack DB types, and go-jet types do not satisfy them:
 
    ```sh
@@ -211,9 +213,29 @@ This is the minimum upgrade. fx modules, zerolog and the legacy HTTP stack keep 
    - A `functional.Option` field in a scan destination is filled by qrm like a `*T` field. A `functional.Option` value in `MODEL`, `VALUES`, `SET`, `Literal` or `Raw` is NULL when it is absent. None in `MODEL` gives NULL, not DEFAULT. Search the models and `QRM` destinations for `functional.Option` first.
    - `FOR(locks ...RowLock)` is variadic. Call sites compile unchanged. A type that implements `SelectStatement` itself must change.
    The full list is in [docs/design/beta-readiness.md](docs/design/beta-readiness.md), section A5, and in [db/UPSTREAM.md](db/UPSTREAM.md).
-5. Silence the deprecations until the service migrates. The legacy packages (`modules/...` except `modules/nanofx`, `app`, `pkg/fxlog`, `pkg/httputil/requestlog`, and `modules/httpserver.StrictErrorHandler`) now carry a `Deprecated:` paragraph, so staticcheck reports SA1019 at every import. Add an SA1019 exclusion scoped to those import paths, for example a rule on the text `is deprecated: removed with fx (ADR 0013)`; where the shared lint config takes one rule per file, add `staticcheck` to the rule of each importing file and raise the exclusion budget in the same reviewed change. Remove the rules as the service moves each module.
+5. Regenerate the lint configuration (`go tool lintconfig`; `lintconfig -check` fails until you do) and silence what the new standard refuses until the service migrates. A rule of `.golangci.local.yml` names its linters and one `path`, and `exclusion-budget` counts the linters it names (see [lint/README.md](lint/README.md#adding-the-standard-to-existing-code)). `lintconfig` refuses a rule without a `path`, so one rule on a message text cannot cover the whole service. Add one rule per importing file, with a `text` that keeps the rule to the deprecation, and raise the budget in the same reviewed change:
+   - **The deprecated packages.** The legacy packages (`modules/...` except `modules/nanofx`, `app`, `pkg/fxlog`, `pkg/httputil/requestlog`, and `modules/httpserver.StrictErrorHandler`) now carry a `Deprecated:` paragraph, so staticcheck reports SA1019 at every use.
+   - **zerolog.** The base configuration bans `github.com/rs/zerolog` and its subpackages with `depguard` (`lint/base.golangci.yml`, rule `deprecated`): `log/slog` is the only logging API. A service on zerolog gets a `depguard` finding at every import.
+
+   ```yaml
+   linters:
+     exclusions:
+       rules:
+         # The fx stack and zerolog, until the service moves off them.
+         - path: ^cmd/app/app\.go$
+           linters: [staticcheck]
+           text: 'is deprecated: removed with fx \(ADR 0013\)'
+         - path: ^internal/logging/logging\.go$
+           linters: [depguard]
+           text: import 'github\.com/rs/zerolog
+   nanostack:
+     exclusion-budget: 2 # plus the rules the service already had
+   ```
+
+   Remove a file's rule when the file moves off the deprecated package or off zerolog, and lower the budget.
 6. Check the behaviour changes of the beta audit fixes that reach a v0.22.0 service ([CHANGELOG.md](CHANGELOG.md), Security and Changed):
    - `modules/apisec` now matches requirements as chi does (`apisec.MatchChi()`). A test or a service that calls `apisec.NewResolver(doc)` itself on a chi router passes `apisec.MatchChi()`; without it the resolver matches as `http.ServeMux` and fails on paths that conflict there. Refuse a request the resolver does not match.
+   - The resolver no longer agrees with the request validator on a wrong method. v0.22.0 matched with kin-openapi's router, the router of the request validator: `PUT /flows/search`, with only `POST /flows/search` and `PUT /flows/{id}` documented, matched nothing. The resolver now matches as the router that serves the request, chi with `MatchChi` or `http.ServeMux` without it, and both let `/flows/{id}` match `/flows/search`: the request resolves to `PUT /flows/{id}` and its requirements. An authentication middleware that runs before the request validator then answers 401 or 403 to an anonymous or unauthorized caller, where the validator answered 400 "method not allowed". Check the validator's router (kin-openapi `FindRoute`) before the resolver, and refuse a request it does not match with the validator's own answer. Echopoint's `WithAuth` does this: its golden contract test `routing/unknown-method-on-api-path` failed with 401 until it did.
    - `pkg/httputil/errorenvelope` and `StrictErrorHandler` write a stream error frame without a second status once the stream started (behind `core/log.HTTPMiddleware` only).
 7. Run the repository and integration suites. Echopoint's `cmd/it/repository` suite runs in no CI check, so run it by hand.
 

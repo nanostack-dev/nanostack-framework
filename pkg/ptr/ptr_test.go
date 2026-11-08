@@ -3,7 +3,7 @@ package ptr
 import "testing"
 
 func TestPtr(t *testing.T) {
-	value := new("value")
+	value := Ptr("value")
 	if *value != "value" {
 		t.Fatalf("expected pointer to value, got %#v", value)
 	}
