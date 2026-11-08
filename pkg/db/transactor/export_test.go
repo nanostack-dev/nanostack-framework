@@ -3,8 +3,7 @@ package transactor
 import (
 	"context"
 
-	jet "github.com/go-jet/jet/v2/postgres"
-
+	jet "github.com/nanostack-dev/nanostack-framework/db/postgres"
 	"github.com/nanostack-dev/nanostack-framework/pkg/search"
 )
 

@@ -1,4 +1,4 @@
-// Package jetx holds the go-jet helpers that sit above query execution:
+// Package jetx holds the Nanostack DB helpers that sit above query execution:
 // ordering, expression conversion, and filter composition.
 //
 // Every Build* helper returns nil when it has nothing to filter on, so an unset
@@ -14,8 +14,7 @@ import (
 	"fmt"
 	"time"
 
-	jet "github.com/go-jet/jet/v2/postgres"
-
+	jet "github.com/nanostack-dev/nanostack-framework/db/postgres"
 	"github.com/nanostack-dev/nanostack-framework/pkg/search"
 )
 

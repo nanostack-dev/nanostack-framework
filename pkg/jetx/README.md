@@ -1,6 +1,6 @@
 # jetx
 
-Go-Jet helpers that sit *above* query execution: ordering, expression
+[Nanostack DB](../../db/README.md) helpers that sit *above* query execution: ordering, expression
 conversion, and filter composition.
 
 Every `Build*` helper returns `nil` when it has nothing to filter on, and

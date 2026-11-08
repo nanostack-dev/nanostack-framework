@@ -9,15 +9,15 @@ import (
 	"os"
 	"testing"
 
-	"github.com/go-jet/jet/v2/postgres"
 	_ "github.com/lib/pq"
 
+	"github.com/nanostack-dev/nanostack-framework/db/postgres"
 	"github.com/nanostack-dev/nanostack-framework/pkg/db/transactor"
 )
 
 // These tests run against a real PostgreSQL instance, because the value of the
 // translation layer rests on facts no unit test can confirm: that the driver
-// reports the SQLSTATE and constraint name we match on, and that go-jet's error
+// reports the SQLSTATE and constraint name we match on, and that Nanostack DB's error
 // wrapping survives errors.As.
 //
 //	docker run --rm -d -p 55432:5432 -e POSTGRES_PASSWORD=itpass -e POSTGRES_DB=pgerrit postgres:16
@@ -181,7 +181,7 @@ func TestIntegrationOnForeignKey(t *testing.T) {
 	})
 }
 
-// TestIntegrationQueryPathWrapping covers the go-jet Query path rather than
+// TestIntegrationQueryPathWrapping covers the Nanostack DB Query path rather than
 // Exec, since qrm wraps driver errors as fmt.Errorf("jet: %w", err) and the
 // translation must still unwrap them.
 func TestIntegrationQueryPathWrapping(t *testing.T) {

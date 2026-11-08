@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	jet "github.com/go-jet/jet/v2/postgres"
+	jet "github.com/nanostack-dev/nanostack-framework/db/postgres"
 )
 
 type rowLockContextKey struct{}
@@ -48,7 +48,7 @@ func ForKeyShare(ctx context.Context) context.Context {
 	return WithRowLock(ctx, jet.KEY_SHARE())
 }
 
-// WithRowLock asks for any row lock clause go-jet can build, such as
+// WithRowLock asks for any row lock clause Nanostack DB can build, such as
 // jet.UPDATE().NOWAIT() or jet.UPDATE().SKIP_LOCKED().
 func WithRowLock(ctx context.Context, lock jet.RowLock) context.Context {
 	return context.WithValue(ctx, rowLockContextKey{}, lock)

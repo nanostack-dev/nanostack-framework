@@ -52,7 +52,7 @@ const (
 // unique index name, so pass the index name for uniqueness declared as
 // CREATE UNIQUE INDEX rather than as a table constraint.
 //
-// The error is unwrapped with errors.As, so it is matched through go-jet's
+// The error is unwrapped with errors.As, so it is matched through Nanostack DB's
 // "jet: " wrapping and any fmt.Errorf("%w") chain. A nil error never matches.
 func Is(err error, code string, constraints ...string) bool {
 	var pqErr *pq.Error

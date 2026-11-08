@@ -4,13 +4,12 @@ import (
 	"testing"
 	"time"
 
-	jet "github.com/go-jet/jet/v2/postgres"
-
+	jet "github.com/nanostack-dev/nanostack-framework/db/postgres"
 	"github.com/nanostack-dev/nanostack-framework/pkg/jetx"
 	"github.com/nanostack-dev/nanostack-framework/pkg/search"
 )
 
-// The helpers here build go-jet expressions, whose only observable form is the
+// The helpers here build Nanostack DB expressions, whose only observable form is the
 // SQL they render. Every assertion therefore compares rendered SQL rather than
 // expression structure, which keeps the tests pinned to what a caller can
 // actually see.

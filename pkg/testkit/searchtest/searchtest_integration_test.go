@@ -16,10 +16,10 @@ import (
 	"testing"
 	"time"
 
-	jet "github.com/go-jet/jet/v2/postgres"
 	_ "github.com/lib/pq"
 	"github.com/rs/zerolog"
 
+	jet "github.com/nanostack-dev/nanostack-framework/db/postgres"
 	"github.com/nanostack-dev/nanostack-framework/modules/httpserver"
 	"github.com/nanostack-dev/nanostack-framework/pkg/db/transactor"
 	"github.com/nanostack-dev/nanostack-framework/pkg/search"

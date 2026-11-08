@@ -7,8 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/go-jet/jet/v2/postgres"
-
+	"github.com/nanostack-dev/nanostack-framework/db/postgres"
 	"github.com/nanostack-dev/nanostack-framework/pkg/db/transactor"
 )
 
@@ -71,5 +70,48 @@ func TestRowLockRefusesAStatementThatIsNotASelect(t *testing.T) {
 	_, err := transactor.WithRequestedRowLockForTest(transactor.ForUpdate(inFakeTx(context.Background())), stmt)
 	if !errors.Is(err, transactor.ErrRowLockNotSelect) {
 		t.Fatalf("err = %v, want ErrRowLockNotSelect", err)
+	}
+}
+
+// TestRowLockWritesExactlyOneForClause pins the whole SQL text of each lock
+// helper. Nanostack DB's FOR is variadic and replaces the statement's lock
+// list (go-jet afea45b), so a locked context must still write one FOR clause,
+// and a lock the statement already had is replaced, never kept next to it.
+func TestRowLockWritesExactlyOneForClause(t *testing.T) {
+	const selectSQL = "\nSELECT it_locked.id AS \"it_locked.id\"\n" +
+		"FROM public.it_locked\n" +
+		"WHERE it_locked.id = $1::text\n"
+	for name, test := range map[string]struct {
+		lock func(context.Context) context.Context
+		want string
+	}{
+		"for update":        {transactor.ForUpdate, selectSQL + "FOR UPDATE;\n"},
+		"for share":         {transactor.ForShare, selectSQL + "FOR SHARE;\n"},
+		"for no key update": {transactor.ForNoKeyUpdate, selectSQL + "FOR NO KEY UPDATE;\n"},
+		"for key share":     {transactor.ForKeyShare, selectSQL + "FOR KEY SHARE;\n"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			for baseName, base := range map[string]postgres.SelectStatement{
+				"unlocked statement":      selectLockedRow(),
+				"statement with own lock": selectLockedRow().FOR(postgres.SHARE().NOWAIT()),
+			} {
+				t.Run(baseName, func(t *testing.T) {
+					stmt, err := transactor.WithRequestedRowLockForTest(test.lock(inFakeTx(context.Background())), base)
+					if err != nil {
+						t.Fatalf("err = %v", err)
+					}
+					query, args := stmt.Sql()
+					if query != test.want {
+						t.Errorf("query = %q, want %q", query, test.want)
+					}
+					if got := strings.Count(query, "\nFOR "); got != 1 {
+						t.Errorf("query has %d FOR clauses, want 1: %q", got, query)
+					}
+					if len(args) != 1 || args[0] != "a" {
+						t.Errorf("args = %v, want [a]", args)
+					}
+				})
+			}
+		})
 	}
 }

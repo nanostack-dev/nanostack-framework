@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/go-jet/jet/v2/qrm"
 	"github.com/lib/pq"
 
+	"github.com/nanostack-dev/nanostack-framework/db/qrm"
 	"github.com/nanostack-dev/nanostack-framework/pkg/db/pgerr"
 	"github.com/nanostack-dev/nanostack-framework/pkg/db/transactor"
 )
@@ -67,7 +67,7 @@ func TestResultOnUnique(t *testing.T) {
 			want:        errDomain,
 		},
 		{
-			name:        "translates through go-jet wrapping",
+			name:        "translates through Nanostack DB wrapping",
 			err:         fmt.Errorf("jet: %w", &pq.Error{Code: pgerr.UniqueViolation, Constraint: emailIndex}),
 			constraints: []string{emailIndex},
 			want:        errDomain,

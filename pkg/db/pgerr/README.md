@@ -28,7 +28,7 @@ Constraint names stay with the caller — they are application schema knowledge.
 Postgres reports the constraint *or unique index* name, so pass the index name
 for uniqueness declared with `CREATE UNIQUE INDEX`.
 
-Errors are matched with `errors.As`, so go-jet's `jet: ` wrapping and any
+Errors are matched with `errors.As`, so Nanostack DB's `jet: ` wrapping and any
 `fmt.Errorf("%w")` chain are unwrapped.
 
 ## Canceled queries
