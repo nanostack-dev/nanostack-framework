@@ -36,6 +36,9 @@ func (s *Spec) parseSchema(n *yaml.Node, loc string) *Schema {
 	}
 	sc := &Schema{Loc: loc}
 	s.parsing[n] = sc
+	if _, seen := s.lines[loc]; !seen {
+		s.lines[loc] = n.Line
+	}
 	if n.Kind == yaml.ScalarNode {
 		// 3.1 boolean schemas: true allows anything, false nothing.
 		if n.Value == "false" {
@@ -96,6 +99,8 @@ func (s *Spec) fill(sc *Schema, n *yaml.Node, loc string) {
 		switch {
 		case k == "$ref" || k == "exclusiveMinimum" || k == "exclusiveMaximum":
 			// $ref is read by parseSchema, the exclusive bounds by exclusive.
+		case k == WaiverKey:
+			s.waive(loc, v)
 		case unsupportedKeywords[k]:
 			sc.Unsupported = append(sc.Unsupported, k)
 		case !annotations[k] && !strings.HasPrefix(k, "x-"):

@@ -13,6 +13,7 @@
 package genvalidate
 
 import (
+	"errors"
 	"go/token"
 	"go/types"
 	"os"
@@ -36,9 +37,6 @@ type Options struct {
 	Dir string
 	// Output is the generated file name inside Dir. Default validate.gen.go.
 	Output string
-	// Allow lists JSON Pointers of schemas whose unenforced features Run
-	// accepts. Each covers that schema and every schema under it.
-	Allow []string
 	// Check makes Run compare instead of writing.
 	Check bool
 	// Overlay replaces Go files in the package load, keyed by absolute
@@ -55,6 +53,12 @@ type Diagnostic struct {
 	// Loc is the JSON Pointer of the schema in the spec.
 	Loc     string
 	Message string
+	// Line is the line of the schema in the spec, or 0 when it is unknown.
+	Line int
+	// Waived is the reason of the x-nano-unenforced extension that accepts
+	// the gap, on the schema or on one it is nested in. Empty when no
+	// extension accepts it.
+	Waived string
 }
 
 // String is the location and the message. Spec text in them is escaped, so
@@ -67,6 +71,39 @@ func (d Diagnostic) String() string { return commentText(d.Loc + ": " + d.Messag
 type Result struct {
 	File        gen.File
 	Diagnostics []Diagnostic
+	unused      []oas.Waiver // the x-nano-unenforced extensions that accept no gap
+	spec        string       // the spec path, as Options.Spec gave it
+}
+
+// Gaps returns the problems of the spec that do not stop the file from being
+// written, joined: one *gen.Error wrapping ErrUnenforced per diagnostic that
+// no x-nano-unenforced extension accepts, and one per extension that accepts
+// nothing, which would hide the next gap. It returns nil when there are none.
+func (r *Result) Gaps() error {
+	var errs []error
+	for _, d := range r.Diagnostics {
+		if d.Waived != "" {
+			continue
+		}
+		errs = append(errs, &gen.Error{
+			File: r.spec,
+			Line: d.Line,
+			Msg:  "not enforced: " + d.String(),
+			Fix: "change the schema, or accept the gap with " + oas.WaiverKey + `: "<reason>" on the schema at ` +
+				commentText(d.Loc),
+			Err: ErrUnenforced,
+		})
+	}
+	for _, w := range r.unused {
+		errs = append(errs, &gen.Error{
+			File: r.spec,
+			Line: w.Line,
+			Msg:  commentText(w.Loc) + ": " + oas.WaiverKey + " accepts no gap",
+			Fix:  "delete the " + oas.WaiverKey + " extension",
+			Err:  ErrUnenforced,
+		})
+	}
+	return errors.Join(errs...)
 }
 
 // Generate produces the validators. It fails when the spec and the Go types
@@ -97,9 +134,16 @@ func generateWith(cfg Options, gp *goPackage) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	diags := g.diagnostics()
+	for i := range diags {
+		diags[i].Line = spec.Line(diags[i].Loc)
+		diags[i].Waived, _ = spec.Waive(diags[i].Loc)
+	}
 	return &Result{
 		File:        gen.File{Path: filepath.Join(cfg.Dir, cfg.Output), Data: src},
-		Diagnostics: g.diagnostics(),
+		Diagnostics: diags,
+		unused:      spec.Unused(),
+		spec:        cfg.Spec,
 	}, nil
 }
 

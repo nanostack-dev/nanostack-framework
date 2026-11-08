@@ -1,9 +1,14 @@
 // Command nano is the Nanostack command line. Today it runs code generators:
 //
-//	nano gen <generator> [flags]
+//	nano gen [flags]               # every step of the module, in order (package gen/pipeline)
+//	nano gen <generator> [flags]   # one generator
 //
-// Each generator follows the contract of package gen and documents its flags
-// (nano gen <generator> -h). Every generator takes -check, which writes
+// `nano gen` with no generator name runs the pipeline: it reads
+// nanogen/project.go, discovers the rest, and runs validate, errors, config
+// and wire in that order; -check writes nothing and lists every stale,
+// missing or orphaned file (nano gen -h lists the flags). Each generator
+// follows the contract of package gen and documents its flags
+// (nano gen <generator> -h); every generator takes -check, which writes
 // nothing and exits 1 when its output is stale. Exit codes: 0 success, 1 a
 // source error or stale output, 2 bad usage, 3 an environment failure (the
 // go command cannot load packages, or a file cannot be read or written).
@@ -20,6 +25,7 @@ import (
 	"github.com/nanostack-dev/nanostack-framework/gen"
 	genconfig "github.com/nanostack-dev/nanostack-framework/gen/config"
 	generrors "github.com/nanostack-dev/nanostack-framework/gen/errors"
+	"github.com/nanostack-dev/nanostack-framework/gen/pipeline"
 	genvalidate "github.com/nanostack-dev/nanostack-framework/gen/validate"
 	"github.com/nanostack-dev/nanostack-framework/gen/wire"
 )
@@ -42,13 +48,16 @@ func usage() string {
 		names = append(names, name)
 	}
 	slices.Sort(names)
-	return "usage: nano gen {" + strings.Join(names, ",") + "} [flags]"
+	return "usage: nano gen [flags]\n       nano gen {" + strings.Join(names, ",") + "} [flags]"
 }
 
 func run(args []string, stdout, stderr io.Writer) int {
-	if len(args) < 2 || args[0] != "gen" {
+	if len(args) == 0 || args[0] != "gen" {
 		_, _ = fmt.Fprintln(stderr, usage())
 		return 2
+	}
+	if len(args) == 1 || strings.HasPrefix(args[1], "-") {
+		return pipeline.Main(args[1:], stdout, stderr)
 	}
 	cmd, ok := generators[args[1]]
 	if !ok {

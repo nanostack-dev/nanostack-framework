@@ -30,12 +30,35 @@ func TestRun(t *testing.T) {
 		t.Fatalf("check with a directory as -doc: exit %d, stderr %q; want 3 and a fix", code, stderr.String())
 	}
 
-	for _, args := range [][]string{{"gen"}, {"gen", "nope"}, {"build", "wire"}} {
+	for _, args := range [][]string{{}, {"gen", "nope"}, {"build", "wire"}} {
 		stderr.Reset()
 		code := run(args, &stdout, &stderr)
-		if code != 2 || !strings.Contains(stderr.String(), "usage: nano gen {config,errors,validate,wire}") {
+		if code != 2 || !strings.Contains(stderr.String(), "usage: nano gen [flags]\n") ||
+			!strings.Contains(stderr.String(), "nano gen {config,errors,validate,wire} [flags]") {
 			t.Fatalf("run(%q): exit %d stderr %q, want usage and exit 2", args, code, stderr.String())
 		}
+	}
+}
+
+// TestPipelineIsRouted runs `nano gen` without a generator name: the
+// pipeline, on its committed fixture module.
+func TestPipelineIsRouted(t *testing.T) {
+	const fixture = "../../pipeline/testdata/app"
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"gen", "-check", "-dir", fixture}, &stdout, &stderr); code != 0 ||
+		stdout.Len() != 0 || stderr.Len() != 0 {
+		t.Fatalf("nano gen -check: exit %d\nstdout: %s\nstderr: %s", code, stdout.String(), stderr.String())
+	}
+
+	if code := run([]string{"gen", "-list", "-dir", fixture}, &stdout, &stderr); code != 0 ||
+		!strings.Contains(stdout.String(), "validate  api\n  in   api/openapi.yaml\n") ||
+		!strings.Contains(stdout.String(), "wire      cmd/app\n") {
+		t.Fatalf("nano gen -list: exit %d\nstdout: %s\nstderr: %s", code, stdout.String(), stderr.String())
+	}
+
+	stderr.Reset()
+	if code := run([]string{"gen", "-h"}, &stdout, &stderr); code != 0 || !strings.Contains(stderr.String(), "-only") {
+		t.Fatalf("nano gen -h: exit %d, stderr %q; want the flags and exit 0", code, stderr.String())
 	}
 }
 

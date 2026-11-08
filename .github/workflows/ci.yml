@@ -63,12 +63,12 @@ jobs:
       - name: go.mod and go.sum are tidy
         run: go mod tidy -diff
       # internal/nanoexample wires every nano module, as a service does. A module
-      # change that breaks the graph or the config binding fails here. nano is in
-      # the gen module, which requires the root, so it runs from gen/ (go -C).
-      - name: Generated wiring and config of internal/nanoexample are current
-        run: |
-          go -C gen run ./cmd/nano gen config -check -dir ../internal/nanoexample
-          go -C gen run ./cmd/nano gen wire -check -dir ../internal/nanoexample -out .
+      # change that breaks the graph or the config binding fails here. The pipeline
+      # reads internal/nanoexample/nanogen/project.go and runs every step it finds,
+      # as `go tool nano gen -check` does in a service. nano is in the gen module,
+      # which requires the root, so it runs from gen/ (go -C).
+      - name: Generated code of internal/nanoexample is current (nano gen -check)
+        run: go -C gen run ./cmd/nano gen -check -dir ../internal/nanoexample
 
   # The container tests behind the integration tag, which the test job does not
   # build. No -race: golang-migrate's GracefulStop races under -race (see
