@@ -13,6 +13,12 @@ type APIKeysServer interface {
 	DeleteAPIKeys(ctx context.Context, request DeleteAPIKeysRequestObject) (DeleteAPIKeysResponseObject, error)
 }
 
+// CheckedServer serves the operations tagged Checked.
+type CheckedServer interface {
+	// (GET /checks)
+	ListChecks(ctx context.Context, request ListChecksRequestObject) (ListChecksResponseObject, error)
+}
+
 // StatusPagesServer serves the operations tagged "Status pages".
 type StatusPagesServer interface {
 	// (GET /status-pages)
@@ -41,6 +47,7 @@ type WebhooksServer interface {
 // to the handler of the operation's tag. NewHandlers builds it.
 type Handlers struct {
 	apiKeys     APIKeysServer
+	checked_    CheckedServer
 	statusPages StatusPagesServer
 	type_       TypeServer
 	webhooks    WebhooksServer
@@ -50,12 +57,14 @@ type Handlers struct {
 // returns an error that names the tag of a nil handler.
 func NewHandlers(
 	apiKeys APIKeysServer,
+	checked_ CheckedServer,
 	statusPages StatusPagesServer,
 	type_ TypeServer,
 	webhooks WebhooksServer,
 ) (*Handlers, error) {
 	return (&Handlers{
 		apiKeys:     apiKeys,
+		checked_:    checked_,
 		statusPages: statusPages,
 		type_:       type_,
 		webhooks:    webhooks,
@@ -67,6 +76,8 @@ func (h *Handlers) checked() (*Handlers, error) {
 	switch {
 	case h.apiKeys == nil:
 		return nil, errors.New("NewHandlers: the handler of tag \"API keys\" is nil")
+	case h.checked_ == nil:
+		return nil, errors.New("NewHandlers: the handler of tag Checked is nil")
 	case h.statusPages == nil:
 		return nil, errors.New("NewHandlers: the handler of tag \"Status pages\" is nil")
 	case h.type_ == nil:
@@ -80,6 +91,11 @@ func (h *Handlers) checked() (*Handlers, error) {
 // DeleteAPIKeys passes the request to the "API keys" handler.
 func (h *Handlers) DeleteAPIKeys(ctx context.Context, request DeleteAPIKeysRequestObject) (DeleteAPIKeysResponseObject, error) {
 	return h.apiKeys.DeleteAPIKeys(ctx, request)
+}
+
+// ListChecks passes the request to the Checked handler.
+func (h *Handlers) ListChecks(ctx context.Context, request ListChecksRequestObject) (ListChecksResponseObject, error) {
+	return h.checked_.ListChecks(ctx, request)
 }
 
 // GetStatusPages passes the request to the "Status pages" handler.

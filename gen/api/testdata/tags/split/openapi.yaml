@@ -5,6 +5,7 @@ tags:
   - name: Status pages
   - name: API keys
   - name: Type
+  - name: Checked
 paths:
   /webhooks:
     post:
@@ -42,6 +43,12 @@ paths:
     get:
       operationId: listTypes
       tags: [Type]
+      responses:
+        "204": {description: ok}
+  /checks:
+    get:
+      operationId: listChecks
+      tags: [Checked]
       responses:
         "204": {description: ok}
 components:

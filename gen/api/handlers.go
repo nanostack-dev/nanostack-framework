@@ -25,6 +25,9 @@ const HandlersFile = "handlers.gen.go"
 const (
 	handlersType = "Handlers"
 	handlersFunc = "NewHandlers"
+	// checkMethod is the unexported method of Handlers that refuses a nil
+	// handler. fieldName keeps every field off its name.
+	checkMethod = "checked"
 )
 
 // renderHandlers writes handlers.gen.go: one interface per tag, the
@@ -139,9 +142,9 @@ func writeHandlers(b *bytes.Buffer, groups []*tagGroup) {
 	for _, g := range groups {
 		fmt.Fprintf(b, "%s: %s,\n", g.field, g.field)
 	}
-	b.WriteString("}).checked()\n}\n\n")
-	b.WriteString("// checked returns h, or an error when a handler is nil.\n")
-	b.WriteString("func (h *Handlers) checked() (*Handlers, error) {\nswitch {\n")
+	fmt.Fprintf(b, "}).%s()\n}\n\n", checkMethod)
+	fmt.Fprintf(b, "// %s returns h, or an error when a handler is nil.\n", checkMethod)
+	fmt.Fprintf(b, "func (h *Handlers) %s() (*Handlers, error) {\nswitch {\n", checkMethod)
 	for _, g := range groups {
 		fmt.Fprintf(b, "case h.%s == nil:\nreturn nil, errors.New(%s)\n", g.field,
 			strconv.Quote("NewHandlers: the handler of tag "+quoteTag(g.tag)+" is nil"))

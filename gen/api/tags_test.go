@@ -52,7 +52,8 @@ func TestTagRules(t *testing.T) {
 
 // The tag split of a spec with a summary, a deprecated operation, a path
 // alias, an operation without operationId, a tag with a space, one with an
-// initialism and one that is a Go keyword in lower case.
+// initialism, one that is a Go keyword in lower case and one that is the
+// name of the nil check of Handlers in lower case.
 func TestHandlersGolden(t *testing.T) {
 	dir := filepath.Join("testdata", "tags", "split")
 	files, err := Generate(Options{Spec: filepath.Join(dir, "openapi.yaml"), Server: project.Package{Dir: dir}})
@@ -142,6 +143,7 @@ func TestFieldName(t *testing.T) {
 		"V2Users":     "v2Users",
 		"Type":        "type_",
 		"Func":        "func_",
+		"Checked":     "checked_",
 	} {
 		if got := fieldName(in); got != want {
 			t.Errorf("fieldName(%q) = %q, want %q", in, got, want)

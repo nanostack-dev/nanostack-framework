@@ -186,8 +186,10 @@ func (c *tagCheck) goNames() {
 }
 
 // fieldName lowers the leading capitals of a Go name, as Go spells an
-// unexported name: Email gives email, APIKeys gives apiKeys. A keyword gets
-// a trailing underscore, which no tag produces otherwise.
+// unexported name: Email gives email, APIKeys gives apiKeys. A keyword, or
+// the name of the unexported method of Handlers, gets a trailing
+// underscore, which no tag produces otherwise: a field and a method of one
+// type cannot share a name.
 func fieldName(name string) string {
 	runes := []rune(name)
 	n := 0
@@ -201,7 +203,7 @@ func fieldName(name string) string {
 		runes[i] = unicode.ToLower(runes[i])
 	}
 	out := string(runes)
-	if token.IsKeyword(out) {
+	if token.IsKeyword(out) || out == checkMethod {
 		out += "_"
 	}
 	return out
