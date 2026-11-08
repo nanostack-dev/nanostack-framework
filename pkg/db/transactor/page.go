@@ -49,8 +49,10 @@ var (
 //	}, transactor.StringKey(table.Workspaces.ID, func(m model.Workspaces) string { return m.ID })))
 //
 // Both type parameters are inferred from mapFunc; neither is spelled at a call
-// site. That is why mapFunc precedes the columns — a method cannot introduce a
-// type parameter, so everything the builder needs must bind at construction.
+// site. The builder's fields use T and R (the keyset and mapFunc), so they are
+// the builder's own parameters and bind when Page constructs it. The columns
+// are untyped projections, and mapFunc is the only argument that names T and R,
+// which is why it precedes them.
 type PageBuilder[T any, R any] struct {
 	db      qrm.DB
 	columns []jet.Projection
@@ -210,8 +212,8 @@ func (b *PageBuilder[T, R]) keysetStatement(pagination search.Pagination, seek j
 // silently. Fields absent from the map are ignored, so an enum value with no
 // column simply does not sort.
 //
-// It is a free function because it introduces the sort-field type, and a method
-// cannot declare type parameters.
+// It is a free function because the clauses it returns depend on no builder:
+// they suit OrderBy on a PageBuilder and on any other statement.
 func SortColumns[S ~string](sorts []search.Sort[S], columns map[S]jet.Column) []jet.OrderByClause {
 	clauses := make([]jet.OrderByClause, 0, len(sorts))
 	for _, sort := range sorts {

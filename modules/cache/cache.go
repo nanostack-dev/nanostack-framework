@@ -26,8 +26,8 @@ import (
 // down should degrade a read, not fail a request. Callers still receive the
 // error and decide.
 //
-// It is a generic type rather than methods on Store because Go methods cannot
-// declare their own type parameters.
+// It is a generic type rather than methods on Store because Store is an
+// interface, and an interface method cannot declare type parameters.
 type Cache[T any] struct {
 	store  Store
 	prefix string
