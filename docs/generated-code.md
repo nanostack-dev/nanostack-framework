@@ -4,6 +4,8 @@ This guide covers every file the framework generates, or will generate, for a se
 
 **Sources.** Framework paths are relative to this repository at `main` (`4b6c468`, after #69). Service paths start with the service name: anchor means `apps/anchor` in the anchor repository at `7141b9e9`, and echopoint means the echopoint repository at `a9f8780f`. Both services are on their nano branches and pin `v0.23.0-beta.1`. The pipeline, the mapper generator and the tag split come from [the `nano gen` pipeline design](design/nano-gen-pipeline.md) ("design" below, with its line numbers). Prototypes live in the workspace `reports/` folder, outside this repository.
 
+**Excerpts.** Each excerpt matches its file apart from trimming, which a `// …` (or `# …`, `<!-- … -->`) line marks. A comment at the end of a code line that explains it (for example `// nano: replaces …` or `// ToDomain: NULL -> ""`) is this guide's, not the file's.
+
 **Status vocabulary.**
 
 | Status | Meaning |
@@ -11,11 +13,11 @@ This guide covers every file the framework generates, or will generate, for a se
 | **shipped** | In `v0.23.0-beta.1`, and anchor and echopoint run it. |
 | **shipped, unused** | In `v0.23.0-beta.1`, but no service runs it yet. |
 | **on main** | Merged after `v0.23.0-beta.1`. No release that the services pin has it. |
+| **in progress** | Being implemented on a framework branch. Not merged, no PR yet. |
 | **designed** | Specified in the design. No code yet. |
 | **prototype** | Throwaway code in the workspace `reports/prototypes/`. Not for merge. |
-| **idea** | A note only. No code and no prototype. |
 
-Nothing is "in progress" right now: PR 2 of the pipeline (#69) merged at `4b6c468`, and PR 3 has not started.
+PR 2 of the pipeline (#69) merged at `4b6c468`. PR 3 (pipeline core) is **in progress** on the unpushed branch `feat/gen-pipeline`. It has started with the project declaration and with validate waivers as `x-nano-unenforced`. Mapper (PRs 7-8) and the tag split (PR 5) have no code yet.
 
 ## Summary
 
@@ -23,23 +25,23 @@ Nothing is "in progress" right now: PR 2 of the pipeline (#69) merged at `4b6c46
 | --- | --- | --- | --- | --- | --- |
 | db (go-jet fork) | **shipped** (pointer mode). `Option[T]` mode shipped, unused. `nano gen` db step **designed**. | SQL migrations, `dbgen.go` | `internal/db/gen/<svc>/public/{table,model,view}/*.go` | anchor: 1,652 SQL lines in 73 up migrations + 186 → 5,311 in 88 files. echopoint: 2,834 in 97 + 198 → 6,257 in 96 files. | None. No `-check`, and CI does not regenerate. The compiler catches removed or retyped columns only. |
 | api (oapi-codegen) | Upstream v2.8.0 **shipped** in the services. nano templates **shipped, unused**. In-process step **designed**. | `openapi.yaml`, `codegen.yaml` | `gen.go`: models, router, strict server | anchor: 10,424 + 7 → 26,184. echopoint: 16,442 + 7 → 44,625. | None in CI today. |
-| validate | **shipped, unused**. One error per gap with its `-allow` fix: **on main**. | `openapi.yaml` | `validate.gen.go` | 0 in the services. Framework example: 135 → 279. | `-check`. The nano template calls the validators, so a missing file does not compile. An unacknowledged gap exits 1. |
+| validate | **shipped, unused**. One error per gap with its `-allow` fix: **on main**. Waivers as `x-nano-unenforced` in the spec: **in progress**. | `openapi.yaml` | `validate.gen.go` | 0 in the services. Framework example: 135 → 279. | `-check`. The nano template calls the validators, so a missing file does not compile. An unacknowledged gap exits 1. |
 | errors | **shipped, unused** | One `//nano:errors` Go interface | `errors.gen.go`, `ERRORS.md` | 0 in the services. Golden fixture: 34 → 268 + 55. | `-check`. The generator type-checks its output. |
 | mapper | **designed** | `nanomap.Func` declarations | `mapper.gen.go` | Hand-written today: anchor 147 functions in 2,345 lines, echopoint 213 in 3,965. Generated: 0. | Designed: a lossy conversion is an error unless declared. `-check`. |
 | tag split | **designed** | One tag per operation in `openapi.yaml`, one handler per tag | `handlers.gen.go` | anchor: 133 operations in one interface today, 21 tags. | Designed: a compile-time assertion and `-check`. |
 | config | **shipped**. Load under `-tags=nanogen`: **on main**. | `Config` struct and field tags | `config.gen.go`, `CONFIG.md`, `.env.example` | echopoint: 80 + module sections → 526 + 79 + 250. anchor: 46 + 65 + module sections → 421 + 66 + 198. | A `Run(Check)` test in each service. Bind reports every issue at start. |
 | wire | **shipped**. Two-line `fix:` errors: **on main**. | `manifest.go`, each package's `module.go` | `wire.gen.go` | anchor: 56 → 2,218. echopoint: 98 → 2,758. | A `Run(Check)` test in each service. `file:line` errors with a fix. |
-| pipeline | Nested `gen` module (#68) and error contract (#69) **on main**. `go tool nano gen` **designed**. | `nanogen/project.go` | Runs all of the above in order | n/a | Designed: `-check` covers every output, orphans included. |
-| derived repositories | **prototype** | Method names on a query interface | `derived_repo.gen.go` | Prototype on anchor: 11 declaration lines → 134 generated, replacing 181 hand-written lines. | Prototype `-check` and a database test. |
-| search builder | **idea** | `//nano:search` on a `SortField` type | `search.gen.go` | n/a | n/a |
+| pipeline | Nested `gen` module (#68) and error contract (#69) **on main**. `go tool nano gen` core (PR 3): **in progress**. Later steps **designed**. | `nanogen/project.go` | Runs all of the above in order | n/a | Designed: `-check` covers every output, orphans included. |
+| derived repositories | **prototype** | Method names on a query interface | `derived_repo.gen.go` in the report; `repo.gen.go` in the current prototype | Prototype report, on anchor: 11 declaration lines → 134 generated, replacing 181 hand-written lines. | Prototype `-check` and a database test. |
+| search builder | **prototype**, still changing, no report yet | A `nanosearch.Search(...)` declaration | A typed search builder in `repo.gen.go`, the request mapper `search_mapper.gen.go` and a test case table | n/a | Prototype checks against the OpenAPI search schema. |
 
 ## How to review generated code
 
 1. **Review the source of truth, not the output.** Each section below names the file a developer writes. A diff in generated code is explained by a diff in that file. If the generated diff has no source diff, the generator or its version changed. Ask why.
-2. **Trust `-check` for everything else.** Each nano generator takes `-check`. It writes nothing and exits 1 when a committed output is missing or differs from what the source produces. Today the services run it as a Go test (`Run(Options{Check: true})`). Once a service adopts the pipeline, CI runs `go tool nano gen -check -fresh` instead. Generated code that `-check` covers is correct by construction. Read only the parts the checklists below name.
+2. **Trust `-check` for freshness.** Each nano generator takes `-check`. It writes nothing and exits 1 when a committed output is missing or differs from what the source produces. Today the services run it for config and wire only, as a Go test (`Run(Options{Check: true})`). Once a service adopts the pipeline, CI runs `go tool nano gen -check -fresh` instead. `-check` proves that the output matches the source. It does not prove that the generator is right: the generator's golden tests do that. So read only the parts the checklists below name, and read more when the generator version changed.
 3. **Know what is not checked.** The DB models and the oapi server have no freshness check today. For those, confirm that the generated diff matches the source diff (see their sections).
 4. **Read the human-facing outputs.** Some outputs are written for people: `ERRORS.md` (the error contract), `CONFIG.md` (every setting) and the SQL comments in derived repositories. A one-row diff there is the fastest way to see a contract change.
-5. **Never hand-edit a file with a generated header.** The next run overwrites the edit, and `-check` fails until the source matches. Change the source and regenerate.
+5. **Never hand-edit a file with a generated header.** The next run overwrites the edit, and, where a `-check` runs, it fails until the source matches. Change the source and regenerate.
 6. **Read the waivers.** Every place the generator lets a developer opt out carries a reason or a flag: `-allow` in validate, `Skip`, `Unused` and `Cast` in a mapper, `config:"-"` in config. These are the decisions in the change. Check that each reason is true.
 
 **Headers.** Every generated file starts with one of these lines. Do not review a file that has one, except for the items the checklists name.
@@ -73,7 +75,7 @@ nano.go:10: no provider for missing.Store (needed by missing.NewService at provi
 
 The SQL migrations, and one type hook per service in `dbgen.go`.
 
-anchor `migrations/000001_init.up.sql:131-140` and `migrations/000005_integration_base.up.sql:70-74`:
+anchor `migrations/000001_init.up.sql:131-140` and `migrations/000005_integration_base.up.sql:70-71`:
 
 ```sql
 CREATE TABLE product_users (
@@ -145,7 +147,7 @@ type productUsersTable struct {
 	ProductID  postgres.ColumnString
 	Email      postgres.ColumnString
 	Name       postgres.ColumnString
-	// … 4 more columns of the same shape
+	// … Status (ColumnString), CreatedAt and UpdatedAt (ColumnTimestampz)
 	ExternalID postgres.ColumnString
 
 	AllColumns     postgres.ColumnList
@@ -180,24 +182,30 @@ A service turns it on with `template.DefaultWith(postgres.Dialect, template.Null
 The `table` package builds the statement. `pkg/db/transactor` runs it and scans into `model.X`. A mapper converts `model.X` to the domain type. anchor `internal/repository/product_user_repository.go` (368 lines):
 
 ```go
-// lines 26-31: the write column list is derived, never listed by hand
 func productUsersUpdatableColumns() postgres.ColumnList {
 	return table.ProductUsers.AllColumns.Except(
 		table.ProductUsers.CreatedAt,
 		table.ProductUsers.UpdatedAt,
 	)
 }
+// …
+	stmt := table.ProductUsers.INSERT(
+		productUsersUpdatableColumns(),
+	).MODEL(entity).RETURNING(table.ProductUsers.AllColumns)
 
-// lines 168-180: write through MODEL(entity); a constraint becomes a domain error
-stmt := table.ProductUsers.INSERT(productUsersUpdatableColumns()).
-	MODEL(entity).RETURNING(table.ProductUsers.AllColumns)
-return transactor.QueryMap(ctx, r.db, stmt, r.productUserMapper.ToDomain).
-	OnUnique(ErrProductUserEmailExists, productUserEmailUniqueConstraint).
-	OnUnique(ErrProductUserExternalIDExists, productUserExternalIDUniqueConstraint).
-	Value()
+	return transactor.QueryMap(
+		ctx,
+		r.db,
+		stmt,
+		r.productUserMapper.ToDomain,
+	).OnUnique(ErrProductUserEmailExists, productUserEmailUniqueConstraint).
+		OnUnique(ErrProductUserExternalIDExists, productUserExternalIDUniqueConstraint).
+		Value()
 ```
 
-Nullability becomes a domain decision in the hand-written mapper (anchor `internal/mapper/product_user_mapper.go`, 46 lines):
+Lines 27-32 derive the write column list; nobody lists it by hand. Lines 168-179 write through `MODEL(entity)`, and a unique constraint becomes a domain error.
+
+Nullability becomes a domain decision in the hand-written mapper (anchor `internal/mapper/product_user_mapper.go`, 46 lines, lines 19 and 34):
 
 ```go
 name := functional.FromPtr(entity.Name).OrElse("")                    // ToDomain: NULL -> ""
@@ -268,7 +276,7 @@ The header of `http/nanohttp/oapitemplates/strict/strict-http.tmpl` (236 lines) 
 - The default error handlers write RFC 9457 problems.
 - `paramProblem` and `NewHTTPHandler` send binding errors to the request error handler.
 
-`http/nanohttp/oapitemplates/union.tmpl` (150 lines) changes one thing: `As<Variant>` decodes with strict json/v2 instead of encoding/json v1.
+`http/nanohttp/oapitemplates/union.tmpl` (150 lines) changes only the decoders: `As<Variant>`, `Discriminator` and the property reads decode with strict json/v2 (`nanohttp.Unmarshal`) instead of encoding/json v1. The encoders are upstream's.
 
 ### What is generated, per operation
 
@@ -288,9 +296,10 @@ func (sh *strictHandler) CreateWebhook(w http.ResponseWriter, r *http.Request) {
 }
 ```
 
-An operation with path parameters runs the parameter check first (lines 731-753):
+An operation with path parameters runs the parameter check first (`GetWebhook`, lines 706-714):
 
 ```go
+	// …
 	request.Id = id
 	if errs := request.validateParams(); len(errs) > 0 {               // nano
 		sh.options.RequestErrorHandlerFunc(w, r, problem.InvalidParameters(errs))
@@ -310,7 +319,7 @@ An operation with path parameters runs the parameter check first (lines 731-753)
 ### Guardrails
 
 - `http/nanohttp/oapitemplates/oapitemplates_test.go` checks that the embedded templates match the files on disk.
-- The template calls methods that only `nano gen validate` writes, so a stale or missing validator is a compile error.
+- The template calls methods that only `nano gen validate` writes, so a missing validator (no `validate.gen.go`, or no method for a new body type or operation) is a compile error. A stale validator still compiles; `nano gen validate -check` catches it.
 - **Designed:** the api step fails on any other oapi-codegen version with `nano gen api: oapi-codegen v2.9.0 resolved; nano templates are pinned to v2.8.2 (exit 3)` and `fix: go get github.com/oapi-codegen/oapi-codegen/v2@v2.8.2`. CI then checks the oapi server for the first time.
 
 **Do not review by hand:** wrapper bodies, `ServerInterfaceWrapper` binding, the `*Param*Error` types, response visitors and union helpers. The e2e table in `http/nanohttp/internal/example/e2e_test.go` covers each problem type end to end.
@@ -319,11 +328,11 @@ An operation with path parameters runs the parameter check first (lines 731-753)
 
 ## 3. Request validators: `nano gen validate`
 
-**Status: shipped, unused.** On `main` (#69), each unenforced feature is its own error with the exact `-allow` fix. Moving `-allow` into the spec as `x-nano-unenforced` is **designed** (P7). Runtime: `core/validate`. Nothing reads the spec at runtime. Decision: [ADR 0016](adr/0016-generated-request-validation.md).
+**Status: shipped, unused.** On `main` (#69), each unenforced feature is its own error with the exact `-allow` fix. Moving `-allow` into the spec as `x-nano-unenforced: "<reason>"` (design P11) is **in progress** in pipeline PR 3. Runtime: `core/validate`. Nothing reads the spec at runtime. Decision: [ADR 0016](adr/0016-generated-request-validation.md).
 
 ### What you write
 
-The OpenAPI schema. `http/nanohttp/internal/example/openapi.yaml` (135 lines):
+The OpenAPI schema. `http/nanohttp/internal/example/openapi.yaml` (135 lines), lines 109-122. `Auth` is a `oneOf` with a discriminator; `RunWhen` is an enum.
 
 ```yaml
     CreateWebhookRequest:
@@ -333,9 +342,12 @@ The OpenAPI schema. `http/nanohttp/internal/example/openapi.yaml` (135 lines):
         name: {type: string, minLength: 1, maxLength: 255}
         description: {type: [string, "null"], maxLength: 1000}
         url: {type: string, format: uri, maxLength: 2048}
-        headers: {type: array, maxItems: 20, items: {$ref: '#/components/schemas/Header'}}
-        auth: {$ref: '#/components/schemas/Auth'}          # oneOf + discriminator
-        run_when: {$ref: '#/components/schemas/RunWhen'}   # enum
+        headers:
+          type: array
+          maxItems: 20
+          items: {$ref: '#/components/schemas/Header'}
+        auth: {$ref: '#/components/schemas/Auth'}
+        run_when: {$ref: '#/components/schemas/RunWhen'}
         retries: {type: integer, format: int32, minimum: 0, maximum: 10}
 ```
 
@@ -347,6 +359,7 @@ Run oapi-codegen first, then validate on the same package (`http/nanohttp/intern
 
 ```go
 // Code generated by nano gen validate from openapi.yaml. DO NOT EDIT.
+// … imports, the compiled patterns, and the Auth, BasicAuth and BearerAuth validators
 
 // Validate checks r against #/components/schemas/CreateWebhookRequest.
 func (r CreateWebhookRequest) Validate(p validate.Path) validate.Errors {
@@ -355,6 +368,7 @@ func (r CreateWebhookRequest) Validate(p validate.Path) validate.Errors {
 	return errs
 }
 
+// validateInto records the violations of r at p in errs.
 func (r CreateWebhookRequest) validateInto(p validate.Path, errs *validate.Errors) {
 	if !errs.NotNull(p) {
 		return
@@ -366,13 +380,16 @@ func (r CreateWebhookRequest) validateInto(p validate.Path, errs *validate.Error
 			errs.Add(f6, validate.CodeMaxLength, "must be at most 255 characters long")
 		}
 	}
+	// … description: maxLength 1000, the same shape
 	if f10 := p.Field("url"); errs.Required(f10, true) && errs.NotNull(f10) {
-		// … maxLength 2048
+		if n11 := utf8.RuneCountInString(r.Url); n11 > 2048 {
+			errs.Add(f10, validate.CodeMaxLength, "must be at most 2048 characters long")
+		}
 		if !validate.URI(r.Url) {
 			errs.Add(f10, validate.CodeFormat, "must be an absolute URI")
 		}
 	}
-	// … description, headers, auth, run_when, retries: same shape
+	// … headers (maxItems, then each item), auth, run_when, retries
 }
 ```
 
@@ -400,14 +417,16 @@ func (r GetWebhookRequestObject) validateParams() validate.Errors {
 
 ### Guardrails
 
+Messages as `gen/validate/generate_test.go` and `gen/validate/run_test.go` assert them. The first starts with the `file:line` of the Go declaration, elided here:
+
 ```text
 StrictServerInterface.Check: no operation POST /check in the spec
   fix: regenerate the oapi-codegen package from this spec with strict-server: true, or pass the -spec it was generated from
-openapi.yaml: not enforced: #/components/schemas/Body/properties/shape: oneOf/anyOf is not enforced
-  fix: change the schema, or acknowledge the gap with -allow '#/components/schemas/Body/properties/shape'
+openapi.yaml: not enforced: #/components/schemas/Body/properties/note: not is not enforced
+  fix: change the schema, or acknowledge the gap with -allow '#/components/schemas/Body/properties/note'
 ```
 
-- A spec and Go package that disagree is a hard error with no output. Spec parse errors carry their YAML line.
+- A spec and Go package that disagree is a hard error with no output. Go-side errors carry the `file:line` of the Go declaration. Spec-side errors name the spec file and a schema pointer, not a line; only a YAML syntax error has a line, inside the YAML parser's message.
 - An unenforced feature exits 1, but the file is still written and lists the gap. An `-allow` covers that schema and every schema under it (`gen/validate/run.go`).
 - `-check` exits 1 when the file is stale.
 
@@ -424,6 +443,7 @@ openapi.yaml: not enforced: #/components/schemas/Body/properties/shape: oneOf/an
 `gen/errors/testdata/billing/errors.go` (34 lines):
 
 ```go
+// … the package clause, the imports and the type's doc comment
 //nano:errors namespace=billing
 type declarations interface {
 	// No invoice has the requested id.
@@ -446,9 +466,10 @@ type declarations interface {
 
 ### What is generated
 
-`gen/errors/testdata/billing/errors.gen.go` (268 lines). Every error gets the same block:
+`gen/errors/testdata/billing/errors.gen.go` (268 lines), lines 95-151 with their doc comments trimmed. Every error gets the same block:
 
 ```go
+// … the header, the imports, the list of kinds, and the InvoiceNotFound block
 var ErrInvoiceAlreadyPaid = fault.NewKind("billing.invoice_already_paid", 409, "Invoice is already paid", "https://errors.nanostack.dev/billing/invoice_already_paid")
 
 type InvoiceAlreadyPaidError struct {
@@ -460,16 +481,17 @@ type InvoiceAlreadyPaidError struct {
 func InvoiceAlreadyPaid(id ids.UUID, paidAt time.Time) *InvoiceAlreadyPaidError {
 	return &InvoiceAlreadyPaidError{ID: id, PaidAt: paidAt}
 }
-// … Wrap, Unwrap, Is, Error, ProblemStatus, ProblemType, ProblemTitle, ProblemCode: one line each, same for every error
+// … Wrap, Unwrap, Is, Error, ProblemType, ProblemStatus, ProblemTitle, ProblemCode: the same shape for every error
 func (e *InvoiceAlreadyPaidError) ProblemDetail() string {
 	return fmt.Sprintf("Invoice %v was paid at %v.", e.ID, e.PaidAt.Format(time.RFC3339))
 }
-// … 3 more errors of the same shape
+// … 2 more errors of the same shape
 ```
 
 `gen/errors/testdata/billing/ERRORS.md` (55 lines):
 
 ```markdown
+<!-- … the header, the title and the intro paragraph -->
 | Code | Status | Title | Fields |
 |---|---|---|---|
 | [`billing.invoice_not_found`](#billinginvoice_not_found) | 404 Not Found | Invoice not found | `id` |
@@ -513,6 +535,7 @@ B: code "a" is already used by A
 Hand-written mapper structs. anchor `internal/mapper/user_mapper.go` (35 lines) holds the design's "bug 1":
 
 ```go
+// … the package clause and the imports
 type UserMapper struct{}
 
 func NewUserMapper() *UserMapper {
@@ -532,7 +555,14 @@ func (m *UserMapper) ToDomain(
 }
 
 func (m *UserMapper) ToEntity(domain auth.User) model.Users {
-	return model.Users{ /* the same 6 fields */ }   // Status is never set: users.status is NOT NULL, so every insert writes ''
+	return model.Users{
+		ID:             domain.ID,
+		Email:          domain.Email,
+		ExternalID:     domain.ExternalID,
+		HashedPassword: domain.HashedPassword,
+		CreatedAt:      domain.CreatedAt,
+		UpdatedAt:      domain.UpdatedAt,
+	}                                    // Name and Status are never set: users.status is NOT NULL, so every insert writes ''
 }
 ```
 
@@ -691,7 +721,10 @@ type StrictServerInterface interface {
 One struct serves it. Its constructor, anchor `internal/api/impl.go:60`, takes 31 parameters, two of them unused (`TenantService`, `Queue`). Every handler method hangs off it, for example anchor `internal/api/email_api.go:399`:
 
 ```go
-func (s *AnchorAPI) SendEmail(ctx context.Context, request SendEmailRequestObject) (SendEmailResponseObject, error)
+func (s *AnchorAPI) SendEmail(
+	ctx context.Context, request SendEmailRequestObject,
+) (SendEmailResponseObject, error) {
+	// …
 ```
 
 ### What you write
@@ -786,7 +819,7 @@ One root `Config` of named sections. Each section is a struct owned by its modul
 
 A field is secret by type: `secret.Secret`. The grammar is in `gen/config/run.go`.
 
-echopoint `cmd/app/config.go` (80 lines):
+echopoint `cmd/app/config.go` (80 lines), lines 33-62, 14 sections:
 
 ```go
 type Config struct {
@@ -794,11 +827,13 @@ type Config struct {
 	App nano.AppConfig `config:"app"`
 	// Log is the process logger.
 	Log logging.Settings `config:"log"`
+	// Tracing is the OpenTelemetry export (OTEL_* variables).
+	Tracing nanotrace.Config `config:"tracing"`
 	// Postgres is the database connection pool.
 	Postgres nanopg.Config `config:"postgres"`
-	// … 10 more sections of the same shape
-	// Anchor is the licensing and identity service.
-	Anchor anchorclient.Config `config:"anchor"`
+	// … 9 more sections of the same shape, from migrations to cloud_runner
+	// CloudWorker is the queue the Cloud worker consumes.
+	CloudWorker executions.CloudflareWorkerConfig `config:"cloud_worker"`
 }
 ```
 
@@ -813,6 +848,7 @@ type Config struct {
 
 ```go
 // Code generated by nano gen config from config.go. DO NOT EDIT.
+// … the package clause and the imports
 
 // Bind reads every Config setting from src, applies defaults, parses and
 // validates each value, and returns all issues together as a
@@ -828,6 +864,8 @@ func Bind(ctx context.Context, src *nanoconf.Sources) (Config, error) {
 		c.App.StartTimeout, _ = nanoconf.Scalar(b, k, nanoconf.ParseDuration)
 	}
 
+	// … 5 more blocks, app.stop_timeout to log.format
+
 	// log.wire: Wire is legacy (the zerolog line shape) or slog.
 	{
 		k := nanoconf.Key{Path: "log.wire", Env: "LOG_WIRE", Default: "legacy"}
@@ -836,7 +874,7 @@ func Bind(ctx context.Context, src *nanoconf.Sources) (Config, error) {
 			nanoconf.OneOf(b, k, v, "legacy", "slog")
 		}
 	}
-	// … 59 more blocks of the same shape, one per setting, in declaration order
+	// … 54 more blocks of the same shape, one per setting, in declaration order
 	if err := b.Err(); err != nil {
 		return Config{}, err
 	}
@@ -905,10 +943,11 @@ Adding one field to anchor's `AuthConfig`:
 +	ResetTokenLifetime time.Duration `config:"reset_token_lifetime" default:"1h" validate:"min=5m,max=24h"`
 ```
 
-regenerates 4 files with 18 insertions:
+gives a diff of 4 files and 18 insertions, the 2 source lines included (blank lines are trimmed below):
 
 ```diff
 --- a/cmd/app/config.gen.go
++	"time"
 +	// core.auth.reset_token_lifetime: ResetTokenLifetime is how long a password reset link stays valid.
 +	{
 +		k := nanoconf.Key{Path: "core.auth.reset_token_lifetime", Env: "CORE_AUTH_RESET_TOKEN_LIFETIME", Default: "1h"}
@@ -947,7 +986,7 @@ internal/service/config/config.go:41: ResetDebug: the field has no config tag
 - A broken `config.gen.go` never blocks regeneration. The loader replaces it with stubs, so only hand-written code has to compile.
 - **Freshness:** echopoint `cmd/app/generated_test.go` (`TestConfigBinderIsCurrent`) and anchor `cmd/app/app_test.go` (`TestGeneratedFilesAreFresh`) call `genconfig.Run(Options{…, Check: true})`.
 - **Committed YAML:** echopoint `TestCommittedConfigBinds` and anchor `TestCommittedFileLayersBind` bind every committed `application.yaml`. An unknown key or a secret in a file fails the test.
-- **At runtime,** Bind lists every issue at once:
+- **At runtime,** Bind lists every issue at once. One `*nanoconf.Error` holds these three issues (`core/config/errors.go`); its `Error()` prints them on one line, after `config: 3 issues:` and separated by `; `:
 
 ```text
 server.port (env SERVER_PORT): must be an integer; got "http" from env SERVER_PORT
@@ -985,7 +1024,7 @@ server.prot: unknown setting; fix the spelling or remove it; from file applicati
 //go:build nanogen
 
 package app
-// … 27 lines of imports
+// … 26 lines of imports
 
 // App is anchor's manifest: nano gen wire reads it and writes wire.gen.go.
 var App = nano.Manifest("anchor",
@@ -996,7 +1035,7 @@ var App = nano.Manifest("anchor",
 	nanocache.Module,
 	mapper.Module,
 	repository.Module,
-	// … 15 more modules of the same shape
+	// … 14 more modules of the same shape
 	httpserver.Module,
 )
 ```
@@ -1029,14 +1068,21 @@ A collection can span modules. A library declares it empty, and a feature adds a
 ```go
 // echopoint internal/pgkit/pgkit.go:33-40
 var Module = nano.Module("pgkit",
-	nano.Providers(NewQueue, NewQueueSchema, NewRetention,
-		NewWorkflowClient, NewWorkflowSchema, NewWorkflowWorker, NewDashboard),
+	nano.Providers(
+		NewQueue, NewQueueSchema, NewRetention,
+		NewWorkflowClient, NewWorkflowSchema, NewWorkflowWorker,
+		NewDashboard,
+	),
 	nano.Collect[workflow.Definition](),
 )
 
 // echopoint internal/feature/openapisyncs/module.go:9-20
 var Module = nano.Module("openapisyncs",
-	nano.Providers(NewOpenAPISyncConfigMapper, /* … 5 more */ NewOpenAPISyncCron),
+	nano.Providers(
+		NewOpenAPISyncConfigMapper,
+		// … 5 more constructors
+		NewOpenAPISyncCron,
+	),
 	nano.Collect[workflow.Definition](SyncWorkflowDefinition),
 )
 ```
@@ -1045,7 +1091,7 @@ The DSL is `core/nano/manifest.go` (96 lines): `Manifest`, `Module`, `Providers`
 
 ### The shape of wire.gen.go
 
-**Header and entry points.** echopoint `cmd/app/wire.gen.go:1-3` and `:482-499`:
+**Header and entry points.** echopoint `cmd/app/wire.gen.go:1-3` and `:482-488`:
 
 ```go
 // Code generated by nano gen wire from cmd/app/manifest.go. DO NOT EDIT.
@@ -1063,7 +1109,7 @@ func Build(ctx context.Context, cfg Config, ov Overrides) (*nano.App, error) {
 
 Production calls `Build(ctx, cfg, Overrides{})`: echopoint `cmd/app/app.go:22`, anchor `cmd/app/run.go:61`.
 
-**`Overrides`: one nilable field per provided value** (echopoint `:66-77`). A set field skips that provider and every provider only it needed. `Components` has the same fields with values; it replaces `fx.Populate` (anchor `cmd/it/shared/test_setup.go:283-299`).
+**`Overrides`: one nilable field per provided value** (echopoint `:71-273`). A set field skips that provider and every provider only it needed. `Components` has the same fields with values; it replaces `fx.Populate` (anchor `cmd/it/shared/test_setup.go:283-299`).
 
 ```go
 type Overrides struct {
@@ -1076,7 +1122,7 @@ type Overrides struct {
 
 Field names follow the type name. When two types share a name, both are qualified: `*nanopg.DB` becomes `NanopgDB` and `*sql.DB` becomes `SQLDB`. Adding a provider never renames another field.
 
-**The demand chain: one `need*` line per value, computed before anything is built** (echopoint `:499-507`):
+**The demand chain: one `need*` line per value, computed before anything is built** (echopoint `:499-506`):
 
 ```go
 	// A value is built only when something that runs needs it and no
@@ -1084,8 +1130,10 @@ Field names follow the type name. When two types share a name, both are qualifie
 	needServer2 := true
 	needHandler23 := needServer2 && ov.NanoserverServer == nil
 	needAuthMiddleware := needHandler23 && ov.HTTPHandler == nil
+	needIdentity := needAuthMiddleware && ov.AuthMiddleware == nil
+	needResolver2 := needAuthMiddleware && ov.AuthMiddleware == nil
 	needDocument := (needResolver2 && ov.ApisecResolver == nil) || (needAuthMiddleware && ov.AuthMiddleware == nil)
-	// … 197 more lines of the same shape
+	// … 195 more lines of the same shape
 ```
 
 Read `needX := (needA && ov.A == nil) || (needB && ov.B == nil)` as: each `||` term is one consumer of X. X is built when a consumer that is itself built takes it and is not overridden. A `:= true` line is a root: a Starter or Runner that nothing takes. A root always runs. The emitter is `demand` in `gen/wire/emit.go`.
@@ -1139,7 +1187,7 @@ Read `needX := (needA && ov.A == nil) || (needB && ov.B == nil)` as: each `||` t
 
 `Manage` appears only in the override branch of a Bind. The implementation already registered its lifecycle. This is not a missing `Manage`.
 
-**3. Collect.** echopoint `:1098-1131`, from the pgkit and openapisyncs modules above:
+**3. Collect.** echopoint `:1108-1118`, from the pgkit and openapisyncs modules above:
 
 ```go
 	var definitions []workflow.Definition
@@ -1191,7 +1239,7 @@ The concrete lifecycle baseline to diff against:
 | Service | Starters | Stoppers | Runners |
 | --- | --- | --- | --- |
 | anchor (13) | `*nanotrace.Installer`, `*resourcetype.SchemaCheck`, `*service.ProductPermissionStartupSync` | `*nanotrace.Provider`, `*nanopg.DB` | `*fgasync.Syncer`, `*service.APIKeyEventWorker`, `*service.IntegrationEventWorker` (also Starter), `*service.QueueRetention`, `*events.Worker`, `*service.LicenseTemplateSyncWorker`, `*nanoserver.Server`, `*httpserver.QueueDashboard` |
-| echopoint (25) | `*nanotrace.Installer`, `*pgkit.QueueSchema`, `*pgkit.WorkflowSchema` | `*nanotrace.Provider`, `*nanopg.DB` | 20: pgkit Retention, WorkflowWorker and Dashboard; `*nanopprof.Server`; 10 crons and workers; `*executions.CloudJobPool`; two `SyncStarter` types (Runners despite the name); `*webhooks.RunWebhookSweep`; `*nanoserver.Server` |
+| echopoint (25) | `*nanotrace.Installer`, `*pgkit.QueueSchema`, `*pgkit.WorkflowSchema` | `*nanotrace.Provider`, `*nanopg.DB` | 20: pgkit Retention, WorkflowWorker and Dashboard; `*nanopprof.Server`; 11 crons, workers and observers; `*executions.CloudJobPool`; two `SyncStarter` types (Runners despite the name); `*webhooks.RunWebhookSweep`; `*nanoserver.Server` |
 
 ### Guardrails
 
@@ -1223,19 +1271,21 @@ Other errors in the same style: a duplicate provider for a type, a provider that
 
 ## 9. The pipeline that runs them: `go tool nano gen`
 
-**Status.** The nested `gen` module (#68) and the error contract (#69) are **on main**. The pipeline itself (`nanogen/project.go`, fixed order, `-check` overlays, orphans, `-json`, `-list`) is **designed** (PR 3, ADR 0023 to come). Design: [Feature 1](design/nano-gen-pipeline.md#feature-1-the-nano-gen-pipeline).
+**Status.** The nested `gen` module (#68) and the error contract (#69) are **on main**. The pipeline core (`nanogen/project.go`, fixed order, `-check` overlays, orphans, `-json`, `-list`) is **in progress** (PR 3, ADR 0023 to come): it covers config, errors, validate and wire. The db, api, tag split, mapper and lint steps are **designed** (PRs 4-9). The excerpts below are from the design; the code may still change them. Design: [Feature 1](design/nano-gen-pipeline.md#feature-1-the-nano-gen-pipeline).
 
 ```text
 go tool nano gen                     # run every step in order, write what changed
 go tool nano gen -check              # write nothing; exit 1 listing every stale, missing or orphaned file
 go tool nano gen -check -fresh       # CI: also ignore the DB cache
-go tool nano gen -only api,mapper    # these steps, still in pipeline order
+go tool nano gen -only api,mapper    # these steps, still in pipeline order (-skip db is the inverse)
 go tool nano gen -list               # print the plan: step, package, inputs, outputs
+# … -json, -diff and single-generator runs (design 85-94)
 ```
 
 **What you write** (design 101-119):
 
 ```go
+// … the package doc comment, the package clause and the import
 var Project = project.Project{
 	DB: &project.Postgres{
 		Image:      "timescale/timescaledb:2.23.0-pg18", // a migration creates a hypertable
@@ -1272,21 +1322,26 @@ Everything else is discovered with `go/parser`: a `//nano:errors` interface, any
 
 ## 10. Prototypes
 
+Both prototypes live in the workspace `reports/prototypes/derived-repo/`, which another agent is still extending. The excerpts below come from the written report, `reports/prototype-derived-repositories.md`, which is a fixed snapshot. The prototype's current files have moved on; each section says how.
+
 ### Derived repositories: `nano gen repo`
 
-**Status: prototype**, throwaway, not for merge. Source: workspace `reports/prototype-derived-repositories.md` and `reports/prototypes/derived-repo/`. The prototype is still changing: its declaration package now also has `Scope` and `Base`. It ran on a copy of anchor and passed `go build`, `go vet`, `-check` and a TimescaleDB test of all 11 derived methods. It proposes a `repo` step after mapper.
+**Status: prototype**, throwaway, not for merge. At the time of the report it ran on a copy of anchor and passed `go build`, `go vet`, `-check` and a TimescaleDB test of all 11 derived methods. It proposes a `repo` step after mapper.
 
-**What you write.** Method names are the grammar. `example/internal/repository/product_user_queries.go` (32 lines):
+**Since the report:** the declaration package has `Scope` (the tenant column, which a derived name must start with) and `Base` (a generated base of typed predicates and transactor helpers for hand-written finders). The output file is now `repo.gen.go`, the derived methods call those helpers instead of building the statement inline, and it also holds the search builders below.
+
+**What you write.** Method names are the grammar. From the report's "The declaration":
 
 ```go
 // ProductUserQueries is derived from its method names by nano gen repo.
 type ProductUserQueries interface {
 	FindByProductIDAndID(ctx context.Context, productID, id string) (functional.Option[user.ProductUser], error)
 	FindByProductID(ctx context.Context, productID string) ([]user.ProductUser, error)
+	FindByProductIDAndExternalID(ctx context.Context, productID, externalID string) (functional.Option[user.ProductUser], error)
 	ExistsByProductIDAndEmail(ctx context.Context, productID, email string) (bool, error)
 	CountByProductIDAndStatus(ctx context.Context, productID string, status user.ProductUserStatus) (int64, error)
 	DeleteByProductIDAndID(ctx context.Context, productID, id string) (bool, error)
-	// … 2 more methods of the same shape
+	DeleteByProductIDAndExternalID(ctx context.Context, productID, externalID string) error
 }
 
 func _() {
@@ -1296,12 +1351,9 @@ func _() {
 
 Prefixes: `FindBy`, `GetBy`, `ExistsBy`, `CountBy`, `DeleteBy`, `FindAll`, `Count`. `And` with equality only. `ctx` first, then one parameter per property in name order.
 
-**What is generated.** `out/derived_repo.gen.go` (134 lines, 2 repositories, 11 methods):
+**What is generated.** At the time of the report, `derived_repo.gen.go`: 134 lines, 2 repositories, 11 methods. From the report's example 1:
 
 ```go
-// Code generated by nano gen repo. DO NOT EDIT.
-// PROTOTYPE: reports/prototypes/derived-repo.
-
 // FindByProductIDAndID runs: SELECT * FROM product_users WHERE product_id = $1 AND id = $2 LIMIT 1
 func (r derivedProductUserQueries) FindByProductIDAndID(ctx context.Context, productID string, id string) (functional.Option[user.ProductUser], error) {
 	stmt := table.ProductUsers.SELECT(table.ProductUsers.AllColumns).
@@ -1309,12 +1361,14 @@ func (r derivedProductUserQueries) FindByProductIDAndID(ctx context.Context, pro
 			AND(table.ProductUsers.ID.EQ(postgres.String(id)))).LIMIT(1)
 	return transactor.QueryOptionalMap(ctx, r.db, stmt, productUserToDomain)
 }
-// … 10 more methods of the same shape, each with its SQL in the doc comment
+// … 10 more methods, each with its SQL in the doc comment
 ```
+
+Every generated file starts with `// Code generated by nano gen repo. DO NOT EDIT.` and `// PROTOTYPE: reports/prototypes/derived-repo.`
 
 On the two anchor repositories, 181 hand-written lines become 11 declaration lines plus 134 generated lines, and 15 call sites in 8 files are renamed.
 
-**Errors** (`out/errors.txt`, `out/drift.txt`):
+**Errors** (from the report's "Errors an agent sees", 3 of 12):
 
 ```text
 internal/repository/broken_queries.go:20: FindByTenantIDAndEmail: no column "TenantID" on table platform_users
@@ -1329,20 +1383,31 @@ internal/repository/product_user_queries.go:19: FindByProductIDAndExternalID: no
 **How to review it:**
 
 - **Read the method names.** The name is the contract and cannot hide a filter. The prototype renamed 7 of 9 anchor methods: four hid a product or tenant filter (for example `FindByExternalID`), and three said `TenantID` for the column `PlatformTenantID`.
-- **Check tenant scoping by eye.** Nothing enforces it yet: `ExistsByEmail` on `product_users` would be accepted.
+- **Check tenant scoping.** In the report nothing enforced it: `ExistsByEmail` on `product_users` was accepted. The current prototype's `Scope` makes a derived name start with the scope column and warns on a hand-written condition without it. Until that lands, check by eye.
 - **Check uniqueness behind `Option[D]`.** `LIMIT 1` on a column that is not unique returns an arbitrary row.
 - **Check shadowing.** A hand-written method with a derived name silently wins.
-- **Do not review `derived_repo.gen.go`** beyond its SQL comments.
+- **Do not review the generated file** beyond its SQL comments.
 
 ### Search builder: `nano gen search`
 
-**Status: idea.** No prototype exists. The only source is the workspace note `reports/codegen-ideas-2026-11-08.md`.
+**Status: prototype**, still changing, with no report yet. It sits in the same folder as the derived repositories (`nanorepo/nanosearch`, `cmd/nanogen-repo/search.go`). The first note, `reports/codegen-ideas-2026-11-08.md`, planned a `//nano:search` marker on a `SortField` type. The prototype uses a typed declaration instead, so columns are Go expressions and a gopls rename updates them. From the doc comment of `nanorepo/nanosearch/nanosearch.go`:
 
-- **Planned declaration:** `//nano:search table=products tiebreak=id default=-created_at` on a `SortField` type.
-- **Planned output:** `search.gen.go` with the SortField constants, `Validate()`, `DefaultSort()`, typed keyset keys, `FilterCondition` for in, eq and ilike, one escaped case-insensitive text predicate, the api-to-domain search mapper and a test case table.
-- **Planned guardrails:** fail when a sort field has no column, a column type has no keyset key kind, the tiebreak column is not unique and NOT NULL, or a filter operator does not fit its column.
+```go
+func _() {
+	nanosearch.Search("ProductUser", table.ProductUsers, productUserToDomain,
+		nanosearch.Scope(table.ProductUsers.ProductID),
+		nanosearch.Field(table.ProductUsers.Email, nanosearch.In, nanosearch.Contains),
+		nanosearch.Sort(table.ProductUsers.CreatedAt),
+		nanosearch.Tiebreak(table.ProductUsers.ID),
+		nanosearch.DefaultSort(table.ProductUsers.CreatedAt, nanosearch.Asc),
+		nanosearch.API("ProductUserSearchRequest"),
+	)
+}
+```
 
-There is no generated code to review yet.
+- **Output so far:** a typed builder per search in `repo.gen.go` (its constructor takes the scope value), the request-to-builder mapper `search_mapper.gen.go` in the server package, and a test case table.
+- **Guardrails so far:** the generator checks the OpenAPI search request (`API(...)`) against the declaration: a filter property or a `sort_by` value with no matching field is an error at its spec line.
+- **To review, once it is real:** the declaration (which columns are filterable, sortable, full-text), the tiebreak and the default sort. Not the generated builder.
 
 ---
 
@@ -1393,4 +1458,4 @@ What changes when the designed pieces land:
 | `Config` struct tags and the `CONFIG.md` diff | `config.gen.go`, `.env.example` |
 | `manifest.go`, `module.go`, and the seven-item `wire.gen.go` checklist | `need*` chains, `Overrides`, `Components` |
 | Literal values in `nanogen/project.go` | Headers, orphans, `nanogen.sum` |
-| Method names on derived-query interfaces (prototype) | `derived_repo.gen.go`, beyond its SQL comments |
+| Method names on derived-query interfaces, and search declarations (prototypes) | The generated repo and search files, beyond their SQL comments |
