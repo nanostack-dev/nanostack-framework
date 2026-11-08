@@ -20,6 +20,7 @@ require (
 	github.com/lib/pq v1.12.3
 	github.com/moby/moby/api v1.54.2
 	github.com/moby/moby/client v0.4.0
+	github.com/nanostack-dev/nanostack-framework/pkg/functional v0.0.0
 	github.com/oapi-codegen/nethttp-middleware v1.2.0
 	github.com/oapi-codegen/nullable v1.1.0
 	github.com/oapi-codegen/runtime v1.8.0
@@ -109,3 +110,8 @@ require (
 	google.golang.org/grpc v1.83.1 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 )
+
+// pkg/functional is its own module (db depends on it without the rest of the framework).
+// Until it is tagged (see db/UPSTREAM.md "Release order"), the root module uses the copy
+// in this repository; remove with the first tag.
+replace github.com/nanostack-dev/nanostack-framework/pkg/functional => ./pkg/functional
