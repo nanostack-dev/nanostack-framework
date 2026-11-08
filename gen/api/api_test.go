@@ -3,10 +3,13 @@ package genapi
 import (
 	"bytes"
 	"go/format"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/nanostack-dev/nanostack-framework/core/nano/project"
@@ -62,7 +65,7 @@ func TestPlainTypesMatchesClientSpecScript(t *testing.T) {
 	}
 	hinted := generateOne(t, Options{Spec: filepath.Join(dir, "openapi.yaml"),
 		Clients: []project.Client{{Dir: out, Package: "client"}}})
-	for _, hint := range []string{"nullable.Nullable[string]", "role.SortField", "search.Pagination"} {
+	for _, hint := range []string{"nullable.Nullable[string]", "role.SortField", "search.Pagination", "[]uuid.UUID"} {
 		if !bytes.Contains(hinted, []byte(hint)) {
 			t.Errorf("the client without PlainTypes lacks %s; the fixture no longer exercises it", hint)
 		}
@@ -117,9 +120,6 @@ func TestErrorsNameTheirFix(t *testing.T) {
 		invalid,
 		"openapi: 3.0.3\ninfo: {title: x, version: \"1\"}\npaths:\n  /x:\n    get: [not, an, operation]\n",
 	)
-	remote := filepath.Join(tmp, "remote.yaml")
-	mustWrite(t, remote, "openapi: 3.0.3\ninfo: {title: x, version: \"1\"}\npaths: {}\ncomponents:\n"+
-		"  schemas:\n    A: {$ref: 'https://example.invalid/schemas.yaml#/B'}\n")
 	spec := filepath.Join("testdata", "upstream", "openapi.yaml")
 	server := project.Package{Dir: filepath.Join("testdata", "upstream")}
 
@@ -132,7 +132,6 @@ func TestErrorsNameTheirFix(t *testing.T) {
 		{"nothing to generate", Options{Spec: spec}, "nothing to generate"},
 		{"missing spec", Options{Spec: filepath.Join(tmp, "nope.yaml"), Server: server}, "does not exist"},
 		{"invalid spec", Options{Spec: invalid, Server: server}, "load the spec"},
-		{"remote ref", Options{Spec: remote, Server: server}, "load the spec"},
 		{"missing server dir", Options{Spec: spec, Server: project.Package{Dir: filepath.Join(tmp, "nope")}},
 			"does not exist"},
 		{"two packages", Options{Spec: spec, Server: project.Package{Dir: twoPkgs}}, "several packages: a, b"},
@@ -153,6 +152,29 @@ func TestErrorsNameTheirFix(t *testing.T) {
 				t.Errorf("a source problem is classed as the environment: %v", err)
 			}
 		})
+	}
+}
+
+// A remote $ref is refused before any request: oapi-codegen's command would
+// fetch it.
+func TestRemoteRefIsRefused(t *testing.T) {
+	var requests atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests.Add(1)
+		_, _ = w.Write([]byte("B: {type: string}\n"))
+	}))
+	t.Cleanup(srv.Close)
+	remote := filepath.Join(t.TempDir(), "remote.yaml")
+	mustWrite(t, remote, "openapi: 3.0.3\ninfo: {title: x, version: \"1\"}\npaths: {}\ncomponents:\n"+
+		"  schemas:\n    A: {$ref: '"+srv.URL+"/schemas.yaml#/B'}\n")
+	_, err := Generate(Options{Spec: remote, Clients: []project.Client{{Dir: t.TempDir(), Package: "client"}}})
+	problems := gentest.Problems(t, err)
+	if len(problems) != 1 || !strings.Contains(problems[0].Msg, "refusing to resolve remote reference") ||
+		problems[0].Fix != loadFix {
+		t.Errorf("problems = %v, want one refused remote reference with the load fix", problems)
+	}
+	if n := requests.Load(); n != 0 {
+		t.Errorf("the step fetched the remote reference %d times", n)
 	}
 }
 

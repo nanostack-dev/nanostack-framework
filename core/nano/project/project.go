@@ -74,6 +74,8 @@ type Package struct {
 // Client is a Go client of the API: models and a client type, in one file.
 type Client struct {
 	// Dir is the package directory. nano gen creates it when it is missing.
+	// A client holds the models of the whole spec, so it needs a directory
+	// of its own, apart from the server and the other clients.
 	Dir string
 	// Package is the package name. A directory such as clients/go has no
 	// usable name, so the declaration states it.
