@@ -234,7 +234,7 @@ Every generator follows the contract of package [`gen`](../gen/gen.go): `Options
 
 - Every error is a `*gen.Error{File, Line, Msg, Fix}`, or several joined with `errors.Join`. A `Fix` is required: an error without one is a generator bug, and each generator's error table test fails on it. `gen.Errorf` takes the fix before the message.
 - An error of the machine wraps `gen.ErrEnvironment`, and `Main` exits 3 on it.
-- `Overlay` replaces files in every `go/packages` load, keyed by absolute path. The generator's own output always stays its own stub. A caller that keeps outputs in memory, such as a `-check` run of several generators, overlays the fresh outputs of the earlier ones.
+- `Overlay` replaces files in every `go/packages` load, keyed by absolute path. The overlay never replaces a generator's own output: `config` loads a stub of it, `errors` and `validate` an empty file, and `wire` loads with `-tags=nanogen`, which drops `wire.gen.go`. A caller that keeps outputs in memory, such as a `-check` run of several generators, overlays the fresh outputs of the earlier ones.
 - `Main` prints with `gen.Report`. `Generate`, `Run` and `gen.Sync` add no `nano gen <name>:` prefix, and a Check run returns a `*gen.StaleError` that lists the stale files.
 
 `gen/cmd/nano` routes `nano gen <name>` to each `Main`.

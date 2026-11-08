@@ -35,11 +35,8 @@ func sanitizeIdent(s string) string {
 	return strings.ToLower(b.String())
 }
 
-// relPos formats a position as file:line relative to Options.Base for files
-// in the main module, and as importpath/file:line otherwise, so messages are
-// the same on every machine.
-// at returns the position of p for a problem: the file relative to
-// Options.Base, and the line.
+// at returns the position of p for a problem: the file as relFile names it,
+// and the line.
 func (m *manifest) at(p token.Pos) pos {
 	if !p.IsValid() {
 		return pos{}
@@ -51,6 +48,9 @@ func (m *manifest) at(p token.Pos) pos {
 	return pos{file: m.relFile(at.Filename), line: at.Line}
 }
 
+// relPos formats a position as file:line relative to Options.Base for files
+// in the main module, and as importpath/file:line otherwise, so messages are
+// the same on every machine.
 func (m *manifest) relPos(p token.Pos) string {
 	if !p.IsValid() {
 		return ""

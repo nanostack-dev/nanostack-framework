@@ -59,11 +59,15 @@ func Overlay(caller, own map[string][]byte) (map[string][]byte, error) {
 }
 
 // LoadFailed reports a packages.Load that returned an error: the go command
-// could not run, so the environment, not the source, is at fault.
+// failed before any package was type-checked. The usual cause is the
+// machine (no go command, no toolchain, no network for a module download),
+// so it wraps ErrEnvironment. A go.mod that does not parse fails here too;
+// the fix names it, and the message carries the go command's report.
 func LoadFailed(dir string, err error) *gen.Error {
 	return &gen.Error{
 		Msg: fmt.Sprintf("load the package in %s: %v", dir, err),
-		Fix: "check that the go command is on PATH and that the directory is inside a Go module",
+		Fix: "fix what the go command reports: check that go is on PATH, that the directory is inside a " +
+			"Go module, and that its go.mod parses",
 		Err: gen.ErrEnvironment,
 	}
 }

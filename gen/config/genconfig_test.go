@@ -276,6 +276,14 @@ func TestPackageErrorsNameTheFix(t *testing.T) {
 			src:  "package bad\n\ntype Settings struct{}\n",
 			want: "has no type Config",
 		},
+		"type in a file the tag excludes": {
+			src:  "//go:build !nanogen\n\npackage bad\n\ntype Config struct{ A string `config:\"a\"` }\n",
+			want: "Config is in a file that -tags=nanogen excludes",
+		},
+		"syntax error hides the type": {
+			src:  "package bad\n\nvar x = (\n\ntype Config struct{ A string `config:\"a\"` }\n",
+			want: "expected ')', found 'type'",
+		},
 		"not a struct": {
 			src:  "package bad\n\ntype Config int\n",
 			want: "Config must be a struct type",

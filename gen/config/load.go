@@ -99,8 +99,7 @@ func load(opts Options) (*model, error) {
 	// the build; report the cause, not the symptom.
 	obj, ok := pkg.Types.Scope().Lookup(typeName).(*types.TypeName)
 	if !ok {
-		return nil, gen.Errorf("", 0, "pass -type with the root configuration struct",
-			"package %s has no type %s", pkg.PkgPath, typeName)
+		return nil, missingType(pkg, absDir, typeName)
 	}
 	if len(pkg.Errors) > 0 {
 		return nil, errors.Join(gopkg.CompileErrors(pkg, func(f string) string { return relPath(absDir, f) },
