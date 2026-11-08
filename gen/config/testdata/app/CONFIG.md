@@ -10,6 +10,10 @@ default. An empty value counts as unset. A setting without a default is required
 unless it is optional. Secret settings are never read from config files and never
 printed. Lists use commas in environment variables and YAML lists in files.
 
+A default that names an environment variable ("env `NAME`") is that variable's value,
+read only when the setting's own variable and the config files leave it unset;
+when that variable is unset too, the literal default after "else" applies.
+
 `nano gen config` checks every default against its type and validation, except
 defaults of types that parse themselves (encoding.TextUnmarshaler, such as
 slog.Level): those are checked when the service starts.
@@ -19,6 +23,7 @@ slog.Level): those are checked when the service starts.
 | `environment` | `ENVIRONMENT` | app.Environment (string) | `dev` | no | no | `oneof=dev staging prod` | Deployment environment. |
 | `log_level` | `LOG_LEVEL` | slog.Level | `info` | no | no |  | Minimum log level: debug, info, warn or error. |
 | `debug` | `DEBUG` | bool | `false` | no | no |  | Expose pprof handlers. |
+| `deployment` | `DEPLOYMENT` | string | env `ENVIRONMENT`, else `prod` | no | no |  | Stack the deploy renderer names in the config file (prod, dev); the process environment when the file leaves it unset. |
 | `http.addr` | `HTTP_ADDR` | string | `:8080` | no | no |  | Address the server listens on. |
 | `http.read_timeout` | `HTTP_READ_TIMEOUT` | duration | `5s` | no | no | `min=100ms,max=1m` | Maximum time to read a request, headers included. |
 | `http.admin_port` | `HTTP_ADMIN_PORT` | uint16 | `9090` | no | no | `min=1024` | TCP port of the admin listener. |
@@ -26,6 +31,7 @@ slog.Level): those are checked when the service starts.
 | `postgres.max_conns` | `PG_MAX_CONNS` | int32 | `10` | no | no | `min=1,max=500` | Maximum open connections. |
 | `billing.due_days` | `BILLING_DUE_DAYS` | int | `30` | no | no | `min=1,max=365` | Days before an open invoice is overdue. |
 | `billing.from` | `BILLING_FROM` | string |  | yes | no |  | Sender address for invoice mail. |
+| `billing.reply_to` | `BILLING_REPLY_TO` | string | env `BILLING_FROM` | no | no |  | Reply-To address of invoice mail; the sender's when unset. |
 | `billing.stripe_key` | `STRIPE_KEY` | secret |  | yes | yes |  | Stripe API key. |
 | `billing.webhook_secret` | `BILLING_WEBHOOK_SECRET` | secret |  | no | yes |  | Webhook signing secret; webhooks are disabled when unset. |
 | `billing.cc` | `BILLING_CC` | list of string |  | no | no |  | Extra recipients of overdue notices. |

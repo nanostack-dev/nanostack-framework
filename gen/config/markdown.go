@@ -2,6 +2,7 @@ package genconfig
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -17,6 +18,11 @@ func renderMarkdown(m *model) []byte {
 	w("default. An empty value counts as unset. A setting without a default is required\n")
 	w("unless it is optional. Secret settings are never read from config files and never\n")
 	w("printed. Lists use commas in environment variables and YAML lists in files.\n\n")
+	if slices.ContainsFunc(m.settings, func(s *setting) bool { return s.defEnv != "" }) {
+		w("A default that names an environment variable (\"env `NAME`\") is that variable's value,\n")
+		w("read only when the setting's own variable and the config files leave it unset;\n")
+		w("when that variable is unset too, the literal default after \"else\" applies.\n\n")
+	}
 	w("`nano gen config` checks every default against its type and validation, except\n")
 	w("defaults of types that parse themselves (encoding.TextUnmarshaler, such as\n")
 	w("slog.Level): those are checked when the service starts.\n\n")
@@ -24,10 +30,23 @@ func renderMarkdown(m *model) []byte {
 	w("|---|---|---|---|---|---|---|---|\n")
 	for _, s := range m.settings {
 		w("| `%s` | `%s` | %s | %s | %s | %s | %s | %s |\n",
-			s.path, s.env, cell(typeLabel(s)), code(s.def), yesNo(s.required()), yesNo(s.secret()),
+			s.path, s.env, cell(typeLabel(s)), defaultCell(s), yesNo(s.required()), yesNo(s.secret()),
 			code(s.rawCheck), cell(strings.Join(strings.Fields(s.doc), " ")))
 	}
 	return []byte(b.String())
+}
+
+// defaultCell shows the default: the literal, or the variable it is read
+// from first, then the literal.
+func defaultCell(s *setting) string {
+	switch {
+	case s.defEnv == "":
+		return code(s.def)
+	case s.def == "":
+		return "env " + code(s.defEnv)
+	default:
+		return "env " + code(s.defEnv) + ", else " + code(s.def)
+	}
 }
 
 func code(s string) string {

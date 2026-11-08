@@ -52,6 +52,7 @@ type setting struct {
 	kind     kind
 	list     bool
 	def      string
+	defEnv   string // defaultenv tag: the variable read before def
 	optional bool
 	checks   []check
 	rawCheck string // validate tag as written, for the reference doc

@@ -921,9 +921,27 @@ anchor `cmd/app/CONFIG.md:59` and `.env.example:168-170`:
 
 The `env:` tag keeps the name the deployed stacks set. Without it, the name would be `CORE_AUTH_REFRESH_TOKEN_LIFETIME`.
 
+### One variable, two settings
+
+Two settings cannot share an `env`. A setting that should follow another one's variable reads it as its default with `defaultenv:"NAME"`: its own variable first, then the config files, then `NAME`, then the literal `default`.
+
+```go
+	Environment string `config:"environment" defaultenv:"ENVIRONMENT" default:"production"`
+```
+
+```go
+		k := nanoconf.Key{Path: "core.environment", Env: "CORE_ENVIRONMENT", DefaultEnv: "ENVIRONMENT", Default: "production"}
+```
+
+```text
+| `core.environment` | `CORE_ENVIRONMENT` | string | env `ENVIRONMENT`, else `production` | no | no |  | … |
+```
+
+A value read from `NAME` that fails a check names its origin: `got "staging" from env ENVIRONMENT (the default)`.
+
 ### Secrets
 
-- **No default.** The generator refuses `default:` on a `secret.Secret` field.
+- **No default.** The generator refuses `default:` and `defaultenv:` on a `secret.Secret` field, and a `defaultenv:` that names the env of a secret setting.
 - **Never from a config file.** If a YAML layer holds the key, Bind fails, even when env would win.
 - **Never printed.** `LogValue` calls `.String()`, which returns `[REDACTED]`. `secret.Secret` also redacts `%v`, `%#v`, `slog` and JSON/YAML/text marshalling (`core/secret/secret.go`). URLs are logged through `secret.RedactURL`.
 

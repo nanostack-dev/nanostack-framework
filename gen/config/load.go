@@ -18,12 +18,13 @@ import (
 )
 
 const (
-	runtimePath = "github.com/nanostack-dev/nanostack-framework/core/config"
-	secretPath  = "github.com/nanostack-dev/nanostack-framework/core/secret"
-	tagConfig   = "config"
-	tagEnv      = "env"
-	tagDefault  = "default"
-	tagValidate = "validate"
+	runtimePath   = "github.com/nanostack-dev/nanostack-framework/core/config"
+	secretPath    = "github.com/nanostack-dev/nanostack-framework/core/secret"
+	tagConfig     = "config"
+	tagEnv        = "env"
+	tagDefault    = "default"
+	tagDefaultEnv = "defaultenv" // the variable read after the setting's own sources, before default
+	tagValidate   = "validate"
 	// buildTag is the tag config loads with, as wire does: it drops
 	// wire.gen.go and the files that call Build (//go:build !nanogen), which
 	// read Config fields that may have been renamed since, and keeps the
@@ -56,7 +57,7 @@ type loader struct {
 	docs     map[string]*ast.File // root package syntax, by absolute path
 	ext      map[string]*ast.File // other packages' files, parsed on demand
 	extFset  *token.FileSet
-	envs     map[string]string // env name -> setting path, to catch clashes
+	envs     map[string]*setting // env name -> setting, to catch clashes
 	paths    map[string]bool
 }
 
@@ -117,7 +118,7 @@ func load(opts Options) (*model, error) {
 		docs:    map[string]*ast.File{},
 		ext:     map[string]*ast.File{},
 		extFset: token.NewFileSet(),
-		envs:    map[string]string{},
+		envs:    map[string]*setting{},
 		paths:   map[string]bool{},
 		model: &model{
 			pkgPath:  pkg.PkgPath,
@@ -130,6 +131,7 @@ func load(opts Options) (*model, error) {
 		l.docs[fset.Position(f.Package).Filename] = f
 	}
 	l.model.root = l.walk(st, scope{}, map[*types.Struct]bool{})
+	l.checkDefaultEnvs()
 	if len(l.problems) > 0 {
 		return nil, errors.Join(l.problems...)
 	}
@@ -234,7 +236,7 @@ func (l *loader) field(f *types.Var, tag reflect.StructTag, sc scope, seen map[*
 	s := &setting{
 		path: ft.path, env: ft.env, name: ft.name, goExpr: goSel, typ: f.Type(),
 		optional: ft.optional, doc: l.fieldDoc(f), at: at,
-		def: tag.Get(tagDefault), rawCheck: tag.Get(tagValidate),
+		def: tag.Get(tagDefault), defEnv: tag.Get(tagDefaultEnv), rawCheck: tag.Get(tagValidate),
 	}
 	if !l.leaf(f, tag, s) {
 		return nil
@@ -284,7 +286,7 @@ func (l *loader) nested(
 	at pos,
 	seen map[*types.Struct]bool,
 ) []node {
-	for _, t := range []string{tagDefault, tagValidate} {
+	for _, t := range []string{tagDefault, tagDefaultEnv, tagValidate} {
 		if _, set := tag.Lookup(t); set {
 			l.problemf(at, "remove it, and set it on the fields of the struct",
 				"%s: %s does not apply to a nested struct", f.Name(), t)
@@ -306,11 +308,16 @@ func (l *loader) leaf(f *types.Var, tag reflect.StructTag, s *setting) bool {
 		return false
 	}
 	if prev, clash := l.envs[s.env]; clash {
-		l.problemf(s.at, "set a distinct env tag on one of them", "%s: env %s is already used by %s",
-			f.Name(), s.env, prev)
+		l.problemf(s.at,
+			fmt.Sprintf("give one of them another env, or replace its env tag with defaultenv:\"%s\" "+
+				"to read %s after its own env and the config files", s.env, s.env),
+			"%s: env %s is already used by %s", f.Name(), s.env, prev.path)
 		return false
 	}
-	l.envs[s.env] = s.path
+	l.envs[s.env] = s
+	if !l.defaultEnv(f, tag, s) {
+		return false
+	}
 	l.paths[s.path] = true
 	_, hasDefault := tag.Lookup(tagDefault)
 	switch {

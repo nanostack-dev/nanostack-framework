@@ -245,9 +245,35 @@ func TestSourceErrorsNameTheFix(t *testing.T) {
 			"L []string `config:\"l\" default:\",\"`",
 			`default "," has no elements, so it counts as unset`,
 		},
+		"bad defaultenv": {
+			"Name string `config:\"name\" defaultenv:\"name\"`",
+			`defaultenv "name" must be upper snake case`,
+		},
+		"defaultenv is its own env": {
+			"Name string `config:\"name\" defaultenv:\"NAME\"`",
+			"defaultenv NAME is the setting's own env",
+		},
+		"defaultenv on a nested struct": {
+			"A struct{ X string `config:\"x\"` } `config:\"a\" defaultenv:\"X\"`",
+			"A: defaultenv does not apply to a nested struct",
+		},
+		"defaultenv on a secret": {
+			"Key secret.Secret `config:\"key\" defaultenv:\"SHARED\"`",
+			"secrets cannot have a default, not even from env SHARED",
+		},
+		"defaultenv reads a secret": {
+			"Key secret.Secret `config:\"key\" env:\"STRIPE_KEY\"`\n\tName string `config:\"name\" defaultenv:\"STRIPE_KEY\"`",
+			"Name: defaultenv STRIPE_KEY is the env of secret setting key",
+		},
+		"defaultenv reads a secret declared later": {
+			"Name string `config:\"name\" defaultenv:\"STRIPE_KEY\"`\n\tKey secret.Secret `config:\"key\" env:\"STRIPE_KEY\"`",
+			"Name: defaultenv STRIPE_KEY is the env of secret setting key",
+		},
 		"bad option":  {"N int `config:\"n,omitempty\"`", `unknown config tag option "omitempty"`},
 		"no settings": {"", "Config has no settings"},
 	}
+	// fixes holds a part of the fix of the cases that check it.
+	fixes := map[string]string{"env clash": `replace its env tag with defaultenv:"X"`}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -256,9 +282,11 @@ func TestSourceErrorsNameTheFix(t *testing.T) {
 			_, err := Generate(Options{Dir: badPackage(t, src)})
 			problems := gentest.Problems(t, err)
 			if !slices.ContainsFunc(problems, func(p *gen.Error) bool {
-				return strings.Contains(p.Msg, tc.want) && p.File == "config.go" && p.Line > 0
+				return strings.Contains(p.Msg, tc.want) && strings.Contains(p.Fix, fixes[name]) &&
+					p.File == "config.go" && p.Line > 0
 			}) {
-				t.Fatalf("got error %v\nwant a problem at config.go:<line> whose message contains %q", err, tc.want)
+				t.Fatalf("got error %v\nwant a problem at config.go:<line> whose message contains %q and fix %q",
+					err, tc.want, fixes[name])
 			}
 		})
 	}
