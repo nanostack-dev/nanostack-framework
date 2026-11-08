@@ -46,6 +46,35 @@ type clientMistake struct{}
 func (clientMistake) Error() string     { return "invalid cursor" }
 func (clientMistake) Level() slog.Level { return slog.LevelDebug }
 
+// driverError has the SQLSTATE method of *pq.Error and *pgconn.PgError.
+type driverError struct{ code, message string }
+
+func (e *driverError) Error() string    { return "pq: " + e.message + " (" + e.code + ")" }
+func (e *driverError) SQLState() string { return e.code }
+
+var (
+	cancelledStatement = &driverError{code: "57014", message: "canceling statement due to user request"}
+	timedOutStatement  = &driverError{code: "57014", message: "canceling statement due to statement timeout"}
+)
+
+func TestIsContextError(t *testing.T) {
+	t.Parallel()
+	for err, want := range map[error]bool{
+		context.Canceled:                                 true,
+		context.DeadlineExceeded:                         true,
+		fmt.Errorf("list flows: %w", cancelledStatement): true,
+		timedOutStatement:                                false,
+		&driverError{code: "23505", message: "duplicate key due to user request"}:      false,
+		errors.New("pq: canceling statement due to user request (57014)"):              false,
+		internal(fmt.Errorf("jet: %w", cancelledStatement)):                            true,
+		errors.Join(errors.New("rollback"), &driverError{code: "57014", message: "x"}): false,
+	} {
+		if got := log.IsContextError(err); got != want {
+			t.Errorf("IsContextError(%v) = %v, want %v", err, got, want)
+		}
+	}
+}
+
 func TestLevelFor(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -61,6 +90,8 @@ func TestLevelFor(t *testing.T) {
 		{"wrapped bad request", fmt.Errorf("handler: %w", badRequest()), slog.LevelDebug},
 		{"internal fault", internal(nil), slog.LevelError},
 		{"canceled inside a fault", internal(context.Canceled), slog.LevelWarn},
+		{"statement cancelled by the client", fmt.Errorf("query: %w", cancelledStatement), slog.LevelWarn},
+		{"statement timeout", fmt.Errorf("query: %w", timedOutStatement), slog.LevelError},
 		{"self-levelled", fmt.Errorf("search: %w", clientMistake{}), slog.LevelDebug},
 		// The problem writer renders a status outside 400 to 599 as a 500.
 		{"status 200 is not an error status", problemError{status: http.StatusOK}, slog.LevelError},

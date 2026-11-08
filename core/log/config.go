@@ -34,9 +34,10 @@ const (
 	WireSlog Wire = iota
 	// WireLegacy writes the shape of the zerolog lines that the shared log
 	// pipeline and its alerts read today: a lowercase "level" (debug, info,
-	// warn, error), "message", "caller" as "/abs/path/file.go:64" and every
-	// duration as float milliseconds. It is a bridge: delete it when the
-	// collector and the alerts read the slog shape.
+	// warn, error), "message", "caller" as "/abs/path/file.go:64", every
+	// duration as float milliseconds and every time as RFC 3339 in whole
+	// seconds. It is a bridge: delete it when the collector and the alerts
+	// read the slog shape.
 	WireLegacy
 )
 
@@ -267,11 +268,17 @@ const (
 
 // legacyWire rewrites the attributes of the JSON handler to the zerolog shape
 // (see WireLegacy). The level, message and source rules apply at the top level
-// only, where slog puts its built-in attributes. The duration rule applies at
-// any depth, as zerolog's global duration unit does.
+// only, where slog puts its built-in attributes. The duration and time rules
+// apply at any depth, as zerolog's global duration unit and time format do:
+// the line's time and every time.Time attribute are RFC 3339 in whole
+// seconds, zerolog's default TimeFieldFormat.
 func legacyWire(groups []string, a slog.Attr) slog.Attr {
-	if a.Value.Kind() == slog.KindDuration {
+	switch a.Value.Kind() {
+	case slog.KindDuration:
 		return slog.Float64(a.Key, float64(a.Value.Duration())/float64(time.Millisecond))
+	case slog.KindTime:
+		return slog.String(a.Key, a.Value.Time().Format(time.RFC3339))
+	default:
 	}
 	if len(groups) > 0 {
 		return a

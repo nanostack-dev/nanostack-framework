@@ -60,6 +60,44 @@ type Options struct {
 	// IsStream reports whether the request is a server-sent event stream. An
 	// error on such a request is written as an "event: error" frame.
 	IsStream func(*http.Request) bool
+	// Log, when set, writes the log lines of the Writer in place of its
+	// "request failed" line. The Writer calls it once per error, after the
+	// response is written. A service that keeps its own lines passes them
+	// here; StrictErrorHandlerLog returns the lines of
+	// modules/httpserver.StrictErrorHandler, and a func that does nothing
+	// logs nothing. Resolve and ResolveRequest do not call it.
+	Log func(r *http.Request, f Failure)
+}
+
+// Source names the Writer method that received an error.
+type Source int
+
+const (
+	// SourceResponse is ResponseError: an error that a handler returned.
+	SourceResponse Source = iota
+	// SourceRequest is RequestError: body decoding, generated validation or
+	// parameter binding, before the handler ran.
+	SourceRequest
+	// SourceRouter is Handler, NotFound or MethodNotAllowed: no operation
+	// matched the request.
+	SourceRouter
+)
+
+// Failure is one error that the Writer answered, as Options.Log receives it.
+type Failure struct {
+	// Err is the error the Writer received.
+	Err error
+	// Source is the Writer method that received it.
+	Source Source
+	// Response is the resolution that the Writer wrote.
+	Response Response
+	// SentStatus is the status the client received: Response.Status, or,
+	// for a stream that had already sent its status, that status.
+	SentStatus int
+	// Written is false when the stream error frame was not written because
+	// the response had started with another Content-Type (see
+	// Response.Write).
+	Written bool
 }
 
 // Response is the resolution of one error: what to write.

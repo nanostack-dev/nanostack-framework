@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/nanostack-dev/nanostack-framework/core/fault"
@@ -25,8 +26,10 @@ func Err(err error) slog.Attr {
 // only the second should page someone:
 //
 //   - Cancellation and deadline expiry are Warn: the caller went away, the
-//     service did not fail. They are checked first, because a cancelled
-//     request often also carries a wrapper from the layer that gave up.
+//     service did not fail. So is a statement the database cancelled at the
+//     client's request (see IsContextError). They are checked first, because
+//     a cancelled request often also carries a wrapper from the layer that
+//     gave up.
 //   - An error that implements slog.Leveler (a Level() slog.Level method)
 //     anywhere in its chain picks its own level. A package whose errors are
 //     the caller's fault, such as an invalid search cursor, uses this.
@@ -63,11 +66,37 @@ func levelFor(err error, status int) slog.Level {
 // Callers use it for control flow too: work abandoned because the caller left
 // is not a failure to retry or report.
 //
-// A driver that reports a cancelled statement without wrapping
-// context.Canceled (lib/pq's SQLSTATE 57014) must wrap it at the data layer
-// for this to match; this package does not import database drivers.
+// A PostgreSQL statement cancelled at the client's request counts too: when
+// the context of a query is cancelled, lib/pq and pgx send a cancel request
+// and report the abort as SQLSTATE 57014 "canceling statement due to user
+// request", without wrapping context.Canceled. It is matched without
+// importing a driver: an error anywhere in the chain with a SQLState() string
+// method, as *pq.Error and *pgconn.PgError have, code 57014, and that message.
+// A statement_timeout kill shares the code but is a server fault, so it does
+// not match; only the message tells the two apart, as pkg/db/pgerr's
+// IsQueryCanceled does.
 func IsContextError(err error) bool {
-	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
+	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || isQueryCanceled(err)
+}
+
+// sqlStateError is a database driver error that names its SQLSTATE.
+type sqlStateError interface {
+	error
+	SQLState() string
+}
+
+// SQLSTATE 57014 query_canceled, and the part of its message that marks a
+// cancel the client asked for rather than a statement_timeout.
+const (
+	sqlStateQueryCanceled = "57014"
+	canceledByUser        = "due to user request"
+)
+
+// isQueryCanceled reports whether err carries a statement cancelled at the
+// client's request (see IsContextError).
+func isQueryCanceled(err error) bool {
+	e, ok := errors.AsType[sqlStateError](err)
+	return ok && e.SQLState() == sqlStateQueryCanceled && strings.Contains(e.Error(), canceledByUser)
 }
 
 // levelError is an error that picks its own log level.

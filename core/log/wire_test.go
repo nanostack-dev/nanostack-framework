@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -120,6 +121,42 @@ func TestWireLegacyWritesZerologShape(t *testing.T) {
 	}
 }
 
+// TestWireLegacyWritesWholeSecondTimes pins zerolog's default time format:
+// RFC 3339 in whole seconds, for the line's time and for every time.Time
+// attribute at any depth.
+func TestWireLegacyWritesWholeSecondTimes(t *testing.T) {
+	t.Parallel()
+	var out syncBuffer
+	logger := log.New(log.Config{Output: &out, Wire: log.WireLegacy})
+	at := time.Date(2026, 11, 8, 1, 32, 43, 123456789, time.FixedZone("EST", -5*60*60))
+
+	logger.InfoContext(t.Context(), "m", slog.Time("at", at), slog.Group("job", slog.Time("due", at)))
+	raw := out.String()
+	line := onlyLine(t, raw)
+
+	if line["at"] != "2026-11-08T01:32:43-05:00" {
+		t.Errorf("at = %v, want RFC 3339 in whole seconds", line["at"])
+	}
+	if job, _ := line["job"].(map[string]any); job["due"] != "2026-11-08T01:32:43-05:00" {
+		t.Errorf("job.due = %v, want RFC 3339 in whole seconds at any depth", line["job"])
+	}
+	stamp, _ := line["time"].(string)
+	parsed, err := time.Parse(time.RFC3339, stamp)
+	if err != nil || strings.Contains(stamp, ".") || parsed.Format(time.RFC3339) != stamp {
+		t.Errorf("time = %q, want RFC 3339 in whole seconds (%v)", stamp, err)
+	}
+}
+
+func TestWireSlogKeepsFractionalTimes(t *testing.T) {
+	t.Parallel()
+	var out syncBuffer
+	at := time.Date(2026, 11, 8, 1, 32, 43, 123456789, time.UTC)
+	log.New(log.Config{Output: &out}).InfoContext(t.Context(), "m", slog.Time("at", at))
+	if line := onlyLine(t, out.String()); line["at"] != "2026-11-08T01:32:43.123456789Z" {
+		t.Fatalf("at = %v", line["at"])
+	}
+}
+
 func TestWireLegacyLevelNamesByRange(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -198,11 +235,9 @@ func TestLegacySummaryMatchesZerologRequestLog(t *testing.T) {
 	}
 	line := legacySummary(t, t.Context(), "/flows/123?expand=steps&page=2")
 
-	// Additive: route. Absent: caller, which on the zerolog line always names
-	// requestlog.go itself; the summary has no meaningful source (pc 0).
+	// Additive: route, the ServeMux pattern.
 	got := slices.Sorted(maps.Keys(line))
-	want := slices.DeleteFunc(slices.Sorted(maps.Keys(zl)), func(k string) bool { return k == "caller" })
-	want = slices.Sorted(slices.Values(append(want, log.KeyRoute)))
+	want := slices.Sorted(slices.Values(append(slices.Collect(maps.Keys(zl)), log.KeyRoute)))
 	if !slices.Equal(got, want) {
 		t.Fatalf("keys = %v\nwant %v", got, want)
 	}
@@ -211,8 +246,54 @@ func TestLegacySummaryMatchesZerologRequestLog(t *testing.T) {
 			t.Errorf("%s = %v, zerolog %v", k, line[k], zl[k])
 		}
 	}
-	if d, ok := line[log.KeyDuration].(float64); !ok || d <= 0 || d > float64(time.Minute/time.Millisecond) {
-		t.Errorf("duration = %v, want float milliseconds", line[log.KeyDuration])
+	d, ok := line[log.KeyDuration].(float64)
+	if !ok || d <= 0 || d > float64(time.Minute/time.Millisecond) {
+		t.Fatalf("duration = %v, want float milliseconds", line[log.KeyDuration])
+	}
+	// The message prints the duration as time.Duration does, rounded to the
+	// microsecond.
+	message, _ := line["message"].(string)
+	if !regexp.MustCompile(`^GET /flows/123 -> 200 \([0-9]+(\.[0-9]+)?(µs|ms|s)\)$`).MatchString(message) {
+		t.Errorf("message = %q, zerolog %q", message, zl["message"])
+	}
+	stamp, _ := line["time"].(string)
+	if _, err := time.Parse(time.RFC3339, stamp); err != nil || strings.Contains(stamp, ".") {
+		t.Errorf("time = %q, want RFC 3339 in whole seconds like %v", stamp, zl["time"])
+	}
+	caller, _ := line["caller"].(string)
+	if !regexp.MustCompile(`^/.+/core/log/http\.go:\d+$`).MatchString(filepath.ToSlash(caller)) {
+		t.Errorf("caller = %q, want /abs/path/core/log/http.go:<line>", caller)
+	}
+}
+
+func TestLegacySummaryLevelFollowsZerologRule(t *testing.T) {
+	t.Parallel()
+	for status, want := range map[int]string{
+		http.StatusNotFound: "info", http.StatusInternalServerError: "error", 599: "error", 600: "info",
+	} {
+		var out syncBuffer
+		logger := log.New(log.Config{Output: &out, Wire: log.WireLegacy})
+		h := log.HTTPMiddleware(log.HTTPOptions{Logger: logger, LegacySummary: true})(
+			http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(status) }))
+		h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/runs", nil))
+		line := onlyLine(t, out.String())
+		message, _ := line["message"].(string)
+		if line["level"] != want || !strings.HasPrefix(message, "POST /runs -> "+strconv.Itoa(status)+" (") {
+			t.Errorf("status %d: line = %v, want level %s", status, line, want)
+		}
+	}
+}
+
+func TestSlogSummaryKeepsConstantMessageWithoutSource(t *testing.T) {
+	t.Parallel()
+	var out syncBuffer
+	logger := log.New(log.Config{Output: &out})
+	h := log.HTTPMiddleware(log.HTTPOptions{Logger: logger})(
+		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(600) }))
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/x", nil))
+	line := onlyLine(t, out.String())
+	if line["msg"] != "http request" || line["source"] != nil || line["level"] != "ERROR" {
+		t.Fatalf("line = %v", line)
 	}
 }
 

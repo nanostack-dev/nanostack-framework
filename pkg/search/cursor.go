@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 )
 
 // MaxCursorLength bounds the opaque cursor a client may send back. A cursor
@@ -16,22 +17,34 @@ const MaxCursorLength = 8192
 
 const cursorVersion = 1
 
+// The client errors of a search. Each has a Level method that returns
+// slog.LevelDebug, so core/log's LevelFor logs them at Debug through any
+// wrapping: the API refusing a bad request is not the service failing.
 var (
 	// ErrInvalidCursor reports a cursor that cannot continue this search: it
 	// is malformed, too long, or was issued for a different ordering. Callers
 	// map it to a client error (HTTP 400).
-	ErrInvalidCursor = errors.New("search: invalid cursor")
+	ErrInvalidCursor error = &clientError{"search: invalid cursor"}
 
 	// ErrCursorWithOffset reports a request that sets both a cursor and a
 	// non-zero offset. A cursor already says where the page starts, so the two
 	// cannot be combined. Callers map it to a client error (HTTP 400).
-	ErrCursorWithOffset = errors.New("search: cursor cannot be combined with offset")
+	ErrCursorWithOffset error = &clientError{"search: cursor cannot be combined with offset"}
 
 	// ErrUnknownSort reports a sort field the search cannot order by. A
 	// silent fallback to the default order would answer a different question
 	// than the client asked, so callers map it to a client error (HTTP 400).
-	ErrUnknownSort = errors.New("search: unknown sort field")
+	ErrUnknownSort error = &clientError{"search: unknown sort field"}
 )
+
+// clientError is a search error the caller caused. It carries no HTTP status:
+// the transport maps each one to its own 400 code.
+type clientError struct{ msg string }
+
+func (e *clientError) Error() string { return e.msg }
+
+// Level returns slog.LevelDebug, the level of a request the API refuses.
+func (e *clientError) Level() slog.Level { return slog.LevelDebug }
 
 // IsClientError reports whether err is a search error the caller caused: an
 // invalid cursor, a cursor combined with an offset, or an unknown sort field.

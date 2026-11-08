@@ -92,10 +92,18 @@ func Wrap(h slog.Handler, contextAttrs ...func(context.Context) []slog.Attr) slo
 // by base with the context attributes added, then the operations replayed.
 // That costs a handler rebuild per record, paid only by grouped loggers on a
 // context that carries attributes.
+//
+// A key that Logger.With set at the top level is written once: the handler
+// drops a context attribute with the same key, and the logger's value stays.
+// The logger's attributes are formatted into the inner handler when the
+// logger is built, so they cannot give way to the context per record; and a
+// logger that names its component should keep it on every line, as a zerolog
+// logger, which never read the context, did.
 type contextHandler struct {
 	base    slog.Handler // inner handler before the first WithGroup
 	inner   slog.Handler // base with ops applied
 	ops     []handlerOp
+	keys    []string // top-level keys set with WithAttrs before the first WithGroup
 	extract func(context.Context) []slog.Attr
 }
 
@@ -114,7 +122,7 @@ func (h *contextHandler) Enabled(ctx context.Context, level slog.Level) bool {
 }
 
 func (h *contextHandler) Handle(ctx context.Context, r slog.Record) error {
-	attrs := h.extract(ctx)
+	attrs := withoutKeys(h.extract(ctx), h.keys)
 	if len(attrs) == 0 {
 		return h.inner.Handle(ctx, r)
 	}
@@ -140,12 +148,16 @@ func (h *contextHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	}
 	if len(h.ops) == 0 {
 		next := h.base.WithAttrs(attrs)
-		return &contextHandler{base: next, inner: next, extract: h.extract}
+		keys := topLevelKeys(slices.Clip(h.keys), attrs)
+		return &contextHandler{base: next, inner: next, keys: keys, extract: h.extract}
 	}
+	// After a group, the attributes sit inside it and cannot collide with the
+	// top-level context attributes.
 	return &contextHandler{
 		base:    h.base,
 		inner:   h.inner.WithAttrs(attrs),
 		ops:     append(slices.Clip(h.ops), handlerOp{attrs: attrs}),
+		keys:    h.keys,
 		extract: h.extract,
 	}
 }
@@ -158,8 +170,47 @@ func (h *contextHandler) WithGroup(name string) slog.Handler {
 		base:    h.base,
 		inner:   h.inner.WithGroup(name),
 		ops:     append(slices.Clip(h.ops), handlerOp{group: name}),
+		keys:    h.keys,
 		extract: h.extract,
 	}
+}
+
+// topLevelKeys appends to keys the top-level keys that attrs write: each key,
+// and the keys inside a group with an empty key, which slog inlines.
+func topLevelKeys(keys []string, attrs []slog.Attr) []string {
+	for _, a := range attrs {
+		switch {
+		case a.Key == "" && a.Value.Kind() == slog.KindGroup:
+			keys = topLevelKeys(keys, a.Value.Group())
+		case a.Key != "" && !slices.Contains(keys, a.Key):
+			keys = append(keys, a.Key)
+		}
+	}
+	return keys
+}
+
+// withoutKeys returns attrs minus those whose key is in keys. It returns attrs
+// itself when nothing is removed, and a new slice otherwise: attrs may be a
+// view of a scope, which must not be written.
+func withoutKeys(attrs []slog.Attr, keys []string) []slog.Attr {
+	if len(keys) == 0 {
+		return attrs
+	}
+	var kept []slog.Attr
+	for i, a := range attrs {
+		switch {
+		case slices.Contains(keys, a.Key):
+			if kept == nil {
+				kept = append(make([]slog.Attr, 0, len(attrs)-1), attrs[:i]...)
+			}
+		case kept != nil:
+			kept = append(kept, a)
+		}
+	}
+	if kept == nil {
+		return attrs
+	}
+	return kept
 }
 
 // prepend returns a record with attrs before r's own attributes. A key the call
