@@ -21,3 +21,8 @@ worktrees/
 
 # Developer-only Claude settings
 /.claude/settings.local.json
+
+# Local Go workspace. Every module builds without it (go.mod replace directives), and CI
+# sets GOWORK=off, so a developer's go.work never changes what CI or a release builds.
+/go.work
+/go.work.sum

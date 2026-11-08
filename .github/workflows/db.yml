@@ -1,0 +1,174 @@
+name: DB
+
+on:
+  pull_request:
+    paths:
+      - "db/**"
+      - "pkg/functional/**"
+      - ".github/workflows/db.yml"
+  push:
+    branches: [main]
+    paths:
+      - "db/**"
+      - "pkg/functional/**"
+      - ".github/workflows/db.yml"
+  # Weekly run of the integration suites in random test order (see integration-shuffle).
+  schedule:
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: db-${{ github.ref }}
+  cancel-in-progress: true
+
+# Each module builds on its own, as a release does (go.work is for development only).
+env:
+  GOWORK: "off"
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: db
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: db/go.mod
+          cache-dependency-path: |
+            db/go.sum
+            db/tests/go.sum
+            db/examples/go.sum
+      - run: go vet ./...
+      - run: go test -race -count=1 ./...
+      # The quick-start example is its own module; upstream's README sends readers to it.
+      - name: Build the examples
+        working-directory: db/examples
+        run: go vet ./...
+      # The suites import testdata/results/common, a Go package inside the pinned
+      # jet-test-data (no license, never committed): fetch it before anything compiles them.
+      - name: Fetch the test data
+        working-directory: db/tests
+        run: go run ./tools/fetchtestdata
+      - name: Vet the integration suites
+        working-directory: db/tests
+        run: |
+          go vet -tags postgres ./...
+          go vet ./...
+      - name: Test the harness
+        working-directory: db/tests
+        run: go test -race -count=1 ./internal/... ./tools/...
+
+  # Lints the Nanostack files of db and db/tests with the framework's standard
+  # (db/.golangci.local.yml says which files and why).
+  lint:
+    runs-on: ubuntu-latest
+    # The ruleguard rules in gorules/ import go-ruleguard/dsl, which only the root module
+    # requires, and db must not depend on it: lint in a workspace of the repository's
+    # modules, as development does (go.work is git-ignored, so the job creates it).
+    env:
+      GOWORK: ""
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: db/go.mod
+          cache-dependency-path: |
+            go.sum
+            db/go.sum
+            db/tests/go.sum
+      - name: Generated lint config is current
+        run: go run ./lint/cmd/lintconfig -check -dir db
+      - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          version-file: db/.golangci-lint-version
+          install-only: true
+      - name: Create the workspace
+        run: go work init . ./db ./db/tests ./pkg/functional
+      - name: Lint db
+        working-directory: db
+        run: golangci-lint run ./...
+      # The suites import a Go package from the pinned test data (see the unit job).
+      - name: Fetch the test data
+        working-directory: db/tests
+        run: go run ./tools/fetchtestdata
+      - name: Lint db/tests
+        working-directory: db/tests
+        run: golangci-lint run ./...
+
+  # One job per database. The testenv harness in db/tests starts the containers, loads
+  # the pinned jet-test-data and runs the suite; Docker is preinstalled on the runner.
+  integration:
+    name: integration (${{ matrix.dialect }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { dialect: postgres14, package: ./postgres }
+          - { dialect: postgres18, package: ./postgres }
+          - { dialect: cockroach, package: ./postgres }
+          - { dialect: mysql, package: ./mysql }
+          - { dialect: mariadb, package: ./mysql }
+          - { dialect: sqlite, package: ./sqlite }
+    defaults:
+      run:
+        working-directory: db/tests
+    env:
+      NANODB_DIALECTS: ${{ matrix.dialect }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: db/tests/go.mod
+          cache-dependency-path: db/tests/go.sum
+      - name: Fetch the test data
+        run: go run ./tools/fetchtestdata
+      # -count=1: the restored build cache must never replay a result without the database.
+      # -tags postgres compiles the PostgreSQL-only range tests, as upstream CI did. The
+      # CockroachDB run is compiled again against CockroachDB's own models, without the tag.
+      - name: Test
+        run: go test -race -count=1 -tags postgres -v ${{ matrix.package }}
+      - name: Test with statement caching
+        run: go test -count=1 -tags postgres ${{ matrix.package }}
+        env:
+          NANODB_STMT_CACHE: "true"
+
+  # Random test order catches tests that depend on state an earlier test left behind
+  # (such as a table lock on a pooled connection). The seed is printed on failure;
+  # reproduce with -shuffle=<seed>.
+  integration-shuffle:
+    name: integration shuffled (${{ matrix.dialect }})
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { dialect: postgres14, package: ./postgres }
+          - { dialect: postgres18, package: ./postgres }
+          - { dialect: cockroach, package: ./postgres }
+          - { dialect: mysql, package: ./mysql }
+          - { dialect: mariadb, package: ./mysql }
+          - { dialect: sqlite, package: ./sqlite }
+    defaults:
+      run:
+        working-directory: db/tests
+    env:
+      NANODB_DIALECTS: ${{ matrix.dialect }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: db/tests/go.mod
+          cache-dependency-path: db/tests/go.sum
+      - name: Fetch the test data
+        run: go run ./tools/fetchtestdata
+      - name: Test in random order
+        run: go test -count=1 -tags postgres -shuffle=on -v ${{ matrix.package }}
