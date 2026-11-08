@@ -37,6 +37,8 @@ const (
 	TypeUnsupportedMediaType = typeBase + "unsupported_media_type"
 	TypeInvalidParameter     = typeBase + "invalid_parameter"
 	TypeBadRequest           = typeBase + "bad_request"
+	TypeNotFound             = typeBase + "not_found"
+	TypeMethodNotAllowed     = typeBase + "method_not_allowed"
 	TypeTimeout              = typeBase + "timeout"
 	TypeClientClosed         = typeBase + "client_closed_request"
 	TypeInternal             = typeBase + "internal"

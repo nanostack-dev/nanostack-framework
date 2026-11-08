@@ -6,12 +6,13 @@ The package imports only the standard library, `core/secret` and `core/fault`, n
 
 | API | Purpose |
 |---|---|
-| `ConfigFromEnv(getenv)`, `Config`, `New`, `NewHandler` | The process handler: JSON in production, text on a development terminal, level from `LOG_LEVEL`, source locations, service identity, `Config.ContextAttrs` (`trace_id`/`span_id` from `tracing.LogAttrs`), and an optional `Export` handler fanned out with `slog.NewMultiHandler` |
+| `ConfigFromEnv(getenv)`, `Settings`, `Config`, `New`, `NewHandler` | The process handler: JSON in production, text on a development terminal, level from `LOG_LEVEL`, source locations, service identity, `Config.ContextAttrs` (`trace_id`/`span_id` from `tracing.LogAttrs`), and an optional `Export` handler fanned out with `slog.NewMultiHandler`. `Settings` is the same configuration as a struct that `nano gen config` binds |
+| `Wire`, `WireSlog`, `WireLegacy`, `ParseWire` | The key names and units of the JSON output: slog's shape, or the zerolog shape that the shared collector and alerts read (see [Legacy wire](#legacy-wire)) |
 | `WithScope`, `SetAttrs`, `WithAttrs`, `Attrs`, `RequestID` | Attributes carried on the context and written by the handler on every line |
-| `Key*` constants | The shared keys: `request_id`, `component`, `org_id`, `workspace_id`, `user_id`, `error`, `trace_id`, `span_id` |
+| `Key*` constants | The shared keys: `request_id`, `component`, `org_id`, `workspace_id`, `user_id`, `error`, `trace_id`, `span_id`, and the keys of the request summary (`method`, `path`, `route`, `status`, `bytes_out`, `duration`, `client_ip`, `query`, `user_agent`, `client_canceled`, `hijacked`, `panic`) |
 | `secret.IsKey` | Redaction: a handler guard on secret-looking keys that writes `secret.Redacted` (`[REDACTED]`); credentials themselves are held as [`secret.Secret`](../secret/secret.go) (see [Redaction](#redaction)) |
 | `Err`, `Error`, `ErrorTo`, `LevelFor`, `IsContextError` | Log an error at the level its kind deserves |
-| `HTTPMiddleware`, `HTTPOptions`, `RequestIDHeader` | Request id, request scope and one summary line per request, panics and hijacked connections included |
+| `HTTPMiddleware`, `HTTPOptions`, `RequestIDHeader` | Request id, request scope and one summary line per request, panics and hijacked connections included. `HTTPOptions.LegacySummary` keeps the policy of the zerolog request log |
 | `Wrap` | The context and redaction stages around any handler, plus optional context extractors such as `tracing.LogAttrs` |
 | `logtest.New`, `logtest.Capture`, `Recorder` | Capture records in tests; safe with `t.Parallel` and `testing/synctest` |
 
@@ -28,6 +29,33 @@ slog.SetDefault(log.New(cfg))
 ```
 
 `slog.SetDefault` also routes the standard library's `log` package through the handler.
+
+A service with typed configuration binds `log.Settings` instead of calling `ConfigFromEnv`. Its env tags are the variables `ConfigFromEnv` reads (`LOG_LEVEL`, `LOG_FORMAT`, `LOG_WIRE`, `ENVIRONMENT`, `SERVICE_NAME`, `SERVICE_VERSION`), whatever section holds it, because one process has one log configuration:
+
+```go
+type Config struct {
+	Log log.Settings `config:"log"`
+	// ...
+}
+
+logCfg, err := cfg.Log.Config() // validates the level, format and wire
+```
+
+## Legacy wire
+
+Every Go service writes to one log collector, and one set of alerts and dashboards reads the lines (`infra/stacks/otelcol.yaml`, `stacks/grafana/alert-rules.yaml`). They read the zerolog shape. `Config.Wire = log.WireLegacy` (`LOG_WIRE=legacy`, or `wire: legacy` in the service's committed YAML layer) writes that shape from slog, so a service moves its logging to slog without a change in the infra repository:
+
+| Field | `WireSlog` (default) | `WireLegacy` | Read by |
+|---|---|---|---|
+| level | `"level":"INFO"` | `"level":"info"`; by range, so `Info+2` is `info` and `Error+4` is `error` | `severity_text`, the error and warn alerts, the dashboard level filter |
+| message | `msg` | `message` | `body` |
+| source | `source` group `{function,file,line}` | `caller`: `/abs/path/file.go:64` | `code.file.path`, `code.line.number` |
+| durations | nanoseconds, integer | milliseconds, float, at any group depth | the `duration:>1000` alert, the p95 panels |
+| time | RFC 3339 with nanoseconds | unchanged | not parsed from the line |
+
+`Wire` applies to `FormatJSON` only; a terminal is not parsed. It is a bridge: when the collector normalises the level and maps `source.*`, and the alerts read the slog shape, services switch to `WireSlog` and `WireLegacy` is deleted. The slog shape stays the default, because the pipeline is what changes in the end.
+
+`HTTPOptions.LegacySummary` is the second half, the policy of the request summary line. With it, a request the client cancelled takes the level of its status (Info below 500) instead of Warn, so a client cancel does not count twice in the warn alert, and `query` is one string: the raw query with each secret parameter value replaced by `[REDACTED]`, and without the pairs that `url.ParseQuery` rejects (a malformed name, a semicolon). The request body is still never logged. With both options, the summary line has the keys of the `pkg/httputil/requestlog` line plus `route`, and `client_canceled` on a cancelled request. It has no `caller`: the zerolog line's caller always named `requestlog.go` itself. The message stays `http request`; no alert or dashboard reads the message text.
 
 Middleware order, outermost first:
 
@@ -104,7 +132,7 @@ The left column lists every zerolog and `pkg/log` idiom in echopoint at `c6f1cb2
 | `.Str(k, v)` (211) | `slog.String(k, v)` | Use typed attrs, not `k, v` pairs (enforced by sloglint, below). |
 | `.Int(k, v)` / `.Int64` / `.Int32` / `.Bool` / `.Float64` | `slog.Int` / `slog.Int64` / `slog.Int(k, int(v))` / `slog.Bool` / `slog.Float64` | slog has no `Int32`. |
 | `.Err(err)` (201) | `log.Err(err)` | Key stays `error`. |
-| `.Dur(k, d)` | `slog.Duration(k, d)` | JSON unit changes from milliseconds (float) to nanoseconds (integer). |
+| `.Dur(k, d)` | `slog.Duration(k, d)` | JSON unit changes from milliseconds (float) to nanoseconds (integer), unless `Config.Wire` is `WireLegacy`. |
 | `.Time(k, t)` | `slog.Time(k, t)` | |
 | `.Interface(k, v)` | `slog.Any(k, v)` | |
 | `.Msgf(format, args...)` (8) | `slog.InfoContext(ctx, "fixed message", slog.String(...))` | Put the variable parts in attributes so the message stays constant and groupable. |
@@ -172,7 +200,7 @@ Do not call `slog.SetDefault` in a test package that uses `logtest.Capture`.
 
 ## Output changes that affect dashboards and alerts
 
-Update the Grafana queries, alert rules and gate flows that parse log lines in the same change that migrates a product.
+Update the Grafana queries, alert rules and gate flows that parse log lines in the same change that migrates a product, or set `WireLegacy` and `LegacySummary` (see [Legacy wire](#legacy-wire)), which keep the message, level, caller, duration, summary level and `query` rows of the zerolog column.
 
 | Field | zerolog | slog |
 |---|---|---|

@@ -25,6 +25,22 @@ const (
 	KeySpanID      = "span_id"
 )
 
+// Keys of the request summary line that HTTPMiddleware writes. The log
+// collector renames KeyMethod and KeyPath, and the alerts read KeyStatus and
+// KeyDuration, so these names are a contract: a test pins them.
+const (
+	KeyMethod         = "method"
+	KeyPath           = "path"
+	KeyDuration       = "duration"
+	KeyBytesOut       = "bytes_out"
+	KeyClientIP       = "client_ip"
+	KeyQuery          = "query"
+	KeyUserAgent      = "user_agent"
+	KeyClientCanceled = "client_canceled"
+	KeyHijacked       = "hijacked"
+	KeyPanic          = "panic"
+)
+
 type (
 	attrsKey struct{}
 	scopeKey struct{}

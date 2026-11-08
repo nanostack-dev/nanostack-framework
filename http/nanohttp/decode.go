@@ -1,7 +1,9 @@
 // Package nanohttp is the HTTP boundary between net/http and the handlers
 // oapi-codegen generates. It decodes request bodies strictly, runs the
-// validators nano gen validate generates, and sends every error through
-// problem.Write.
+// validators nano gen validate generates, and by default sends every error
+// through problem.Write. The generated HTTPHandlerOptions and NewRouter let a
+// service replace those error writers, for example to keep a legacy error
+// body.
 //
 // The generated strict server calls Decode through the template override in
 // package oapitemplates; services rarely call it directly.

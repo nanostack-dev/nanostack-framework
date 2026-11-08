@@ -143,6 +143,28 @@ func BadRequest(cause error) error {
 	}
 }
 
+// NotFound is the 404 problem for a request whose path matches no route.
+// nanohttp.NewRouter writes it when RouterOptions.NotFound is nil.
+func NotFound() error {
+	return &Error{
+		typ: TypeNotFound, title: "Not found", status: http.StatusNotFound,
+		code: "http.not_found", detail: "No route matches the request path.",
+	}
+}
+
+// MethodNotAllowed is the 405 problem for a request whose path matches a
+// route only for other methods. The caller sets the Allow header.
+// nanohttp.NewRouter writes it when RouterOptions.MethodNotAllowed is nil.
+func MethodNotAllowed() error {
+	return &Error{
+		typ:    TypeMethodNotAllowed,
+		title:  "Method not allowed",
+		status: http.StatusMethodNotAllowed,
+		code:   "http.method_not_allowed",
+		detail: "The route does not accept this method; the Allow header lists those it accepts.",
+	}
+}
+
 // BodyTooLarge is the 413 problem for a body over limit bytes.
 func BodyTooLarge(limit int64) error {
 	return &Error{
@@ -163,17 +185,22 @@ func UnsupportedMediaType(mediaType string) error {
 }
 
 // InvalidParameter is the 400 problem for a path, query, header or cookie
-// parameter that is missing or cannot be parsed. The cause is logged, not
-// sent.
+// parameter that cannot be parsed. The cause is logged, not sent, and
+// errors.Unwrap returns it.
 func InvalidParameter(name string, cause error) error {
-	detail := "is invalid"
-	if cause == nil {
-		detail = "is required"
-	}
-	code := validate.CodeType
-	if cause == nil {
-		code = validate.CodeRequired
-	}
+	return parameterProblem(name, validate.CodeType, "is invalid", cause)
+}
+
+// MissingParameter is the 400 problem for a required parameter that the
+// request does not send. The cause, such as the binding error of the
+// generated router, is logged, not sent, and errors.Unwrap returns it: a
+// renderer can tell a missing query parameter from a missing header, and
+// write the binding error's own text.
+func MissingParameter(name string, cause error) error {
+	return parameterProblem(name, validate.CodeRequired, "is required", cause)
+}
+
+func parameterProblem(name, code, detail string, cause error) error {
 	return &Error{
 		typ: TypeInvalidParameter, title: "Invalid request parameter", status: http.StatusBadRequest,
 		code: "http.invalid_parameter", detail: "A request parameter is missing or invalid.",

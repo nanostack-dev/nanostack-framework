@@ -19,17 +19,27 @@ const (
 	DefaultHealthTimeout = 5 * time.Second
 )
 
-// AppConfig holds the App's timeouts. A service usually embeds it in its
-// Config as a field; the generated Build passes that field to NewApp.
+// AppConfig holds the App's timeouts. A service embeds it in its Config as a
+// section, App nano.AppConfig `config:"app"`, so nano gen config binds it from
+// APP_START_TIMEOUT, APP_STOP_TIMEOUT and APP_HEALTH_TIMEOUT (or the app
+// section of a YAML layer) with the defaults below, and the generated Build
+// passes it to NewApp. A zero field of an AppConfig built by hand also takes
+// the default.
+//
+// The stop bound of a process is StopTimeout plus StopGrace for each Stopper
+// called after StopTimeout has passed. Set the orchestrator's grace period
+// (Docker's stop_grace_period, Kubernetes' terminationGracePeriodSeconds)
+// above it, or the runtime kills the process before Stop ends. Docker's
+// default is 10s, below the default StopTimeout.
 type AppConfig struct {
 	// StartTimeout bounds the whole start phase: every Starter together.
-	StartTimeout time.Duration `json:"start_timeout" yaml:"start_timeout"`
+	StartTimeout time.Duration `config:"start_timeout" default:"15s" json:"start_timeout" yaml:"start_timeout"`
 	// StopTimeout bounds the stop phase: draining the Runners and every
 	// Stopper share it. A Stopper called after it has passed still gets
 	// StopGrace, so a slow Runner or Stopper never skips a later Stopper.
-	StopTimeout time.Duration `json:"stop_timeout" yaml:"stop_timeout"`
+	StopTimeout time.Duration `config:"stop_timeout" default:"15s" json:"stop_timeout" yaml:"stop_timeout"`
 	// HealthTimeout bounds one readiness evaluation, all checks together.
-	HealthTimeout time.Duration `json:"health_timeout" yaml:"health_timeout"`
+	HealthTimeout time.Duration `config:"health_timeout" default:"5s" json:"health_timeout" yaml:"health_timeout"`
 }
 
 func (c AppConfig) withDefaults() AppConfig {
