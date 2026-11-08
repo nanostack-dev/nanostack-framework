@@ -67,7 +67,7 @@ func TestStopFlushesBufferedSpans(t *testing.T) {
 	}
 }
 
-func TestStartInstallsTheGlobalProviderAndPropagator(t *testing.T) {
+func TestInstallerPublishesTheGlobalProviderAndPropagator(t *testing.T) {
 	previousProvider, previousPropagator := otel.GetTracerProvider(), otel.GetTextMapPropagator()
 	t.Cleanup(func() {
 		otel.SetTracerProvider(previousProvider)
@@ -80,7 +80,7 @@ func TestStartInstallsTheGlobalProviderAndPropagator(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = provider.Stop(context.Background()) })
 
-	if err = provider.Start(t.Context()); err != nil {
+	if err = NewInstaller(provider).Start(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 

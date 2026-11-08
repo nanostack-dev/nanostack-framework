@@ -12,6 +12,17 @@ import (
 	"github.com/nanostack-dev/nanostack-framework/pkg/health"
 )
 
+// Context provides ctx as the context.Context of the fx graph. The nano
+// constructors that dial a server take it as their first parameter
+// (nanopg.NewDB, nanocache.NewStore, nanolock.NewClient), and an fx graph has
+// none of its own. Pass the context that the service's signal handling
+// cancels, so a SIGTERM during construction ends the dial instead of waiting
+// for its timeout. The constructors use it only while they build; they do
+// not keep it.
+func Context(ctx context.Context) fx.Option {
+	return fx.Provide(func() context.Context { return ctx })
+}
+
 // params are the dependencies of Lifecycle. fx fills a generic In struct
 // through reflection on its instantiated type.
 type params[T any] struct {

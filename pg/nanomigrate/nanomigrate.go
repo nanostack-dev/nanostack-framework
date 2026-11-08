@@ -28,7 +28,24 @@ const MigrationsTable = "schema_migrations"
 // pending: a migration that fails while the context ends is returned as that
 // failure, and a run that finished every migration before the stop took
 // effect returns nil.
+//
+// The error matches ErrStopped and wraps the cause of the stop, such as
+// context.Canceled, in one chain, so nano.Main counts a stop during Build as
+// a clean shutdown and a failure next to it as a failure.
 var ErrStopped = errors.New("nanomigrate: stopped before the last migration ran")
+
+// stoppedError is ErrStopped over the cause of the stop.
+type stoppedError struct{ cause error }
+
+func (e stoppedError) Error() string        { return ErrStopped.Error() + ": " + e.cause.Error() }
+func (e stoppedError) Is(target error) bool { return target == ErrStopped }
+func (e stoppedError) Unwrap() error        { return e.cause }
+
+// DefaultConfig returns the Config of the default: tags: migrations enabled
+// from the migrations directory, with validation.
+func DefaultConfig() Config {
+	return Config{Enabled: true, BasePath: "migrations", Validate: true}
+}
 
 // Module provides *Migrator and runs it before the App starts.
 var Module = nano.Module("migrations", //nolint:gochecknoglobals // A nano module is a package-level value.
@@ -36,8 +53,13 @@ var Module = nano.Module("migrations", //nolint:gochecknoglobals // A nano modul
 	nano.Invoke(Run),
 )
 
-// Config selects the migrations. The yaml tags are the keys of the deprecated
-// modules/migrations section, so one YAML file serves both.
+// Config selects the migrations. The yaml tags are the legacy keys of the
+// deprecated modules/migrations section, for the deprecated fx loader
+// (modules/config); core/config and the generated Bind read only the config:
+// names, so a YAML layer written for the fx module does not bind here.
+//
+// A zero Config disables the migrations: start a Config built by hand, in a
+// test or an Override, from DefaultConfig.
 type Config struct {
 	// Enabled turns the migrations on.
 	Enabled bool `config:"enabled" default:"true" json:"enabled" yaml:"enabled"`
@@ -82,7 +104,7 @@ func (m *Migrator) Migrate(ctx context.Context) error {
 		return nil
 	}
 	if err := ctx.Err(); err != nil {
-		return fmt.Errorf("%w: %w", ErrStopped, context.Cause(ctx))
+		return stoppedError{cause: context.Cause(ctx)}
 	}
 	if err := requireDir(m.config.BasePath); err != nil {
 		return err
@@ -90,13 +112,22 @@ func (m *Migrator) Migrate(ctx context.Context) error {
 	// golang-migrate keeps the connection it migrates on until it is closed.
 	// Migrate takes that connection itself and gives it back to the pool at
 	// the end; Close of the golang-migrate driver would also close m.db, the
-	// application's pool. The setup does not stop when ctx ends: only the
-	// graceful stop of up does.
+	// application's pool. The wait for the migration lock stops when ctx
+	// ends; after the lock, only the graceful stop of up does.
 	conn, err := m.db.Conn(context.WithoutCancel(ctx))
 	if err != nil {
 		return fmt.Errorf("nanomigrate: take a connection: %w", err)
 	}
 	defer func() { _ = conn.Close() }()
+	held, err := m.lock(ctx, conn)
+	if err != nil {
+		if ctx.Err() != nil {
+			// A query cancelled mid-flight may leave the session unknown.
+			discard(conn)
+		}
+		return err
+	}
+	defer held.release(ctx)
 	migrator, err := m.open(ctx, conn)
 	if err != nil || migrator == nil {
 		return err
@@ -249,7 +280,7 @@ func stopOutcome(upErr error, pending func() (bool, error), cause error) error {
 		return fmt.Errorf("nanomigrate: stop requested (%s); read the pending migrations: %w", cause.Error(), err)
 	}
 	if left {
-		return fmt.Errorf("%w: %w", ErrStopped, cause)
+		return stoppedError{cause: cause}
 	}
 	return nil
 }

@@ -3,6 +3,7 @@ package nanocache
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 	"time"
@@ -14,10 +15,12 @@ import (
 // are expected to use.
 //
 // It owns a key namespace and the serialization: every key it builds is its
-// prefix followed by the caller's parts, joined with ":". Callers address one
-// entry through Key and chain from there:
+// prefix followed by the caller's parts, joined with ":". A part may be free
+// text: its ":" and "\" are escaped, so each list of parts has one key and a
+// part never acts as a separator. Callers address one entry through Key and
+// chain from there:
 //
-//	products := nanocache.New[product.Product](store, "product", 30*time.Minute, logger)
+//	products, err := nanocache.New[product.Product](store, "product", 30*time.Minute, logger)
 //
 //	prod, err := products.Key(tenantID, productID).GetOrElse(ctx, loadFromDB)
 //	err = products.Key(tenantID, productID).Evict(ctx)
@@ -36,18 +39,44 @@ type Cache[T any] struct {
 	logger *slog.Logger
 }
 
+// ErrInvalidPrefix is the error New returns for a prefix it cannot use.
+var ErrInvalidPrefix = errors.New("nanocache: invalid prefix")
+
 // New builds a Cache over store. Keys are namespaced under prefix, and writes
-// expire after ttl.
-func New[T any](store Store, prefix string, ttl time.Duration, logger *slog.Logger) Cache[T] {
+// expire after ttl. The prefix is a constant of the service and is used as
+// given, so it may hold ":" for a hierarchy ("billing:product").
+//
+// New fails with ErrInvalidPrefix when prefix is empty, holds a glob
+// character (* ? [ ] or \) or ends in ":". An empty prefix owns no
+// namespace: every key starts with ":", and EvictPrefix of one cache reaches
+// the keys of every other empty-prefix cache. A glob character would need
+// escaping, and a trailing ":" gives an empty first part.
+//
+// Prefixes must not nest. Two caches whose prefixes are one the other
+// followed by ":" ("billing" and "billing:product") share keys: Key("product",
+// "p1") of the first is Key("p1") of the second, and EvictPrefix of the first
+// drops the entries of the second. New cannot see the other caches, so it
+// does not check this.
+func New[T any](store Store, prefix string, ttl time.Duration, logger *slog.Logger) (Cache[T], error) {
+	if prefix == "" {
+		return Cache[T]{}, fmt.Errorf("%w: it is empty", ErrInvalidPrefix)
+	}
+	if i := strings.IndexAny(prefix, `*?[]\`); i >= 0 {
+		return Cache[T]{}, fmt.Errorf("%w %q: %q is a glob character", ErrInvalidPrefix, prefix, prefix[i])
+	}
+	if strings.HasSuffix(prefix, ":") {
+		return Cache[T]{}, fmt.Errorf("%w %q: it ends in \":\"", ErrInvalidPrefix, prefix)
+	}
 	return Cache[T]{
 		store:  store,
 		prefix: prefix,
 		ttl:    ttl,
 		logger: logger.With(slog.String(log.KeyComponent, "cache"), slog.String("cache_prefix", prefix)),
-	}
+	}, nil
 }
 
-// Key addresses a single entry. Parts are joined with ":" under the prefix.
+// Key addresses a single entry. Parts are joined with ":" under the prefix,
+// each with ":" escaped as "\:" and "\" as "\\".
 func (c Cache[T]) Key(parts ...string) Entry[T] {
 	return Entry[T]{cache: c, key: c.buildKey(parts...)}
 }
@@ -57,9 +86,11 @@ func (c Cache[T]) Key(parts ...string) Entry[T] {
 // one tenant, without listing individual keys.
 //
 // It matches keys with at least one further part, so an entry addressed by the
-// bare prefix (Key() with no parts) is not covered.
+// bare prefix (Key() with no parts) is not covered. The glob characters of the
+// prefix and the parts are escaped, so a part such as "*" or "team[ops]"
+// matches only itself.
 func (c Cache[T]) EvictPrefix(ctx context.Context, parts ...string) error {
-	pattern := c.buildKey(parts...) + ":*"
+	pattern := globEscape(c.buildKey(parts...)) + ":*"
 	if err := c.store.EvictPattern(ctx, pattern); err != nil {
 		c.logger.WarnContext(ctx, "failed to evict cache pattern", log.Err(err), slog.String("pattern", pattern))
 		return err
@@ -69,8 +100,26 @@ func (c Cache[T]) EvictPrefix(ctx context.Context, parts ...string) error {
 }
 
 func (c Cache[T]) buildKey(parts ...string) string {
-	return strings.Join(append([]string{c.prefix}, parts...), ":")
+	var b strings.Builder
+	b.WriteString(c.prefix)
+	for _, part := range parts {
+		b.WriteByte(':')
+		_, _ = partEscaper.WriteString(&b, part) // A strings.Builder does not fail.
+	}
+	return b.String()
 }
+
+// partEscaper gives a key part one encoding: the escape character and the
+// separator are escaped.
+var partEscaper = strings.NewReplacer(`\`, `\\`, ":", `\:`) //nolint:gochecknoglobals // A stateless replacer.
+
+// globEscaper escapes the characters of a Redis glob pattern.
+var globEscaper = strings.NewReplacer( //nolint:gochecknoglobals // A stateless replacer.
+	`\`, `\\`, "*", `\*`, "?", `\?`, "[", `\[`, "]", `\]`,
+)
+
+// globEscape returns the pattern that matches s literally.
+func globEscape(s string) string { return globEscaper.Replace(s) }
 
 // Entry is one addressed key within a Cache namespace.
 type Entry[T any] struct {

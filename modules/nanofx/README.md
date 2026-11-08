@@ -9,7 +9,10 @@ The bridge that runs nano components in an fx application, so a service moves fr
 - `Stop` runs in `OnStop`, after `Run` returned.
 - `CheckHealth` is registered under `name` in the `*health.Registry`, when the graph has one.
 
+`Context(ctx)` provides the `context.Context` that the dialing constructors take first (`nanopg.NewDB`, `nanocache.NewStore`, `nanolock.NewClient`). An fx graph has none of its own. Pass the context that the service's signal handling cancels.
+
 ```go
+nanofx.Context(signalCtx),
 fx.Supply(cfg.Postgres),
 fx.Provide(nanopg.NewDB, nanopg.SQL, nanopg.NewTransactor),
 nanofx.Lifecycle[*nanopg.DB]("postgres"),

@@ -6,4 +6,7 @@
 // core/logging, which builds a slog logger from log.Settings.
 // See docs/modules.md for the migration, one module at a time with
 // modules/nanofx.
+//
+// Deprecated: removed with fx (ADR 0013). Use core/logging; see
+// docs/modules.md.
 package logging

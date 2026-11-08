@@ -93,7 +93,16 @@ func (f *fakeStore) Exists(_ context.Context, key string) (bool, error) {
 }
 
 func newProductCache(s nanocache.Store) nanocache.Cache[product] {
-	return nanocache.New[product](s, "product", 30*time.Minute, slog.New(slog.DiscardHandler))
+	return mustNew[product](s, "product", 30*time.Minute)
+}
+
+// mustNew is New for a prefix that a test knows is valid.
+func mustNew[T any](s nanocache.Store, prefix string, ttl time.Duration) nanocache.Cache[T] {
+	c, err := nanocache.New[T](s, prefix, ttl, slog.New(slog.DiscardHandler))
+	if err != nil {
+		panic(err)
+	}
+	return c
 }
 
 func TestCacheKeyNamespacing(t *testing.T) {
@@ -327,8 +336,8 @@ func TestCacheEviction(t *testing.T) {
 // caches over different types cannot collide, even on identical key parts.
 func TestCacheNamespacesAreIndependent(t *testing.T) {
 	store := newFakeStore()
-	products := nanocache.New[product](store, "product", time.Minute, slog.New(slog.DiscardHandler))
-	apiKeys := nanocache.New[string](store, "apikey", time.Minute, slog.New(slog.DiscardHandler))
+	products := mustNew[product](store, "product", time.Minute)
+	apiKeys := mustNew[string](store, "apikey", time.Minute)
 
 	if err := products.Key("same").Set(context.Background(), &product{ID: "p"}); err != nil {
 		t.Fatalf("Set() err = %v", err)

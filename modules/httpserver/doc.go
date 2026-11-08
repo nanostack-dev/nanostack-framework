@@ -8,4 +8,7 @@
 // pkg/httputil/errorenvelope, whose Writer logs through core/log.
 // See docs/modules.md for the migration, one module at a time with
 // modules/nanofx.
+//
+// Deprecated: removed with fx (ADR 0013). Use http/nanoserver, and
+// pkg/httputil/errorenvelope.Writer for the error path; see docs/modules.md.
 package httpserver

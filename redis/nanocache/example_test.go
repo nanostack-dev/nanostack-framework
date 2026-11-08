@@ -19,7 +19,10 @@ func ExampleNew() {
 	ctx := context.Background()
 	logger := slog.New(slog.DiscardHandler)
 	store := nanocache.NewStore(ctx, nanocache.Config{}, logger)
-	plans := nanocache.New[plan](store, "plan", 10*time.Minute, logger)
+	plans, err := nanocache.New[plan](store, "plan", 10*time.Minute, logger)
+	if err != nil {
+		panic(err)
+	}
 
 	got, err := plans.Key("acme").GetOrElse(ctx, func() (*plan, error) { return &plan{Name: "pro"}, nil })
 	fmt.Println(got.Name, err)

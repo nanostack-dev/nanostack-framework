@@ -52,6 +52,10 @@ type StrictErrorHandlerOptions struct {
 // uses too. StrictErrorHandler logs through zerolog; a service that logs
 // through core/log uses errorenvelope.Writer, whose lines carry the request
 // scope of log.HTTPMiddleware (request_id).
+//
+// Deprecated: removed with fx (ADR 0013). Use errorenvelope.Writer
+// (errorenvelope.New), whose RequestError and ResponseError have the same
+// responses.
 type StrictErrorHandler struct {
 	logger        zerolog.Logger
 	adaptError    APIErrorAdapter

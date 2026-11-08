@@ -152,17 +152,27 @@ func (r *RedisStore) Evict(ctx context.Context, key string) error {
 }
 
 // EvictPattern deletes every key that matches the Redis glob pattern. It
-// walks the keyspace with SCAN, so it does not block the server as KEYS does.
+// walks the keyspace with SCAN, so it does not block the server as KEYS does,
+// and unlinks each page of keys as it arrives, so memory and the size of one
+// command stay bounded by the page. UNLINK frees the values off the main
+// thread. Escape a literal in pattern (Cache.EvictPrefix does).
 func (r *RedisStore) EvictPattern(ctx context.Context, pattern string) error {
-	iter := r.client.Scan(ctx, 0, pattern, scanCount).Iterator()
-	var keys []string
-	for iter.Next(ctx) {
-		keys = append(keys, iter.Val())
+	var cursor uint64
+	for {
+		keys, next, err := r.client.Scan(ctx, cursor, pattern, scanCount).Result()
+		if err != nil {
+			return err
+		}
+		if len(keys) > 0 {
+			if err = r.client.Unlink(ctx, keys...).Err(); err != nil {
+				return err
+			}
+		}
+		if next == 0 {
+			return nil
+		}
+		cursor = next
 	}
-	if err := iter.Err(); err != nil || len(keys) == 0 {
-		return err
-	}
-	return r.client.Del(ctx, keys...).Err()
 }
 
 // scanCount is the SCAN batch hint of EvictPattern.

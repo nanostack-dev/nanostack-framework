@@ -27,8 +27,27 @@ type Config struct {
 	TestOnStartup      bool          `yaml:"testOnStartup"`
 }
 
+// NewClient returns the lock client over db. A zero duration takes its
+// default. A negative duration, or a lease shorter than two heartbeats, fails
+// before pglock sees db, which pglock would close on that error.
 func NewClient(lc fx.Lifecycle, log zerolog.Logger, db *sql.DB, cfg Config) (*cpglock.Client, error) {
 	logger := log.With().Str("component", "pglock").Logger()
+	// pglock reads a negative heartbeat as "no heartbeat" and a negative lease
+	// as a timeout that has already passed, so refuse both.
+	if cfg.LeaseDuration < 0 || cfg.HeartbeatFrequency < 0 {
+		return nil, fmt.Errorf("pglock: leaseDuration %s and heartbeatFrequency %s must not be negative",
+			cfg.LeaseDuration, cfg.HeartbeatFrequency)
+	}
+	if cfg.LeaseDuration == 0 {
+		cfg.LeaseDuration = defaultLeaseDuration
+	}
+	if cfg.HeartbeatFrequency == 0 {
+		cfg.HeartbeatFrequency = defaultHeartbeatFrequency
+	}
+	if cfg.HeartbeatFrequency > 0 && cfg.LeaseDuration < 2*cfg.HeartbeatFrequency {
+		return nil, fmt.Errorf("pglock: leaseDuration %s must be at least twice heartbeatFrequency %s: %w",
+			cfg.LeaseDuration, cfg.HeartbeatFrequency, cpglock.ErrDurationTooSmall)
+	}
 	options := []cpglock.ClientOption{
 		cpglock.WithLeaseDuration(cfg.LeaseDuration),
 		cpglock.WithHeartbeatFrequency(cfg.HeartbeatFrequency),
@@ -36,7 +55,9 @@ func NewClient(lc fx.Lifecycle, log zerolog.Logger, db *sql.DB, cfg Config) (*cp
 	if cfg.TableName != "" {
 		options = append(options, cpglock.WithCustomTable(cfg.TableName))
 	}
-	client, err := cpglock.New(db, options...)
+	// UnsafeNew, not New: New accepts only a bare *pq.Driver pool, and the
+	// pool of modules/postgres may be wrapped by otelsql.
+	client, err := cpglock.UnsafeNew(db, options...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create pglock client: %w", err)
 	}

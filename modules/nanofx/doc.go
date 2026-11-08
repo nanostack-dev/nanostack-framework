@@ -4,10 +4,12 @@
 // A nano module provides plain constructors and gives its components the
 // lifecycle methods of core/nano (Starter, Stopper, Runner, HealthChecker).
 // In an fx graph, provide the constructors with fx.Provide, supply the typed
-// configuration from the service's generated Bind, and register the
-// lifecycle with Lifecycle:
+// configuration from the service's generated Bind, provide the context the
+// constructors dial with through Context, and register the lifecycle with
+// Lifecycle:
 //
 //	fx.New(
+//		nanofx.Context(signalCtx),                   // cancelled by SIGTERM
 //		fx.Supply(cfg.Postgres),                     // nanopg.Config from Bind
 //		fx.Provide(nanopg.NewDB, nanopg.SQL, nanopg.NewTransactor),
 //		nanofx.Lifecycle[*nanopg.DB]("postgres"),

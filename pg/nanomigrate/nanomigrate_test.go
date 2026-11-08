@@ -34,8 +34,14 @@ func TestMigrateDoesNotStartAfterTheContextEnded(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	m := nanomigrate.NewMigrator(nanomigrate.Config{Enabled: true, BasePath: t.TempDir()}, nil, discard())
-	if err := m.Migrate(ctx); !errors.Is(err, nanomigrate.ErrStopped) {
-		t.Fatalf("Migrate after cancel = %v, want ErrStopped", err)
+	err := m.Migrate(ctx)
+	if !errors.Is(err, nanomigrate.ErrStopped) || !errors.Is(err, context.Canceled) {
+		t.Fatalf("Migrate after cancel = %v, want ErrStopped over the cancellation", err)
+	}
+	// The cause is the one chain under the marker, so nano.Main can tell a
+	// stop from a failure next to it.
+	if _, multi := err.(interface{ Unwrap() []error }); multi {
+		t.Fatalf("Migrate after cancel = %T, want one chain", err)
 	}
 }
 

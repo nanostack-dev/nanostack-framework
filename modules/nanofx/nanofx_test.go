@@ -215,3 +215,20 @@ func TestLifecycleGivesALateStopTheStopGrace(t *testing.T) {
 			s.stopErr, s.stopLeft, nano.StopGrace)
 	}
 }
+
+func TestContextReachesTheConstructors(t *testing.T) {
+	type key struct{}
+	ctx := context.WithValue(t.Context(), key{}, "signal")
+	var got any
+	app := fx.New(
+		fx.NopLogger,
+		nanofx.Context(ctx),
+		fx.Invoke(func(c context.Context) { got = c.Value(key{}) }),
+	)
+	if err := app.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if got != "signal" {
+		t.Fatalf("constructor context value = %v, want the context given to Context", got)
+	}
+}

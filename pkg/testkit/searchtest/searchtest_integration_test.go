@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"maps"
 	"math"
 	"net/http"
@@ -17,17 +18,16 @@ import (
 	"time"
 
 	_ "github.com/lib/pq"
-	"github.com/rs/zerolog"
 
 	jet "github.com/nanostack-dev/nanostack-framework/db/postgres"
-	"github.com/nanostack-dev/nanostack-framework/modules/httpserver"
 	"github.com/nanostack-dev/nanostack-framework/pkg/db/transactor"
+	"github.com/nanostack-dev/nanostack-framework/pkg/httputil/errorenvelope"
 	"github.com/nanostack-dev/nanostack-framework/pkg/search"
 	"github.com/nanostack-dev/nanostack-framework/pkg/testkit/searchtest"
 )
 
 // The integration test runs the kit against a real search: a Postgres table,
-// a PageBuilder with StrictKeys, and the framework's StrictErrorHandler over
+// a PageBuilder with StrictKeys, and the framework's errorenvelope.Writer over
 // HTTP. Forged cursors for every key type must never produce a 5xx.
 //
 //	PGERR_TEST_DSN="postgres://postgres:itpass@localhost:55432/pgerrit?sslmode=disable" \
@@ -65,7 +65,7 @@ func keys() map[field]transactor.Key[row] {
 }
 
 func handler(db *sql.DB) http.Handler {
-	errs := httpserver.NewStrictErrorHandler(httpserver.StrictErrorHandlerOptions{Logger: zerolog.Nop()})
+	errs := errorenvelope.New(errorenvelope.Options{Logger: slog.New(slog.DiscardHandler)})
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			Tenant        string                `json:"tenant"`
@@ -74,7 +74,7 @@ func handler(db *sql.DB) http.Handler {
 			Pagination    *search.Pagination    `json:"pagination"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			errs.HandleRequestError(w, r, err)
+			errs.RequestError(w, r, err)
 			return
 		}
 		req := search.NewRequest[struct{}, field]().WithSort(body.SortBy, body.SortDirection).
@@ -85,7 +85,7 @@ func handler(db *sql.DB) http.Handler {
 			transactor.StringKey(colID, func(r row) string { return r.ID }),
 		)
 		if err != nil {
-			errs.HandleResponseError(w, r, err)
+			errs.ResponseError(w, r, err)
 			return
 		}
 		page, err := transactor.Page(db, func(r row) map[string]any { return map[string]any{"id": r.ID} },
@@ -93,7 +93,7 @@ func handler(db *sql.DB) http.Handler {
 			From(table).Where(colTenant.EQ(jet.String(body.Tenant))).Keyset(order).
 			Run(r.Context(), req.Pagination).Value()
 		if err != nil {
-			errs.HandleResponseError(w, r, err)
+			errs.ResponseError(w, r, err)
 			return
 		}
 		response := map[string]any{"items": page.Items, "total": page.Total, "count": page.Count}

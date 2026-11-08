@@ -30,8 +30,14 @@ var Module = nano.Module("postgres", //nolint:gochecknoglobals // A nano module 
 	nano.Providers(NewDB, SQL, NewTransactor),
 )
 
-// Config is the connection and the pool. The yaml tags are the keys of the
-// deprecated modules/postgres section, so one YAML file serves both.
+// Config is the connection and the pool. The yaml tags are the legacy keys
+// of the deprecated modules/postgres section, for the deprecated fx loader
+// (modules/config); core/config and the generated Bind read only the config:
+// names, so a YAML layer written for the fx module does not bind here.
+//
+// NewDB defaults a zero Port, MaxOpenConns and ConnMaxLifetime. Start a
+// Config built by hand, in a test or an Override, from DefaultConfig so
+// MaxIdleConns, for which zero is valid, gets its default too.
 type Config struct {
 	// Host is the server host name or address.
 	Host string `config:"host" json:"host" yaml:"host"`
@@ -53,6 +59,38 @@ type Config struct {
 	MaxIdleConns int `config:"max_idle_conns" default:"25" validate:"min=0" json:"max_idle_conns" yaml:"maxIdleConns"`
 	// ConnMaxLifetime closes a connection after this age.
 	ConnMaxLifetime time.Duration `config:"conn_max_lifetime" default:"5m" json:"conn_max_lifetime" yaml:"connMaxLifetime"`
+}
+
+// The defaults of Config.
+const (
+	defaultPort            = 5432
+	defaultMaxOpenConns    = 25
+	defaultMaxIdleConns    = 25
+	defaultConnMaxLifetime = 5 * time.Minute
+)
+
+// DefaultConfig returns the Config of the default: tags. The connection
+// fields (Host, User, Password, DB) stay empty.
+func DefaultConfig() Config {
+	return Config{
+		Port:            defaultPort,
+		MaxOpenConns:    defaultMaxOpenConns,
+		MaxIdleConns:    defaultMaxIdleConns,
+		ConnMaxLifetime: defaultConnMaxLifetime,
+	}
+}
+
+func (c Config) withDefaults() Config {
+	if c.Port <= 0 {
+		c.Port = defaultPort
+	}
+	if c.MaxOpenConns <= 0 {
+		c.MaxOpenConns = defaultMaxOpenConns
+	}
+	if c.ConnMaxLifetime <= 0 {
+		c.ConnMaxLifetime = defaultConnMaxLifetime
+	}
+	return c
 }
 
 // DSN returns the lib/pq connection string. Every value is quoted, so a
@@ -90,6 +128,7 @@ type DB struct {
 // NewDB opens the pool with the query tracing of modules/postgres and pings
 // the server. A failed ping closes the pool and fails the build.
 func NewDB(ctx context.Context, cfg Config, logger *slog.Logger, tp trace.TracerProvider) (*DB, error) {
+	cfg = cfg.withDefaults()
 	logger = logger.With(slog.String(log.KeyComponent, "postgres"))
 	logger.InfoContext(ctx, "connecting to postgres",
 		slog.String("host", cfg.Host), slog.Int("port", cfg.Port), slog.String("db", cfg.DB))
