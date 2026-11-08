@@ -56,6 +56,7 @@ Make sure that the new tags do not exist. A tag is never moved or deleted (see [
 
 - Check that a tag exists with `git ls-remote --exit-code --tags origin refs/tags/<tag>`.
 - Run each `go list -m` and each `go mod tidy` of the release steps with an empty module cache: `GOMODCACHE="$(mktemp -d)"`.
+- `GOPROXY=direct` and `GOPRIVATE` make Go fetch this repository with git over HTTPS. A git `url.<ssh>.insteadOf https://github.com/nanostack-dev` rule sends those fetches to SSH; when SSH is not available, run the Go commands with `GIT_CONFIG_GLOBAL` pointing at a config without that rule (the repository is public).
 
 ### 1. pkg/functional
 
@@ -72,7 +73,7 @@ GOWORK=off GOPROXY=direct GOMODCACHE="$(mktemp -d)" \
 
 ### 2. db
 
-One commit on the release branch puts `db/go.mod` in the release form:
+One commit on the release branch puts `db/go.mod` in the release form. `go mod tidy` joins go-jet's two `require` blocks: before you commit, move `go-cmp` and `testify` back under `// used in tests`, so that the diff is only the `pkg/functional` line, the dropped `replace` and `go.sum` ([db/UPSTREAM.md](db/UPSTREAM.md), Dependency row):
 
 ```sh
 (cd db &&
@@ -81,6 +82,7 @@ One commit on the release branch puts `db/go.mod` in the release form:
     -require github.com/nanostack-dev/nanostack-framework/pkg/functional@v0.23.0-beta.1 &&
   GOWORK=off GOMODCACHE="$(mktemp -d)" go mod tidy &&
   GOWORK=off go build ./... && GOWORK=off go test -race -count=1 ./...)
+git diff db/go.mod   # restore the two require blocks if tidy joined them
 git commit -am "release: db v0.23.0-beta.1"
 git push origin release/v0.23.0-beta.1
 gh workflow run release.yml --ref release/v0.23.0-beta.1 -f version=db/v0.23.0-beta.1   # dry run
