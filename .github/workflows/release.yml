@@ -196,12 +196,44 @@ jobs:
           fi
           echo "ok: ${RELEASE_TAG:-pull request rules}"
 
+  # A released module must not ship a known advisory that its code reaches. On a
+  # pull request every released module is checked; at a tag, the tagged one.
+  vulncheck:
+    needs: check
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ needs.check.outputs.tag }}
+      TAG_EXISTS: ${{ needs.check.outputs.exists }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: govulncheck the released modules
+        run: |
+          set -euo pipefail
+          if [ "$TAG_EXISTS" = "true" ]; then
+            git fetch -q --depth=1 origin "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
+            git checkout -q --detach "refs/tags/$RELEASE_TAG^{commit}"
+          fi
+          case "$RELEASE_TAG" in
+            pkg/functional/v*) dirs=pkg/functional ;;
+            db/v*) dirs=db ;;
+            v*) dirs=. ;;
+            *) dirs=". db pkg/functional" ;;
+          esac
+          for dir in $dirs; do
+            echo "== $dir"
+            (cd "$dir" && go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...)
+          done
+
   # Builds a scratch module against the published tag, as a consumer does.
   # GONOPROXY reads this repository's modules from git, so the proxy cache cannot
   # hide a bad tag. Third-party modules still come from the proxy: fetching every
   # module from git (GOPROXY=direct) takes minutes and tests nothing more.
   consumer:
-    needs: check
+    needs: [check, vulncheck]
     if: needs.check.outputs.exists == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15

@@ -101,6 +101,24 @@ jobs:
           go test -tags integration -count=1 -p 1
           ./pkg/db/... ./pkg/testkit/searchtest/... ./modules/migrations/... ./modules/postgres/...
 
+  # A known advisory that the code reaches fails the pull request. The version is
+  # pinned so a new govulncheck release cannot change the verdict unannounced.
+  # db.yml covers db and db/tests; release.yml runs the same check on a tag.
+  vulncheck:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        dir: [".", pkg/functional]
+    defaults:
+      run:
+        working-directory: ${{ matrix.dir }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: ${{ matrix.dir }}/go.mod
+      - run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+
   # pkg/functional is its own module, so the root `go test ./...` does not reach it.
   functional:
     runs-on: ubuntu-latest

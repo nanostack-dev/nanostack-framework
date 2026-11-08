@@ -25,6 +25,15 @@ formatters:
     goimports:
       local-prefixes:
         - github.com/nanostack-dev/nanostack-framework
+  # db/ is its own module with its own configuration (db/.golangci.local.yml), which keeps the
+  # formatters off the files taken from go-jet. `golangci-lint fmt` from the root would
+  # otherwise reformat them.
+  exclusions:
+    # golangci-lint run from the root never lints db/ (another module), so it prints one
+    # "Skipped 0 issues" warning for this pattern; formatters.exclusions.warn-unused does not
+    # silence it, and linters.exclusions.warn-unused must stay on for the rules below.
+    paths:
+      - ^db/
 linters:
   default: none
   enable:
@@ -309,7 +318,7 @@ linters:
           - sloglint
       - {linters: [depguard], path: ^modules/cache/cache\.go$} # imports zerolog; legacy, deleted after the slog migration
       - {linters: [depguard], path: ^modules/cache/cache_test\.go$} # imports zerolog; legacy, deleted after the slog migration
-      - {linters: [depguard], path: ^modules/cache/module\.go$} # imports zerolog; legacy, deleted after the slog migration
+      - {linters: [depguard, staticcheck], path: ^modules/cache/module\.go$} # imports zerolog; SA1019 imports the deprecated modules/config; legacy, deleted with fx
       - {linters: [depguard], path: ^modules/cache/redis\.go$} # imports zerolog; legacy, deleted after the slog migration
       - {linters: [depguard], path: ^modules/cache/redis_test\.go$} # imports zerolog; legacy, deleted after the slog migration
       - {linters: [depguard], path: ^modules/config/module\.go$} # imports zerolog; legacy, deleted after the slog migration
@@ -318,14 +327,15 @@ linters:
       - {linters: [depguard], path: ^modules/httpserver/strict_error_handler_test\.go$} # imports zerolog; legacy, deleted after the slog migration
       - {linters: [depguard], path: ^modules/httpserver/tracing_test\.go$} # imports zerolog; legacy, deleted after the slog migration
       - {linters: [depguard], path: ^modules/logging/binder\.go$} # imports zerolog; legacy, deleted after the slog migration
-      - {linters: [depguard], path: ^modules/logging/logging\.go$} # imports zerolog; legacy, deleted after the slog migration
+      - {linters: [depguard, staticcheck], path: ^modules/logging/logging\.go$} # imports zerolog; SA1019 imports the deprecated pkg/fxlog; legacy, deleted with fx
       - {linters: [depguard], path: ^modules/logging/logging_test\.go$} # imports zerolog; legacy, deleted after the slog migration
       - {linters: [depguard], path: ^modules/migrations/migrations_integration_test\.go$} # imports zerolog; legacy, deleted after the slog migration
       - {linters: [depguard], path: ^modules/migrations/migrator\.go$} # imports zerolog; legacy, deleted after the slog migration
       - {linters: [depguard], path: ^modules/migrations/migrator_test\.go$} # imports zerolog; legacy, deleted after the slog migration
-      - {linters: [depguard], path: ^modules/migrations/module\.go$} # imports zerolog; legacy, deleted after the slog migration
-      - {linters: [depguard], path: ^modules/pglock/pglock\.go$} # imports zerolog; legacy, deleted after the slog migration
-      - {linters: [depguard], path: ^modules/postgres/postgres\.go$} # imports zerolog; legacy, deleted after the slog migration
+      - {linters: [depguard, staticcheck], path: ^modules/migrations/module\.go$} # imports zerolog; SA1019 imports the deprecated modules/config; legacy, deleted with fx
+      - {linters: [depguard, staticcheck], path: ^modules/pglock/pglock\.go$} # imports zerolog; SA1019 imports the deprecated modules/config; legacy, deleted with fx
+      - {linters: [depguard], path: ^modules/pglock/pglock_test\.go$} # imports zerolog; legacy, deleted after the slog migration
+      - {linters: [depguard, staticcheck], path: ^modules/postgres/postgres\.go$} # imports zerolog; SA1019 imports the deprecated modules/config; legacy, deleted with fx
       - {linters: [depguard], path: ^modules/pprof/module\.go$} # imports zerolog; legacy, deleted after the slog migration
       - {linters: [depguard], path: ^modules/tracing/tracing\.go$} # imports zerolog; legacy, deleted after the slog migration
       - {linters: [depguard], path: ^modules/tracing/tracing_test\.go$} # imports zerolog; legacy, deleted after the slog migration
@@ -351,7 +361,6 @@ linters:
       - {linters: [depguard], path: ^pkg/queueworker/lifecycle\.go$} # imports zerolog; legacy, deleted after the slog migration
       - {linters: [depguard], path: ^pkg/queueworker/lifecycle_test\.go$} # imports zerolog; legacy, deleted after the slog migration
       - {linters: [depguard], path: ^pkg/redisx/topic\.go$} # imports zerolog; legacy, deleted after the slog migration
-      - {linters: [depguard], path: ^pkg/testkit/searchtest/searchtest_integration_test\.go$} # imports zerolog; legacy, deleted after the slog migration
       - {linters: [exhaustive], path: ^pkg/db/transactor/keyset\.go$} # 2 switches on nulls skip nullsDefault
       - {linters: [exhaustive], path: ^pkg/db/transactor/keyset_test\.go$} # 4 Key maps list only the sorts a test uses
       - {linters: [funlen], path: ^pkg/testkit/searchtest/searchtest\.go$} # CheckRefusals, 63 statements
