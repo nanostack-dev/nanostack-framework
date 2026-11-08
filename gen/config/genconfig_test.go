@@ -273,7 +273,7 @@ func TestSourceErrorsNameTheFix(t *testing.T) {
 		"no settings": {"", "Config has no settings"},
 	}
 	// fixes holds a part of the fix of the cases that check it.
-	fixes := map[string]string{"env clash": `replace its env tag with defaultenv:"X"`}
+	fixes := map[string]string{"env clash": `tag it defaultenv:"X" instead of env:"X"`}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()

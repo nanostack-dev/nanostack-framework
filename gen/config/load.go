@@ -309,8 +309,8 @@ func (l *loader) leaf(f *types.Var, tag reflect.StructTag, s *setting) bool {
 	}
 	if prev, clash := l.envs[s.env]; clash {
 		l.problemf(s.at,
-			fmt.Sprintf("give one of them another env, or replace its env tag with defaultenv:\"%s\" "+
-				"to read %s after its own env and the config files", s.env, s.env),
+			fmt.Sprintf("give one of them another env, or tag it defaultenv:\"%s\" instead of env:\"%s\" "+
+				"to read %s after its own env and the config files", s.env, s.env, s.env),
 			"%s: env %s is already used by %s", f.Name(), s.env, prev.path)
 		return false
 	}

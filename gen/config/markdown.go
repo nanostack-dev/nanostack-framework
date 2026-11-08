@@ -21,7 +21,7 @@ func renderMarkdown(m *model) []byte {
 	if slices.ContainsFunc(m.settings, func(s *setting) bool { return s.defEnv != "" }) {
 		w("A default that names an environment variable (\"env `NAME`\") is that variable's value,\n")
 		w("read only when the setting's own variable and the config files leave it unset;\n")
-		w("when that variable is unset too, the literal default after \"else\" applies.\n\n")
+		w("when that variable is unset too, the literal default after \"else\" applies, if any.\n\n")
 	}
 	w("`nano gen config` checks every default against its type and validation, except\n")
 	w("defaults of types that parse themselves (encoding.TextUnmarshaler, such as\n")

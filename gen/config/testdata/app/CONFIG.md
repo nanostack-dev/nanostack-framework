@@ -12,7 +12,7 @@ printed. Lists use commas in environment variables and YAML lists in files.
 
 A default that names an environment variable ("env `NAME`") is that variable's value,
 read only when the setting's own variable and the config files leave it unset;
-when that variable is unset too, the literal default after "else" applies.
+when that variable is unset too, the literal default after "else" applies, if any.
 
 `nano gen config` checks every default against its type and validation, except
 defaults of types that parse themselves (encoding.TextUnmarshaler, such as
