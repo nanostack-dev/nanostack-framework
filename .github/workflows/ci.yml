@@ -71,3 +71,18 @@ jobs:
           go-version-file: pkg/functional/go.mod
       - run: go vet ./...
       - run: go test -race -count=1 ./...
+      - name: Generated lint config is current
+        working-directory: .
+        run: go run ./lint/cmd/lintconfig -check -dir pkg/functional
+      - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          version-file: pkg/functional/.golangci-lint-version
+          install-only: true
+      # The ruleguard rules in gorules/ import go-ruleguard/dsl, which only the root module
+      # requires, so lint runs in a workspace of the repository's modules (as in db.yml).
+      - name: Lint
+        env:
+          GOWORK: ""
+        run: |
+          (cd ../.. && go work init . ./pkg/functional)
+          golangci-lint run ./...

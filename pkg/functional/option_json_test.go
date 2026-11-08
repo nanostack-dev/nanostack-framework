@@ -75,7 +75,7 @@ func TestOptionUnmarshalJSON(t *testing.T) {
 			t.Fatal(err)
 		}
 		var out functional.Option[time.Time]
-		if err := json.Unmarshal(data, &out); err != nil {
+		if err = json.Unmarshal(data, &out); err != nil {
 			t.Fatal(err)
 		}
 		if !out.IsPresent() || !out.Value().Equal(in.Value()) {

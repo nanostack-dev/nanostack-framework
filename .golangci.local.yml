@@ -120,8 +120,6 @@ linters:
       - {linters: [funlen], path: ^pkg/testkit/searchtest/searchtest\.go$} # CheckRefusals, 63 statements
       - {linters: [gocognit], path: ^modules/httpserver/module\.go$} # setupRouter, complexity 21
       - {linters: [gocognit], path: ^pkg/testkit/searchtest/searchtest\.go$} # CheckRefusals, complexity 34
-      - {linters: [gocritic], path: ^pkg/functional/slice_bench_test\.go$} # benchmarks Filter().Map() against FilterMap
-      - {linters: [gocritic], path: ^pkg/functional/slice_test\.go$} # tests the Filter().Map() and Map().FindFirst() chains
       - {linters: [gosec], path: ^modules/config/configloader\.go$} # G703 on the config and .env paths the service passes
       - {linters: [govet], path: ^modules/cache/redis_fallback_test\.go$} # shadow: loadErr
       - {linters: [govet], path: ^modules/config/configloader\.go$} # shadow: err x3
@@ -143,9 +141,8 @@ linters:
       - {linters: [govet], path: ^pkg/validate/validator\.go$} # shadow: err x12
       - {linters: [revive], path: ^pkg/db/transactor/keyset\.go$} # 587 lines, limit 400
       - {linters: [revive], path: ^pkg/db/transactor/keyset_test\.go$} # 450 lines, limit 400
-      - {linters: [revive], path: ^pkg/functional/result_test\.go$} # 410 lines, limit 400
       - {linters: [revive], path: ^pkg/validate/default_validator\.go$} # ValidateStruct stutters; renaming breaks callers
       - {linters: [unparam], path: ^pkg/tracing/http_test\.go$} # serve always gets GET
 nanostack:
   # One per linter in each rule above; lintconfig fails when they differ.
-  exclusion-budget: 75
+  exclusion-budget: 72
