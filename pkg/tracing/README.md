@@ -46,7 +46,9 @@ Each call gets a client span and a `traceparent` header. Requests must carry the
 
 ## Logs
 
-`log.TraceEnricher` (registered by `modules/logging`) adds `trace_id`/`span_id` on every `log.Bind`, including queue jobs whose context carries a span. `requestlog.Contextualize` adds the same fields to the request logger. Both derive from different base loggers, so no line carries a key twice; do not register `log.TraceEnricher` a second time.
+With `core/log` (slog), pass `LogAttrs` to the handler: `cfg.ContextAttrs = tracing.LogAttrs`. Every output line logged with a context that carries a valid span then has `trace_id` and `span_id`. `core/log` does not import OpenTelemetry; this is the only place the two meet.
+
+Legacy zerolog path: `log.TraceEnricher` (registered by `modules/logging`) adds `trace_id`/`span_id` on every `log.Bind`, including queue jobs whose context carries a span. `requestlog.Contextualize` adds the same fields to the request logger. Both derive from different base loggers, so no line carries a key twice; do not register `log.TraceEnricher` a second time.
 
 ## PostgreSQL
 
