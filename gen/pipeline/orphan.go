@@ -7,7 +7,8 @@ import (
 // scanOrphans reports, or without Check deletes, each file whose header
 // names a step that ran and that no unit of the run produces. It does not
 // run when discovery was incomplete: a declaration in a file that did not
-// parse would make its outputs look orphaned.
+// parse, or behind a misspelled //nano: directive, would make its outputs
+// look orphaned.
 func (r *runner) scanOrphans() {
 	if !r.found.complete {
 		return

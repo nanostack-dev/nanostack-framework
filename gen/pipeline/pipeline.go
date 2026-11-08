@@ -240,8 +240,11 @@ func (r *runner) setup() (Result, bool) {
 		return r.result(), false
 	}
 	if r.root, err = resolveRoot(r.wd, r.opts.Dir); err != nil {
+		// A -dir that names no directory of a module is bad usage.
 		r.problem(StepPlan, "", err)
-		return r.result(), false
+		res := r.result()
+		res.Exit = 2
+		return res, false
 	}
 	var projErr error
 	r.proj, r.declared, projErr = readProject(r.root)
@@ -252,12 +255,28 @@ func (r *runner) setup() (Result, bool) {
 	}
 	r.units = r.plan(selected, projErr == nil)
 	r.planned = map[string]bool{}
+	owner := map[string]*unit{}
 	for _, u := range r.units {
 		for _, out := range u.outputs {
+			if first, dup := owner[out]; dup && first != u {
+				r.problem(StepPlan, "", r.sharedOutput(out, first, u))
+			}
+			owner[out] = u
 			r.planned[out] = true
 		}
 	}
 	return Result{}, true
+}
+
+// sharedOutput reports two units that write the same file: the later one
+// would overwrite the earlier, and -check would find one of them stale.
+func (r *runner) sharedOutput(out string, first, second *unit) error {
+	file, fix := "", "give each package its own output; an error without a better fix is a nano gen bug, report it"
+	if r.proj.Env != "" && out == r.abs(r.proj.Env) {
+		file, fix = projectFile, "remove Env from "+projectFile+", so each Config package writes the .env.example next to it"
+	}
+	return gen.Errorf(file, 0, fix, "%s is written by %s %s and by %s %s",
+		r.rel(out), first.step.name, r.rel(first.dir), second.step.name, r.rel(second.dir))
 }
 
 // selectSteps returns the steps a run covers, as a set of names.

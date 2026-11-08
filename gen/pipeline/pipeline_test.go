@@ -358,6 +358,7 @@ func TestUsage(t *testing.T) {
 		{"-diff"},
 		{"config"},
 		{"-no-such-flag"},
+		{"-dir", "no-such-dir"},
 	} {
 		if _, stderr, code := nano(t, fixture, args...); code != 2 || stderr == "" {
 			t.Errorf("nano gen %v: exit %d, stderr %q; want 2 and a message", args, code, stderr)

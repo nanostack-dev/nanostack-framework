@@ -46,7 +46,10 @@ func (r *runner) plan(selected map[string]bool, withProject bool) []*unit {
 		if len(own) == 0 && r.failedNeed(s) == "" {
 			// A step with no unit, such as errors in a module without a
 			// catalogue, or validate in a declaration without an API, has
-			// run: its orphans are reported. runUnit marks the others.
+			// run: its orphans are reported. Only a need skipped for the
+			// declaration has failed yet; a step without a unit has nothing
+			// that a later failure could change, and every file with its
+			// header is an orphan. runUnit marks the steps with units.
 			r.ran[s.name] = true
 		}
 		units = append(units, own...)

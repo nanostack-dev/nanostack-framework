@@ -70,6 +70,9 @@ func readDeclaration(root string) (project.Project, error) {
 	if err != nil {
 		return project.Project{}, err
 	}
+	if err = onlyDeclared(fset, pkg); err != nil {
+		return project.Project{}, err
+	}
 	d := &decoder{fset: fset, info: pkg.TypesInfo, lines: map[string]int{}}
 	var p project.Project
 	d.decode(expr, reflect.ValueOf(&p).Elem(), "Project")
@@ -93,6 +96,28 @@ func projectLiteral(pkg *packages.Package) (ast.Expr, error) {
 	}
 	return nil, gen.Errorf(projectFile, 0, "give var Project a value: var Project = project.Project{...}",
 		"var Project has no value")
+}
+
+// onlyDeclared reports each use of var Project outside its declaration,
+// such as an assignment in init: nano reads only the literal, so the value
+// set there would be ignored.
+func onlyDeclared(fset *token.FileSet, pkg *packages.Package) error {
+	obj := pkg.Types.Scope().Lookup(projectVar)
+	var errs []error
+	for id, used := range pkg.TypesInfo.Uses {
+		if used == obj {
+			errs = append(errs, gen.Errorf(projectFile, fset.Position(id.Pos()).Line,
+				"set every value in the var Project literal, and do not refer to Project elsewhere",
+				"nano gen reads only the literal of var Project; this use of Project is ignored"))
+		}
+	}
+	slices.SortFunc(errs, func(a, b error) int {
+		var x, y *gen.Error
+		errors.As(a, &x)
+		errors.As(b, &y)
+		return x.Line - y.Line
+	})
+	return errors.Join(errs...)
 }
 
 func isProjectType(t types.Type) bool {
@@ -251,7 +276,16 @@ func checkProject(root string, p project.Project, d *decoder) error {
 		case dir == "":
 			errs = append(errs, gen.Errorf(projectFile, at("API"), "set API.Server.Dir to the oapi-codegen package",
 				"API.Server.Dir is empty"))
-		case relative("API.Server.Dir", dir):
+		case !relative("API.Server.Dir", dir):
+			// relative reported it.
+		case outside(dir):
+			// validate writes there: an output outside the run's
+			// directory escapes its orphan scan and may sit in another
+			// module (design P10).
+			errs = append(errs, gen.Errorf(projectFile, at("API.Server.Dir"),
+				"keep the server package inside the directory nano gen runs on, or run nano gen on a directory "+
+					"that holds it", "API.Server.Dir %s is outside the directory nano gen runs on", dir))
+		default:
 			if !dirExists(filepath.Join(root, dir)) {
 				errs = append(errs, gen.Errorf(projectFile, at("API.Server.Dir"),
 					"set API.Server.Dir to the directory of the oapi-codegen package",
@@ -263,6 +297,13 @@ func checkProject(root string, p project.Project, d *decoder) error {
 		relative("Env", p.Env)
 	}
 	return errors.Join(errs...)
+}
+
+// outside reports whether the relative path leaves the directory it is
+// relative to.
+func outside(path string) bool {
+	clean := filepath.Clean(filepath.FromSlash(path))
+	return clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator))
 }
 
 // specFix names the OpenAPI documents under root, when there are some.

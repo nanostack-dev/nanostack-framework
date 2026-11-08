@@ -42,8 +42,9 @@ type discovery struct {
 	manifests  []pkgFiles // packages whose nanogen file calls nano.Manifest
 	headers    []header   // files that start with a nano gen header
 	problems   []error    // guards and parse errors
-	// complete is false when a Go file did not parse: a declaration in it
-	// may be missing, so the orphan scan does not run.
+	// complete is false when a Go file did not parse, or holds an unknown
+	// //nano: directive: a declaration in it may be missing or misspelled,
+	// so the orphan scan does not run.
 	complete bool
 }
 
@@ -194,6 +195,9 @@ func (d *discovery) guard(fset *token.FileSet, path string, f *ast.File) {
 		for _, c := range group.List {
 			line := fset.Position(c.Slash).Line
 			if e := directiveProblem(path, line, c.Text); e != nil {
+				// A misspelled //nano:errors drops its catalogue from the
+				// plan; the scan would delete the catalogue's outputs.
+				d.complete = false
 				d.problems = append(d.problems, e)
 			}
 			if e := generateProblem(path, line, c.Text); e != nil {
