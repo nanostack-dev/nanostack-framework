@@ -104,7 +104,7 @@ internal/api/email_api.go:14: *emailHandler does not implement EmailServer (miss
   fix: add the method of EmailServer: func (h *emailHandler) SendEmail(ctx context.Context, request SendEmailRequestObject) (SendEmailResponseObject, error)
 ```
 
-wire reports no other compile error of a dependency; go build does. When no provider returns a tag interface, wire's fix names the provider to add: `add a provider that returns api.EmailServer to nano.Providers in cmd/app/manifest.go`. A `nano.Bind` whose type lacks a method gets the full method in its fix too.
+A method with the wrong signature gets `give SendEmail the signature of EmailServer:` and the same declaration. A handler in another package, such as an echopoint feature package, gets the server's types qualified by package name: `apigen.SendEmailRequestObject`. wire reports no other compile error of a dependency; go build does. When no provider returns a tag interface, wire's fix names the provider to add: `add a provider that returns api.EmailServer to nano.Providers in cmd/app/manifest.go`. A `nano.Bind` whose type lacks a method gets the full method in its fix too.
 
 ### Unenforced schema features
 

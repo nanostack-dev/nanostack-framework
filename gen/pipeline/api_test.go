@@ -279,6 +279,35 @@ var App = nano.Manifest("app", nano.Providers(NewGreeter, api.NewTypesHandler))
 		`api/types_api.go:6: *typesHandler does not implement TypeServer (missing method ListTypes)
   fix: add the method of TypeServer: func (t *typesHandler) ListTypes(ctx context.Context, request ListTypesRequestObject) (ListTypesResponseObject, error)
 `)
+
+	// A handler in another package, as in echopoint's feature packages, with
+	// a method of the wrong signature: the fix qualifies the server's types
+	// by package name, as the handler's file writes them.
+	if err = os.Remove(filepath.Join(dir, "api", "types_api.go")); err != nil {
+		t.Fatal(err)
+	}
+	write(t, dir, "feature/types.go", `package feature
+
+import (
+	"context"
+
+	"example.com/pipelineapp/api"
+)
+
+type typesHandler struct{}
+
+func (h *typesHandler) ListTypes(context.Context, int) {}
+
+// NewTypesHandler returns the Type handler, whose ListTypes is wrong.
+func NewTypesHandler() api.TypeServer { return &typesHandler{} }
+`)
+	edit(t, dir, "cmd/app/manifest.go", `"example.com/pipelineapp/api"`, `"example.com/pipelineapp/feature"`)
+	edit(t, dir, "cmd/app/manifest.go", "api.NewTypesHandler", "feature.NewTypesHandler")
+	stdout, stderr, code = nano(t, dir, "-check", "-only", "wire")
+	wantRun(t, "nano gen -check -only wire", code, 1, stdout, "", stderr,
+		`feature/types.go:14: *typesHandler does not implement api.TypeServer (wrong type for method ListTypes)
+  fix: give ListTypes the signature of api.TypeServer: func (h *typesHandler) ListTypes(ctx context.Context, request api.ListTypesRequestObject) (api.ListTypesResponseObject, error)
+`)
 }
 
 // goBuild runs go build ./... and go vet ./... in dir.

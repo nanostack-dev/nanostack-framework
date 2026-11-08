@@ -28,7 +28,7 @@ const (
 //
 //nolint:gochecknoglobals // compiled once.
 var implementPattern = regexp.MustCompile(
-	`(\S+) does not implement (\S+) \((?:missing method|wrong type for method) (\w+)\)`)
+	`(\S+) does not implement (\S+) \((missing method|wrong type for method) (\w+)\)`)
 
 // listErrorLine matches one error of the go command's compile report:
 // "file:line:col: msg".
@@ -51,10 +51,17 @@ func IsTagServer(fset *token.FileSet, obj types.Object) bool {
 
 // MethodDecl returns the declaration a type needs to have method m:
 // "func (h *emailHandler) SendEmail(ctx context.Context, …) (…, error)", with
-// the types qualified as code in package from writes them. The receiver
-// name is the one the type's other methods use, or its first letter.
+// the types qualified as code in package from writes them: a type of from
+// unqualified, any other by its package name, as in apigen.SendEmailRequestObject.
+// The receiver name is the one the type's other methods use, or its first
+// letter.
 func MethodDecl(recv types.Type, m *types.Func, from *types.Package) string {
-	qual := types.RelativeTo(from)
+	qual := func(p *types.Package) string {
+		if p == from {
+			return ""
+		}
+		return p.Name()
+	}
 	sig, ok := m.Type().(*types.Signature)
 	if !ok {
 		return ""
@@ -88,7 +95,8 @@ func receiverName(recv types.Type) string {
 }
 
 // tagMethodFix returns the fix of msg, a type error of pkg, when msg says a
-// type lacks a method of a tag interface: the method to add, in full.
+// type lacks a method of a tag interface, or has it with another signature:
+// the method to add, or the signature to give it, in full.
 func tagMethodFix(pkg *packages.Package, msg string) (string, bool) {
 	if pkg.Types == nil || pkg.Fset == nil {
 		return "", false
@@ -97,7 +105,7 @@ func tagMethodFix(pkg *packages.Package, msg string) (string, bool) {
 	if m == nil {
 		return "", false
 	}
-	recvText, ifaceText, method := m[1], m[2], m[3]
+	recvText, ifaceText, wrongType, method := m[1], m[2], m[3] != "missing method", m[4]
 	obj := lookup(pkg.Types, ifaceText)
 	if !IsTagServer(pkg.Fset, obj) {
 		return "", false
@@ -116,7 +124,11 @@ func tagMethodFix(pkg *packages.Package, msg string) (string, bool) {
 	if fn == nil || recv == nil {
 		return "", false
 	}
-	return "add the method of " + ifaceText + ": " + MethodDecl(recv, fn, pkg.Types), true
+	decl := MethodDecl(recv, fn, pkg.Types)
+	if wrongType {
+		return "give " + method + " the signature of " + ifaceText + ": " + decl, true
+	}
+	return "add the method of " + ifaceText + ": " + decl, true
 }
 
 // lookup resolves a type name as go/types prints it in an error of pkg:

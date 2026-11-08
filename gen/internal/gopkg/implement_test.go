@@ -27,7 +27,7 @@ func TestErrorLines(t *testing.T) {
 		t.Errorf("errorLines(type error) = %+v", one)
 	}
 	if m := implementPattern.FindStringSubmatch(report.Msg); m == nil || m[1] != "*h" || m[2] != "CheckServer" ||
-		m[3] != "Check" {
+		m[3] != "missing method" || m[4] != "Check" {
 		t.Errorf("implementPattern = %q", m)
 	}
 }
