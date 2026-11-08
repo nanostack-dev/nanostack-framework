@@ -62,10 +62,12 @@ type scope struct {
 // HTTPMiddleware opens a scope per request. Queue workers and crons open one
 // per job or tick.
 func WithScope(ctx context.Context) context.Context {
-	next := &scope{}
+	// Room for the request attributes and those an auth middleware adds,
+	// so SetAttrs rarely grows the slice.
+	next := &scope{attrs: make([]slog.Attr, 0, scopeCapacity)}
 	if parent, ok := ctx.Value(scopeKey{}).(*scope); ok {
 		parent.mu.RLock()
-		next.attrs = slices.Clone(parent.attrs)
+		next.attrs = append(next.attrs, parent.attrs...)
 		parent.mu.RUnlock()
 	}
 	return context.WithValue(ctx, scopeKey{}, next)
@@ -122,6 +124,26 @@ func Attrs(ctx context.Context) []slog.Attr {
 	}
 	return out
 }
+
+// viewAttrs is Attrs for the handlers, which only read the result: the
+// scope's attributes are not copied but clipped. That is safe because merge
+// never writes below the length of a slice it was given: it appends past it,
+// which a clipped view cannot see, or clones before it replaces.
+func viewAttrs(ctx context.Context) []slog.Attr {
+	var out []slog.Attr
+	if s, ok := ctx.Value(scopeKey{}).(*scope); ok {
+		s.mu.RLock()
+		out = slices.Clip(s.attrs)
+		s.mu.RUnlock()
+	}
+	if layered, ok := ctx.Value(attrsKey{}).([]slog.Attr); ok {
+		out = merge(out, layered)
+	}
+	return out
+}
+
+// scopeCapacity is the initial capacity of a scope's attributes.
+const scopeCapacity = 8
 
 // RequestID returns the request id that HTTPMiddleware put on ctx, or "" off
 // the HTTP path. Pass it to outbound calls and job payloads to correlate them.

@@ -19,6 +19,7 @@ slog.Level): those are checked when the service starts.
 | `app.start_timeout` | `APP_START_TIMEOUT` | duration | `15s` | no | no |  | StartTimeout bounds the whole start phase: every Starter together. |
 | `app.stop_timeout` | `APP_STOP_TIMEOUT` | duration | `15s` | no | no |  | StopTimeout bounds the stop phase: draining the Runners and every Stopper share it. A Stopper called after it has passed still gets StopGrace, so a slow Runner or Stopper never skips a later Stopper. |
 | `app.health_timeout` | `APP_HEALTH_TIMEOUT` | duration | `5s` | no | no |  | HealthTimeout bounds one readiness evaluation, all checks together. |
+| `app.drain_delay` | `APP_DRAIN_DELAY` | duration | `0s` | no | no |  | DrainDelay is how long Stop keeps the Runners serving after readiness turns unavailable, so a load balancer stops routing new requests to the instance before its listeners close. Set it to at least the load balancer's discovery refresh plus its health-check interval (about 10s behind Traefik with a 5s refresh and a 5s check; periodSeconds × failureThreshold plus a margin on Kubernetes). It is counted inside StopTimeout and must leave at least StopGrace of it for the Runners: Start fails when DrainDelay is above StopTimeout minus StopGrace. That check only guarantees StopGrace: nanoserver's shutdown_timeout must fit in StopTimeout minus DrainDelay. Zero, the default, cancels the Runners at once. |
 | `log.level` | `LOG_LEVEL` | string | `info` | no | no |  | Level is the minimum level: debug, info, warn or error, with optional offsets such as info+2, or a zerolog name (see ParseLevel). |
 | `log.format` | `LOG_FORMAT` | string |  | no | no |  | Format is json or text. Empty picks JSON in production and for any output that is not a terminal, and text on a development terminal. |
 | `log.wire` | `LOG_WIRE` | string | `slog` | no | no |  | Wire is slog or legacy (see Wire). |
@@ -27,8 +28,8 @@ slog.Level): those are checked when the service starts.
 | `log.version` | `SERVICE_VERSION` | string |  | no | no |  | Version names the running release on every line. |
 | `tracing.sdk_disabled` | `OTEL_SDK_DISABLED` | bool |  | no | no |  | SDKDisabled turns export off (OTEL_SDK_DISABLED=true). |
 | `tracing.traces_exporter` | `OTEL_TRACES_EXPORTER` | string |  | no | no |  | TracesExporter "none" turns export off. |
-| `tracing.endpoint` | `OTEL_EXPORTER_OTLP_ENDPOINT` | string |  | no | no |  | Endpoint is the OTLP base endpoint. Export needs it or TracesEndpoint. |
-| `tracing.traces_endpoint` | `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | string |  | no | no |  | TracesEndpoint is the OTLP traces endpoint. |
+| `tracing.endpoint` | `OTEL_EXPORTER_OTLP_ENDPOINT` | string |  | no | no |  | Endpoint is the OTLP/HTTP base URL, such as http://collector:4318. Spans go to its path joined with /v1/traces. Export needs it or TracesEndpoint. |
+| `tracing.traces_endpoint` | `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | string |  | no | no |  | TracesEndpoint is the full OTLP/HTTP traces URL, used as given. It wins over Endpoint. |
 | `tracing.sample_ratio` | `OTEL_TRACES_SAMPLER_ARG` | float64 | `1` | no | no | `min=0,max=1` | SampleRatio is the fraction of new root traces that are sampled. A sampled incoming parent (traceparent) is always kept. |
 | `postgres.host` | `POSTGRES_HOST` | string |  | yes | no |  | Host is the server host name or address. |
 | `postgres.port` | `POSTGRES_PORT` | int | `5432` | no | no | `min=1,max=65535` | Port is the server port. |
@@ -58,7 +59,7 @@ slog.Level): those are checked when the service starts.
 | `http.read_timeout` | `HTTP_READ_TIMEOUT` | duration | `60s` | no | no |  | ReadTimeout bounds reading the whole request. |
 | `http.write_timeout` | `HTTP_WRITE_TIMEOUT` | duration | `60s` | no | no |  | WriteTimeout bounds writing the response. Streaming routes extend it per request with http.ResponseController. |
 | `http.idle_timeout` | `HTTP_IDLE_TIMEOUT` | duration | `120s` | no | no |  | IdleTimeout closes an idle keep-alive connection. |
-| `http.shutdown_timeout` | `HTTP_SHUTDOWN_TIMEOUT` | duration | `5s` | no | no |  | ShutdownTimeout bounds the drain of in-flight requests when the App stops. Keep it below AppConfig.StopTimeout. After it, the remaining connections are closed. |
+| `http.shutdown_timeout` | `HTTP_SHUTDOWN_TIMEOUT` | duration | `5s` | no | no |  | ShutdownTimeout bounds the drain of in-flight requests when the App stops. Keep it below AppConfig.StopTimeout minus AppConfig.DrainDelay. After it, the remaining connections are closed. |
 | `pprof.enabled` | `ENABLE_PPROF` | bool | `false` | no | no |  | Enabled serves the profiles. Off by default: profiles expose memory contents and cost CPU. |
 | `pprof.addr` | `PPROF_ADDR` | string | `127.0.0.1:6060` | no | no |  | Addr is the listen address. Keep it on loopback; reach it through an SSH tunnel or a container exec. |
 | `pprof.read_header_timeout` | `PPROF_READ_HEADER_TIMEOUT` | duration | `30s` | no | no |  | ReadHeaderTimeout bounds reading the request headers. |

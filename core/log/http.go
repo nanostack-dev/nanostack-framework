@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"io"
 	"log/slog"
-	"maps"
 	"net"
 	"net/http"
 	"net/netip"
@@ -208,20 +207,59 @@ func writeSummary(
 // percent-encoding) is left out; the others are kept. The raw query is never
 // logged, since it would carry the secret values.
 func queryAttr(rawQuery string) slog.Attr {
-	values, _ := url.ParseQuery(rawQuery) // on error, the parameters that parsed are still worth logging
-	attrs := make([]slog.Attr, 0, len(values))
-	for _, name := range slices.Sorted(maps.Keys(values)) {
-		switch v := values[name]; {
+	if strings.Count(rawQuery, "&") >= maxQueryParams {
+		// url.ParseQuery refuses such a query as a whole; so does the log.
+		return slog.Attr{Key: KeyQuery, Value: slog.GroupValue()}
+	}
+	// One pass in place of url.ParseQuery, its map and its sorted keys: the
+	// same pairs are kept (a pair with ';' or a bad escape is left out), a
+	// stable sort by name keeps the values of a repeated name in order.
+	pairs := make([]queryPair, 0, strings.Count(rawQuery, "&")+1)
+	for pair := range strings.SplitSeq(rawQuery, "&") {
+		if pair == "" || strings.Contains(pair, ";") {
+			continue
+		}
+		rawName, rawValue, _ := strings.Cut(pair, "=")
+		name, err := url.QueryUnescape(rawName)
+		if err != nil {
+			continue
+		}
+		value, err := url.QueryUnescape(rawValue)
+		if err != nil {
+			continue
+		}
+		pairs = append(pairs, queryPair{name: name, value: value})
+	}
+	slices.SortStableFunc(pairs, func(a, b queryPair) int { return strings.Compare(a.name, b.name) })
+	attrs := make([]slog.Attr, 0, len(pairs))
+	for i := 0; i < len(pairs); {
+		j := i + 1
+		for j < len(pairs) && pairs[j].name == pairs[i].name {
+			j++
+		}
+		name := pairs[i].name
+		switch {
 		case secret.IsKey(name):
 			attrs = append(attrs, slog.String(name, secret.Redacted))
-		case len(v) == 1:
-			attrs = append(attrs, slog.String(name, v[0]))
+		case j-i == 1:
+			attrs = append(attrs, slog.String(name, pairs[i].value))
 		default:
-			attrs = append(attrs, slog.Any(name, v))
+			values := make([]string, 0, j-i)
+			for _, p := range pairs[i:j] {
+				values = append(values, p.value)
+			}
+			attrs = append(attrs, slog.Any(name, values))
 		}
+		i = j
 	}
 	return slog.Attr{Key: KeyQuery, Value: slog.GroupValue(attrs...)}
 }
+
+// maxQueryParams is url.ParseQuery's default limit on the parameters of a
+// query (GODEBUG urlmaxqueryparams).
+const maxQueryParams = 10_000
+
+type queryPair struct{ name, value string }
 
 // redactedQuery returns rawQuery as one string for HTTPOptions.LegacySummary:
 // each name=value pair as the client sent it, in its order and encoding, with
@@ -433,4 +471,24 @@ func (rec *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 // can still clear its write deadline or flush with an error result.
 func (rec *statusRecorder) Unwrap() http.ResponseWriter {
 	return rec.ResponseWriter
+}
+
+// ResponseStatus reports what HTTPMiddleware recorded on w or on a writer
+// that w wraps (through Unwrap): written is true once the handler wrote a
+// status, a byte or a flush, and status is the status sent then. known is
+// false when no writer of the chain is the middleware's, so the caller cannot
+// tell whether the response started. An error writer uses it so it does not
+// write a status after a stream started.
+func ResponseStatus(w http.ResponseWriter) (status int, written, known bool) {
+	for w != nil {
+		if rec, ok := w.(*statusRecorder); ok {
+			return rec.status, rec.wroteHeader, true
+		}
+		unwrapper, ok := w.(interface{ Unwrap() http.ResponseWriter })
+		if !ok {
+			break
+		}
+		w = unwrapper.Unwrap()
+	}
+	return 0, false, false
 }

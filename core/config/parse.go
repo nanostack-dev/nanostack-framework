@@ -83,7 +83,9 @@ func ParseDuration(s string) (time.Duration, error) {
 // through secret.RedactURL.
 func ParseURL(s string) (*url.URL, error) {
 	u, err := url.Parse(strings.TrimSpace(s))
-	if err != nil || u.Scheme == "" || u.Host == "" {
+	// A host with an empty port ("app:", or ":") is how url.Parse reads a
+	// password that is not percent-encoded, as in postgres://app:#pw@db.
+	if err != nil || u.Scheme == "" || u.Host == "" || strings.HasSuffix(u.Host, ":") {
 		return nil, errHiddenURL
 	}
 	return u, nil

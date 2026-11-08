@@ -5,4 +5,7 @@
 // through the beta. New code uses core/log.HTTPMiddleware;
 // HTTPOptions.LegacySummary keeps the keys of the legacy request line. See
 // docs/modules.md for the migration.
+//
+// Deprecated: removed with fx (ADR 0013). Use core/log.HTTPMiddleware; see
+// docs/modules.md.
 package requestlog

@@ -67,10 +67,16 @@ func TestParseHelpers(t *testing.T) {
 	if d, err := config.ParseDuration(" 1m30s "); err != nil || d != 90*time.Second {
 		t.Errorf("ParseDuration = %v, %v", d, err)
 	}
-	for _, bad := range []string{"/relative", "example.com", "https://"} {
+	// An empty port is the misparse of a password that is not
+	// percent-encoded: postgres://app:#pw@db reads as host "app:".
+	for _, bad := range []string{"/relative", "example.com", "https://", "postgres://app:#hunter2@db/app", "redis://:#pw@cache"} {
 		if _, err := config.ParseURL(bad); err == nil {
 			t.Errorf("ParseURL(%q) must fail", bad)
 		}
+	}
+	// A scoped npm registry has an '@' in its path; it is a valid setting.
+	if _, err := config.ParseURL("https://cdn.example/npm/@org/pkg"); err != nil {
+		t.Errorf("ParseURL of a path with '@' = %v", err)
 	}
 	if a, err := config.ParseText[netip.Addr]("10.0.0.1"); err != nil || a.String() != "10.0.0.1" {
 		t.Errorf("ParseText[netip.Addr] = %v, %v", a, err)

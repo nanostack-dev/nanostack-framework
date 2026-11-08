@@ -35,6 +35,12 @@ func Bind(ctx context.Context, src *nanoconf.Sources) (Config, error) {
 		c.App.HealthTimeout, _ = nanoconf.Scalar(b, k, nanoconf.ParseDuration)
 	}
 
+	// app.drain_delay: DrainDelay is how long Stop keeps the Runners serving after readiness
+	{
+		k := nanoconf.Key{Path: "app.drain_delay", Env: "APP_DRAIN_DELAY", Default: "0s"}
+		c.App.DrainDelay, _ = nanoconf.Scalar(b, k, nanoconf.ParseDuration)
+	}
+
 	// log.level: Level is the minimum level: debug, info, warn or error, with optional
 	{
 		k := nanoconf.Key{Path: "log.level", Env: "LOG_LEVEL", Default: "info"}
@@ -83,13 +89,13 @@ func Bind(ctx context.Context, src *nanoconf.Sources) (Config, error) {
 		c.Tracing.TracesExporter, _ = nanoconf.Scalar(b, k, nanoconf.ParseString[string])
 	}
 
-	// tracing.endpoint: Endpoint is the OTLP base endpoint. Export needs it or TracesEndpoint.
+	// tracing.endpoint: Endpoint is the OTLP/HTTP base URL, such as http://collector:4318.
 	{
 		k := nanoconf.Key{Path: "tracing.endpoint", Env: "OTEL_EXPORTER_OTLP_ENDPOINT", Optional: true}
 		c.Tracing.Endpoint, _ = nanoconf.Scalar(b, k, nanoconf.ParseString[string])
 	}
 
-	// tracing.traces_endpoint: TracesEndpoint is the OTLP traces endpoint.
+	// tracing.traces_endpoint: TracesEndpoint is the full OTLP/HTTP traces URL, used as given. It wins
 	{
 		k := nanoconf.Key{Path: "tracing.traces_endpoint", Env: "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", Optional: true}
 		c.Tracing.TracesEndpoint, _ = nanoconf.Scalar(b, k, nanoconf.ParseString[string])
@@ -348,6 +354,7 @@ func (c Config) LogValue() slog.Value {
 			slog.Duration("start_timeout", c.App.StartTimeout),
 			slog.Duration("stop_timeout", c.App.StopTimeout),
 			slog.Duration("health_timeout", c.App.HealthTimeout),
+			slog.Duration("drain_delay", c.App.DrainDelay),
 		),
 		slog.Group("log",
 			slog.String("level", c.Log.Level),

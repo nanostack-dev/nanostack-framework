@@ -19,6 +19,7 @@ func TestAppConfigTags(t *testing.T) {
 		"StartTimeout":  {"start_timeout", DefaultStartTimeout},
 		"StopTimeout":   {"stop_timeout", DefaultStopTimeout},
 		"HealthTimeout": {"health_timeout", DefaultHealthTimeout},
+		"DrainDelay":    {"drain_delay", 0},
 	}
 	typ := reflect.TypeFor[AppConfig]()
 	if typ.NumField() != len(want) {

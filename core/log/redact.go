@@ -49,19 +49,32 @@ func (h *redactHandler) Enabled(ctx context.Context, level slog.Level) bool {
 }
 
 func (h *redactHandler) Handle(ctx context.Context, r slog.Record) error {
-	dirty := false
+	// Find the first attribute that may change; the ones before it are
+	// copied as they are, so each attribute's key is checked once.
+	first, n := -1, 0
 	r.Attrs(func(a slog.Attr) bool {
-		dirty = mayChange(a)
-		return !dirty
-	})
-	if !dirty {
-		return h.inner.Handle(ctx, r)
-	}
-	out := slog.NewRecord(r.Time, r.Level, r.Message, r.PC)
-	r.Attrs(func(a slog.Attr) bool {
-		out.AddAttrs(clean(a, 0))
+		if mayChange(a) {
+			first = n
+			return false
+		}
+		n++
 		return true
 	})
+	if first < 0 {
+		return h.inner.Handle(ctx, r)
+	}
+	attrs := make([]slog.Attr, 0, r.NumAttrs())
+	n = 0
+	r.Attrs(func(a slog.Attr) bool {
+		if n >= first {
+			a = clean(a, 0)
+		}
+		attrs = append(attrs, a)
+		n++
+		return true
+	})
+	out := slog.NewRecord(r.Time, r.Level, r.Message, r.PC)
+	out.AddAttrs(attrs...)
 	return h.inner.Handle(ctx, out)
 }
 

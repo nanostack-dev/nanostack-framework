@@ -35,46 +35,48 @@ import (
 // override's lifecycle instead. A Starter or Runner that nothing takes is
 // always built.
 type Overrides struct {
-	ContextAttrs    log.ContextAttrs
-	ContextAttrss   []log.ContextAttrs
-	Logger          *slog.Logger
-	Provider        *nanotrace.Provider
-	TracerProvider  trace.TracerProvider
-	DB              *nanopg.DB
-	SqlDB           *sql.DB
-	Migrator        *nanomigrate.Migrator
-	Transactor      transactor.Transactor
-	Client          *pglock.Client
-	Store           nanocache.Store
-	Document        nanoapisec.Document
-	Resolver        *apisec.Resolver
-	Service         *Service
-	Handler         http.Handler
-	Server          *nanoserver.Server
-	NanopprofServer *nanopprof.Server
+	ContextAttrs     log.ContextAttrs
+	ContextAttrsList []log.ContextAttrs
+	Logger           *slog.Logger
+	Provider         *nanotrace.Provider
+	Installer        *nanotrace.Installer
+	TracerProvider   trace.TracerProvider
+	NanopgDB         *nanopg.DB
+	SQLDB            *sql.DB
+	Migrator         *nanomigrate.Migrator
+	Transactor       transactor.Transactor
+	Client           *pglock.Client
+	Store            nanocache.Store
+	Document         nanoapisec.Document
+	Resolver         *apisec.Resolver
+	Service          *Service
+	Handler          http.Handler
+	NanoserverServer *nanoserver.Server
+	NanopprofServer  *nanopprof.Server
 }
 
 // Components holds the values BuildComponents constructed, for tests that
 // need to reach them. A field holds the override when one was set, and the
 // zero value when no built value needed it.
 type Components struct {
-	ContextAttrs    log.ContextAttrs
-	ContextAttrss   []log.ContextAttrs
-	Logger          *slog.Logger
-	Provider        *nanotrace.Provider
-	TracerProvider  trace.TracerProvider
-	DB              *nanopg.DB
-	SqlDB           *sql.DB
-	Migrator        *nanomigrate.Migrator
-	Transactor      transactor.Transactor
-	Client          *pglock.Client
-	Store           nanocache.Store
-	Document        nanoapisec.Document
-	Resolver        *apisec.Resolver
-	Service         *Service
-	Handler         http.Handler
-	Server          *nanoserver.Server
-	NanopprofServer *nanopprof.Server
+	ContextAttrs     log.ContextAttrs
+	ContextAttrsList []log.ContextAttrs
+	Logger           *slog.Logger
+	Provider         *nanotrace.Provider
+	Installer        *nanotrace.Installer
+	TracerProvider   trace.TracerProvider
+	NanopgDB         *nanopg.DB
+	SQLDB            *sql.DB
+	Migrator         *nanomigrate.Migrator
+	Transactor       transactor.Transactor
+	Client           *pglock.Client
+	Store            nanocache.Store
+	Document         nanoapisec.Document
+	Resolver         *apisec.Resolver
+	Service          *Service
+	Handler          http.Handler
+	NanoserverServer *nanoserver.Server
+	NanopprofServer  *nanopprof.Server
 }
 
 // Build constructs the nanoexample app. It calls each needed provider once, in
@@ -98,7 +100,7 @@ func BuildComponents(ctx context.Context, cfg Config, ov Overrides) (_ *nano.App
 	// override replaces the value that needs it.
 	needServer2 := true
 	needServer := true
-	needHandler := needServer && ov.Server == nil
+	needHandler := needServer && ov.NanoserverServer == nil
 	needService := needHandler && ov.Handler == nil
 	needResolver := needService && ov.Service == nil
 	needDocument := needResolver && ov.Resolver == nil
@@ -107,12 +109,13 @@ func BuildComponents(ctx context.Context, cfg Config, ov Overrides) (_ *nano.App
 	needTransactor2 := needService && ov.Service == nil
 	needMigrator := true
 	needDb2 := (needMigrator && ov.Migrator == nil) || (needTransactor2 && ov.Transactor == nil) || (needClient && ov.Client == nil)
-	needDb := needDb2 && ov.SqlDB == nil
-	needTracerProvider := needDb && ov.DB == nil
-	needProvider := needTracerProvider && ov.TracerProvider == nil
-	needLogger := (needProvider && ov.Provider == nil) || (needDb && ov.DB == nil) || (needMigrator && ov.Migrator == nil) || (needClient && ov.Client == nil) || (needStore && ov.Store == nil) || (needServer && ov.Server == nil) || (needServer2 && ov.NanopprofServer == nil)
-	needContextAttrss := needLogger && ov.Logger == nil
-	needContextAttrs := needContextAttrss && ov.ContextAttrss == nil
+	needDb := needDb2 && ov.SQLDB == nil
+	needTracerProvider := needDb && ov.NanopgDB == nil
+	needInstaller := true
+	needProvider := (needInstaller && ov.Installer == nil) || (needTracerProvider && ov.TracerProvider == nil)
+	needLogger := (needProvider && ov.Provider == nil) || (needDb && ov.NanopgDB == nil) || (needMigrator && ov.Migrator == nil) || (needClient && ov.Client == nil) || (needStore && ov.Store == nil) || (needServer && ov.NanoserverServer == nil) || (needServer2 && ov.NanopprofServer == nil)
+	needContextAttrsList := needLogger && ov.Logger == nil
+	needContextAttrs := needContextAttrsList && ov.ContextAttrsList == nil
 
 	var contextAttrs log.ContextAttrs
 	if needContextAttrs {
@@ -123,12 +126,12 @@ func BuildComponents(ctx context.Context, cfg Config, ov Overrides) (_ *nano.App
 		}
 	}
 
-	var contextAttrss []log.ContextAttrs
-	if needContextAttrss {
-		if ov.ContextAttrss != nil {
-			contextAttrss = ov.ContextAttrss
+	var contextAttrsList []log.ContextAttrs
+	if needContextAttrsList {
+		if ov.ContextAttrsList != nil {
+			contextAttrsList = ov.ContextAttrsList
 		} else {
-			contextAttrss = []log.ContextAttrs{contextAttrs}
+			contextAttrsList = []log.ContextAttrs{contextAttrs}
 		}
 	}
 
@@ -137,7 +140,7 @@ func BuildComponents(ctx context.Context, cfg Config, ov Overrides) (_ *nano.App
 		if ov.Logger != nil {
 			logger = ov.Logger
 		} else {
-			logger, err = logging.NewLogger(cfg.Log, contextAttrss)
+			logger, err = logging.NewLogger(cfg.Log, contextAttrsList)
 			if err != nil {
 				return nil, nil, fmt.Errorf("nano: provide *slog.Logger: logging.NewLogger: %w", err)
 			}
@@ -155,7 +158,17 @@ func BuildComponents(ctx context.Context, cfg Config, ov Overrides) (_ *nano.App
 				return nil, nil, fmt.Errorf("nano: provide *nanotrace.Provider: nanotrace.NewProvider: %w", err)
 			}
 		}
-		app.Manage("*nanotrace.Provider", provider) // Starter, Stopper
+		app.Manage("*nanotrace.Provider", provider) // Stopper
+	}
+
+	var installer *nanotrace.Installer
+	if needInstaller {
+		if ov.Installer != nil {
+			installer = ov.Installer
+		} else {
+			installer = nanotrace.NewInstaller(provider)
+		}
+		app.Manage("*nanotrace.Installer", installer) // Starter
 	}
 
 	var tracerProvider trace.TracerProvider
@@ -170,8 +183,8 @@ func BuildComponents(ctx context.Context, cfg Config, ov Overrides) (_ *nano.App
 
 	var db *nanopg.DB
 	if needDb {
-		if ov.DB != nil {
-			db = ov.DB
+		if ov.NanopgDB != nil {
+			db = ov.NanopgDB
 		} else {
 			db, err = nanopg.NewDB(ctx, cfg.Postgres, logger, tracerProvider)
 			if err != nil {
@@ -183,8 +196,8 @@ func BuildComponents(ctx context.Context, cfg Config, ov Overrides) (_ *nano.App
 
 	var db2 *sql.DB
 	if needDb2 {
-		if ov.SqlDB != nil {
-			db2 = ov.SqlDB
+		if ov.SQLDB != nil {
+			db2 = ov.SQLDB
 		} else {
 			db2 = nanopg.SQL(db)
 		}
@@ -273,8 +286,8 @@ func BuildComponents(ctx context.Context, cfg Config, ov Overrides) (_ *nano.App
 
 	var server *nanoserver.Server
 	if needServer {
-		if ov.Server != nil {
-			server = ov.Server
+		if ov.NanoserverServer != nil {
+			server = ov.NanoserverServer
 		} else {
 			server = nanoserver.NewServer(cfg.HTTP, handler, logger)
 		}
@@ -294,5 +307,5 @@ func BuildComponents(ctx context.Context, cfg Config, ov Overrides) (_ *nano.App
 	if err = nanomigrate.Run(ctx, migrator); err != nil {
 		return nil, nil, fmt.Errorf("nano: invoke nanomigrate.Run: %w", err)
 	}
-	return app, &Components{ContextAttrs: contextAttrs, ContextAttrss: contextAttrss, Logger: logger, Provider: provider, TracerProvider: tracerProvider, DB: db, SqlDB: db2, Migrator: migrator, Transactor: transactor2, Client: client, Store: store, Document: document, Resolver: resolver, Service: service, Handler: handler, Server: server, NanopprofServer: server2}, nil
+	return app, &Components{ContextAttrs: contextAttrs, ContextAttrsList: contextAttrsList, Logger: logger, Provider: provider, Installer: installer, TracerProvider: tracerProvider, NanopgDB: db, SQLDB: db2, Migrator: migrator, Transactor: transactor2, Client: client, Store: store, Document: document, Resolver: resolver, Service: service, Handler: handler, NanoserverServer: server, NanopprofServer: server2}, nil
 }

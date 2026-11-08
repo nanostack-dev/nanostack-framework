@@ -25,13 +25,24 @@ type Provider struct {
 type Option func(*options)
 
 type options struct {
-	exporter sdktrace.SpanExporter
+	exporter    sdktrace.SpanExporter
+	endpointURL string
 }
 
 // WithExporter replaces the OTLP/HTTP exporter, typically with an in-memory
 // exporter in tests. It has no effect when cfg.Enabled is false.
 func WithExporter(exporter sdktrace.SpanExporter) Option {
 	return func(o *options) { o.exporter = exporter }
+}
+
+// WithEndpointURL sends spans to url, the full OTLP/HTTP traces URL such as
+// https://collector:4318/v1/traces, instead of the endpoint the exporter
+// reads from OTEL_EXPORTER_OTLP_ENDPOINT and OTEL_EXPORTER_OTLP_TRACES_ENDPOINT.
+// An http URL exports without TLS. Headers, timeout and compression still
+// come from the OTEL_* variables. An empty url keeps the environment. It has
+// no effect when cfg.Enabled is false or WithExporter is set.
+func WithEndpointURL(url string) Option {
+	return func(o *options) { o.endpointURL = url }
 }
 
 // New builds the provider described by cfg.
@@ -59,7 +70,11 @@ func New(ctx context.Context, cfg Config, opts ...Option) (*Provider, error) {
 
 	exporter := o.exporter
 	if exporter == nil {
-		otlp, err := otlptracehttp.New(ctx)
+		var exporterOpts []otlptracehttp.Option
+		if o.endpointURL != "" {
+			exporterOpts = append(exporterOpts, otlptracehttp.WithEndpointURL(o.endpointURL))
+		}
+		otlp, err := otlptracehttp.New(ctx, exporterOpts...)
 		if err != nil {
 			return nil, fmt.Errorf("create otlp trace exporter: %w", err)
 		}

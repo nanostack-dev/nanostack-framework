@@ -5,8 +5,11 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"sync"
+
+	nanolog "github.com/nanostack-dev/nanostack-framework/core/log"
 )
 
 // Report is the body of /livez and /readyz.
@@ -25,7 +28,11 @@ type Report struct {
 //     health check passes, 503 otherwise, including during shutdown so load
 //     balancers drain the instance first.
 //
-// The App does not listen itself; mount the handler on an admin server.
+// The App does not listen itself; mount the handler on an admin listener, not
+// on the API's. The body names each check with "ok" or "fail" only: a check's
+// error can hold an internal address or a database user. The App logs that
+// error when the check starts failing or fails differently, and Ready returns
+// it to callers in the process.
 func (a *App) AdminHandler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /livez", a.serveLivez)
@@ -99,13 +106,37 @@ func (a *App) evaluate(ctx context.Context) (map[string]string, error) {
 			}
 			key = fmt.Sprintf("%s#%d", c.name, n)
 		}
+		results[key] = "ok"
 		if errs[i] != nil {
-			results[key] = errs[i].Error()
-		} else {
-			results[key] = "ok"
+			results[key] = "fail"
 		}
+		a.noteCheck(ctx, key, errs[i])
 	}
 	return results, errors.Join(append([]error{notRunning}, errs...)...)
+}
+
+// noteCheck logs the error of a check when it changes: a passing check
+// starts failing, or a failing one fails with another error. A probe every
+// few seconds then logs a failure once, not on every probe.
+func (a *App) noteCheck(ctx context.Context, key string, err error) {
+	msg := ""
+	if err != nil {
+		msg = err.Error()
+	}
+	a.checkMu.Lock()
+	if a.lastChecks == nil {
+		a.lastChecks = map[string]string{}
+	}
+	last, seen := a.lastChecks[key]
+	a.lastChecks[key] = msg
+	a.checkMu.Unlock()
+	switch {
+	case msg == last && (seen || msg == ""):
+	case msg == "":
+		a.logger().InfoContext(ctx, "nano: health check passes again", slog.String("check", key))
+	default:
+		a.logger().WarnContext(ctx, "nano: health check failed", slog.String("check", key), nanolog.Err(err))
+	}
 }
 
 func writeReport(w http.ResponseWriter, code int, rep Report) {

@@ -23,7 +23,8 @@ const StopGrace = time.Second
 // Stoppers share one deadline, StopTimeout; a Stopper called after it gets
 // StopGrace (see StopGrace). Stop keeps going past failures, and the result
 // joins every error. Stop ignores the cancellation of ctx (shutdown usually
-// follows a cancelled context) but keeps its values.
+// follows a cancelled context) but keeps its values. The one exception is
+// the DrainDelay wait: a ctx cancelled during it ends it early.
 //
 // A Runner or Stopper that overruns its deadline is reported and left
 // running: the App stops waiting for it but cannot interrupt it.
@@ -37,6 +38,7 @@ func (a *App) Stop(ctx context.Context) error {
 
 func (a *App) stop(ctx context.Context) error {
 	a.mu.Lock()
+	wasRunning := a.state == stateRunning
 	a.state = stateStopping
 	cancelRun := a.cancelRun
 	a.mu.Unlock()
@@ -50,6 +52,9 @@ func (a *App) stop(ctx context.Context) error {
 
 	var errs []error
 	if cancelRun != nil {
+		if wasRunning && a.cfg.DrainDelay > 0 {
+			a.drain(ctx)
+		}
 		cancelRun()
 		if err := a.drainRunners(deadline); err != nil {
 			logger.ErrorContext(ctx, "nano: runners did not stop", nanolog.Err(err))
@@ -86,6 +91,29 @@ func (a *App) stop(ctx context.Context) error {
 	logger.InfoContext(ctx, "nano: stopped",
 		slog.Int("failures", len(errs)), slog.Duration("took", time.Since(began)))
 	return errors.Join(errs...)
+}
+
+// drain keeps the Runners serving for DrainDelay: readiness already answers
+// unavailable, and the load balancers need that long to see it. Start
+// checked that DrainDelay leaves the Runners StopGrace of StopTimeout.
+//
+// A ctx cancelled during the drain ends it early, so a caller can cut the
+// wait short. A ctx already cancelled when the drain begins does not: a
+// shutdown usually follows a cancelled context, and the drain is for it.
+func (a *App) drain(ctx context.Context) {
+	logger := a.logger()
+	logger.InfoContext(ctx, "nano: draining", slog.Duration("drain_delay", a.cfg.DrainDelay))
+	cut := ctx.Done()
+	if ctx.Err() != nil {
+		cut = nil
+	}
+	timer := time.NewTimer(a.cfg.DrainDelay)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+	case <-cut:
+		logger.InfoContext(ctx, "nano: drain cut short", slog.Any(nanolog.KeyCause, context.Cause(ctx)))
+	}
 }
 
 // drainRunners waits for every Runner to return, until deadline.
@@ -139,21 +167,28 @@ func runGuarded(ctx context.Context, fn func(context.Context) error) (err error)
 // becomes an error. fn keeps running in the background after call gave up:
 // the App cannot interrupt it.
 func call(ctx context.Context, fn func(context.Context) error) error {
+	_, err := callTracked(ctx, fn)
+	return err
+}
+
+// callTracked is call that also hands back, when it gave up on fn, the
+// channel on which fn's result arrives later; nil when fn returned.
+func callTracked(ctx context.Context, fn func(context.Context) error) (late <-chan error, err error) {
 	done := make(chan error, 1)
 	go func() { done <- runGuarded(ctx, fn) }()
 	select {
-	case err := <-done:
-		return err
+	case err = <-done:
+		return nil, err
 	case <-ctx.Done():
 	}
 	select {
-	case err := <-done:
-		return err
+	case err = <-done:
+		return nil, err
 	default:
 	}
 	cause := context.Cause(ctx)
 	if errors.Is(cause, context.DeadlineExceeded) {
-		return fmt.Errorf("did not return in time: %w", cause)
+		return done, fmt.Errorf("did not return in time: %w", cause)
 	}
-	return fmt.Errorf("interrupted: %w", cause)
+	return done, fmt.Errorf("interrupted: %w", cause)
 }

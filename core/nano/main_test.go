@@ -3,6 +3,7 @@ package nano
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"testing"
@@ -65,6 +66,54 @@ func TestRunExitCodes(t *testing.T) {
 		}
 	})
 
+	// SIGTERM while Build runs a migration or pings a server is a requested
+	// shutdown too, as it is one step later, during start.
+	t.Run("shutdown during build", func(t *testing.T) {
+		for name, cause := range map[string]func(ctx context.Context) error{
+			"migration stopped": func(ctx context.Context) error {
+				return fmt.Errorf("nano: invoke migrations: %w", stopped{context.Cause(ctx)})
+			},
+			"ping cancelled": func(context.Context) error {
+				return errors.Join(fmt.Errorf("nanopg: ping db:5432: %w", context.Canceled))
+			},
+		} {
+			t.Run(name, func(t *testing.T) {
+				ctx, cancel := context.WithCancel(t.Context())
+				code := run(ctx, func(ctx context.Context) (*App, error) {
+					cancel() // stands in for SIGTERM
+					return nil, cause(ctx)
+				}, quiet)
+				if code != ExitOK {
+					t.Fatalf("exit = %d, want %d", code, ExitOK)
+				}
+			})
+		}
+	})
+
+	t.Run("build failure besides the shutdown", func(t *testing.T) {
+		for name, err := range map[string]error{
+			"stop failed too": errors.Join(fmt.Errorf("ping: %w", context.Canceled), errors.New("flush failed")),
+			"dirty migration": errors.New("nanomigrate: migrate (stop requested: context canceled): dirty version 3"),
+		} {
+			t.Run(name, func(t *testing.T) {
+				ctx, cancel := context.WithCancel(t.Context())
+				code := run(ctx, func(context.Context) (*App, error) { cancel(); return nil, err }, quiet)
+				if code != ExitFailure {
+					t.Fatalf("exit = %d, want %d", code, ExitFailure)
+				}
+			})
+		}
+	})
+
+	t.Run("cancellation without a shutdown request", func(t *testing.T) {
+		code := run(t.Context(), func(context.Context) (*App, error) {
+			return nil, fmt.Errorf("nanopg: ping: %w", context.Canceled)
+		}, quiet)
+		if code != ExitFailure {
+			t.Fatalf("exit = %d, want %d", code, ExitFailure)
+		}
+	})
+
 	t.Run("runner failure", func(t *testing.T) {
 		code := run(t.Context(), func(context.Context) (*App, error) {
 			app := newTestApp(AppConfig{})
@@ -76,3 +125,10 @@ func TestRunExitCodes(t *testing.T) {
 		}
 	})
 }
+
+// stopped has the shape of nanomigrate's stop error: a marker over the
+// cause, in one chain.
+type stopped struct{ cause error }
+
+func (e stopped) Error() string { return "stopped before the last migration ran: " + e.cause.Error() }
+func (e stopped) Unwrap() error { return e.cause }

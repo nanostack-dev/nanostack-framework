@@ -69,10 +69,10 @@ func New(cfg Config) *slog.Logger {
 // tracing.LogAttrs. Use it when a handler is built outside NewHandler, as
 // logtest does, so that what a test sees matches production.
 func Wrap(h slog.Handler, contextAttrs ...func(context.Context) []slog.Attr) slog.Handler {
-	extract := Attrs
+	extract := viewAttrs
 	if len(contextAttrs) > 0 {
 		extract = func(ctx context.Context) []slog.Attr {
-			attrs := Attrs(ctx)
+			attrs := viewAttrs(ctx)
 			for _, f := range contextAttrs {
 				attrs = merge(attrs, f(ctx))
 			}
@@ -166,12 +166,16 @@ func (h *contextHandler) WithGroup(name string) slog.Handler {
 // site also logs is left to the call site: it is the more specific value, and
 // emitting both would duplicate the key.
 func prepend(r slog.Record, attrs []slog.Attr) slog.Record {
-	out := slog.NewRecord(r.Time, r.Level, r.Message, r.PC)
-	out.AddAttrs(withoutRecordKeys(attrs, r)...)
+	// One slice and one AddAttrs, so the record grows once.
+	kept := withoutRecordKeys(attrs, r)
+	all := make([]slog.Attr, 0, len(kept)+r.NumAttrs())
+	all = append(all, kept...)
 	r.Attrs(func(a slog.Attr) bool {
-		out.AddAttrs(a)
+		all = append(all, a)
 		return true
 	})
+	out := slog.NewRecord(r.Time, r.Level, r.Message, r.PC)
+	out.AddAttrs(all...)
 	return out
 }
 

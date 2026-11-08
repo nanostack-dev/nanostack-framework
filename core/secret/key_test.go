@@ -15,12 +15,17 @@ func TestIsKey(t *testing.T) {
 		"secret_key", "SECRET_KEY", "aws_secret_access_key", "AWS_SECRET_ACCESS_KEY", "access_key",
 		"signing_key", "encryption_key", "hmac_key", "client_key", "session_key", "master_key",
 		"X-Hub-Signature", "dsn", "DATABASE_URL", "database_url", "db_url", "connection_string",
+		// Bracket notation (qs, PHP, Rails): the last named segment decides.
+		"token[]", "user[password]", "access_token[0]", "user[password][0]", "creds[api_key]",
+		// Short names of signed URLs and forms.
+		"sig", "pwd", "jwt", "passcode", "SIG", "id_jwt",
 	}
 	public := []string{
 		"api_key_id", "api_key_name", "token_count", "max_tokens", "input_tokens", "secret_name",
 		"password_reset_at", "org_id", "user_email", "", "key", "status",
 		"key_id", "secret_key_id", "access_key_id", "public_key", "cache_key", "idempotency_key",
 		"object_key", "database", "url",
+		"status_code", "error_code", "tokens[0]", "user[name]", "items[0][id]", "[]", "oauth", "design",
 	}
 	for _, key := range secrets {
 		if !secret.IsKey(key) {
