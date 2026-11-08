@@ -65,7 +65,7 @@ func TestPlainTypesMatchesClientSpecScript(t *testing.T) {
 	}
 	hinted := generateOne(t, Options{Spec: filepath.Join(dir, "openapi.yaml"),
 		Clients: []project.Client{{Dir: out, Package: "client"}}})
-	for _, hint := range []string{"nullable.Nullable[string]", "role.SortField", "search.Pagination", "[]uuid.UUID"} {
+	for _, hint := range []string{"nullable.Nullable[string]", "role.SortField", "search.Pagination", "[]uuid.UUID", "role.Owner"} {
 		if !bytes.Contains(hinted, []byte(hint)) {
 			t.Errorf("the client without PlainTypes lacks %s; the fixture no longer exercises it", hint)
 		}
