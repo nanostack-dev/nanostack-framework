@@ -29,3 +29,4 @@ Accepted on 2026-11-07, with the error catalogue generator:
 Accepted on 2026-11-08, with the `nano gen` pipeline:
 
 - [0023: `nano gen` runs every generation step, in a fixed order, from one declaration](0023-nano-gen-pipeline.md)
+- [0024: The api step splits the strict server by OpenAPI tag](0024-api-split-by-tag.md)
