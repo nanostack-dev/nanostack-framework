@@ -26,11 +26,17 @@ const (
 //
 // build binds the configuration and calls the generated Build; ExampleMain
 // shows it.
+//
+// Main logs through slog.Default() as it is when it logs, not as it was when
+// Main began: build usually installs the service's logger with
+// slog.SetDefault, and a logger taken before that writes through the log
+// package, which SetDefault routes into the new handler at Info.
 func Main(build func(context.Context) (*App, error)) {
-	os.Exit(run(context.Background(), build, slog.Default()))
+	os.Exit(run(context.Background(), build, slog.Default))
 }
 
-func run(parent context.Context, build func(context.Context) (*App, error), logger *slog.Logger) int {
+// run is Main without the exit. logger returns the logger for each line.
+func run(parent context.Context, build func(context.Context) (*App, error), logger func() *slog.Logger) int {
 	ctx, stopSignals := signal.NotifyContext(parent, os.Interrupt, syscall.SIGTERM)
 	defer stopSignals()
 	go func() {
@@ -47,16 +53,16 @@ func run(parent context.Context, build func(context.Context) (*App, error), logg
 		// generated Build has already stopped what it built; a failure of
 		// that stop is not a cancellation and keeps the exit code at 1.
 		if ctx.Err() != nil && onlyCancellation(err) {
-			logger.InfoContext(ctx, "nano: shutdown requested while building", nanolog.Err(err))
+			logger().InfoContext(ctx, "nano: shutdown requested while building", nanolog.Err(err))
 			return ExitOK
 		}
-		logger.ErrorContext(ctx, "nano: build failed", nanolog.Err(err))
+		logger().ErrorContext(ctx, "nano: build failed", nanolog.Err(err))
 		return ExitFailure
 	}
 	// The App logged each start, Runner and stop failure at Error where it
 	// happened; logging the joined error again would count each one twice.
 	if err = app.Run(ctx); err != nil && !onlyShutdownDuringStart(err) {
-		logger.InfoContext(ctx, "nano: exiting", slog.Int("exit_code", ExitFailure))
+		logger().InfoContext(ctx, "nano: exiting", slog.Int("exit_code", ExitFailure))
 		return ExitFailure
 	}
 	return ExitOK
