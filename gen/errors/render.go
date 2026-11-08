@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/nanostack-dev/nanostack-framework/gen"
 	"github.com/nanostack-dev/nanostack-framework/gen/internal/importset"
 )
 
@@ -85,7 +86,8 @@ func renderGo(c *catalogue, scope []string) ([]byte, error) {
 	file.WriteString(b.String())
 	src, err := format.Source([]byte(file.String()))
 	if err != nil {
-		return nil, fmt.Errorf("format generated code: %w\n%s", err, file.String())
+		return nil, gen.Errorf("", 0, "report this nano gen errors bug with the declaration",
+			"format generated code: %v\n%s", err, file.String())
 	}
 	return src, nil
 }

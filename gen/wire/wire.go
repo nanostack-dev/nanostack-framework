@@ -49,6 +49,9 @@ type Options struct {
 	// Check makes Run compare instead of writing: it returns an error
 	// wrapping gen.ErrStale when wire.gen.go is missing or differs.
 	Check bool
+	// Overlay replaces files in every package load, keyed by absolute
+	// path, as in golang.org/x/tools/go/packages.
+	Overlay map[string][]byte
 }
 
 func (o Options) resolve() (Options, error) {
@@ -57,7 +60,7 @@ func (o Options) resolve() (Options, error) {
 	}
 	dir, err := filepath.Abs(o.Dir)
 	if err != nil {
-		return o, err
+		return o, gen.EnvErrorf("run from a directory that exists", "resolve %s: %v", o.Dir, err)
 	}
 	o.Dir = dir
 	if o.Out == "" {
@@ -68,18 +71,18 @@ func (o Options) resolve() (Options, error) {
 	}
 	if o.Base == "" {
 		if o.Base, err = os.Getwd(); err != nil {
-			return o, err
+			return o, gen.EnvErrorf("run from a directory that exists", "find the working directory: %v", err)
 		}
 	}
 	if o.Base, err = filepath.Abs(o.Base); err != nil {
-		return o, err
+		return o, gen.EnvErrorf("pass a Base directory that exists", "resolve %s: %v", o.Base, err)
 	}
 	return o, nil
 }
 
 // Generate loads the manifest package and returns wire.gen.go, without
-// touching the disk. A graph problem is reported as an *Error listing every
-// diagnostic.
+// touching the disk. Graph problems are returned as one *gen.Error each,
+// joined, in discovery order, with paths relative to Options.Base.
 func Generate(opts Options) ([]gen.File, error) {
 	opts, err := opts.resolve()
 	if err != nil {
@@ -118,7 +121,8 @@ func run(opts Options) ([]string, error) {
 
 // Main runs `nano gen wire [-dir dir] [-out dir] [-tags list] [-check]` and
 // returns the exit code: 0 on success, 1 on a manifest error or stale output,
-// 2 on bad flags; -h prints the flags and returns 0. It is a gen.Command.
+// 2 on bad flags, 3 when the environment fails; -h prints the flags and
+// returns 0. It is a gen.Command.
 func Main(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("nano gen wire", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -135,14 +139,7 @@ func Main(args []string, stdout, stderr io.Writer) int {
 	}
 	written, err := run(opts)
 	if err != nil {
-		if gerr, ok := errors.AsType[*Error](err); ok {
-			for _, d := range gerr.Diagnostics {
-				_, _ = fmt.Fprintln(stderr, d)
-			}
-		} else {
-			_, _ = fmt.Fprintf(stderr, "nano gen wire: %v\n", err)
-		}
-		return 1
+		return gen.Report(stderr, "wire", err)
 	}
 	for _, path := range written {
 		_, _ = fmt.Fprintf(stdout, "nano gen wire: wrote %s\n", path)
@@ -150,53 +147,32 @@ func Main(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-// Diagnostic is one problem in the manifest or provider graph.
-type Diagnostic struct {
-	Pos string // file:line, relative to Options.Base; empty when unknown
-	Msg string
+// pos is a source position for generator errors, relative to Options.Base.
+// The zero pos is unknown.
+type pos struct {
+	file string
+	line int
 }
 
-func (d Diagnostic) String() string {
-	if d.Pos == "" {
-		return d.Msg
-	}
-	return d.Pos + ": " + d.Msg
-}
-
-// Error lists every diagnostic of a failed generation, in discovery order.
-type Error struct {
-	Diagnostics []Diagnostic
-}
-
-func (e *Error) Error() string {
-	lines := make([]string, len(e.Diagnostics))
-	for i, d := range e.Diagnostics {
-		lines[i] = d.String()
-	}
-	return strings.Join(lines, "\n")
-}
-
-// diags collects diagnostics without duplicates.
+// diags collects the problems of the manifest and the provider graph,
+// without duplicates, in discovery order.
 type diags struct {
-	list []Diagnostic
-	seen map[Diagnostic]bool
+	list []error
+	seen map[gen.Error]bool
 }
 
-func (d *diags) add(pos, format string, args ...any) {
-	diag := Diagnostic{Pos: pos, Msg: fmt.Sprintf(format, args...)}
+func (d *diags) add(at pos, fix, format string, args ...any) {
+	e := gen.Errorf(at.file, at.line, fix, format, args...)
 	if d.seen == nil {
-		d.seen = map[Diagnostic]bool{}
+		d.seen = map[gen.Error]bool{}
 	}
-	if d.seen[diag] {
+	if d.seen[*e] {
 		return
 	}
-	d.seen[diag] = true
-	d.list = append(d.list, diag)
+	d.seen[*e] = true
+	d.list = append(d.list, e)
 }
 
 func (d *diags) err() error {
-	if len(d.list) == 0 {
-		return nil
-	}
-	return &Error{Diagnostics: d.list}
+	return errors.Join(d.list...)
 }

@@ -1,7 +1,14 @@
-nano.go:9: provider badsig.NewTwoValues must return T, (T, error) or (T, func(), error); got (*badsig.Thing, string)
+nano.go:9: provider badsig.NewTwoValues returns (*badsig.Thing, string)
+  fix: return T, (T, error) or (T, func(), error)
 nano.go:10: nano.Providers: badsig.NewVariadic is variadic; providers take one value per parameter
-nano.go:11: provider badsig.NewNothing must return T, (T, error) or (T, func(), error); got ()
+  fix: take a slice parameter, or wrap the function in one with fixed parameters
+nano.go:11: provider badsig.NewNothing returns ()
+  fix: return T, (T, error) or (T, func(), error)
 nano.go:12: nano.Providers takes package-level functions; (*Thing).Method is not one
+  fix: list a package-level function, or wrap the value in one
 nano.go:14: nano.Bind[badsig.Store, *badsig.Thing]: *badsig.Thing does not implement badsig.Store (missing method Get)
+  fix: implement the missing methods on *badsig.Thing, or bind another type
 nano.go:15: nano.Bind[*badsig.Thing, *badsig.Thing]: *badsig.Thing is not an interface
+  fix: bind an interface type: nano.Bind[Interface, Implementation]()
 nano.go:16: nano.Invoke: badsig.Returns must return nothing or error; got (int)
+  fix: return nothing, or only an error

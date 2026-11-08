@@ -1,1 +1,2 @@
 nano.go:9: nano.Collect[collecterr.Route]: collecterr.NewNotARoute returns *collecterr.NotARoute, which is not assignable to collecterr.Route
+  fix: return a value assignable to collecterr.Route, or move it out of the collection

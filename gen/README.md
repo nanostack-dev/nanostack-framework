@@ -6,14 +6,14 @@ Generated application files remain visible and owned by each service.
 
 Current packages:
 
-- `gen` (this directory): the contract every generator follows, so the CLI, `gen/cmd/nano`, routes `nano gen <name>` to it. A generator has `Options` with a `Check` field, `Generate(Options) ([]gen.File, error)`, `Run(Options) error` (stale output wraps `gen.ErrStale`, written with `gen.Sync`) and a `Main(args, stdout, stderr) int` command. Exit codes: 0 success, 1 source error or stale output, 2 bad usage. `config`, `errors`, `validate` and `wire` follow it; `validate.Generate` returns a `*Result` that holds the `gen.File` and the schema features it does not enforce. `Main` adds the `nano gen <name>: ` prefix to an error once; the library functions add none.
+- `gen` (this directory): the contract every generator follows, so the CLI, `gen/cmd/nano`, routes `nano gen <name>` to it. A generator has `Options` with a `Check` and an `Overlay` field, `Generate(Options) ([]gen.File, error)`, `Run(Options) error` (stale output wraps `gen.ErrStale`, written with `gen.Sync`) and a `Main(args, stdout, stderr) int` command. Every error is a `*gen.Error{File, Line, Msg, Fix}` with a fix, or several joined; `Main` prints them with `gen.Report`. Exit codes: 0 success, 1 source error or stale output, 2 bad usage, 3 environment failure (an error that wraps `gen.ErrEnvironment`). `Overlay` replaces files in every package load, keyed by absolute path. `config`, `errors`, `validate` and `wire` follow it; `validate.Generate` returns a `*Result` that holds the `gen.File` and the schema features it does not enforce. `Report` prints `file:line: msg`, or `nano gen <name>: msg` when an error has no file, then `  fix: <fix>`; the library functions add no prefix.
 - `wire`: `nano gen wire`, which reads a `nano.Manifest` and writes `wire.gen.go` (`Build`, `BuildComponents`, `Overrides`, `Components`). It replaces Fx; the runtime it targets is [`core/nano`](../core/nano). Guide: [generation](../docs/generation.md#wiring-nano-gen-wire).
 - `oapi`: oapi-codegen path and config conventions, including the server config of the [HTTP boundary](../docs/http-boundary.md)
 - `validate`: `nano gen validate`, which writes request validators from the OpenAPI document (see [generation](../docs/generation.md#openapi))
 - `jet`: go-jet database generation configuration conventions
 - `config`: `nano gen config`, a reflection-free configuration binder, `CONFIG.md` and `.env.example` from a tagged Go struct (runtime: `core/config`)
 - `errors`: `nano gen errors`, typed error constructors and `ERRORS.md` from a `//nano:errors` Go interface (runtime: `core/fault`)
-- `internal`: helpers the generators share (import naming, package loading)
+- `internal`: helpers the generators share (import naming, package loading and its errors, and `gentest`, which fails a test on an error without a fix)
 
 [docs/generation.md](../docs/generation.md) describes the tags, directives and `-check`.
 

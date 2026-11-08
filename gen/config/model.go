@@ -56,7 +56,7 @@ type setting struct {
 	checks   []check
 	rawCheck string // validate tag as written, for the reference doc
 	doc      string
-	at       string // file:line for generator errors
+	at       pos // where the field is declared, for generator errors
 }
 
 func (s *setting) secret() bool { return s.kind == kindSecret }

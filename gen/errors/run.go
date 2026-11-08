@@ -67,6 +67,11 @@ type Options struct {
 	// Check compares instead of writing and returns an error wrapping
 	// gen.ErrStale on drift.
 	Check bool
+	// Overlay replaces files in the package loads, keyed by absolute path,
+	// as in golang.org/x/tools/go/packages. The output file is always
+	// replaced: by an empty file, then by the new output for the final
+	// type check.
+	Overlay map[string][]byte
 }
 
 func (o Options) withDefaults() Options {
@@ -85,7 +90,7 @@ func (o Options) withDefaults() Options {
 // Generate returns the generated files without touching the disk.
 func Generate(opts Options) ([]gen.File, error) {
 	opts = opts.withDefaults()
-	l, c, err := parseDir(opts.Dir, opts.Out)
+	l, c, err := parseDir(opts)
 	if err != nil {
 		return nil, err
 	}
@@ -120,8 +125,8 @@ func run(opts Options) ([]string, error) {
 
 // Main runs `nano gen errors [-dir d] [-out f] [-doc f] [-check]` and returns
 // the process exit code: 0 on success, 1 on stale output or a declaration
-// error, 2 on bad flags; -h prints the flags and returns 0. It is a
-// gen.Command.
+// error, 2 on bad flags, 3 when the environment fails; -h prints the flags
+// and returns 0. It is a gen.Command.
 func Main(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("nano gen errors", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -135,8 +140,7 @@ func Main(args []string, stdout, stderr io.Writer) int {
 	}
 	written, err := run(opts)
 	if err != nil {
-		_, _ = fmt.Fprintf(stderr, "nano gen errors: %v\n", err)
-		return 1
+		return gen.Report(stderr, "errors", err)
 	}
 	for _, path := range written {
 		_, _ = fmt.Fprintf(stdout, "nano gen errors: wrote %s\n", path)

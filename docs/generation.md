@@ -94,6 +94,8 @@ Source: a plain Go struct. Struct tags declare each setting, and the field's doc
 
 Outputs, next to the struct: `config.gen.go` (a reflection-free `Bind`, a redacted `LogValue`, `String` and `GoString`), `CONFIG.md` (the reference of every setting) and `.env.example` (`-env` sets another path).
 
+`nano gen config` loads the package with `-tags=nanogen`, as `nano gen wire` does. That drops `wire.gen.go` and the files that call `Build` (they carry `//go:build !nanogen`), so a renamed `Config` field never blocks regeneration: config writes the new `config.gen.go`, then wire reads it. Keep `Config` in a file without a build tag. The generator replaces its own previous output with a stub, so a stale `config.gen.go` does not block it either.
+
 At start-up, `config.NewSources(config.ProfileFromEnv("config"), config.Env())` layers `config/base.yaml`, then `config/<NANO_PROFILE>.yaml`, then environment variables. `Bind` reports every issue in one `*config.Error` (a list of `config.Issue`) and never shows a secret or a URL password.
 
 ## Errors: `nano gen errors`
@@ -120,7 +122,25 @@ go get -tool github.com/nanostack-dev/nanostack-framework/gen/cmd/nano@<gen tag>
 
 The `gen` module requires the root module, so the framework's own root module cannot pin `nano` as a tool. Its `//go:generate` lines run `go -C <path to gen> run ./cmd/nano` and pass the package directory as `-dir` ([`internal/nanoexample`](../internal/nanoexample/doc.go)). [RELEASING.md](../RELEASING.md#consumers-of-nano) gives the tag order.
 
-Every generator takes `-check`: it writes nothing and exits 1 when a committed output is missing or differs from what the source produces. Run each generator with `-check` in CI next to the tests. Exit codes: 0 on success, 1 on a source error, stale output or (for `validate`) an unacknowledged validation gap, 2 on bad usage. `-h` prints the flags and exits 0.
+Every generator takes `-check`: it writes nothing and exits 1 when a committed output is missing or differs from what the source produces. Run each generator with `-check` in CI next to the tests. Exit codes:
+
+| Code | Meaning |
+| --- | --- |
+| 0 | Success. `-h` prints the flags and exits 0. |
+| 1 | A source error, stale output or (for `validate`) an unacknowledged validation gap. |
+| 2 | Bad usage. |
+| 3 | The environment failed: the go command cannot load packages, or a file cannot be read or written. |
+
+Every error names its fix. A generator prints each error as its position and message, then an indented `fix:` line:
+
+```text
+config.go:15: Name: the field has no config tag
+  fix: add a config:"name" tag, or config:"-" to skip the field
+nano gen config: generated files are stale: config.gen.go
+  fix: run nano gen config
+```
+
+An error with no file starts with `nano gen <name>:` instead of a position.
 
 ## Wiring: `nano gen wire`
 
@@ -210,7 +230,14 @@ nano gen wire [-dir .] [-out internal/gen/wire] [-tags a,b] [-check]
 
 `-out` is relative to `-dir`; set it to `.` to generate into the manifest package. `-check` writes nothing and exits 1 when `wire.gen.go` is missing or stale. Output is deterministic. Generated provider errors read `nano: provide *T: pkg.NewT: <cause>`, without a source position, so moving a provider does not change the generated file.
 
-Every generator follows the contract of package [`gen`](../gen/gen.go): `Options` with a `Check` field, `Generate(Options) ([]gen.File, error)`, `Run(Options) error` (stale output wraps `gen.ErrStale`) and `Main(args, stdout, stderr) int`. `gen/validate` is the one variation: its `Generate` returns a `*Result` that holds the `gen.File` and the schema features it does not enforce. Each `Main` writes an error once, after the prefix `nano gen <name>: `; `Generate`, `Run` and `gen.Sync` add no prefix, and a Check run returns a `*gen.StaleError` that lists the stale files. `gen/cmd/nano` routes `nano gen <name>` to each `Main`.
+Every generator follows the contract of package [`gen`](../gen/gen.go): `Options` with a `Check` field and an `Overlay` field, `Generate(Options) ([]gen.File, error)`, `Run(Options) error` (stale output wraps `gen.ErrStale`) and `Main(args, stdout, stderr) int`. `gen/validate` is the one variation: its `Generate` returns a `*Result` that holds the `gen.File` and the schema features it does not enforce.
+
+- Every error is a `*gen.Error{File, Line, Msg, Fix}`, or several joined with `errors.Join`. A `Fix` is required: an error without one is a generator bug, and each generator's error table test fails on it. `gen.Errorf` takes the fix before the message.
+- An error of the machine wraps `gen.ErrEnvironment`, and `Main` exits 3 on it.
+- `Overlay` replaces files in every `go/packages` load, keyed by absolute path. The generator's own output always stays its own stub. A caller that keeps outputs in memory, such as a `-check` run of several generators, overlays the fresh outputs of the earlier ones.
+- `Main` prints with `gen.Report`. `Generate`, `Run` and `gen.Sync` add no `nano gen <name>:` prefix, and a Check run returns a `*gen.StaleError` that lists the stale files.
+
+`gen/cmd/nano` routes `nano gen <name>` to each `Main`.
 
 ## Replacing Shell Scripts
 

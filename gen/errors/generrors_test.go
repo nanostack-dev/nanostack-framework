@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"flag"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/nanostack-dev/nanostack-framework/gen"
+	"github.com/nanostack-dev/nanostack-framework/gen/internal/gentest"
 )
 
 var update = flag.Bool("update", false, "rewrite golden files under testdata")
@@ -152,7 +154,7 @@ func TestDeclarationErrorsNameTheFix(t *testing.T) {
 	}{
 		"no declaration": {
 			src:  "package p\n",
-			want: "no error declarations; add an interface type whose doc comment has a //nano:errors namespace=<name> line",
+			want: "no error declarations\n  fix: add an interface type whose doc comment has a //nano:errors namespace=<name> line",
 		},
 		"bad namespace": {
 			src:  declHeader + "//nano:errors namespace=Billing\ntype d interface {\n//nano:error code=a status=404 title=\"x\"\nA()\n}\n",
@@ -160,11 +162,11 @@ func TestDeclarationErrorsNameTheFix(t *testing.T) {
 		},
 		"missing directive": {
 			src:  decl + "// Doc only.\nInvoiceGone()\n}\n",
-			want: "errors.go:10: InvoiceGone: missing //nano:error line; add //nano:error code=invoice_gone status=",
+			want: "errors.go:10: InvoiceGone: missing //nano:error line\n  fix: add //nano:error code=invoice_gone status=",
 		},
 		"missing code": {
 			src:  decl + "//nano:error status=400 title=\"x\"\nIPv6Invalid()\n}\n",
-			want: "errors.go:10: IPv6Invalid: code is required; add code=ipv6_invalid",
+			want: "errors.go:10: IPv6Invalid: code is required\n  fix: add code=ipv6_invalid",
 		},
 		"bad status": {
 			src:  decl + "//nano:error code=a status=200 title=\"x\"\nA()\n}\n",
@@ -180,11 +182,11 @@ func TestDeclarationErrorsNameTheFix(t *testing.T) {
 		},
 		"unknown option": {
 			src:  decl + "//nano:error code=a status=404 title=\"x\" tittle=\"y\"\nA()\n}\n",
-			want: `unknown option "tittle"; valid options: code, status, title, detail`,
+			want: `unknown option "tittle"` + "\n  fix: use one of the valid options: code, status, title, detail",
 		},
 		"duplicate code": {
 			src:  decl + "//nano:error code=a status=404 title=\"x\"\nA()\n//nano:error status=404 title=\"y\" code=a\nB()\n}\n",
-			want: `B: code "a" is already used by A; set a distinct code=`,
+			want: `B: code "a" is already used by A` + "\n  fix: set a distinct code=",
 		},
 		"reserved field": {
 			src:  decl + "//nano:error code=a status=404 title=\"x\"\nA(wrap string)\n}\n",
@@ -192,15 +194,15 @@ func TestDeclarationErrorsNameTheFix(t *testing.T) {
 		},
 		"same field twice": {
 			src:  decl + "//nano:error code=a status=404 title=\"x\"\nA(url string, URL string)\n}\n",
-			want: `A: parameters "url" and "URL" both become field URL; rename one`,
+			want: `A: parameters "url" and "URL" both become field URL`,
 		},
 		"unimported type": {
 			src:  decl + "//nano:error code=a status=404 title=\"x\"\nA(id uuid.UUID)\n}\n",
-			want: "errors.go:10:6: undefined: uuid",
+			want: "errors.go:10: undefined: uuid",
 		},
 		"results": {
 			src:  decl + "//nano:error code=a status=404 title=\"x\"\nA() error\n}\n",
-			want: "declarations take parameters only; remove the results",
+			want: "A: declarations take parameters only\n  fix: remove the results",
 		},
 		"method named Kinds": {
 			src:  decl + "//nano:error code=a status=404 title=\"x\"\nKinds()\n}\n",
@@ -215,6 +217,83 @@ func TestDeclarationErrorsNameTheFix(t *testing.T) {
 			src:  decl + "//nano:error code=a status=404 title=\"x\"\nFoo()\n}\n\nvar ErrFoo = 1\n",
 			want: "errors.go:10: Foo: generated name ErrFoo clashes with ErrFoo declared at errors.go:13",
 		},
+		"clash with the Kinds list": {
+			src:  decl + "//nano:error code=a status=404 title=\"x\"\nFoo()\n}\n\nvar Kinds = 1\n",
+			want: "errors.go:8: d: the generated Kinds list clashes with Kinds declared at errors.go:13",
+		},
+		"not an interface": {
+			src:  declHeader + "//nano:errors namespace=b\ntype d struct{}\n",
+			want: "errors.go:8: d: //nano:errors must annotate an interface type",
+		},
+		"two catalogues": {
+			src: decl + "//nano:error code=a status=404 title=\"x\"\nA()\n}\n\n" +
+				"//nano:errors namespace=c\ntype e interface {\n//nano:error code=b status=404 title=\"y\"\nB()\n}\n",
+			want: "2 //nano:errors declarations",
+		},
+		"bad type_base": {
+			src:  declHeader + "//nano:errors namespace=b type_base=ftp://x\ntype d interface {\n//nano:error code=a status=404 title=\"x\"\nA()\n}\n",
+			want: `type_base="ftp://x" must be an absolute http(s) URL`,
+		},
+		"embedded interface": {
+			src:  decl + "error\n}\n",
+			want: "d may only list methods, one per error",
+		},
+		"no methods": {
+			src:  decl + "}\n",
+			want: "d declares no errors",
+		},
+		"unexported method": {
+			src:  decl + "//nano:error code=a status=404 title=\"x\"\na()\n}\n",
+			want: "a: error names must be exported\n  fix: rename it to A",
+		},
+		"placeholder in title": {
+			src:  decl + "//nano:error code=a status=404 title=\"no {id}\"\nA(id string)\n}\n",
+			want: "A: title must not hold placeholders",
+		},
+		"bad code": {
+			src:  decl + "//nano:error code=A-1 status=404 title=\"x\"\nA()\n}\n",
+			want: `A: code="A-1" must be lower snake case`,
+		},
+		"variadic": {
+			src:  decl + "//nano:error code=a status=404 title=\"x\"\nA(ids ...string)\n}\n",
+			want: "A: variadic parameters are not supported",
+		},
+		"unnamed parameter": {
+			src:  decl + "//nano:error code=a status=404 title=\"x\"\nA(string)\n}\n",
+			want: "A: a parameter has no name",
+		},
+		"parameter shadows the type": {
+			src:  decl + "//nano:error code=a status=404 title=\"x\"\nA(AError string)\n}\n",
+			want: `A: parameter "AError" shadows the generated type AError`,
+		},
+		"unmatched brace": {
+			src:  decl + "//nano:error code=a status=404 title=\"x\" detail=\"no {id\"\nA(id string)\n}\n",
+			want: "A: detail has an unmatched brace",
+		},
+		"not key=value": {
+			src:  decl + "//nano:error code=a status=404 title\nA()\n}\n",
+			want: `A: //nano:error: expected key=value at "title"`,
+		},
+		"option twice": {
+			src:  decl + "//nano:error code=a code=b status=404 title=\"x\"\nA()\n}\n",
+			want: "A: //nano:error: option code is set twice",
+		},
+		"unterminated quote": {
+			src:  decl + "//nano:error code=a status=404 title=\"x\nA()\n}\n",
+			want: "A: //nano:error: unterminated quoted value for title",
+		},
+		"bad quoted value": {
+			src:  decl + "//nano:error code=a status=404 title=\"\\q\"\nA()\n}\n",
+			want: "A: //nano:error: bad quoted value for title",
+		},
+		"catalogue option": {
+			src:  declHeader + "//nano:errors namespace=b space=c\ntype d interface {\n//nano:error code=a status=404 title=\"x\"\nA()\n}\n",
+			want: `//nano:errors: unknown option "space"`,
+		},
+		"syntax error": {
+			src:  declHeader + "func broken( {\n",
+			want: "errors.go:7:",
+		},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -222,6 +301,7 @@ func TestDeclarationErrorsNameTheFix(t *testing.T) {
 			dir := moduleTempDir(t, "bad-")
 			writeDecl(t, dir, tc.src)
 			_, err := Generate(Options{Dir: dir})
+			gentest.Problems(t, err)
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("got error %v\nwant it to contain %q", err, tc.want)
 			}
@@ -279,9 +359,38 @@ func TestHandWrittenCodeMustMatch(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err := Generate(Options{Dir: dir})
-	if err == nil || !strings.Contains(err.Error(), "does not compile with the new errors.gen.go") ||
-		!strings.Contains(err.Error(), "use.go:3:") {
+	gentest.Problems(t, err)
+	if err == nil || !strings.Contains(err.Error(), "use.go:3: not enough arguments in call to A") ||
+		!strings.Contains(err.Error(), "fix: update the code that uses the generated errors.gen.go") {
 		t.Fatalf("got %v, want the hand-written call reported", err)
+	}
+}
+
+// TestOverlayReplacesTheDisk generates from an overlaid declaration, as a
+// -check run of the pipeline does. The output file stays the generator's
+// own, whatever the overlay holds.
+func TestOverlayReplacesTheDisk(t *testing.T) {
+	dir := moduleTempDir(t, "overlay-")
+	const iface = "package p\n\n//nano:errors namespace=b\ntype d interface {\n//nano:error code=%s status=404 title=\"x\"\n%s()\n}\n"
+	writeDecl(t, dir, fmt.Sprintf(iface, "on_disk", "OnDisk"))
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	files, err := Generate(Options{Dir: dir, Overlay: map[string][]byte{
+		filepath.Join(abs, "errors.go"):     fmt.Appendf(nil, iface, "overlaid", "Overlaid"),
+		filepath.Join(abs, "errors.gen.go"): []byte("package p\n\nfunc broken( {\n"),
+	}})
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	if !bytes.Contains(files[0].Data, []byte("func Overlaid()")) || bytes.Contains(files[0].Data, []byte("OnDisk")) {
+		t.Fatalf("errors.gen.go was not generated from the overlay:\n%s", files[0].Data)
+	}
+
+	_, err = Generate(Options{Dir: dir, Overlay: map[string][]byte{"errors.go": nil}})
+	if p := gentest.Problems(t, err); !strings.Contains(p[0].Msg, "overlay path errors.go is not absolute") {
+		t.Fatalf("relative overlay path: got %v", err)
 	}
 }
 

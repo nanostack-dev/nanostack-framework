@@ -5,7 +5,6 @@ package oas
 
 import (
 	"errors"
-	"fmt"
 	"math/big"
 	"os"
 	"slices"
@@ -16,6 +15,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/nanostack-dev/nanostack-framework/core/validate"
+	"github.com/nanostack-dev/nanostack-framework/gen"
 )
 
 // Spec is the part of an OpenAPI 3.0 or 3.1 document the generator reads:
@@ -151,8 +151,11 @@ type Value struct {
 // LoadSpec reads and parses an OpenAPI document.
 func LoadSpec(path string) (*Spec, error) {
 	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, gen.Errorf(path, 0, "pass -spec with the path of the OpenAPI document", "the file does not exist")
+	}
 	if err != nil {
-		return nil, err
+		return nil, &gen.Error{File: path, Msg: err.Error(), Fix: "make the file readable", Err: gen.ErrEnvironment}
 	}
 	return ParseSpec(path, data)
 }
@@ -161,10 +164,10 @@ func LoadSpec(path string) (*Spec, error) {
 func ParseSpec(path string, data []byte) (*Spec, error) {
 	var doc yaml.Node
 	if err := yaml.Unmarshal(data, &doc); err != nil {
-		return nil, fmt.Errorf("parse %s: %w", path, err)
+		return nil, gen.Errorf(path, 0, "fix the YAML syntax", "%v", err)
 	}
 	if doc.Kind != yaml.DocumentNode || len(doc.Content) != 1 || doc.Content[0].Kind != yaml.MappingNode {
-		return nil, fmt.Errorf("parse %s: not an OpenAPI document", path)
+		return nil, gen.Errorf(path, 0, "pass -spec with an OpenAPI 3.0 or 3.1 document", "not an OpenAPI document")
 	}
 	s := &Spec{Path: path, root: doc.Content[0], schemas: map[string]*Schema{}, parsing: map[*yaml.Node]*Schema{}}
 	version := scalar(get(s.root, "openapi"))
@@ -174,7 +177,8 @@ func ParseSpec(path string, data []byte) (*Spec, error) {
 	case strings.HasPrefix(version, "3.1."):
 		s.Version = "3.1"
 	default:
-		return nil, fmt.Errorf("parse %s: unsupported openapi version %q (want 3.0.x or 3.1.x)", path, version)
+		return nil, gen.Errorf(path, lineOf(get(s.root, "openapi")), "set openapi: to 3.0.x or 3.1.x",
+			"unsupported openapi version %q", version)
 	}
 	s.parseOperations()
 	if len(s.errs) > 0 {
@@ -274,7 +278,7 @@ func (s *Spec) deref(n *yaml.Node, loc string) (*yaml.Node, string) {
 		}
 		target := s.lookup(ref)
 		if target == nil {
-			s.errs = append(s.errs, fmt.Errorf("%s: unresolved reference %q", loc, ref))
+			s.errorf(n.Line, unresolvedFix, "%s: unresolved reference %q", loc, ref)
 			return nil, loc
 		}
 		n, loc = target, ref
@@ -315,15 +319,25 @@ func RefName(ref string) string {
 	return ref[strings.LastIndexByte(ref, '/')+1:]
 }
 
+// unresolvedFix is the fix for a $ref that points nowhere.
+const unresolvedFix = "define the referenced component, or correct the $ref"
+
+// errorf records a problem in the spec at line, 0 when unknown.
+func (s *Spec) errorf(line int, fix, format string, args ...any) {
+	s.errs = append(s.errs, gen.Errorf(s.Path, line, fix, format, args...))
+}
+
+// JoinErrors joins problems without duplicates, sorted by their text, so the
+// report does not depend on map order.
 func JoinErrors(errs []error) error {
-	msgs := make([]string, 0, len(errs))
 	seen := map[string]bool{}
+	out := make([]error, 0, len(errs))
 	for _, e := range errs {
 		if !seen[e.Error()] {
 			seen[e.Error()] = true
-			msgs = append(msgs, e.Error())
+			out = append(out, e)
 		}
 	}
-	sort.Strings(msgs)
-	return errors.New(strings.Join(msgs, "\n"))
+	sort.Slice(out, func(i, j int) bool { return out[i].Error() < out[j].Error() })
+	return errors.Join(out...)
 }

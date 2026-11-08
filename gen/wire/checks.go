@@ -1,6 +1,7 @@
 package wire
 
 import (
+	"fmt"
 	"go/types"
 )
 
@@ -38,9 +39,9 @@ func (g *graph) analyzeLifecycle(n *node) {
 			return true
 		}
 		if _, isPtr := t.(*types.Pointer); !isPtr && g.implements(types.NewPointer(t), iface) {
-			g.d.add(m.relPos(n.p.ref), "provider %s returns %s by value, but its %s method has a pointer receiver; "+
-				"return *%s so the App and every consumer share one value", funcName(n.p.fn), m.typeString(t), method,
-				m.typeString(t))
+			g.d.add(m.at(n.p.ref), fmt.Sprintf("return *%s so the App and every consumer share one value",
+				m.typeString(t)), "provider %s returns %s by value, but its %s method has a pointer receiver",
+				funcName(n.p.fn), m.typeString(t), method)
 		}
 		return false
 	}
@@ -56,8 +57,8 @@ func (g *graph) analyzeLifecycle(n *node) {
 func (g *graph) checkAccess() {
 	m := g.m
 	report := func(p *provider, what string) {
-		g.d.add(m.relPos(p.ref), "%s is unexported, so package %s cannot use it; export it, "+
-			"or generate into the manifest package with -out .", what, m.outName)
+		g.d.add(m.at(p.ref), "export it, or generate into the manifest package with -out .",
+			"%s is unexported, so package %s cannot use it", what, m.outName)
 	}
 	checkFunc := func(p *provider) {
 		if p.fn != nil && !p.fn.Exported() && p.fn.Pkg().Path() != m.outPath {

@@ -58,8 +58,8 @@ func (w *walker) item(pkg *packages.Package, e ast.Expr) {
 			return
 		}
 	}
-	w.d.add(w.pos(e.Pos()), "unsupported manifest entry %s: use nano.Providers, nano.Bind, nano.Collect, "+
-		"nano.Invoke, nano.Module or a module variable", exprString(e))
+	w.d.add(w.at(e.Pos()), "use nano.Providers, nano.Bind, nano.Collect, nano.Invoke, nano.Module or a module variable",
+		"unsupported manifest entry %s", exprString(e))
 }
 
 // nanoItem reads a call to a core/nano manifest function and reports whether
@@ -92,12 +92,13 @@ func (w *walker) nanoItem(pkg *packages.Package, call *ast.CallExpr) bool {
 // moduleVar reads the initializer of a package-level module variable.
 func (w *walker) moduleVar(v *types.Var, ref token.Pos) {
 	if !w.isNanoType(v.Type(), "Item") {
-		w.d.add(w.pos(ref), "%s.%s is a %s, not a nano.Item; list modules declared with nano.Module",
+		w.d.add(w.at(ref), "list modules declared with nano.Module", "%s.%s is a %s, not a nano.Item",
 			v.Pkg().Name(), v.Name(), v.Type())
 		return
 	}
 	if w.modules[v] {
-		w.d.add(w.pos(ref), "module %s.%s includes itself", v.Pkg().Name(), v.Name())
+		w.d.add(w.at(ref), "remove the module from its own list, directly or through the modules it lists",
+			"module %s.%s includes itself", v.Pkg().Name(), v.Name())
 		return
 	}
 	pkg := w.pkgs[v.Pkg().Path()]
@@ -107,7 +108,8 @@ func (w *walker) moduleVar(v *types.Var, ref token.Pos) {
 	}
 	init := findVarInit(pkg, v)
 	if init == nil {
-		w.d.add(w.pos(ref), "cannot find the initializer of module %s.%s", v.Pkg().Name(), v.Name())
+		w.d.add(w.at(ref), "initialize the module variable with nano.Module(...) where it is declared",
+			"cannot find the initializer of module %s.%s", v.Pkg().Name(), v.Name())
 		return
 	}
 	w.modules[v] = true
@@ -170,7 +172,8 @@ func (w *walker) function(pkg *packages.Package, e ast.Expr, kind providerKind) 
 		fn, _ = pkg.TypesInfo.Uses[id].(*types.Func)
 	}
 	if fn == nil || fn.Signature().Recv() != nil {
-		w.d.add(w.pos(e.Pos()), "%s takes package-level functions; %s is not one", what, exprString(e))
+		w.d.add(w.at(e.Pos()), "list a package-level function, or wrap the value in one",
+			"%s takes package-level functions; %s is not one", what, exprString(e))
 		return nil
 	}
 	sig := fn.Signature()
@@ -183,11 +186,13 @@ func (w *walker) function(pkg *packages.Package, e ast.Expr, kind providerKind) 
 			targs = append(targs, t)
 		}
 	} else if sig.TypeParams().Len() > 0 {
-		w.d.add(w.pos(e.Pos()), "%s: generic function %s needs explicit type arguments", what, funcName(fn))
+		w.d.add(w.at(e.Pos()), "instantiate it: "+funcName(fn)+"[T]",
+			"%s: generic function %s needs explicit type arguments", what, funcName(fn))
 		return nil
 	}
 	if sig.Variadic() {
-		w.d.add(w.pos(e.Pos()), "%s: %s is variadic; providers take one value per parameter", what, funcName(fn))
+		w.d.add(w.at(e.Pos()), "take a slice parameter, or wrap the function in one with fixed parameters",
+			"%s: %s is variadic; providers take one value per parameter", what, funcName(fn))
 		return nil
 	}
 	p := &provider{kind: kind, ref: e.Pos(), order: w.next(), fn: fn, targs: targs}
@@ -209,8 +214,8 @@ func (w *walker) results(p *provider, res *types.Tuple) bool {
 		case res.Len() == 1 && isError(res.At(0).Type()):
 			p.errRet = true
 		default:
-			w.d.add(w.pos(p.ref), "nano.Invoke: %s must return nothing or error; got %s",
-				funcName(p.fn), w.m.tupleString(res))
+			w.d.add(w.at(p.ref), "return nothing, or only an error",
+				"nano.Invoke: %s must return nothing or error; got %s", funcName(p.fn), w.m.tupleString(res))
 			return false
 		}
 		return true
@@ -227,8 +232,8 @@ func (w *walker) results(p *provider, res *types.Tuple) bool {
 		p.errRet, p.clean = true, true
 	}
 	if !ok {
-		w.d.add(w.pos(p.ref), "provider %s must return T, (T, error) or (T, func(), error); got %s",
-			funcName(p.fn), w.m.tupleString(res))
+		w.d.add(w.at(p.ref), "return T, (T, error) or (T, func(), error)",
+			"provider %s returns %s", funcName(p.fn), w.m.tupleString(res))
 		return false
 	}
 	p.out = res.At(0).Type()
@@ -239,7 +244,7 @@ func (w *walker) bind(pkg *packages.Package, call *ast.CallExpr) *provider {
 	id := baseIdent(call.Fun)
 	inst, ok := pkg.TypesInfo.Instances[id]
 	if !ok || inst.TypeArgs.Len() != 2 {
-		w.d.add(w.pos(call.Pos()), "nano.Bind needs two type arguments: nano.Bind[Interface, Implementation]()")
+		w.d.add(w.at(call.Pos()), "write nano.Bind[Interface, Implementation]()", "nano.Bind needs two type arguments")
 		return nil
 	}
 	iface, impl := inst.TypeArgs.At(0), inst.TypeArgs.At(1)
@@ -247,7 +252,8 @@ func (w *walker) bind(pkg *packages.Package, call *ast.CallExpr) *provider {
 	label := w.m.bindLabel(p)
 	it, isIface := iface.Underlying().(*types.Interface)
 	if !isIface {
-		w.d.add(w.pos(call.Pos()), "%s: %s is not an interface", label, w.m.typeString(iface))
+		w.d.add(w.at(call.Pos()), "bind an interface type: nano.Bind[Interface, Implementation]()",
+			"%s: %s is not an interface", label, w.m.typeString(iface))
 		return nil
 	}
 	if !types.AssignableTo(impl, iface) {
@@ -258,8 +264,8 @@ func (w *walker) bind(pkg *packages.Package, call *ast.CallExpr) *provider {
 				reason = fmt.Sprintf(" (method %s has the wrong signature or receiver)", method.Name())
 			}
 		}
-		w.d.add(w.pos(call.Pos()), "%s: %s does not implement %s%s",
-			label, w.m.typeString(impl), w.m.typeString(iface), reason)
+		w.d.add(w.at(call.Pos()), "implement the missing methods on "+w.m.typeString(impl)+", or bind another type",
+			"%s: %s does not implement %s%s", label, w.m.typeString(impl), w.m.typeString(iface), reason)
 		return nil
 	}
 	return p
@@ -270,7 +276,7 @@ func (w *walker) bind(pkg *packages.Package, call *ast.CallExpr) *provider {
 func (w *walker) collect(pkg *packages.Package, call *ast.CallExpr, owned bool) {
 	inst, ok := pkg.TypesInfo.Instances[baseIdent(call.Fun)]
 	if !ok || inst.TypeArgs.Len() != 1 {
-		w.d.add(w.pos(call.Pos()), "nano.Collect needs the element type: nano.Collect[T](providers...)")
+		w.d.add(w.at(call.Pos()), "write nano.Collect[T](providers...)", "nano.Collect needs the element type")
 		return
 	}
 	elem := inst.TypeArgs.At(0)
@@ -282,8 +288,15 @@ func (w *walker) collect(pkg *packages.Package, call *ast.CallExpr, owned bool) 
 			continue
 		}
 		if !types.AssignableTo(p.out, elem) {
-			w.d.add(w.pos(arg.Pos()), "%s: %s returns %s, which is not assignable to %s",
-				w.m.collectLabel(decl), funcName(p.fn), w.m.typeString(p.out), w.m.typeString(elem))
+			w.d.add(
+				w.at(arg.Pos()),
+				"return a value assignable to "+w.m.typeString(elem)+", or move it out of the collection",
+				"%s: %s returns %s, which is not assignable to %s",
+				w.m.collectLabel(decl),
+				funcName(p.fn),
+				w.m.typeString(p.out),
+				w.m.typeString(elem),
+			)
 			continue
 		}
 		p.elem = elem

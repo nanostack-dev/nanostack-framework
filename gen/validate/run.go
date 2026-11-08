@@ -10,16 +10,17 @@ import (
 	"github.com/nanostack-dev/nanostack-framework/gen"
 )
 
-// ErrUnenforced reports schema features that the generated validators do
-// not enforce and that no Options.Allow location acknowledges. A validation
-// gap must not ship unnoticed, so it fails the run.
-var ErrUnenforced = errors.New("schema features are not enforced")
+// ErrUnenforced classifies the *gen.Error of a schema feature that the
+// generated validators do not enforce and that no Options.Allow location
+// acknowledges. A validation gap must not ship unnoticed, so it fails the
+// run.
+var ErrUnenforced = errors.New("schema feature is not enforced")
 
 // Run generates the validators and writes the file when it changed. With
 // Options.Check it writes nothing and returns an error wrapping gen.ErrStale
-// when the file is missing or differs. It also returns an error wrapping
-// ErrUnenforced when a diagnostic is not covered by Options.Allow; the file
-// is still written then, and lists the gap.
+// when the file is missing or differs. It also returns one *gen.Error
+// wrapping ErrUnenforced per diagnostic that Options.Allow does not cover;
+// the file is still written then, and lists the gap.
 func Run(opts Options) error {
 	_, _, err := run(opts)
 	return err
@@ -31,18 +32,18 @@ func run(opts Options) (*Result, []string, error) {
 		return nil, nil, err
 	}
 	written, syncErr := gen.Sync("validate", []gen.File{res.File}, opts.Check)
-	unallowed := 0
+	errs := []error{syncErr}
 	for _, d := range res.Diagnostics {
 		if !allowed(d, opts.Allow) {
-			unallowed++
+			errs = append(errs, &gen.Error{
+				File: opts.Spec,
+				Msg:  "not enforced: " + d.String(),
+				Fix:  "change the schema, or acknowledge the gap with -allow '" + commentText(d.Loc) + "'",
+				Err:  ErrUnenforced,
+			})
 		}
 	}
-	var gapErr error
-	if unallowed > 0 {
-		gapErr = fmt.Errorf("%w: %d; change the schema or acknowledge each location with -allow",
-			ErrUnenforced, unallowed)
-	}
-	return res, written, errors.Join(syncErr, gapErr)
+	return res, written, errors.Join(errs...)
 }
 
 // allowed reports whether an allow location covers d: the schema itself or
@@ -59,7 +60,8 @@ func allowed(d Diagnostic, allow []string) bool {
 // Main runs `nano gen validate -spec file [-dir dir] [-out file]
 // [-allow pointer]... [-check]` and returns the exit code: 0 on success, 1 on
 // a source error, stale output or an unacknowledged validation gap, 2 on bad
-// flags; -h prints the flags and returns 0. It is a gen.Command.
+// flags, 3 when the environment fails; -h prints the flags and returns 0. It
+// is a gen.Command.
 //
 // A schema feature the validators do not enforce is a failure: a validation
 // gap must not ship unnoticed. The generated file is still written, listing
@@ -96,17 +98,11 @@ func Main(args []string, stdout, stderr io.Writer) int {
 		for _, d := range res.Diagnostics {
 			if allowed(d, opts.Allow) {
 				_, _ = fmt.Fprintln(stderr, "not enforced (allowed):", d)
-			} else {
-				_, _ = fmt.Fprintln(stderr, "not enforced:", d)
 			}
 		}
 	}
 	for _, path := range written {
 		_, _ = fmt.Fprintf(stdout, "nano gen validate: wrote %s\n", path)
 	}
-	if err != nil {
-		_, _ = fmt.Fprintln(stderr, "nano gen validate:", err)
-		return 1
-	}
-	return 0
+	return gen.Report(stderr, "validate", err)
 }

@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/nanostack-dev/nanostack-framework/core/fault"
+	"github.com/nanostack-dev/nanostack-framework/gen"
 )
 
 const (
@@ -46,7 +47,7 @@ type catalogue struct {
 	pkg       string
 	pkgPath   string
 	file      string // file name relative to the package directory
-	at        string // file:line of the declaration interface
+	at        pos    // where the declaration interface is
 	iface     string
 	namespace string
 	typeBase  string
@@ -63,7 +64,7 @@ type decl struct {
 	title  string
 	detail string // template with {param} placeholders; may be empty
 	doc    string
-	at     string // file:line of the method, for errors
+	at     pos // where the method is, for errors
 	params []param
 }
 
@@ -78,8 +79,9 @@ type param struct {
 // parseDir loads and type-checks the package in dir and finds its one
 // declaration interface. Types come from the type checker, so every package
 // is named as Go resolves it, whatever its import path looks like.
-func parseDir(dir, out string) (*loaded, *catalogue, error) {
-	l, err := loadPackage(dir, out)
+func parseDir(opts Options) (*loaded, *catalogue, error) {
+	dir := opts.Dir
+	l, err := loadPackage(opts)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -94,11 +96,13 @@ func parseDir(dir, out string) (*loaded, *catalogue, error) {
 	}
 	switch len(found) {
 	case 0:
-		return nil, nil, fmt.Errorf("%s: no error declarations; add an interface type whose doc comment has a "+
-			"%s namespace=<name> line", dir, catalogueDirective)
+		return nil, nil, gen.Errorf(dir, 0,
+			"add an interface type whose doc comment has a "+catalogueDirective+" namespace=<name> line",
+			"no error declarations")
 	case 1:
 	default:
-		return nil, nil, fmt.Errorf("%s: %d %s declarations; keep one per package", dir, len(found), catalogueDirective)
+		return nil, nil, gen.Errorf(dir, 0, "keep one per package; move the others to packages of their own",
+			"%d %s declarations", len(found), catalogueDirective)
 	}
 	c := found[0]
 	if err = c.checkNames(l); err != nil {
@@ -142,10 +146,15 @@ func parseSpec(l *loaded, name string, f *ast.File, ts *ast.TypeSpec, doc *ast.C
 	at := l.position(ts.Pos())
 	it, isIface := ts.Type.(*ast.InterfaceType)
 	if !isIface {
-		return nil, fmt.Errorf("%s: %s: %s must annotate an interface type", at, ts.Name.Name, catalogueDirective)
+		return nil, at.errorf(
+			"declare "+ts.Name.Name+" as an interface with one method per error, or remove the directive",
+			"%s: %s must annotate an interface type",
+			ts.Name.Name,
+			catalogueDirective,
+		)
 	}
 	if errs := l.errorsWithin(ts); len(errs) > 0 {
-		return nil, fmt.Errorf("%s: %s does not compile; fix it first:\n%s", at, ts.Name.Name, strings.Join(errs, "\n"))
+		return nil, errors.Join(errs...)
 	}
 	c, err := parseCatalogue(name, f, ts.Name.Name, args, at)
 	if err != nil {
@@ -159,10 +168,10 @@ func parseSpec(l *loaded, name string, f *ast.File, ts *ast.TypeSpec, doc *ast.C
 }
 
 // parseCatalogue reads the //nano:errors options.
-func parseCatalogue(name string, f *ast.File, iface, args, at string) (*catalogue, error) {
+func parseCatalogue(name string, f *ast.File, iface, args string, at pos) (*catalogue, error) {
 	opts, err := parseArgs(args, "namespace", "type_base")
 	if err != nil {
-		return nil, fmt.Errorf("%s: %s: %w", at, catalogueDirective, err)
+		return nil, at.wrap(catalogueDirective, err)
 	}
 	c := &catalogue{
 		pkg:       f.Name.Name,
@@ -174,15 +183,15 @@ func parseCatalogue(name string, f *ast.File, iface, args, at string) (*catalogu
 		aliases:   importAliases(f),
 	}
 	if !identPattern.MatchString(c.namespace) {
-		return nil, fmt.Errorf("%s: %s: namespace=%q must be lower snake case, for example namespace=billing",
-			at, catalogueDirective, c.namespace)
+		return nil, at.errorf("write it in lower snake case, for example namespace=billing",
+			"%s: namespace=%q must be lower snake case", catalogueDirective, c.namespace)
 	}
 	if base, ok := opts["type_base"]; ok {
 		u, urlErr := url.Parse(base)
 		if urlErr != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" || u.RawQuery != "" ||
 			u.Fragment != "" {
-			return nil, fmt.Errorf("%s: %s: type_base=%q must be an absolute http(s) URL without query or fragment",
-				at, catalogueDirective, base)
+			return nil, at.errorf("set it to a URL such as https://errors.example.com, or remove it for the default",
+				"%s: type_base=%q must be an absolute http(s) URL without query or fragment", catalogueDirective, base)
 		}
 		c.typeBase = strings.TrimSuffix(base, "/")
 	}
@@ -196,48 +205,50 @@ func (c *catalogue) parseMethods(l *loaded, it *ast.InterfaceType) error {
 		mpos := l.position(m.Pos())
 		ft, isFunc := m.Type.(*ast.FuncType)
 		if !isFunc || len(m.Names) != 1 {
-			return fmt.Errorf("%s: %s may only list methods, one per error", mpos, c.iface)
+			return mpos.errorf("declare each error as a method of its own; move embedded interfaces out",
+				"%s may only list methods, one per error", c.iface)
 		}
 		fn, _ := l.pkg.TypesInfo.Defs[m.Names[0]].(*types.Func)
 		if fn == nil {
-			return fmt.Errorf("%s: %s: the type checker has no signature for it", mpos, m.Names[0].Name)
+			return mpos.errorf("fix the method so that it type-checks",
+				"%s: the type checker has no signature for it", m.Names[0].Name)
 		}
 		d, declErr := c.parseDecl(m, ft, fn.Signature())
 		if declErr != nil {
-			return fmt.Errorf("%s: %s: %w", mpos, m.Names[0].Name, declErr)
+			return mpos.wrap(m.Names[0].Name, declErr)
 		}
 		d.at = mpos
 		if prev, dup := seenCode[d.code]; dup {
-			return fmt.Errorf("%s: %s: code %q is already used by %s; set a distinct code=", mpos, d.name, d.code, prev)
+			return mpos.errorf("set a distinct code=", "%s: code %q is already used by %s", d.name, d.code, prev)
 		}
 		seenCode[d.code] = d.name
 		c.errors = append(c.errors, d)
 	}
 	if len(c.errors) == 0 {
-		return fmt.Errorf("%s: %s declares no errors; add a method per error", c.at, c.iface)
+		return c.at.errorf("add a method per error", "%s declares no errors", c.iface)
 	}
 	return nil
 }
 
-func (c *catalogue) parseDecl(m *ast.Field, ft *ast.FuncType, sig *types.Signature) (decl, error) {
+func (c *catalogue) parseDecl(m *ast.Field, ft *ast.FuncType, sig *types.Signature) (decl, *gen.Error) {
 	d := decl{name: m.Names[0].Name, doc: strings.TrimSpace(m.Doc.Text())}
 	if !ast.IsExported(d.name) {
-		return d, fmt.Errorf("error names must be exported; rename to %s", exportName(d.name))
+		return d, problem("rename it to "+exportName(d.name), "error names must be exported")
 	}
 	args, annotated := directive(m.Doc, errorDirective)
 	if !annotated {
-		return d, fmt.Errorf("missing %s line; add %s code=%s status=<4xx|5xx> title=\"...\" to its doc comment",
-			errorDirective, errorDirective, snakeName(d.name))
+		return d, problem(fmt.Sprintf("add %s code=%s status=<4xx|5xx> title=\"...\" to its doc comment",
+			errorDirective, snakeName(d.name)), "missing %s line", errorDirective)
 	}
 	opts, err := parseArgs(args, "code", "status", "title", "detail")
 	if err != nil {
-		return d, fmt.Errorf("%s: %w", errorDirective, err)
+		return d, problem(err.Fix, "%s: %s", errorDirective, err.Msg)
 	}
 	if err = d.applyOptions(opts); err != nil {
 		return d, err
 	}
 	if ft.Results != nil && len(ft.Results.List) > 0 {
-		return d, errors.New("declarations take parameters only; remove the results")
+		return d, problem("remove the results", "declarations take parameters only")
 	}
 	if d.params, err = c.parseParams(d, sig); err != nil {
 		return d, err
@@ -246,28 +257,30 @@ func (c *catalogue) parseDecl(m *ast.Field, ft *ast.FuncType, sig *types.Signatu
 }
 
 // applyOptions validates and stores the //nano:error options.
-func (d *decl) applyOptions(opts map[string]string) error {
+func (d *decl) applyOptions(opts map[string]string) *gen.Error {
 	status, err := strconv.Atoi(opts["status"])
 	if err != nil || status < 400 || status > 599 || http.StatusText(status) == "" {
-		return fmt.Errorf("status=%q must be a known HTTP error status (400-599)", opts["status"])
+		return problem("set status= to a 4xx or 5xx code, for example status=404",
+			"status=%q must be a known HTTP error status (400-599)", opts["status"])
 	}
 	d.status = status
 	d.title = opts["title"]
 	switch {
 	case strings.TrimSpace(d.title) == "":
-		return errors.New(`title is required; add title="..." (a short summary that never changes per occurrence)`)
+		return problem(`add title="..." (a short summary that never changes per occurrence)`, "title is required")
 	case strings.Contains(d.title, "{"):
-		return errors.New("title must not hold placeholders; put occurrence data in detail=")
+		return problem("move occurrence data to detail=", "title must not hold placeholders")
 	}
 	code, set := opts["code"]
 	switch {
 	case !set:
 		// The code and the type URI are the client contract. Deriving them
 		// from the Go name would let a rename for readability change them.
-		return fmt.Errorf("code is required; add code=%s (the code and the problem type URI are the public "+
-			"contract, so they never follow a rename of the Go method)", snakeName(d.name))
+		return problem(fmt.Sprintf("add code=%s; the code and the problem type URI are the public contract, "+
+			"so they never follow a rename of the Go method", snakeName(d.name)), "code is required")
 	case !identPattern.MatchString(code):
-		return fmt.Errorf("code=%q must be lower snake case, for example code=%s", code, snakeName(d.name))
+		return problem("write it in lower snake case, for example code="+snakeName(d.name),
+			"code=%q must be lower snake case", code)
 	}
 	d.code = code
 	d.detail = opts["detail"]
@@ -275,9 +288,9 @@ func (d *decl) applyOptions(opts map[string]string) error {
 }
 
 // parseParams reads the parameters from the type-checked signature.
-func (c *catalogue) parseParams(d decl, sig *types.Signature) ([]param, error) {
+func (c *catalogue) parseParams(d decl, sig *types.Signature) ([]param, *gen.Error) {
 	if sig.Variadic() {
-		return nil, errors.New("variadic parameters are not supported")
+		return nil, problem("take a slice instead", "variadic parameters are not supported")
 	}
 	typeName := d.name + "Error"
 	fields := map[string]string{}
@@ -285,17 +298,17 @@ func (c *catalogue) parseParams(d decl, sig *types.Signature) ([]param, error) {
 	for v := range sig.Params().Variables() {
 		name := v.Name()
 		if name == "" {
-			return nil, errors.New("every parameter needs a name; it becomes a field of the error")
+			return nil, problem("name each parameter; it becomes a field of the error", "a parameter has no name")
 		}
 		field := exportName(name)
 		switch {
 		case name == "_" || slices.Contains(reserved, field):
-			return nil, fmt.Errorf("parameter %q clashes with a generated name; rename it", name)
+			return nil, problem("rename it", "parameter %q clashes with a generated name", name)
 		case name == typeName:
-			return nil, fmt.Errorf("parameter %q shadows the generated type %s; rename it", name, typeName)
+			return nil, problem("rename it", "parameter %q shadows the generated type %s", name, typeName)
 		}
 		if prev, dup := fields[field]; dup {
-			return nil, fmt.Errorf("parameters %q and %q both become field %s; rename one", prev, name, field)
+			return nil, problem("rename one", "parameters %q and %q both become field %s", prev, name, field)
 		}
 		fields[field] = name
 		params = append(params, param{
@@ -318,7 +331,7 @@ func (c *catalogue) checkNames(l *loaded) error {
 	for _, d := range c.errors {
 		for _, n := range []string{d.name, d.name + "Error", "Err" + d.name} {
 			if prev, dup := owner[n]; dup {
-				return fmt.Errorf("%s: %s: generated name %s clashes with %s; rename the method", d.at, d.name, n, prev)
+				return d.at.errorf("rename the method", "%s: generated name %s clashes with %s", d.name, n, prev)
 			}
 			owner[n] = "the generated code of " + d.name
 		}
@@ -326,14 +339,14 @@ func (c *catalogue) checkNames(l *loaded) error {
 	for _, d := range c.errors {
 		for _, n := range []string{d.name, d.name + "Error", "Err" + d.name} {
 			if obj, at := l.lookup(n); obj != nil {
-				return fmt.Errorf("%s: %s: generated name %s clashes with %s declared at %s; rename one",
-					d.at, d.name, n, obj.Name(), at)
+				return d.at.errorf("rename one of them", "%s: generated name %s clashes with %s declared at %s",
+					d.name, n, obj.Name(), at)
 			}
 		}
 	}
 	if obj, at := l.lookup(kindsVar); obj != nil {
-		return fmt.Errorf("%s: %s: the generated %s list clashes with %s declared at %s; rename it",
-			c.at, c.iface, kindsVar, obj.Name(), at)
+		return c.at.errorf("rename "+obj.Name(), "%s: the generated %s list clashes with %s declared at %s",
+			c.iface, kindsVar, obj.Name(), at)
 	}
 	return nil
 }
@@ -356,14 +369,22 @@ func isTimeType(t types.Type) bool {
 }
 
 // checkDetail proves every {placeholder} names a parameter.
-func (d *decl) checkDetail() error {
+func (d *decl) checkDetail() *gen.Error {
 	for _, m := range placeholderPattern.FindAllStringSubmatch(d.detail, -1) {
 		if !slices.ContainsFunc(d.params, func(p param) bool { return p.name == m[1] }) {
-			return fmt.Errorf("detail placeholder {%s} names no parameter; use one of the parameter names", m[1])
+			names := make([]string, len(d.params))
+			for i, p := range d.params {
+				names[i] = "{" + p.name + "}"
+			}
+			fix := "add a parameter of that name, or remove the placeholder"
+			if len(names) > 0 {
+				fix = "use one of " + strings.Join(names, ", ") + ", or add a parameter of that name"
+			}
+			return problem(fix, "detail placeholder {%s} names no parameter", m[1])
 		}
 	}
 	if rest := placeholderPattern.ReplaceAllString(d.detail, ""); strings.ContainsAny(rest, "{}") {
-		return errors.New("detail has an unmatched brace; placeholders look like {name}")
+		return problem("write placeholders as {name}, with no other brace in detail=", "detail has an unmatched brace")
 	}
 	return nil
 }
@@ -380,79 +401,4 @@ func importAliases(f *ast.File) map[string]string {
 		out[path] = imp.Name.Name
 	}
 	return out
-}
-
-// directive returns the arguments of the first doc-comment line that starts
-// with prefix.
-func directive(doc *ast.CommentGroup, prefix string) (string, bool) {
-	if doc == nil {
-		return "", false
-	}
-	for _, c := range doc.List {
-		if rest, ok := strings.CutPrefix(c.Text, prefix); ok && (rest == "" || rest[0] == ' ' || rest[0] == '\t') {
-			return strings.TrimSpace(rest), true
-		}
-	}
-	return "", false
-}
-
-// parseArgs reads key=value pairs. A value is either bare (no spaces) or a Go
-// double-quoted string. Keys outside allowed are rejected.
-func parseArgs(s string, allowed ...string) (map[string]string, error) {
-	out := map[string]string{}
-	for s = strings.TrimSpace(s); s != ""; s = strings.TrimSpace(s) {
-		eq := strings.IndexByte(s, '=')
-		if eq <= 0 || strings.ContainsAny(s[:eq], " \t\"") {
-			return nil, fmt.Errorf("expected key=value at %q", s)
-		}
-		key := s[:eq]
-		val, rest, err := scanValue(key, s[eq+1:])
-		if err != nil {
-			return nil, err
-		}
-		s = rest
-		if !slices.Contains(allowed, key) {
-			return nil, fmt.Errorf("unknown option %q; valid options: %s", key, strings.Join(allowed, ", "))
-		}
-		if _, dup := out[key]; dup {
-			return nil, fmt.Errorf("option %s is set twice", key)
-		}
-		out[key] = val
-	}
-	return out, nil
-}
-
-// scanValue reads the value at the start of s, quoted or bare, and returns it
-// with the rest of s.
-func scanValue(key, s string) (string, string, error) {
-	if !strings.HasPrefix(s, `"`) {
-		end := strings.IndexAny(s, " \t")
-		if end < 0 {
-			end = len(s)
-		}
-		return s[:end], s[end:], nil
-	}
-	end := quotedEnd(s)
-	if end < 0 {
-		return "", "", fmt.Errorf("unterminated quoted value for %s", key)
-	}
-	v, err := strconv.Unquote(s[:end])
-	if err != nil {
-		return "", "", fmt.Errorf("bad quoted value for %s: %w", key, err)
-	}
-	return v, s[end:], nil
-}
-
-// quotedEnd returns the index just past the closing quote of the Go string
-// literal at the start of s, or -1.
-func quotedEnd(s string) int {
-	for i := 1; i < len(s); i++ {
-		switch s[i] {
-		case '\\':
-			i++
-		case '"':
-			return i + 1
-		}
-	}
-	return -1
 }

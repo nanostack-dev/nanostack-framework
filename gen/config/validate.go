@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/nanostack-dev/nanostack-framework/gen"
 )
 
 var sizes = types.SizesFor("gc", "amd64")
@@ -23,9 +25,15 @@ type value struct {
 	s string  // string, and the URL scheme for URLs
 }
 
+// problem is a rule problem with its fix; the loader adds the position and
+// the field name.
+func problem(fix, format string, args ...any) *gen.Error {
+	return gen.Errorf("", 0, fix, format, args...)
+}
+
 // validateSetting parses the validate tag into checks and proves that the
 // default parses and passes them.
-func validateSetting(s *setting) error {
+func validateSetting(s *setting) *gen.Error {
 	rules, order, err := parseRules(s.rawCheck)
 	if err != nil {
 		return err
@@ -40,7 +48,8 @@ func validateSetting(s *setting) error {
 			lo, _ := parseValue(s, minArg)
 			hi, _ := parseValue(s, maxArg)
 			if less(s.kind, hi, lo) {
-				return fmt.Errorf("validate min=%s is greater than max=%s", minArg, maxArg)
+				return problem("swap the two values, or correct one of them",
+					"validate min=%s is greater than max=%s", minArg, maxArg)
 			}
 		}
 	}
@@ -49,7 +58,7 @@ func validateSetting(s *setting) error {
 }
 
 // parseRules splits "min=1,max=5" into rules, keeping their order.
-func parseRules(raw string) (map[string]string, []string, error) {
+func parseRules(raw string) (map[string]string, []string, *gen.Error) {
 	rules := map[string]string{}
 	var order []string
 	if strings.TrimSpace(raw) == "" {
@@ -58,7 +67,7 @@ func parseRules(raw string) (map[string]string, []string, error) {
 	for part := range strings.SplitSeq(raw, ",") {
 		rule, arg, _ := strings.Cut(strings.TrimSpace(part), "=")
 		if _, dup := rules[rule]; dup {
-			return nil, nil, fmt.Errorf("validate rule %s is set twice", rule)
+			return nil, nil, problem("keep one of them", "validate rule %s is set twice", rule)
 		}
 		rules[rule] = arg
 		order = append(order, rule)
@@ -68,45 +77,55 @@ func parseRules(raw string) (map[string]string, []string, error) {
 
 // checkRule proves that one rule applies to the setting's type and that its
 // arguments parse as that type.
-func checkRule(s *setting, rule, arg string) error {
+func checkRule(s *setting, rule, arg string) *gen.Error {
+	valueFix := "write it as a value of type " + typeLabel(s)
 	switch rule {
 	case "min", "max":
 		if !slices.Contains([]kind{kindInt, kindUint, kindFloat, kindDuration}, s.kind) {
-			return fmt.Errorf("validate rule %s applies to numbers and durations, not %s", rule, typeLabel(s))
+			return problem("remove the rule",
+				"validate rule %s applies to numbers and durations, not %s", rule, typeLabel(s))
 		}
 		if _, err := parseValue(s, arg); err != nil {
-			return fmt.Errorf("validate %s=%s: %w", rule, arg, err)
+			return problem(valueFix, "validate %s=%s: %v", rule, arg, err)
 		}
 	case "oneof":
 		if !slices.Contains([]kind{kindString, kindInt, kindUint}, s.kind) {
-			return fmt.Errorf("validate rule oneof applies to strings and integers, not %s", typeLabel(s))
+			return problem(
+				"remove the rule",
+				"validate rule oneof applies to strings and integers, not %s",
+				typeLabel(s),
+			)
 		}
 		if len(strings.Fields(arg)) == 0 {
-			return errors.New("validate oneof needs values separated by spaces, for example oneof=live test")
+			return problem(
+				"list values separated by spaces, for example oneof=live test",
+				"validate oneof has no values",
+			)
 		}
 		for o := range strings.FieldsSeq(arg) {
 			if _, err := parseValue(s, o); err != nil {
-				return fmt.Errorf("validate oneof value %q: %w", o, err)
+				return problem(valueFix, "validate oneof value %q: %v", o, err)
 			}
 		}
 	case "scheme":
 		if s.kind != kindURL {
-			return fmt.Errorf("validate rule scheme applies to *url.URL, not %s", typeLabel(s))
+			return problem("remove the rule", "validate rule scheme applies to *url.URL, not %s", typeLabel(s))
 		}
 		if len(strings.Fields(arg)) == 0 {
-			return errors.New("validate scheme needs schemes separated by spaces, for example scheme=https http")
+			return problem("list schemes separated by spaces, for example scheme=https http",
+				"validate scheme has no schemes")
 		}
 	case "required":
-		return fmt.Errorf("remove validate rule required: settings without a default are required already "+
-			"(config:\"%s,optional\" makes one optional)", s.name)
+		return problem(fmt.Sprintf("remove it; config:\"%s,optional\" makes a setting optional", s.name),
+			"validate rule required has no effect: settings without a default are required already")
 	default:
-		return fmt.Errorf("unknown validate rule %q; valid rules: min, max, oneof, scheme", rule)
+		return problem("use one of the valid rules: min, max, oneof, scheme", "unknown validate rule %q", rule)
 	}
 	return nil
 }
 
 // checkDefault proves that every default value parses and passes the rules.
-func checkDefault(s *setting, rules map[string]string) error {
+func checkDefault(s *setting, rules map[string]string) *gen.Error {
 	if s.def == "" {
 		return nil
 	}
@@ -114,17 +133,18 @@ func checkDefault(s *setting, rules map[string]string) error {
 	if s.list {
 		defaults = splitList(s.def)
 		if len(defaults) == 0 {
-			return fmt.Errorf("default %q has no elements, so it counts as unset; use config:\"%s,optional\" "+
-				"for a list that may stay empty", s.def, s.name)
+			return problem(fmt.Sprintf("remove the default; use config:\"%s,optional\" for a list that may stay empty",
+				s.name), "default %q has no elements, so it counts as unset", s.def)
 		}
 	}
 	for _, d := range defaults {
 		v, err := parseValue(s, d)
 		if err != nil {
-			return fmt.Errorf("default %q: %w", d, err)
+			return problem("set the default to a value of type "+typeLabel(s), "default %q: %v", d, err)
 		}
 		if ruleErr := applyRules(s, rules, v, d); ruleErr != nil {
-			return fmt.Errorf("default %q: %w", d, ruleErr)
+			return problem("change the default so that it passes the validate rules, or change the rules",
+				"default %q: %v", d, ruleErr)
 		}
 	}
 	return nil

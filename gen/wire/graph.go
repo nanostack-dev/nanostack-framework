@@ -202,14 +202,14 @@ func (g *graph) addProvider(p *provider) {
 	if existing := g.nodes[k]; existing != nil {
 		switch existing.kind {
 		case nodeBuiltin, nodeAmbiguous:
-			g.d.add(m.relPos(p.ref), "%s provides %s, which %s already provides; remove the provider",
+			g.d.add(m.at(p.ref), "remove the provider", "%s provides %s, which %s already provides",
 				m.providerLabel(p), m.typeString(p.out), existing.via)
 		case nodeCollect:
-			g.d.add(m.relPos(p.ref), "%s provides %s, which %s (%s) already provides; remove the provider, "+
-				"or make it a member of the collection", m.providerLabel(p), m.typeString(p.out),
+			g.d.add(m.at(p.ref), "remove the provider, or make it a member of the collection",
+				"%s provides %s, which %s (%s) already provides", m.providerLabel(p), m.typeString(p.out),
 				m.providerLabel(existing.p), m.relPos(existing.p.ref))
 		case nodeFunc, nodeBind:
-			g.d.add(m.relPos(p.ref), "duplicate provider for %s: %s (%s) and %s (%s); keep one", m.typeString(p.out),
+			g.d.add(m.at(p.ref), "keep one", "duplicate provider for %s: %s (%s) and %s (%s)", m.typeString(p.out),
 				m.providerLabel(existing.p), m.relPos(existing.p.ref), m.providerLabel(p), m.relPos(p.ref))
 		}
 		return
@@ -251,19 +251,25 @@ func (g *graph) lookup(t types.Type, consumer *provider) *node {
 		at = m.declPos(consumer.fn)
 	}
 	if n != nil {
-		g.d.add(m.relPos(consumer.ref), "%s needs %s, which more than one Config field provides (%s); "+
-			"take Config and pick a field, or give each field its own type", m.providerLabel(consumer), m.typeString(t), n.via)
+		g.d.add(
+			m.at(consumer.ref),
+			"take Config and pick a field, or give each field its own type",
+			"%s needs %s, which more than one Config field provides (%s)",
+			m.providerLabel(consumer),
+			m.typeString(t),
+			n.via,
+		)
 		return nil
 	}
-	g.d.add(m.relPos(consumer.ref), "no provider for %s (needed by %s at %s); %s",
-		m.typeString(t), m.providerLabel(consumer), at, g.suggest(t))
+	g.d.add(m.at(consumer.ref), g.suggest(t), "no provider for %s (needed by %s at %s)",
+		m.typeString(t), m.providerLabel(consumer), at)
 	return nil
 }
 
 func (g *graph) suggest(t types.Type) string {
 	m := g.m
 	if n := g.nodes[key(types.NewSlice(t))]; n != nil && n.kind == nodeCollect {
-		return fmt.Sprintf("%s collects %s values; take %s", m.providerLabel(n.p), m.typeString(t), m.typeString(n.typ))
+		return fmt.Sprintf("take %s; %s collects %s values", m.typeString(n.typ), m.providerLabel(n.p), m.typeString(t))
 	}
 	if types.IsInterface(t) {
 		var binds []string
@@ -287,7 +293,7 @@ func (g *graph) suggest(t types.Type) string {
 		alt = types.NewPointer(t)
 	}
 	if n := g.nodes[key(alt)]; n != nil && n.kind == nodeFunc {
-		return fmt.Sprintf("%s provides %s instead; make the parameter and the provider agree",
+		return fmt.Sprintf("make the parameter and the provider agree; %s provides %s",
 			g.m.providerLabel(n.p), m.typeString(alt))
 	}
 	hint := fmt.Sprintf("add a function returning %s to nano.Providers", m.typeString(t))
@@ -347,8 +353,8 @@ func (g *graph) reportCycle(path []*node, back *node) {
 		steps = append(steps, fmt.Sprintf("%s (%s, %s)", m.typeString(n.typ), m.providerLabel(n.p), m.relPos(n.p.ref)))
 	}
 	steps = append(steps, m.typeString(back.typ))
-	g.d.add(m.relPos(back.p.ref), "dependency cycle: %s; break it with an interface, "+
-		"or by moving the shared part into its own provider", strings.Join(steps, " -> "))
+	g.d.add(m.at(back.p.ref), "break it with an interface, or by moving the shared part into its own provider",
+		"dependency cycle: %s", strings.Join(steps, " -> "))
 }
 
 func (g *graph) reportUnused() {
@@ -364,8 +370,9 @@ func (g *graph) reportUnused() {
 		case kindCollect:
 			if n != nil && n.state != visited {
 				g.d.add(
-					m.relPos(p.ref),
-					"unused collection %s: no Runner, Starter or nano.Invoke depends on %s; remove it",
+					m.at(p.ref),
+					"remove it",
+					"unused collection %s: no Runner, Starter or nano.Invoke depends on %s",
 					m.collectLabel(p),
 					m.typeString(p.out),
 				)
@@ -373,16 +380,22 @@ func (g *graph) reportUnused() {
 		case kindBind:
 			if n != nil && n.p == p && n.state != visited {
 				g.d.add(
-					m.relPos(p.ref),
-					"unused binding %s: no Runner, Starter or nano.Invoke depends on %s; remove it",
+					m.at(p.ref),
+					"remove it",
+					"unused binding %s: no Runner, Starter or nano.Invoke depends on %s",
 					m.bindLabel(p),
 					m.typeString(p.out),
 				)
 			}
 		case kindFunc:
 			if n != nil && n.p == p && n.state != visited {
-				g.d.add(m.relPos(p.ref), "unused provider %s: no Runner, Starter or nano.Invoke depends on %s; "+
-					"remove it from nano.Providers", funcName(p.fn), m.typeString(p.out))
+				g.d.add(
+					m.at(p.ref),
+					"remove it from nano.Providers",
+					"unused provider %s: no Runner, Starter or nano.Invoke depends on %s",
+					funcName(p.fn),
+					m.typeString(p.out),
+				)
 			}
 		}
 	}

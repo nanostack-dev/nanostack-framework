@@ -1,1 +1,2 @@
-nano.go:8: provider valuerecv.NewWorker returns valuerecv.Worker by value, but its Start method has a pointer receiver; return *valuerecv.Worker so the App and every consumer share one value
+nano.go:8: provider valuerecv.NewWorker returns valuerecv.Worker by value, but its Start method has a pointer receiver
+  fix: return *valuerecv.Worker so the App and every consumer share one value
