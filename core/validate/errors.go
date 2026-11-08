@@ -56,23 +56,52 @@ type Error struct {
 	Detail string
 }
 
+// MaxErrors is how many violations a client is shown. An Errors keeps one
+// more, so that a reader knows the list was cut: see [Errors.Truncated].
+const MaxErrors = 100
+
 // Errors accumulates violations. The zero value is ready to use.
+//
+// It is bounded: Add, Append and OnlyMembers keep at most MaxErrors+1
+// violations and drop the rest, so a hostile body cannot make the validator,
+// or the response that lists its violations, grow with its size. Generated
+// validators stop walking an array, a map or the members of an object once
+// the accumulator is [Errors.Full]. A slice built by hand is not bounded.
 type Errors []Error
 
-// Add records a violation at p.
+// Add records a violation at p, unless the accumulator is Full.
 func (e *Errors) Add(p Path, code, message string) {
+	if e.Full() {
+		return
+	}
 	*e = append(*e, Error{Pointer: p.ptr, Code: code, Detail: message})
 }
 
-// Append records every violation in other, in order.
+// Append records the violations in other, in order, until the accumulator is
+// Full.
 func (e *Errors) Append(other Errors) {
-	*e = append(*e, other...)
+	if room := MaxErrors + 1 - len(*e); room > 0 {
+		*e = append(*e, other[:min(len(other), room)]...)
+	}
 }
 
-// Error joins the violations into one line, so Errors can travel as an error.
+// Full reports whether the accumulator holds more than MaxErrors violations.
+// It then records nothing more, and a validator may stop looking.
+func (e Errors) Full() bool { return len(e) > MaxErrors }
+
+// Truncated reports whether violations were dropped or not looked for: the
+// accumulator holds more than MaxErrors, so the list a client sees is cut. It
+// is Full seen from the reader's side.
+func (e Errors) Truncated() bool { return e.Full() }
+
+// Listed returns the violations a client is shown: the first MaxErrors.
+func (e Errors) Listed() []Error { return e[:min(len(e), MaxErrors)] }
+
+// Error joins the violations a client is shown into one line, so Errors can
+// travel as an error. It ends with "; and more" when the list is Truncated.
 func (e Errors) Error() string {
 	var b strings.Builder
-	for i, v := range e {
+	for i, v := range e.Listed() {
 		if i > 0 {
 			b.WriteString("; ")
 		}
@@ -81,6 +110,9 @@ func (e Errors) Error() string {
 			ptr = "/"
 		}
 		b.WriteString(ptr + ": " + v.Detail + " (" + v.Code + ")")
+	}
+	if e.Truncated() {
+		b.WriteString("; and more")
 	}
 	return b.String()
 }
@@ -108,14 +140,18 @@ func (e *Errors) NotNull(p Path) bool {
 }
 
 // OnlyMembers records an additionalProperties violation for every member of
-// the object at p whose name is not in allowed, which must be sorted. Without
-// a document the Go value cannot hold unknown members, so it records nothing.
+// the object at p whose name is not in allowed, which must be sorted, until
+// the accumulator is Full. Without a document the Go value cannot hold
+// unknown members, so it records nothing.
 func (e *Errors) OnlyMembers(p Path, allowed ...string) {
 	names, known := p.Members()
 	if !known {
 		return
 	}
 	for _, name := range names {
+		if e.Full() {
+			return
+		}
 		if _, found := slices.BinarySearch(allowed, name); !found {
 			e.Add(p.Field(name), CodeAdditionalProperties, "is not an allowed property")
 		}

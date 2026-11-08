@@ -119,9 +119,10 @@ type strictHandler struct {
                     }
                     {{end -}}
                 {{else if eq .NameTag "Text" -}}
-                    data, err := io.ReadAll(r.Body)
+                    {{/* ReadText applies the request's body limit; its error carries the 413 problem. */ -}}
+                    data, err := nanohttp.ReadText(r)
                     if err != nil {
-                        sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't read body: %w", err))
+                        sh.options.RequestErrorHandlerFunc(w, r, err)
                         return
                     }
                     {{if not .Required -}}

@@ -48,11 +48,22 @@ func (w *Writer) RequestError(rw http.ResponseWriter, r *http.Request, err error
 }
 
 // ResponseError writes the error that a handler returned as Resolve maps it.
+//
+// For a stream that already sent its status, the failure line reports the
+// status the client received, not the one of the error.
 func (w *Writer) ResponseError(rw http.ResponseWriter, r *http.Request, err error) {
 	resp := Resolve(r, err, w.opts)
-	w.log(r, err, resp)
+	logged := resp
+	if resp.Stream {
+		if sent, written, known := log.ResponseStatus(rw); known && written {
+			logged.Status = sent
+		}
+	}
+	w.log(r, err, logged)
 	if !resp.Write(rw) {
-		w.logger().DebugContext(r.Context(), "stream headers already written; the error frame is not sent")
+		w.logger().
+			DebugContext(r.Context(), "the stream error frame is not sent: the response started with another content type",
+				slog.String("content_type", rw.Header().Get("Content-Type")))
 	}
 }
 

@@ -173,6 +173,9 @@ func TestWriterRouterHandlers(t *testing.T) {
 		t.Fatalf("HEAD /health = %d Allow %q %q", rec.Code, rec.Header().Get("Allow"), rec.Header().Get("Content-Type"))
 	}
 
+	// A mux is wrapped once: the second router gets its own.
+	mux = http.NewServeMux()
+	mux.HandleFunc("GET /health", func(http.ResponseWriter, *http.Request) {})
 	router = nanohttp.NewRouter(mux, nanohttp.RouterOptions{
 		NotFound: envelope.Handler(fault.BadRequest("BAD_REQUEST", "no matching operation was found")),
 	})

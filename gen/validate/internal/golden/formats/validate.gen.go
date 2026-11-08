@@ -9,8 +9,14 @@ import (
 // Validate checks r against #/components/schemas/Body.
 func (r Body) Validate(p validate.Path) validate.Errors {
 	var errs validate.Errors
+	r.validateInto(p, &errs)
+	return errs
+}
+
+// validateInto records the violations of r at p in errs.
+func (r Body) validateInto(p validate.Path, errs *validate.Errors) {
 	if !errs.NotNull(p) {
-		return errs
+		return
 	}
 	if f1 := p.Field("id"); f1.Present(r.Id != nil) && errs.NotNull(f1) && r.Id != nil {
 		if !validate.UUID(*r.Id) {
@@ -60,5 +66,4 @@ func (r Body) Validate(p validate.Path) validate.Errors {
 			errs.Add(f12, validate.CodeFormat, "must be an email address")
 		}
 	}
-	return errs
 }

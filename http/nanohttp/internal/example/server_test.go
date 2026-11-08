@@ -61,6 +61,10 @@ func (s server) ListEvents(context.Context, example.ListEventsRequestObject) (ex
 	return example.ListEvents200JSONResponse{}, nil
 }
 
+func (s server) AddNote(context.Context, example.AddNoteRequestObject) (example.AddNoteResponseObject, error) {
+	return example.AddNote204Response{}, nil
+}
+
 func newServer() (http.Handler, server) {
 	s := server{gotBody: make(chan *example.UpdateWebhookRequest, 1)}
 	return nanohttp.MaxBodyBytes(4096)(example.NewHTTPHandler(s, example.HTTPHandlerOptions{})), s

@@ -7,15 +7,17 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/nanostack-dev/nanostack-framework/gen/validate/internal/oas"
 )
 
 // enumChecks renders enum and const for a value of kind "string",
 // "boolean", "number" or "integer:<basic name>".
-func (g *generator) enumChecks(sc *Schema, x, kind, p string) string {
+func (g *generator) enumChecks(sc *oas.Schema, x, kind, p string) string {
 	return g.enumCheck(sc, x, kind, p) + g.constCheck(sc, x, kind, p)
 }
 
-func (g *generator) enumCheck(sc *Schema, x, kind, p string) string {
+func (g *generator) enumCheck(sc *oas.Schema, x, kind, p string) string {
 	if sc.Enum == nil {
 		return ""
 	}
@@ -45,7 +47,7 @@ func (g *generator) enumCheck(sc *Schema, x, kind, p string) string {
 	return ""
 }
 
-func (g *generator) constCheck(sc *Schema, x, kind, p string) string {
+func (g *generator) constCheck(sc *oas.Schema, x, kind, p string) string {
 	c := sc.Const
 	switch {
 	case c == nil || c.Kind == "null":
@@ -63,7 +65,7 @@ func (g *generator) constCheck(sc *Schema, x, kind, p string) string {
 
 // enumLiteral renders v as a constant of a value of the given kind, or
 // reports false when no value of that kind can equal v.
-func enumLiteral(kind string, v Value) (string, bool) {
+func enumLiteral(kind string, v oas.Value) (string, bool) {
 	switch {
 	case kind == "string" && v.Kind == "string":
 		return strconv.Quote(v.Str), true
@@ -102,7 +104,7 @@ var basicKinds = map[string]types.BasicKind{
 
 // untyped checks a value decoded into an interface: its JSON type, enum and
 // const. Other constraints are reported as not enforced.
-func (g *generator) untyped(sc *Schema, x, p string) string {
+func (g *generator) untyped(sc *oas.Schema, x, p string) string {
 	x = bare(x)
 	var b strings.Builder
 	if types := nonNullTypes(sc.Types); len(types) > 0 {
@@ -129,7 +131,7 @@ func nonNullTypes(ts []string) []string {
 
 // untypedLost names the constraints an interface value cannot be checked
 // against.
-func untypedLost(sc *Schema) []string {
+func untypedLost(sc *oas.Schema) []string {
 	var lost []string
 	for _, k := range stringConstraints(sc) {
 		if k != "enum" && k != "const" {
@@ -155,7 +157,7 @@ func untypedLost(sc *Schema) []string {
 
 // untypedEnum checks enum and const on a value decoded into an interface,
 // where JSON numbers are float64.
-func (g *generator) untypedEnum(sc *Schema, x, p string) string {
+func (g *generator) untypedEnum(sc *oas.Schema, x, p string) string {
 	var b strings.Builder
 	if sc.Enum != nil {
 		lits := make([]string, 0, len(sc.Enum))
@@ -191,7 +193,7 @@ func (g *generator) untypedEnum(sc *Schema, x, p string) string {
 	return b.String()
 }
 
-func untypedLiteral(v Value) (string, bool) {
+func untypedLiteral(v oas.Value) (string, bool) {
 	switch v.Kind {
 	case "string":
 		return strconv.Quote(v.Str), true
@@ -210,7 +212,7 @@ func untypedLiteral(v Value) (string, bool) {
 	return "", false
 }
 
-func stringConstraints(sc *Schema) []string {
+func stringConstraints(sc *oas.Schema) []string {
 	var out []string
 	if sc.MinLength != nil && *sc.MinLength > 0 {
 		out = append(out, "minLength")
@@ -233,8 +235,8 @@ func stringConstraints(sc *Schema) []string {
 	return out
 }
 
-func hasAnyConstraint(sc *Schema) bool {
+func hasAnyConstraint(sc *oas.Schema) bool {
 	c := *sc
 	c.Types, c.Nullable = nil, false
-	return hasConstraints(&c) || sc.Ref != ""
+	return oas.HasConstraints(&c) || sc.Ref != ""
 }

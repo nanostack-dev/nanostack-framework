@@ -7,9 +7,15 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/nanostack-dev/nanostack-framework/gen/validate/internal/oas"
 )
 
-func (g *generator) array(sc *Schema, x string, sl *types.Slice, p string, c ctx) string {
+// stopWhenFull opens the body of every generated loop over a value of the
+// document: once the accumulator is full, the rest is not looked at.
+const stopWhenFull = "if errs.Full() {\nbreak\n}\n"
+
+func (g *generator) array(sc *oas.Schema, x string, sl *types.Slice, p string, c ctx) string {
 	var b strings.Builder
 	if v := sc.MinItems; v != nil && *v > 0 {
 		fmt.Fprintf(
@@ -21,16 +27,10 @@ func (g *generator) array(sc *Schema, x string, sl *types.Slice, p string, c ctx
 			"must have at least "+plural(*v, "item", "items"),
 		)
 	}
-	if v := sc.MaxItems; v != nil {
-		fmt.Fprintf(
-			&b,
-			"if len(%s) > %d {\nerrs.Add(%s, validate.CodeMaxItems, %q)\n}\n",
-			x,
-			*v,
-			p,
-			"must have at most "+plural(*v, "item", "items"),
-		)
-	}
+	// The items are checked only within maxItems: an array past it already
+	// fails, and walking it would let a long array cost work in proportion to
+	// its length. Each loop also stops once the accumulator is full.
+	var items strings.Builder
 	if sc.UniqueItems {
 		fn := "validate.UniqueJSON"
 		if plainComparable(sl.Elem()) {
@@ -38,7 +38,7 @@ func (g *generator) array(sc *Schema, x string, sl *types.Slice, p string, c ctx
 		}
 		i, j := g.fresh("i"), g.fresh("j")
 		fmt.Fprintf(
-			&b,
+			&items,
 			"if %s, %s, ok := %s(%s); !ok {\nerrs.Add(%s, validate.CodeUniqueItems, validate.DuplicateMessage(%s, %s))\n}\n",
 			i,
 			j,
@@ -56,17 +56,18 @@ func (g *generator) array(sc *Schema, x string, sl *types.Slice, p string, c ctx
 		switch {
 		case inner == "" && nullable:
 		case inner == "":
-			fmt.Fprintf(&b, "for %s := range %s {\nerrs.NotNull(%s.Index(%s))\n}\n", i, x, p, i)
+			fmt.Fprintf(&items, "for %s := range %s {\n%serrs.NotNull(%s.Index(%s))\n}\n", i, x, stopWhenFull, p, i)
 		case nullable:
 			// A null item satisfies the schema; the checks are for a value.
-			fmt.Fprintf(&b, "for %s := range %s {\nif %s := %s.Index(%s); !%s.IsNull() {\n%s}\n}\n",
-				i, x, pi, p, i, pi, inner)
+			fmt.Fprintf(&items, "for %s := range %s {\n%sif %s := %s.Index(%s); !%s.IsNull() {\n%s}\n}\n",
+				i, x, stopWhenFull, pi, p, i, pi, inner)
 		default:
 			fmt.Fprintf(
-				&b,
-				"for %s := range %s {\nif %s := %s.Index(%s); errs.NotNull(%s) {\n%s}\n}\n",
+				&items,
+				"for %s := range %s {\n%sif %s := %s.Index(%s); errs.NotNull(%s) {\n%s}\n}\n",
 				i,
 				x,
+				stopWhenFull,
 				pi,
 				p,
 				i,
@@ -74,6 +75,16 @@ func (g *generator) array(sc *Schema, x string, sl *types.Slice, p string, c ctx
 				inner,
 			)
 		}
+	}
+	switch v := sc.MaxItems; {
+	case v != nil && items.Len() > 0:
+		fmt.Fprintf(&b, "if len(%s) > %d {\nerrs.Add(%s, validate.CodeMaxItems, %q)\n} else {\n%s}\n",
+			x, *v, p, "must have at most "+plural(*v, "item", "items"), items.String())
+	case v != nil:
+		fmt.Fprintf(&b, "if len(%s) > %d {\nerrs.Add(%s, validate.CodeMaxItems, %q)\n}\n",
+			x, *v, p, "must have at most "+plural(*v, "item", "items"))
+	default:
+		b.WriteString(items.String())
 	}
 	if len(sc.Types) > 0 && !slices.Contains(sc.Types, "array") {
 		g.diag(sc.Loc, "schema type "+strings.Join(sc.Types, "|")+" does not match a Go slice")
@@ -109,7 +120,7 @@ func bare(x string) string {
 	return x
 }
 
-func (g *generator) basic(sc *Schema, x string, t types.Type, bt *types.Basic, p string) string {
+func (g *generator) basic(sc *oas.Schema, x string, t types.Type, bt *types.Basic, p string) string {
 	x = bare(x)
 	info := bt.Info()
 	switch {
@@ -154,7 +165,7 @@ var annotationFormats = map[string]bool{
 	"double":   true,
 }
 
-func (g *generator) stringChecks(sc *Schema, s, p string) string {
+func (g *generator) stringChecks(sc *oas.Schema, s, p string) string {
 	var b strings.Builder
 	minL, maxL := sc.MinLength, sc.MaxLength
 	if minL != nil && *minL == 0 {
@@ -213,9 +224,9 @@ func (g *generator) stringChecks(sc *Schema, s, p string) string {
 	return b.String()
 }
 
-func (g *generator) numberChecks(sc *Schema, x string, bt *types.Basic, p string) string {
+func (g *generator) numberChecks(sc *oas.Schema, x string, bt *types.Basic, p string) string {
 	var b strings.Builder
-	bound := func(n *Number, op, code, msg string) {
+	bound := func(n *oas.Number, op, code, msg string) {
 		if n != nil {
 			fmt.Fprintf(
 				&b,
@@ -254,7 +265,7 @@ func (g *generator) numberChecks(sc *Schema, x string, bt *types.Basic, p string
 
 // compare renders x op n so that it compiles for x's type: a fractional or
 // out-of-range bound on an integer compares as float64.
-func compare(x string, bt *types.Basic, op string, n *Number) string {
+func compare(x string, bt *types.Basic, op string, n *oas.Number) string {
 	if bt.Info()&types.IsInteger != 0 {
 		if n.IsInt() && fits(bt, n.Rat.Num()) {
 			return fmt.Sprintf("%s %s %s", x, op, n.Rat.Num().String())

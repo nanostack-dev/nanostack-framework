@@ -62,3 +62,36 @@ func TestEnabledServerServesTheIndexAndStops(t *testing.T) {
 		t.Fatalf("Run = %v, want nil", err)
 	}
 }
+
+// A CPU profile in progress when the App stops must not turn the planned
+// stop into a failure: Run closes it after ShutdownTimeout and returns nil.
+func TestAProfileInProgressDoesNotFailTheStop(t *testing.T) {
+	cfg := config(true)
+	cfg.ShutdownTimeout = 50 * time.Millisecond
+	srv := nanopprof.NewServer(cfg, slog.New(slog.DiscardHandler))
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() { done <- srv.Run(ctx) }()
+	<-srv.Listening()
+
+	requested := make(chan struct{})
+	go func() {
+		close(requested)
+		resp, err := http.Get("http://" + srv.Addr().String() + "/debug/pprof/profile?seconds=3")
+		if err == nil {
+			_ = resp.Body.Close()
+		}
+	}()
+	<-requested
+	time.Sleep(100 * time.Millisecond) // the profile request is in flight
+	cancel()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Run = %v, want nil after a timed-out drain", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Run waited for the profile instead of ShutdownTimeout")
+	}
+}

@@ -33,7 +33,7 @@ func run(opts Options) (*Result, []string, error) {
 	written, syncErr := gen.Sync("validate", []gen.File{res.File}, opts.Check)
 	unallowed := 0
 	for _, d := range res.Diagnostics {
-		if !Allowed(d, opts.Allow) {
+		if !allowed(d, opts.Allow) {
 			unallowed++
 		}
 	}
@@ -45,9 +45,9 @@ func run(opts Options) (*Result, []string, error) {
 	return res, written, errors.Join(syncErr, gapErr)
 }
 
-// Allowed reports whether an allow location covers d: the schema itself or
+// allowed reports whether an allow location covers d: the schema itself or
 // one of its ancestors.
-func Allowed(d Diagnostic, allow []string) bool {
+func allowed(d Diagnostic, allow []string) bool {
 	for _, loc := range allow {
 		if d.Loc == loc || strings.HasPrefix(d.Loc, strings.TrimSuffix(loc, "/")+"/") {
 			return true
@@ -94,7 +94,7 @@ func Main(args []string, stdout, stderr io.Writer) int {
 	res, written, err := run(opts)
 	if res != nil {
 		for _, d := range res.Diagnostics {
-			if Allowed(d, opts.Allow) {
+			if allowed(d, opts.Allow) {
 				_, _ = fmt.Fprintln(stderr, "not enforced (allowed):", d)
 			} else {
 				_, _ = fmt.Fprintln(stderr, "not enforced:", d)

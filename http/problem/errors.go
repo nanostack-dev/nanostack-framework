@@ -71,11 +71,12 @@ func (e *Error) FieldErrors() []FieldError { return e.errs }
 func (e *Error) problemErrors() []FieldError { return e.errs }
 
 // Validation is the 422 problem for a body that decoded but violates the
-// schema. It lists every violation.
+// schema. It lists the violations, at most validate.MaxErrors of them; the
+// detail says when there are more.
 func Validation(errs validate.Errors) error {
 	return &Error{
 		typ: TypeValidation, title: "Request validation failed", status: http.StatusUnprocessableEntity,
-		code: "http.validation_failed", detail: plural(len(errs), "violation") + " in the request body.",
+		code: "http.validation_failed", detail: violations(errs, "request body"),
 		errs: fieldErrors(errs, inBody),
 	}
 }
@@ -210,11 +211,12 @@ func parameterProblem(name, code, detail string, cause error) error {
 
 // InvalidParameters is the 400 problem for parameters that parsed but
 // violate their schema, such as limit=500 with maximum 100. The violations'
-// pointers name the parameters ("/limit").
+// pointers name the parameters ("/limit"). Like Validation, it lists at most
+// validate.MaxErrors violations.
 func InvalidParameters(errs validate.Errors) error {
 	return &Error{
 		typ: TypeInvalidParameter, title: "Invalid request parameter", status: http.StatusBadRequest,
-		code: "http.invalid_parameter", detail: plural(len(errs), "violation") + " in the request parameters.",
+		code: "http.invalid_parameter", detail: violations(errs, "request parameters"),
 		errs: fieldErrors(errs, inParameters),
 	}
 }
@@ -237,12 +239,24 @@ func fieldError(v validate.Error, at location) FieldError {
 	return FieldError{Pointer: v.Pointer, Code: v.Code, Detail: v.Detail}
 }
 
+// fieldErrors converts the violations a client is shown, the first
+// validate.MaxErrors.
 func fieldErrors(errs validate.Errors, at location) []FieldError {
-	fields := make([]FieldError, len(errs))
-	for i, v := range errs {
+	listed := errs.Listed()
+	fields := make([]FieldError, len(listed))
+	for i, v := range listed {
 		fields[i] = fieldError(v, at)
 	}
 	return fields
+}
+
+// violations is the detail of a problem that lists errs, found in where.
+func violations(errs validate.Errors, where string) string {
+	if errs.Truncated() {
+		limit := strconv.Itoa(validate.MaxErrors)
+		return "More than " + limit + " violations in the " + where + "; the first " + limit + " are listed."
+	}
+	return plural(len(errs), "violation") + " in the " + where + "."
 }
 
 func plural(n int, noun string) string {

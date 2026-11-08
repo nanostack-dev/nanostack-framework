@@ -31,7 +31,10 @@ type Validator interface {
 }
 
 // DefaultMaxBodyBytes bounds a request body when no MaxBodyBytes middleware
-// sets another limit.
+// sets another limit. It applies to the bodies the generated server reads
+// through Decode, ReadBody and ReadText: JSON and text/plain. A multipart
+// body, a form body (net/http caps it at 10 MB) and a handler that reads
+// r.Body itself need MaxBodyBytes.
 const DefaultMaxBodyBytes int64 = 1 << 20
 
 // ErrNoBody marks the error Decode returns for an empty body. A generated
@@ -94,6 +97,40 @@ func ReadBody(r *http.Request) ([]byte, error) {
 	if r.Body == nil || r.Body == http.NoBody {
 		return nil, noBody()
 	}
+	data, err := readLimited(r)
+	if err != nil {
+		if errors.Is(err, errReadBody) {
+			return nil, problem.MalformedJSON(err)
+		}
+		return nil, err
+	}
+	if len(bytes.TrimSpace(data)) == 0 {
+		return nil, noBody()
+	}
+	return data, nil
+}
+
+// ReadText reads the whole body of any media type within the request's size
+// limit, as ReadBody does for JSON: past the limit it returns an error with
+// a 413 problem.BodyTooLarge. An absent body is empty, not an error. The
+// generated strict server reads a text/plain body with it.
+//
+// A multipart body, or a handler that reads r.Body itself, is not bounded by
+// the default limit: wrap such routes in MaxBodyBytes.
+func ReadText(r *http.Request) ([]byte, error) {
+	if r.Body == nil || r.Body == http.NoBody {
+		return nil, nil
+	}
+	return readLimited(r)
+}
+
+// errReadBody marks a body that failed to read for another reason than its
+// size, such as a connection reset.
+var errReadBody = errors.New("nanohttp: read body")
+
+// readLimited reads the body within the request's size limit. Past the
+// limit the error carries problem.BodyTooLarge.
+func readLimited(r *http.Request) ([]byte, error) {
 	// MaxBodyBytes has already wrapped the body with the response writer,
 	// so the server closes the connection at the limit. This wrap is the
 	// backstop for a request it did not wrap.
@@ -103,10 +140,7 @@ func ReadBody(r *http.Request) ([]byte, error) {
 		if mb, ok := errors.AsType[*http.MaxBytesError](err); ok {
 			return nil, fmt.Errorf("nanohttp: read body: %w", errors.Join(mb, problem.BodyTooLarge(mb.Limit)))
 		}
-		return nil, problem.MalformedJSON(fmt.Errorf("nanohttp: read body: %w", err))
-	}
-	if len(bytes.TrimSpace(data)) == 0 {
-		return nil, noBody()
+		return nil, fmt.Errorf("%w: %w", errReadBody, err)
 	}
 	return data, nil
 }

@@ -15,7 +15,7 @@ var (
 
 // validateParams checks the parameters of GET /envs/{environment}/items.
 func (r ListItemsRequestObject) validateParams() validate.Errors {
-	var errs validate.Errors
+	errs := new(validate.Errors)
 	p := validate.Root
 	if r.Params.Limit != nil {
 		if *r.Params.Limit < 1 {
@@ -40,5 +40,5 @@ func (r ListItemsRequestObject) validateParams() validate.Errors {
 	if !pattern1.MatchString(r.Environment) {
 		errs.Add(p.Field("environment"), validate.CodePattern, "must match the pattern ^[A-Za-z0-9][A-Za-z0-9_-]*$")
 	}
-	return errs
+	return *errs
 }

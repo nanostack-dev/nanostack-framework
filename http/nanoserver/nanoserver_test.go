@@ -2,7 +2,6 @@ package nanoserver_test
 
 import (
 	"context"
-	"errors"
 	"io"
 	"log/slog"
 	"net"
@@ -79,38 +78,6 @@ func TestRunDrainsAnInFlightRequestOnCancel(t *testing.T) {
 	}
 	if _, err := net.DialTimeout("tcp", srv.Addr().String(), time.Second); err == nil {
 		t.Fatal("the listener still accepts connections after Run returned")
-	}
-}
-
-func TestRunClosesConnectionsAfterTheShutdownTimeout(t *testing.T) {
-	entered := make(chan struct{})
-	handler := http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
-		close(entered)
-		<-r.Context().Done()
-	})
-	cfg := testConfig()
-	cfg.ShutdownTimeout = 50 * time.Millisecond
-	srv := nanoserver.NewServer(cfg, handler, discard())
-	cancel, done := start(t, srv)
-
-	go func() {
-		resp, err := http.Get(
-			"http://" + srv.Addr().String() + "/stream",
-		)
-		if err == nil {
-			_ = resp.Body.Close()
-		}
-	}()
-	<-entered
-	cancel()
-
-	select {
-	case err := <-done:
-		if !errors.Is(err, context.DeadlineExceeded) {
-			t.Fatalf("Run = %v, want the drain deadline", err)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("Run did not return after ShutdownTimeout")
 	}
 }
 

@@ -2,6 +2,7 @@ package nanohttp
 
 import (
 	"net/http"
+	"net/url"
 	"path"
 	"slices"
 	"strings"
@@ -38,30 +39,31 @@ var probeMethods = []string{ //nolint:gochecknoglobals // read-only table.
 // 405; a service that must keep its own error shape on them, such as a
 // legacy envelope, passes NotFound and MethodNotAllowed handlers here.
 //
-// A request with an unclean path, such as //health or /a/../health, goes to
-// mux.ServeHTTP for every method, which redirects it to the clean path (307
-// on Go 1.27). The clean path then gets the answers of NewRouter. chi answers
-// such a path with 404 at once.
+// NewRouter registers a catch-all pattern "/" on mux. ServeMux tries the
+// patterns of the request's method first, then GET for HEAD, then the
+// patterns without a method, so the catch-all runs only on a real miss. Every
+// request goes straight to mux.ServeHTTP, which sets r.Pattern and the path
+// values, and keeps ServeMux's redirects: an unclean path, such as //health
+// or /a/../health, is redirected to the clean path (307 on Go 1.27) for every
+// method, and /tree to /tree/ when only the latter is a pattern. chi answers
+// an unclean path with 404 at once.
 //
-// For each other request, NewRouter looks the request up with mux.Handler. A
-// non-empty pattern is a match: the request goes to mux.ServeHTTP, which
-// sets r.Pattern and the path values, and which also serves ServeMux's
-// trailing-slash redirect. An empty pattern is a miss: NewRouter looks the
-// path up again with each method of probeMethods, sets Allow to the methods
-// that match (sorted, as ServeMux writes it), and calls MethodNotAllowed
-// when there is one and NotFound otherwise.
-//
-// A matched request is looked up twice, once here and once in
-// mux.ServeHTTP. A miss costs one lookup per probed method.
+// On a miss, the catch-all looks the path up with each method of
+// probeMethods, sets Allow to the methods that match (sorted, as ServeMux
+// writes it), and calls MethodNotAllowed when there is one and NotFound
+// otherwise. It clears r.Pattern, which ServeMux set to the catch-all, so a
+// 404 or 405 is logged without a route.
 //
 // So every status and redirect is the one of a bare ServeMux, with one
 // difference: with ExplicitHEAD, a HEAD request on a GET pattern is a miss
 // (405). Only the bodies of the 404 and 405 answers are NewRouter's.
 //
-// The design relies on ServeMux.Handler returning an empty pattern for a
-// method mismatch and for no match, and on ServeMux cleaning a path as
-// cleanPath does. The tests of this package pin that behaviour, so a Go
-// release that changes it fails them.
+// mux must not have a pattern without a method that matches every path ("/"
+// or "/{path...}"): such a mux never misses, and NewRouter returns it
+// unchanged. Register every pattern before calling NewRouter; a later "/"
+// panics. Wrap a mux once: NewRouter panics on a mux it already wrapped,
+// whose misses would otherwise reach the first router's handlers. The tests of this package pin the ServeMux behaviour the design
+// relies on, so a Go release that changes it fails them.
 func NewRouter(mux *http.ServeMux, opts RouterOptions) http.Handler {
 	rt := &router{
 		mux:              mux,
@@ -79,7 +81,46 @@ func NewRouter(mux *http.ServeMux, opts RouterOptions) http.Handler {
 			problem.Write(w, r, problem.MethodNotAllowed())
 		})
 	}
+	if !rt.registerCatchAll() {
+		return mux
+	}
 	return rt
+}
+
+// catchAll is the pattern NewRouter registers for the misses.
+const catchAll = "/"
+
+// registerCatchAll registers the miss handler. It reports false when mux
+// already has a pattern that conflicts with it, which matches every path.
+func (rt *router) registerCatchAll() bool {
+	if rt.tryRegister() {
+		return true
+	}
+	probe := &http.Request{Method: http.MethodGet, URL: &url.URL{Path: catchAll}}
+	if h, _ := rt.mux.Handler(probe); isMissHandler(h) {
+		panic("nanohttp: NewRouter: the mux is already wrapped by NewRouter; wrap a mux once")
+	}
+	return false
+}
+
+func (rt *router) tryRegister() (ok bool) {
+	defer func() {
+		if recover() != nil {
+			ok = false
+		}
+	}()
+	rt.mux.Handle(catchAll, missHandler{rt})
+	return true
+}
+
+// missHandler is the handler of the catch-all pattern.
+type missHandler struct{ rt *router }
+
+func (m missHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) { m.rt.miss(w, r) }
+
+func isMissHandler(h http.Handler) bool {
+	_, ok := h.(missHandler)
+	return ok
 }
 
 type router struct {
@@ -90,24 +131,28 @@ type router struct {
 }
 
 func (rt *router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// ServeMux answers the asterisk-form request (OPTIONS *) with a 400 of
-	// its own before any lookup.
-	if r.RequestURI == "*" {
-		rt.mux.ServeHTTP(w, r)
-		return
+	// ServeMux serves HEAD with a GET pattern before it reaches the
+	// catch-all, so ExplicitHEAD needs a lookup first. An unclean path keeps
+	// its redirect.
+	if rt.explicitHEAD && r.Method == http.MethodHead {
+		if p := r.URL.EscapedPath(); cleanPath(p) == p {
+			if _, pattern := rt.mux.Handler(r); rt.headOnGet(r.Method, pattern) {
+				rt.answerMiss(w, r)
+				return
+			}
+		}
 	}
-	// ServeMux redirects an unclean path before it matches a method. A probe
-	// of that path with another method would find the redirect's pattern and
-	// count the method as allowed, so the request goes to the mux unprobed.
-	// ServeMux does not clean the path of a CONNECT request.
-	if p := r.URL.EscapedPath(); r.Method != http.MethodConnect && cleanPath(p) != p {
-		rt.mux.ServeHTTP(w, r)
-		return
-	}
-	if _, pattern := rt.mux.Handler(r); pattern != "" && !rt.headOnGet(r.Method, pattern) {
-		rt.mux.ServeHTTP(w, r)
-		return
-	}
+	rt.mux.ServeHTTP(w, r)
+}
+
+// miss is the handler of the catch-all pattern.
+func (rt *router) miss(w http.ResponseWriter, r *http.Request) {
+	// ServeMux set r.Pattern to the catch-all; a miss has no route.
+	r.Pattern = ""
+	rt.answerMiss(w, r)
+}
+
+func (rt *router) answerMiss(w http.ResponseWriter, r *http.Request) {
 	allow := rt.allowed(r)
 	if len(allow) == 0 {
 		rt.notFound.ServeHTTP(w, r)
@@ -124,7 +169,8 @@ func (rt *router) headOnGet(method, pattern string) bool {
 }
 
 // allowed returns the methods of probeMethods for which the path of r
-// matches a pattern, sorted.
+// matches a pattern other than the catch-all, sorted. Every lookup matches
+// at least the catch-all, so none of them computes ServeMux's own Allow set.
 func (rt *router) allowed(r *http.Request) []string {
 	probe := *r // ServeMux.Handler reads only Method, URL and Host
 	var allow []string
@@ -133,7 +179,10 @@ func (rt *router) allowed(r *http.Request) []string {
 			continue
 		}
 		probe.Method = method
-		if _, pattern := rt.mux.Handler(&probe); pattern != "" && !rt.headOnGet(method, pattern) {
+		if _, pattern := rt.mux.Handler(
+			&probe,
+		); pattern != "" && pattern != catchAll &&
+			!rt.headOnGet(method, pattern) {
 			allow = append(allow, method)
 		}
 	}

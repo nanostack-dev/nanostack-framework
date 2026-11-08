@@ -18,8 +18,14 @@ var (
 // Validate checks r against #/components/schemas/Address.
 func (r Address) Validate(p validate.Path) validate.Errors {
 	var errs validate.Errors
+	r.validateInto(p, &errs)
+	return errs
+}
+
+// validateInto records the violations of r at p in errs.
+func (r Address) validateInto(p validate.Path, errs *validate.Errors) {
 	if !errs.NotNull(p) {
-		return errs
+		return
 	}
 	if f18 := p.Field("city"); errs.Required(f18, true) && errs.NotNull(f18) {
 		if n19 := utf8.RuneCountInString(r.City); n19 < 1 {
@@ -31,14 +37,19 @@ func (r Address) Validate(p validate.Path) validate.Errors {
 			errs.Add(f20, validate.CodePattern, "must match the pattern ^[0-9]{5}$")
 		}
 	}
-	return errs
 }
 
 // Validate checks r against #/components/schemas/Body.
 func (r Body) Validate(p validate.Path) validate.Errors {
 	var errs validate.Errors
+	r.validateInto(p, &errs)
+	return errs
+}
+
+// validateInto records the violations of r at p in errs.
+func (r Body) validateInto(p validate.Path, errs *validate.Errors) {
 	if !errs.NotNull(p) {
-		return errs
+		return
 	}
 	if f1 := p.Field("name"); errs.Required(f1, true) && errs.NotNull(f1) {
 		if n2 := utf8.RuneCountInString(r.Name); n2 > 10 {
@@ -46,12 +57,15 @@ func (r Body) Validate(p validate.Path) validate.Errors {
 		}
 	}
 	if f3 := p.Field("home"); errs.Required(f3, true) && errs.NotNull(f3) {
-		errs.Append(r.Home.Validate(f3))
+		r.Home.validateInto(f3, errs)
 	}
 	if f4 := p.Field("others"); f4.Present(r.Others != nil) && errs.NotNull(f4) && r.Others != nil {
 		for i5 := range *r.Others {
+			if errs.Full() {
+				break
+			}
 			if f6 := f4.Index(i5); errs.NotNull(f6) {
-				errs.Append((*r.Others)[i5].Validate(f6))
+				(*r.Others)[i5].validateInto(f6, errs)
 			}
 		}
 	}
@@ -64,6 +78,9 @@ func (r Body) Validate(p validate.Path) validate.Errors {
 	}
 	if f9 := p.Field("labels"); f9.Present(r.Labels != nil) && errs.NotNull(f9) && r.Labels != nil {
 		for _, k10 := range slices.Sorted(maps.Keys((*r.Labels))) {
+			if errs.Full() {
+				break
+			}
 			if f12 := f9.Field(k10); errs.NotNull(f12) {
 				v11 := (*r.Labels)[k10]
 				if n13 := utf8.RuneCountInString(v11); n13 < 1 {
@@ -74,11 +91,13 @@ func (r Body) Validate(p validate.Path) validate.Errors {
 	}
 	if f14 := p.Field("byName"); f14.Present(r.ByName != nil) && errs.NotNull(f14) && r.ByName != nil {
 		for _, k15 := range slices.Sorted(maps.Keys((*r.ByName))) {
+			if errs.Full() {
+				break
+			}
 			if f17 := f14.Field(k15); errs.NotNull(f17) {
 				v16 := (*r.ByName)[k15]
-				errs.Append(v16.Validate(f17))
+				v16.validateInto(f17, errs)
 			}
 		}
 	}
-	return errs
 }

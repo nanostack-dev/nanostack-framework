@@ -11,8 +11,14 @@ import (
 // Validate checks r against #/components/schemas/Auth.
 func (r Auth) Validate(p validate.Path) validate.Errors {
 	var errs validate.Errors
+	r.validateInto(p, &errs)
+	return errs
+}
+
+// validateInto records the violations of r at p in errs.
+func (r Auth) validateInto(p validate.Path, errs *validate.Errors) {
 	if !errs.NotNull(p) {
-		return errs
+		return
 	}
 	if d14, ok := errs.Discriminator(r.union, p, "type"); ok {
 		switch d14 {
@@ -20,26 +26,31 @@ func (r Auth) Validate(p validate.Path) validate.Errors {
 			v15, verrs := validate.Variant[Basic](r.union, p)
 			errs.Append(verrs)
 			if verrs == nil {
-				errs.Append(v15.Validate(p))
+				v15.validateInto(p, errs)
 			}
 		case "bearer":
 			v16, verrs := validate.Variant[Bearer](r.union, p)
 			errs.Append(verrs)
 			if verrs == nil {
-				errs.Append(v16.Validate(p))
+				v16.validateInto(p, errs)
 			}
 		default:
 			errs.Add(p.Field("type"), validate.CodeDiscriminator, "must be one of: basic, bearer")
 		}
 	}
-	return errs
 }
 
 // Validate checks r against #/components/schemas/Basic.
 func (r Basic) Validate(p validate.Path) validate.Errors {
 	var errs validate.Errors
+	r.validateInto(p, &errs)
+	return errs
+}
+
+// validateInto records the violations of r at p in errs.
+func (r Basic) validateInto(p validate.Path, errs *validate.Errors) {
 	if !errs.NotNull(p) {
-		return errs
+		return
 	}
 	if f23 := p.Field("type"); errs.Required(f23, true) && errs.NotNull(f23) {
 		switch string(r.Type) {
@@ -53,14 +64,19 @@ func (r Basic) Validate(p validate.Path) validate.Errors {
 			errs.Add(f24, validate.CodeMinLength, "must be at least 1 character long")
 		}
 	}
-	return errs
 }
 
 // Validate checks r against #/components/schemas/Bearer.
 func (r Bearer) Validate(p validate.Path) validate.Errors {
 	var errs validate.Errors
+	r.validateInto(p, &errs)
+	return errs
+}
+
+// validateInto records the violations of r at p in errs.
+func (r Bearer) validateInto(p validate.Path, errs *validate.Errors) {
 	if !errs.NotNull(p) {
-		return errs
+		return
 	}
 	if f26 := p.Field("type"); errs.Required(f26, true) && errs.NotNull(f26) {
 		switch string(r.Type) {
@@ -74,31 +90,36 @@ func (r Bearer) Validate(p validate.Path) validate.Errors {
 			errs.Add(f27, validate.CodeMinLength, "must be at least 8 characters long")
 		}
 	}
-	return errs
 }
 
 // Validate checks r against #/components/schemas/Body.
 func (r Body) Validate(p validate.Path) validate.Errors {
 	var errs validate.Errors
+	r.validateInto(p, &errs)
+	return errs
+}
+
+// validateInto records the violations of r at p in errs.
+func (r Body) validateInto(p validate.Path, errs *validate.Errors) {
 	if !errs.NotNull(p) {
-		return errs
+		return
 	}
 	if f1 := p.Field("auth"); errs.Required(f1, true) && errs.NotNull(f1) {
-		errs.Append(r.Auth.Validate(f1))
+		r.Auth.validateInto(f1, errs)
 	}
 	if f2 := p.Field("pet"); f2.Present(r.Pet != nil) && errs.NotNull(f2) && r.Pet != nil {
 		matched3 := 0
 		if v4, verrs := validate.Variant[Cat]((*r.Pet).union, f2); verrs == nil {
-			var errs validate.Errors
-			errs.Append(v4.Validate(f2))
-			if len(errs) == 0 {
+			errs := new(validate.Errors)
+			v4.validateInto(f2, errs)
+			if len(*errs) == 0 {
 				matched3++
 			}
 		}
 		if v5, verrs := validate.Variant[Dog]((*r.Pet).union, f2); verrs == nil {
-			var errs validate.Errors
-			errs.Append(v5.Validate(f2))
-			if len(errs) == 0 {
+			errs := new(validate.Errors)
+			v5.validateInto(f2, errs)
+			if len(*errs) == 0 {
 				matched3++
 			}
 		}
@@ -111,16 +132,16 @@ func (r Body) Validate(p validate.Path) validate.Errors {
 	if f6 := p.Field("source"); f6.Present(r.Source != nil) && errs.NotNull(f6) && r.Source != nil {
 		matched7 := 0
 		if v8, verrs := validate.Variant[ByPath]((*r.Source).union, f6); verrs == nil {
-			var errs validate.Errors
-			errs.Append(v8.Validate(f6))
-			if len(errs) == 0 {
+			errs := new(validate.Errors)
+			v8.validateInto(f6, errs)
+			if len(*errs) == 0 {
 				matched7++
 			}
 		}
 		if v9, verrs := validate.Variant[ByHeader]((*r.Source).union, f6); verrs == nil {
-			var errs validate.Errors
-			errs.Append(v9.Validate(f6))
-			if len(errs) == 0 {
+			errs := new(validate.Errors)
+			v9.validateInto(f6, errs)
+			if len(*errs) == 0 {
 				matched7++
 			}
 		}
@@ -142,57 +163,76 @@ func (r Body) Validate(p validate.Path) validate.Errors {
 			errs.Add(f10, validate.CodeOneOf, "must match exactly one of: BodyPrim0, BodyPrim1, but matches several")
 		}
 	}
-	return errs
 }
 
 // Validate checks r against #/components/schemas/ByHeader.
 func (r ByHeader) Validate(p validate.Path) validate.Errors {
 	var errs validate.Errors
+	r.validateInto(p, &errs)
+	return errs
+}
+
+// validateInto records the violations of r at p in errs.
+func (r ByHeader) validateInto(p validate.Path, errs *validate.Errors) {
 	if !errs.NotNull(p) {
-		return errs
+		return
 	}
 	if f21 := p.Field("header"); errs.Required(f21, true) && errs.NotNull(f21) {
 		if n22 := utf8.RuneCountInString(r.Header); n22 < 1 {
 			errs.Add(f21, validate.CodeMinLength, "must be at least 1 character long")
 		}
 	}
-	return errs
 }
 
 // Validate checks r against #/components/schemas/ByPath.
 func (r ByPath) Validate(p validate.Path) validate.Errors {
 	var errs validate.Errors
+	r.validateInto(p, &errs)
+	return errs
+}
+
+// validateInto records the violations of r at p in errs.
+func (r ByPath) validateInto(p validate.Path, errs *validate.Errors) {
 	if !errs.NotNull(p) {
-		return errs
+		return
 	}
 	if f19 := p.Field("path"); errs.Required(f19, true) && errs.NotNull(f19) {
 		if n20 := utf8.RuneCountInString(r.Path); n20 < 1 {
 			errs.Add(f19, validate.CodeMinLength, "must be at least 1 character long")
 		}
 	}
-	return errs
 }
 
 // Validate checks r against #/components/schemas/Cat.
 func (r Cat) Validate(p validate.Path) validate.Errors {
 	var errs validate.Errors
+	r.validateInto(p, &errs)
+	return errs
+}
+
+// validateInto records the violations of r at p in errs.
+func (r Cat) validateInto(p validate.Path, errs *validate.Errors) {
 	if !errs.NotNull(p) {
-		return errs
+		return
 	}
 	if f17 := p.Field("meows"); errs.Required(f17, true) {
 		errs.NotNull(f17)
 	}
-	return errs
 }
 
 // Validate checks r against #/components/schemas/Dog.
 func (r Dog) Validate(p validate.Path) validate.Errors {
 	var errs validate.Errors
+	r.validateInto(p, &errs)
+	return errs
+}
+
+// validateInto records the violations of r at p in errs.
+func (r Dog) validateInto(p validate.Path, errs *validate.Errors) {
 	if !errs.NotNull(p) {
-		return errs
+		return
 	}
 	if f18 := p.Field("barks"); errs.Required(f18, true) {
 		errs.NotNull(f18)
 	}
-	return errs
 }

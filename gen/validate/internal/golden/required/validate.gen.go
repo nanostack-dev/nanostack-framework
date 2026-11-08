@@ -11,8 +11,14 @@ import (
 // Validate checks r against #/components/schemas/Body.
 func (r Body) Validate(p validate.Path) validate.Errors {
 	var errs validate.Errors
+	r.validateInto(p, &errs)
+	return errs
+}
+
+// validateInto records the violations of r at p in errs.
+func (r Body) validateInto(p validate.Path, errs *validate.Errors) {
 	if !errs.NotNull(p) {
-		return errs
+		return
 	}
 	if f1 := p.Field("name"); errs.Required(f1, true) {
 		errs.NotNull(f1)
@@ -27,6 +33,9 @@ func (r Body) Validate(p validate.Path) validate.Errors {
 	}
 	if f4 := p.Field("tags"); errs.Required(f4, r.Tags != nil) && errs.NotNull(f4) {
 		for i5 := range r.Tags {
+			if errs.Full() {
+				break
+			}
 			errs.NotNull(f4.Index(i5))
 		}
 	}
@@ -37,5 +46,4 @@ func (r Body) Validate(p validate.Path) validate.Errors {
 			errs.Add(f9, validate.CodeMaxLength, "must be at most 3 characters long")
 		}
 	}
-	return errs
 }

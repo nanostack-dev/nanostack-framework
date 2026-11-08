@@ -22,6 +22,10 @@ var Module = nano.Module("pprof", //nolint:gochecknoglobals // A nano module is 
 
 // Config is the profiling listener. The defaults are those of the deprecated
 // modules/pprof.
+//
+// Durations default when zero, and an empty Addr is 127.0.0.1:6060, so a
+// Config built by hand never listens on every interface nor without
+// timeouts. Start such a Config from DefaultConfig.
 type Config struct {
 	// Enabled serves the profiles. Off by default: profiles expose memory
 	// contents and cost CPU.
@@ -42,6 +46,45 @@ type Config struct {
 	ShutdownTimeout time.Duration `config:"shutdown_timeout" default:"5s" json:"shutdown_timeout" yaml:"shutdownTimeout"`
 }
 
+// The defaults of Config.
+const (
+	defaultAddr              = "127.0.0.1:6060"
+	defaultReadHeaderTimeout = 30 * time.Second
+	defaultReadTimeout       = 60 * time.Second
+	defaultWriteTimeout      = 60 * time.Second
+	defaultIdleTimeout       = 120 * time.Second
+	defaultShutdownTimeout   = 5 * time.Second
+)
+
+// DefaultConfig returns the Config of the default: tags.
+func DefaultConfig() Config {
+	return Config{
+		Addr:              defaultAddr,
+		ReadHeaderTimeout: defaultReadHeaderTimeout,
+		ReadTimeout:       defaultReadTimeout,
+		WriteTimeout:      defaultWriteTimeout,
+		IdleTimeout:       defaultIdleTimeout,
+		ShutdownTimeout:   defaultShutdownTimeout,
+	}
+}
+
+func (c Config) withDefaults() Config {
+	d := DefaultConfig()
+	if c.Addr == "" {
+		c.Addr = d.Addr
+	}
+	for _, f := range []struct{ got, def *time.Duration }{
+		{&c.ReadHeaderTimeout, &d.ReadHeaderTimeout}, {&c.ReadTimeout, &d.ReadTimeout},
+		{&c.WriteTimeout, &d.WriteTimeout}, {&c.IdleTimeout, &d.IdleTimeout},
+		{&c.ShutdownTimeout, &d.ShutdownTimeout},
+	} {
+		if *f.got <= 0 {
+			*f.got = *f.def
+		}
+	}
+	return c
+}
+
 // Server is the profiling server. It is a nano Runner.
 type Server struct {
 	enabled         bool
@@ -54,8 +97,10 @@ type Server struct {
 	addr      net.Addr
 }
 
-// NewServer returns the profiling server. It does not listen yet.
+// NewServer returns the profiling server. It does not listen yet. A zero
+// duration or an empty Addr in cfg takes its default.
 func NewServer(cfg Config, logger *slog.Logger) *Server {
+	cfg = cfg.withDefaults()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/debug/pprof/", pprof.Index)
 	mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
@@ -79,7 +124,9 @@ func NewServer(cfg Config, logger *slog.Logger) *Server {
 	}
 }
 
-// Run serves the profiles until ctx ends, when Enabled. When disabled, it
+// Run serves the profiles until ctx ends, when Enabled. After ShutdownTimeout
+// it closes the connections still open, such as a CPU profile in progress,
+// logs it at Warn and returns nil. When disabled, it
 // serves nothing and only waits for ctx: a Runner that returns early would
 // shut the App down. A listen failure returns at once and stops the App, so a
 // requested profiler is never silently missing.
@@ -108,7 +155,14 @@ func (s *Server) Run(ctx context.Context) error {
 	drainCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), s.shutdownTimeout)
 	defer cancel()
 	if err = s.server.Shutdown(drainCtx); err != nil {
-		return errors.Join(fmt.Errorf("nanopprof: drain: %w", err), s.server.Close())
+		closeErr := s.server.Close()
+		if !errors.Is(err, context.DeadlineExceeded) || closeErr != nil {
+			return errors.Join(fmt.Errorf("nanopprof: drain: %w", err), closeErr)
+		}
+		// A CPU profile or a trace in progress outlives the drain: the stop
+		// is planned, as in nanoserver.
+		s.logger.WarnContext(drainCtx, "pprof server drain timed out; connections closed",
+			slog.Duration("timeout", s.shutdownTimeout))
 	}
 	return nil
 }

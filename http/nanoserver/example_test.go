@@ -15,7 +15,9 @@ import (
 func ExampleNewServer() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /ping", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("pong")) })
-	srv := nanoserver.NewServer(nanoserver.Config{Host: "127.0.0.1"}, mux, slog.New(slog.DiscardHandler))
+	cfg := nanoserver.DefaultConfig()
+	cfg.Host, cfg.Port = "127.0.0.1", 0 // a free port, for the example
+	srv := nanoserver.NewServer(cfg, mux, slog.New(slog.DiscardHandler))
 
 	app := nano.NewApp("billing", nano.AppConfig{})
 	app.SetLogger(slog.New(slog.DiscardHandler))

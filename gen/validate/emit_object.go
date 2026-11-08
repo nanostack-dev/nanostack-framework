@@ -7,14 +7,16 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/nanostack-dev/nanostack-framework/gen/validate/internal/oas"
 )
 
 // isNullable reports whether sc accepts a JSON null.
-func (g *generator) isNullable(sc *Schema) bool {
+func (g *generator) isNullable(sc *oas.Schema) bool {
 	return g.nullable(sc, 0)
 }
 
-func (g *generator) nullable(sc *Schema, depth int) bool {
+func (g *generator) nullable(sc *oas.Schema, depth int) bool {
 	switch {
 	case sc == nil || depth > 32 || sc.Nullable:
 		return true
@@ -22,22 +24,22 @@ func (g *generator) nullable(sc *Schema, depth int) bool {
 		if sib := sc.Siblings(); sib != nil && sib.Nullable {
 			return true
 		}
-		target := g.spec.Resolve(&Schema{Ref: sc.Ref})
+		target := g.spec.Resolve(&oas.Schema{Ref: sc.Ref})
 		return target != nil && g.nullable(target, depth+1)
 	case len(sc.OneOf)+len(sc.AnyOf) > 0:
-		return slices.ContainsFunc(append(slices.Clone(sc.OneOf), sc.AnyOf...), func(v *Schema) bool {
+		return slices.ContainsFunc(append(slices.Clone(sc.OneOf), sc.AnyOf...), func(v *oas.Schema) bool {
 			return g.nullable(v, depth+1)
 		})
 	case len(sc.AllOf) > 0:
-		all := !slices.ContainsFunc(sc.AllOf, func(part *Schema) bool { return !g.nullable(part, depth+1) })
+		all := !slices.ContainsFunc(sc.AllOf, func(part *oas.Schema) bool { return !g.nullable(part, depth+1) })
 		return all && len(sc.Types) == 0
 	}
 	return len(sc.Types) == 0 && sc.Enum == nil && sc.Const == nil
 }
 
-func (g *generator) resolve(sc *Schema) *Schema {
+func (g *generator) resolve(sc *oas.Schema) *oas.Schema {
 	if sc == nil {
-		return &Schema{}
+		return &oas.Schema{}
 	}
 	if r := g.spec.Resolve(sc); r != nil {
 		return r
@@ -47,7 +49,7 @@ func (g *generator) resolve(sc *Schema) *Schema {
 
 // object checks a struct: properties, required members, unknown members,
 // additional properties and union branches.
-func (g *generator) object(sc *Schema, x string, t types.Type, st *types.Struct, p string, c ctx) string {
+func (g *generator) object(sc *oas.Schema, x string, t types.Type, st *types.Struct, p string, c ctx) string {
 	var b strings.Builder
 	if isUnion(st) {
 		b.WriteString(g.union(sc, x, t, p, c))
@@ -62,8 +64,7 @@ func (g *generator) object(sc *Schema, x string, t types.Type, st *types.Struct,
 		b.WriteString(g.property(prop, required[prop.Name], x, t, st, p, c))
 	}
 	b.WriteString(g.requiredOnly(sc, x, t, st, p, c))
-	b.WriteString(g.additional(sc, x, t, st, p, c))
-	b.WriteString(g.memberCount(sc, p))
+	b.WriteString(g.memberCount(sc, p, g.additional(sc, x, t, st, p, c)))
 	if len(sc.Types) > 0 && !slices.Contains(sc.Types, "object") {
 		g.diag(sc.Loc, "schema type "+strings.Join(sc.Types, "|")+" does not match Go struct "+types.TypeString(t, nil))
 	}
@@ -73,16 +74,16 @@ func (g *generator) object(sc *Schema, x string, t types.Type, st *types.Struct,
 // requiredOnly checks members that are required but not defined in
 // properties: through a struct field, the AdditionalProperties map, or only
 // the document.
-func (g *generator) requiredOnly(sc *Schema, x string, t types.Type, st *types.Struct, p string, c ctx) string {
+func (g *generator) requiredOnly(sc *oas.Schema, x string, t types.Type, st *types.Struct, p string, c ctx) string {
 	var b strings.Builder
 	_, hasAP := fieldNamed(st, "AdditionalProperties")
 	for _, name := range sc.Required {
-		if slices.ContainsFunc(sc.Properties, func(pr Property) bool { return pr.Name == name }) {
+		if slices.ContainsFunc(sc.Properties, func(pr oas.Property) bool { return pr.Name == name }) {
 			continue
 		}
 		switch {
 		case hasField(st, name):
-			b.WriteString(g.property(Property{Name: name, Schema: &Schema{Loc: sc.Loc}}, true, x, t, st, p, c))
+			b.WriteString(g.property(oas.Property{Name: name, Schema: &oas.Schema{Loc: sc.Loc}}, true, x, t, st, p, c))
 		case hasAP:
 			fmt.Fprintf(&b, "{\n_, ok := %s.AdditionalProperties[%q]\nerrs.Required(%s.Field(%q), ok)\n}\n",
 				x, name, p, name)
@@ -95,7 +96,7 @@ func (g *generator) requiredOnly(sc *Schema, x string, t types.Type, st *types.S
 
 // additional checks additionalProperties: false rejects unknown members, a
 // schema checks every value of the AdditionalProperties map.
-func (g *generator) additional(sc *Schema, x string, t types.Type, st *types.Struct, p string, c ctx) string {
+func (g *generator) additional(sc *oas.Schema, x string, t types.Type, st *types.Struct, p string, c ctx) string {
 	var b strings.Builder
 	if sc.AdditionalPropertiesFalse {
 		names := make([]string, 0, len(sc.Properties))
@@ -138,40 +139,45 @@ func hasField(st *types.Struct, name string) bool {
 	return ok
 }
 
-func (g *generator) memberCount(sc *Schema, p string) string {
+// memberCount checks minProperties and maxProperties. guarded is the code
+// that walks the members (additionalProperties); it runs only when the
+// object is within maxProperties, so a wide object costs no work in
+// proportion to its width.
+func (g *generator) memberCount(sc *oas.Schema, p, guarded string) string {
 	if sc.MinProperties == nil && sc.MaxProperties == nil {
-		return ""
+		return guarded
 	}
 	n := g.fresh("n")
-	var b strings.Builder
-	fmt.Fprintf(&b, "if %s, ok := %s.MemberCount(); ok {\n", n, p)
+	var minCheck string
 	if v := sc.MinProperties; v != nil {
-		fmt.Fprintf(
-			&b,
-			"if %s < %d {\nerrs.Add(%s, validate.CodeMinProperties, %q)\n}\n",
+		minCheck = fmt.Sprintf(
+			"if ok && %s < %d {\nerrs.Add(%s, validate.CodeMinProperties, %q)\n}\n",
 			n,
 			*v,
 			p,
 			"must have at least "+plural(*v, "property", "properties"),
 		)
 	}
-	if v := sc.MaxProperties; v != nil {
-		fmt.Fprintf(
-			&b,
-			"if %s > %d {\nerrs.Add(%s, validate.CodeMaxProperties, %q)\n}\n",
-			n,
-			*v,
-			p,
-			"must have at most "+plural(*v, "property", "properties"),
-		)
+	v := sc.MaxProperties
+	if v == nil {
+		return fmt.Sprintf("%s{\n%s, ok := %s.MemberCount()\n%s}\n", guarded, n, p, minCheck)
 	}
-	b.WriteString("}\n")
-	return b.String()
+	return fmt.Sprintf(
+		"if %s, ok := %s.MemberCount(); ok && %s > %d {\nerrs.Add(%s, validate.CodeMaxProperties, %q)\n} else {\n%s%s}\n",
+		n,
+		p,
+		n,
+		*v,
+		p,
+		"must have at most "+plural(*v, "property", "properties"),
+		guarded,
+		minCheck,
+	)
 }
 
 // property checks one member of a struct: presence, null, then the value.
 func (g *generator) property(
-	prop Property,
+	prop oas.Property,
 	required bool,
 	x string,
 	owner types.Type,
@@ -213,7 +219,7 @@ func (g *generator) property(
 
 // propertyField finds the struct field of a property. A missing field is an
 // error in a generated type and a diagnostic in a type of another package.
-func (g *generator) propertyField(prop Property, owner types.Type, st *types.Struct, c ctx) (*types.Var, bool) {
+func (g *generator) propertyField(prop oas.Property, owner types.Type, st *types.Struct, c ctx) (*types.Var, bool) {
 	sc := prop.Schema
 	f, ok := fieldByJSON(st, prop.Name)
 	switch {
@@ -303,7 +309,7 @@ func valueFallback(x string, t types.Type, required bool) string {
 	return "true"
 }
 
-func (g *generator) mapObject(sc *Schema, x string, mt *types.Map, p string, c ctx) string {
+func (g *generator) mapObject(sc *oas.Schema, x string, mt *types.Map, p string, c ctx) string {
 	var b strings.Builder
 	required := map[string]bool{}
 	for _, r := range sc.Required {
@@ -331,10 +337,11 @@ func (g *generator) mapObject(sc *Schema, x string, mt *types.Map, p string, c c
 		}
 	}
 	for _, r := range sc.Required {
-		if !slices.ContainsFunc(sc.Properties, func(pr Property) bool { return pr.Name == r }) {
+		if !slices.ContainsFunc(sc.Properties, func(pr oas.Property) bool { return pr.Name == r }) {
 			fmt.Fprintf(&b, "{\n_, ok := %s[%q]\nerrs.Required(%s.Field(%q), ok)\n}\n", x, r, p, r)
 		}
 	}
+	var walk strings.Builder
 	if sc.AdditionalPropertiesFalse {
 		names := make([]string, 0, len(sc.Properties))
 		for _, prop := range sc.Properties {
@@ -345,16 +352,16 @@ func (g *generator) mapObject(sc *Schema, x string, mt *types.Map, p string, c c
 		for i, n := range names {
 			names[i] = strconv.Quote(n)
 		}
-		fmt.Fprintf(&b, "errs.OnlyMembers(%s%s)\n", p, prefixComma(names))
+		fmt.Fprintf(&walk, "errs.OnlyMembers(%s%s)\n", p, prefixComma(names))
 	}
 	if sc.AdditionalProperties != nil {
 		if len(sc.Properties) > 0 {
 			g.diag(sc.Loc, "additionalProperties next to properties on a Go map is not enforced")
 		} else {
-			b.WriteString(g.mapValues(sc.AdditionalProperties, x, mt, p, c))
+			walk.WriteString(g.mapValues(sc.AdditionalProperties, x, mt, p, c))
 		}
 	}
-	b.WriteString(g.memberCount(sc, p))
+	b.WriteString(g.memberCount(sc, p, walk.String()))
 	if len(sc.OneOf)+len(sc.AnyOf) > 0 {
 		g.diag(sc.Loc, "oneOf/anyOf is not enforced on a Go map")
 	}
@@ -362,7 +369,7 @@ func (g *generator) mapObject(sc *Schema, x string, mt *types.Map, p string, c c
 }
 
 // mapValues checks every value of a map, in key order.
-func (g *generator) mapValues(sc *Schema, x string, mt *types.Map, p string, c ctx) string {
+func (g *generator) mapValues(sc *oas.Schema, x string, mt *types.Map, p string, c ctx) string {
 	k, v, pk := g.fresh("k"), g.fresh("v"), g.fresh("f")
 	nullable := g.isNullable(sc)
 	inner := g.value(sc, v, mt.Elem(), pk, c.deeper())
@@ -390,7 +397,7 @@ func (g *generator) mapValues(sc *Schema, x string, mt *types.Map, p string, c c
 			inner,
 		)
 	}
-	return fmt.Sprintf("for _, %s := range slices.Sorted(maps.Keys(%s)) {\n%s}\n", k, x, body)
+	return fmt.Sprintf("for _, %s := range slices.Sorted(maps.Keys(%s)) {\n%s%s}\n", k, x, stopWhenFull, body)
 }
 
 func bindValue(inner, v, m, k string) string {

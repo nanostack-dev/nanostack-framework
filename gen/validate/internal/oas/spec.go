@@ -1,10 +1,15 @@
-package genvalidate
+// Package oas is the model of an OpenAPI 3.0 or 3.1 document that nano gen
+// validate reads: operations, request bodies, parameters and schemas. It is
+// internal so the generator can change it without breaking an importer.
+package oas
 
 import (
+	"errors"
 	"fmt"
 	"math/big"
 	"os"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -173,7 +178,7 @@ func ParseSpec(path string, data []byte) (*Spec, error) {
 	}
 	s.parseOperations()
 	if len(s.errs) > 0 {
-		return nil, joinErrors(s.errs)
+		return nil, JoinErrors(s.errs)
 	}
 	return s, nil
 }
@@ -308,4 +313,17 @@ func (sc *Schema) Siblings() *Schema { return sc.siblings }
 // RefName returns the component name of a schema reference.
 func RefName(ref string) string {
 	return ref[strings.LastIndexByte(ref, '/')+1:]
+}
+
+func JoinErrors(errs []error) error {
+	msgs := make([]string, 0, len(errs))
+	seen := map[string]bool{}
+	for _, e := range errs {
+		if !seen[e.Error()] {
+			seen[e.Error()] = true
+			msgs = append(msgs, e.Error())
+		}
+	}
+	sort.Strings(msgs)
+	return errors.New(strings.Join(msgs, "\n"))
 }

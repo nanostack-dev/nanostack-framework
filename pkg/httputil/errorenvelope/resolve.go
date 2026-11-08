@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	corefault "github.com/nanostack-dev/nanostack-framework/core/fault"
+	"github.com/nanostack-dev/nanostack-framework/core/log"
 	"github.com/nanostack-dev/nanostack-framework/http/problem"
 	"github.com/nanostack-dev/nanostack-framework/pkg/fault"
 	"github.com/nanostack-dev/nanostack-framework/pkg/search"
@@ -35,8 +36,8 @@ const (
 )
 
 // StatusClientClosedRequest is the nginx convention for a request the client
-// abandoned before the response was written. net/http has no constant for it.
-const StatusClientClosedRequest = 499
+// abandoned before the response was written: problem.StatusClientClosedRequest.
+const StatusClientClosedRequest = problem.StatusClientClosedRequest
 
 // Metadata keys of a boundary error detail.
 const (
@@ -288,7 +289,10 @@ func statusCode(status int) string {
 // Write writes resp to w: the envelope as fault.WriteJSON writes it, a
 // server-sent event frame for a stream, or the bare status when there is no
 // body. A stream frame is not written when the response already started with
-// another Content-Type; Write then reports false.
+// another Content-Type; Write then reports false. Behind core/log's
+// HTTPMiddleware, a frame after the stream started does not write the status
+// again (see log.ResponseStatus); without it, the status is written as the
+// v0.22.0 handler did.
 func (resp Response) Write(w http.ResponseWriter) bool {
 	switch {
 	case resp.Stream && resp.Body == nil:
@@ -313,7 +317,9 @@ func writeStream(w http.ResponseWriter, status int, message string) bool {
 		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("Connection", "keep-alive")
 	}
-	w.WriteHeader(status)
+	if _, written, known := log.ResponseStatus(w); !known || !written {
+		w.WriteHeader(status)
+	}
 	// The payload is JSON-encoded, so a message with quotes or new lines
 	// cannot break the frame.
 	payload, err := json.Marshal(struct {

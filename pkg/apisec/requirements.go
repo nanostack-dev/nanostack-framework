@@ -34,10 +34,11 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
+	"strconv"
+	"strings"
 
 	"github.com/getkin/kin-openapi/openapi3"
-	"github.com/getkin/kin-openapi/routers"
-	"github.com/getkin/kin-openapi/routers/gorillamux"
+	"github.com/go-chi/chi/v5"
 )
 
 // SchemeRequirement is one security scheme together with the scopes the
@@ -226,54 +227,188 @@ func satisfyEach(
 
 // Resolver maps an incoming request to the security requirements of the
 // operation it addresses.
+//
+// It must pick the operation the router dispatches to, or a request can be
+// authenticated against one operation and served by another. So the index is
+// a private http.ServeMux with one pattern per operation, the pattern that
+// oapi-codegen's std-http server registers ("GET /files/{name}"): path
+// decoding, a GET pattern serving HEAD, and the precedence of a literal
+// segment over a wildcard are those of nanohttp.NewRouter. The document's
+// servers are ignored, as the router ignores them; a base path is the
+// router's BaseURL, which the Resolver does not model.
+//
+// A chi router needs MatchChi, and a router that refuses HEAD on a GET
+// pattern needs ExplicitHEAD.
 type Resolver struct {
-	router routers.Router
-	global Requirements
+	mux     *http.ServeMux
+	chi     *chi.Mux // with MatchChi, in place of mux
+	byRoute map[string]Requirements
+	opts    options
+}
+
+// errRouteIndex reports a route that the index cannot take.
+var errRouteIndex = errors.New("route cannot be indexed")
+
+// Option configures a Resolver to match the router that serves the
+// document.
+type Option func(*options)
+
+type options struct {
+	explicitHEAD bool
+	chi          bool
+}
+
+// ExplicitHEAD makes a GET operation stop matching HEAD, as
+// nanohttp.RouterOptions.ExplicitHEAD does: pass the router's value. A HEAD
+// request then resolves only to a HEAD operation.
+func ExplicitHEAD(on bool) Option {
+	return func(o *options) { o.explicitHEAD = on }
+}
+
+// MatchChi indexes the operations in a chi router and matches a request as
+// a chi router does: on the escaped path, so GET /files/%61dmin reaches
+// /files/{name}, not /files/admin, and with chi's precedence between
+// siblings. Use it when chi serves the document. The default matches as
+// http.ServeMux and nanohttp.NewRouter do.
+func MatchChi() Option {
+	return func(o *options) { o.chi = true }
 }
 
 // NewResolverFromDocument builds a Resolver from a raw OpenAPI document, which
 // is how applications with an embedded contract construct one. Loading here
 // keeps every consumer from repeating the loader boilerplate, and a malformed
 // document fails at construction rather than leaving routes unresolvable.
-func NewResolverFromDocument(raw []byte) (*Resolver, error) {
+func NewResolverFromDocument(raw []byte, opts ...Option) (*Resolver, error) {
 	doc, err := openapi3.NewLoader().LoadFromData(raw)
 	if err != nil {
 		return nil, fmt.Errorf("apisec: load OpenAPI document: %w", err)
 	}
-	return NewResolver(doc)
+	return NewResolver(doc, opts...)
 }
 
 // NewResolver builds a Resolver over an already-loaded OpenAPI document. The
-// route index is built once here, not per request.
-func NewResolver(spec *openapi3.T) (*Resolver, error) {
+// route index is built once here, not per request. It fails on a path that a
+// ServeMux pattern cannot express, such as a parameter that is only part of
+// a segment (/files/{name}.json), and on two paths that match the same
+// requests.
+func NewResolver(spec *openapi3.T, opts ...Option) (*Resolver, error) {
 	if spec == nil {
 		return nil, errors.New("apisec: nil OpenAPI document")
 	}
-	router, err := gorillamux.NewRouter(spec)
-	if err != nil {
-		return nil, fmt.Errorf("apisec: index routes: %w", err)
+	rr := &Resolver{byRoute: map[string]Requirements{}}
+	for _, opt := range opts {
+		opt(&rr.opts)
 	}
-	return &Resolver{router: router, global: convert(&spec.Security)}, nil
+	if rr.opts.chi {
+		rr.chi = chi.NewRouter()
+	} else {
+		rr.mux = http.NewServeMux()
+	}
+	global := convert(&spec.Security)
+	var paths map[string]*openapi3.PathItem
+	if spec.Paths != nil {
+		paths = spec.Paths.Map()
+	}
+	for _, path := range sortedKeys(paths) {
+		route := path
+		if !rr.opts.chi {
+			var err error
+			if route, err = routePath(path); err != nil {
+				return nil, err
+			}
+		}
+		for method, op := range paths[path].Operations() {
+			reqs := global
+			// An operation-level `security` key overrides the document-level
+			// default, including when it is present but empty, which is how a
+			// document marks a single operation public. A nil key inherits.
+			if op.Security != nil {
+				reqs = convert(op.Security)
+			}
+			pattern := method + " " + route
+			if err := rr.register(method, route); err != nil {
+				return nil, fmt.Errorf("apisec: index %s %s: %w", method, path, err)
+			}
+			rr.byRoute[pattern] = reqs
+		}
+	}
+	return rr, nil
+}
+
+// register adds the route of method to the index. ServeMux and chi panic on
+// a pattern they cannot take, such as one that conflicts with another; that
+// becomes an error.
+func (rr *Resolver) register(method, route string) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("%w: %v", errRouteIndex, r)
+		}
+	}()
+	if rr.chi != nil {
+		rr.chi.Method(method, route, http.NotFoundHandler())
+		return nil
+	}
+	rr.mux.Handle(method+" "+route, http.NotFoundHandler())
+	return nil
+}
+
+// routePath turns an OpenAPI path into the path of a ServeMux pattern. Each
+// parameter becomes a positional wildcard, since its value is not read and
+// its name need not be a Go identifier.
+func routePath(path string) (string, error) {
+	segments := strings.Split(path, "/")
+	n := 0
+	for i, seg := range segments {
+		if !strings.ContainsAny(seg, "{}") {
+			continue
+		}
+		if !strings.HasPrefix(seg, "{") || !strings.HasSuffix(seg, "}") || strings.Count(seg, "{") != 1 {
+			return "", fmt.Errorf("apisec: path %s: a parameter must be a whole segment", path)
+		}
+		segments[i] = "{p" + strconv.Itoa(n) + "}"
+		n++
+	}
+	return strings.Join(segments, "/"), nil
+}
+
+func sortedKeys(m map[string]*openapi3.PathItem) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // For returns the requirements governing r.
 //
-// ok is false when the request matches no operation in the document. That is
-// not an authorisation decision: the caller decides what an unknown route
-// means. Requests that never reach a documented operation are normally rejected
-// by request validation before reaching this point.
+// ok is false when the request matches no operation of the document. On the
+// nano stack, request validation runs inside the handler, after routing, so
+// nothing rejects such a request before this point: refuse it (401 or 404),
+// never let it through. The router answers it with 404 or 405 anyway, unless
+// the router serves a route the document does not list.
 func (rr *Resolver) For(r *http.Request) (Requirements, bool) {
-	route, _, err := rr.router.FindRoute(r)
-	if err != nil || route == nil || route.Operation == nil {
+	var pattern string
+	if rr.chi != nil {
+		// chi routes on RawPath when it is set, else on Path.
+		path := r.URL.RawPath
+		if path == "" {
+			path = r.URL.Path
+		}
+		if route := rr.chi.Find(chi.NewRouteContext(), r.Method, path); route != "" {
+			pattern = r.Method + " " + route
+		}
+	} else {
+		_, pattern = rr.mux.Handler(r)
+	}
+	if pattern == "" {
 		return nil, false
 	}
-	// An operation-level `security` key overrides the document-level default,
-	// including when it is present but empty — which is how a document marks a
-	// single operation public. A nil key means "inherit".
-	if route.Operation.Security == nil {
-		return rr.global, true
+	if rr.opts.explicitHEAD && r.Method == http.MethodHead && strings.HasPrefix(pattern, http.MethodGet+" ") {
+		return nil, false
 	}
-	return convert(route.Operation.Security), true
+	reqs, ok := rr.byRoute[pattern]
+	return reqs, ok
 }
 
 // convert turns kin-openapi's map-based requirements into the ordered form this

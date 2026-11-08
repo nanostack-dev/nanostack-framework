@@ -21,6 +21,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/nanostack-dev/nanostack-framework/gen/validate/internal/oas"
+
 	"github.com/nanostack-dev/nanostack-framework/gen"
 	"github.com/nanostack-dev/nanostack-framework/gen/internal/importset"
 )
@@ -50,7 +52,9 @@ type Diagnostic struct {
 	Message string
 }
 
-func (d Diagnostic) String() string { return d.Loc + ": " + d.Message }
+// String is the location and the message. Spec text in them is escaped, so
+// it cannot end a comment in the generated file or drive a terminal.
+func (d Diagnostic) String() string { return commentText(d.Loc + ": " + d.Message) }
 
 // Result is the generated file and what it could not enforce. It is the one
 // variation on the gen contract: Generate returns the file in a Result, not
@@ -79,7 +83,7 @@ func generateWith(cfg Options, gp *goPackage) (*Result, error) {
 	if cfg.Output == "" {
 		cfg.Output = DefaultOutput
 	}
-	spec, err := LoadSpec(cfg.Spec)
+	spec, err := oas.LoadSpec(cfg.Spec)
 	if err != nil {
 		return nil, err
 	}
@@ -111,18 +115,18 @@ func relativeTo(dir, path string) string {
 
 type method struct {
 	named  *types.Named
-	schema *Schema
+	schema *oas.Schema
 	body   string
 }
 
 type paramsMethod struct {
 	req  *types.Named
-	op   *Operation
+	op   *oas.Operation
 	body string
 }
 
 type generator struct {
-	spec *Spec
+	spec *oas.Spec
 	gp   *goPackage
 
 	methods  map[*types.Named]*method
@@ -137,7 +141,7 @@ type generator struct {
 	n        int
 }
 
-func newGenerator(spec *Spec, gp *goPackage) *generator {
+func newGenerator(spec *oas.Spec, gp *goPackage) *generator {
 	return &generator{
 		spec: spec, gp: gp,
 		methods:  map[*types.Named]*method{},
@@ -149,7 +153,7 @@ func newGenerator(spec *Spec, gp *goPackage) *generator {
 }
 
 func (g *generator) run(specRel string) ([]byte, error) {
-	ops := map[string]*Operation{}
+	ops := map[string]*oas.Operation{}
 	for _, op := range g.spec.Operations {
 		ops[op.Method+" "+op.Path] = op
 	}
@@ -178,7 +182,7 @@ func (g *generator) run(specRel string) ([]byte, error) {
 		m.body = g.methodBody(m)
 	}
 	if len(g.errs) > 0 {
-		return nil, joinErrors(g.errs)
+		return nil, oas.JoinErrors(g.errs)
 	}
 	return g.render(specRel)
 }
@@ -193,16 +197,16 @@ func (g *generator) run(specRel string) ([]byte, error) {
 func (g *generator) methodBody(m *method) string {
 	checks := g.value(m.schema, "r", m.named, "p", ctx{})
 	if !g.isNullable(m.schema) {
-		return "if !errs.NotNull(p) {\nreturn errs\n}\n" + checks
+		return "if !errs.NotNull(p) {\nreturn\n}\n" + checks
 	}
 	if checks == "" {
 		return ""
 	}
-	return "if p.IsNull() {\nreturn nil\n}\n" + checks
+	return "if p.IsNull() {\nreturn\n}\n" + checks
 }
 
 // operation joins one strict-server operation to the spec.
-func (g *generator) operation(gop *goOperation, op *Operation) {
+func (g *generator) operation(gop *goOperation, op *oas.Operation) {
 	st, ok := structOf(gop.Request)
 	if !ok {
 		g.errorf("%s: %s is not a struct", op.Loc, gop.Request.Obj().Name())
@@ -248,11 +252,11 @@ func isRequestBodyPointer(t types.Type) bool {
 	return named && strings.HasSuffix(n.Obj().Name(), "RequestBody")
 }
 
-func jsonContent(op *Operation) []MediaType {
+func jsonContent(op *oas.Operation) []oas.MediaType {
 	if op.Body == nil {
 		return nil
 	}
-	var out []MediaType
+	var out []oas.MediaType
 	for _, mt := range op.Body.Content {
 		if isJSONMediaType(mt.Type) {
 			out = append(out, mt)
@@ -263,7 +267,7 @@ func jsonContent(op *Operation) []MediaType {
 
 // body assigns the request body schema to the body's Go type, whose
 // Validate method the strict server calls through nanohttp.Decode.
-func (g *generator) body(op *Operation, f *types.Var, mt MediaType) {
+func (g *generator) body(op *oas.Operation, f *types.Var, mt oas.MediaType) {
 	ptr, _ := f.Type().(*types.Pointer) // checked by isRequestBodyPointer
 	elem := types.Unalias(ptr.Elem())
 	n := g.localNamed(elem)
@@ -274,7 +278,7 @@ func (g *generator) body(op *Operation, f *types.Var, mt MediaType) {
 	}
 	sc := mt.Schema
 	if sc == nil {
-		sc = &Schema{Loc: op.Loc + "/requestBody"}
+		sc = &oas.Schema{Loc: op.Loc + "/requestBody"}
 	}
 	if !g.claim(n, g.spec.Resolve(sc)) {
 		g.errorf("%s: Go type %s already validates another schema", op.Loc, n.Obj().Name())
@@ -287,12 +291,12 @@ func (g *generator) body(op *Operation, f *types.Var, mt MediaType) {
 // matchBody pairs a Body field with its JSON media type. oapi-codegen names
 // the field Body for a single body and <Tag>Body when there are several; the
 // tag of application/json is JSON.
-func (g *generator) matchBody(f *types.Var, content []MediaType) (MediaType, bool) {
+func (g *generator) matchBody(f *types.Var, content []oas.MediaType) (oas.MediaType, bool) {
 	if f.Name() == "Body" {
 		if len(content) == 1 {
 			return content[0], true
 		}
-		return MediaType{}, false
+		return oas.MediaType{}, false
 	}
 	tag := strings.TrimSuffix(f.Name(), "Body")
 	for _, mt := range content {
@@ -300,7 +304,7 @@ func (g *generator) matchBody(f *types.Var, content []MediaType) (MediaType, boo
 			return mt, true
 		}
 	}
-	return MediaType{}, false
+	return oas.MediaType{}, false
 }
 
 // mediaTypeTag approximates oapi-codegen's tag for a +json media type.
@@ -335,7 +339,7 @@ func isJSONMediaType(mt string) bool {
 // claim assigns schema sc to the in-package named type n, whose Validate
 // method will check it. It reports false when n already checks another
 // schema; the caller then inlines the checks.
-func (g *generator) claim(n *types.Named, sc *Schema) bool {
+func (g *generator) claim(n *types.Named, sc *oas.Schema) bool {
 	if sc == nil {
 		return false
 	}

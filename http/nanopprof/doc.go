@@ -1,5 +1,6 @@
 // Package nanopprof is the nano module that serves net/http/pprof on a
-// separate, loopback-only listener when ENABLE_PPROF is set.
+// separate listener, on loopback by default (Config.Addr), when ENABLE_PPROF
+// is set.
 //
 // It replaces the deprecated fx module modules/pprof. A service lists Module
 // in its manifest and puts Config in its own Config:

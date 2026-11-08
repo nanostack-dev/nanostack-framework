@@ -11,8 +11,14 @@ import (
 // Validate checks r against #/components/schemas/Body.
 func (r Body) Validate(p validate.Path) validate.Errors {
 	var errs validate.Errors
+	r.validateInto(p, &errs)
+	return errs
+}
+
+// validateInto records the violations of r at p in errs.
+func (r Body) validateInto(p validate.Path, errs *validate.Errors) {
 	if !errs.NotNull(p) {
-		return errs
+		return
 	}
 	if f1 := p.Field("tags"); f1.Present(r.Tags != nil) && errs.NotNull(f1) && r.Tags != nil {
 		if len((*r.Tags)) < 1 {
@@ -20,14 +26,18 @@ func (r Body) Validate(p validate.Path) validate.Errors {
 		}
 		if len((*r.Tags)) > 3 {
 			errs.Add(f1, validate.CodeMaxItems, "must have at most 3 items")
-		}
-		if i2, j3, ok := validate.Unique((*r.Tags)); !ok {
-			errs.Add(f1, validate.CodeUniqueItems, validate.DuplicateMessage(i2, j3))
-		}
-		for i4 := range *r.Tags {
-			if f5 := f1.Index(i4); errs.NotNull(f5) {
-				if n6 := utf8.RuneCountInString((*r.Tags)[i4]); n6 > 4 {
-					errs.Add(f5, validate.CodeMaxLength, "must be at most 4 characters long")
+		} else {
+			if i2, j3, ok := validate.Unique((*r.Tags)); !ok {
+				errs.Add(f1, validate.CodeUniqueItems, validate.DuplicateMessage(i2, j3))
+			}
+			for i4 := range *r.Tags {
+				if errs.Full() {
+					break
+				}
+				if f5 := f1.Index(i4); errs.NotNull(f5) {
+					if n6 := utf8.RuneCountInString((*r.Tags)[i4]); n6 > 4 {
+						errs.Add(f5, validate.CodeMaxLength, "must be at most 4 characters long")
+					}
 				}
 			}
 		}
@@ -37,40 +47,54 @@ func (r Body) Validate(p validate.Path) validate.Errors {
 			errs.Add(f7, validate.CodeUniqueItems, validate.DuplicateMessage(i8, j9))
 		}
 		for i10 := range *r.Items {
+			if errs.Full() {
+				break
+			}
 			if f11 := f7.Index(i10); errs.NotNull(f11) {
-				errs.Append((*r.Items)[i10].Validate(f11))
+				(*r.Items)[i10].validateInto(f11, errs)
 			}
 		}
 	}
 	if f12 := p.Field("matrix"); f12.Present(r.Matrix != nil) && errs.NotNull(f12) && r.Matrix != nil {
 		for i13 := range *r.Matrix {
+			if errs.Full() {
+				break
+			}
 			if f14 := f12.Index(i13); errs.NotNull(f14) {
 				if len((*r.Matrix)[i13]) > 2 {
 					errs.Add(f14, validate.CodeMaxItems, "must have at most 2 items")
-				}
-				for i15 := range (*r.Matrix)[i13] {
-					if f16 := f14.Index(i15); errs.NotNull(f16) {
-						if (*r.Matrix)[i13][i15] < 0 {
-							errs.Add(f16, validate.CodeMinimum, "must be at least 0")
+				} else {
+					for i15 := range (*r.Matrix)[i13] {
+						if errs.Full() {
+							break
+						}
+						if f16 := f14.Index(i15); errs.NotNull(f16) {
+							if (*r.Matrix)[i13][i15] < 0 {
+								errs.Add(f16, validate.CodeMinimum, "must be at least 0")
+							}
 						}
 					}
 				}
 			}
 		}
 	}
-	return errs
 }
 
 // Validate checks r against #/components/schemas/Item.
 func (r Item) Validate(p validate.Path) validate.Errors {
 	var errs validate.Errors
+	r.validateInto(p, &errs)
+	return errs
+}
+
+// validateInto records the violations of r at p in errs.
+func (r Item) validateInto(p validate.Path, errs *validate.Errors) {
 	if !errs.NotNull(p) {
-		return errs
+		return
 	}
 	if f17 := p.Field("sku"); errs.Required(f17, true) && errs.NotNull(f17) {
 		if n18 := utf8.RuneCountInString(r.Sku); n18 < 1 {
 			errs.Add(f17, validate.CodeMinLength, "must be at least 1 character long")
 		}
 	}
-	return errs
 }

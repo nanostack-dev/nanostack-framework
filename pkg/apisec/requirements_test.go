@@ -387,3 +387,52 @@ func TestEvaluateReportsAttemptedFailureFirst(t *testing.T) {
 		t.Errorf("wanted the real rejection reported before the absent credential, got %q", joined)
 	}
 }
+
+// The router ignores the document's servers, so the resolver does too: an
+// https server behind a TLS-terminating proxy, or a host the request does
+// not name, must not leave a protected operation unresolved.
+func TestServersAreIgnored(t *testing.T) {
+	const doc = `
+openapi: 3.0.3
+info: {title: t, version: "1"}
+servers: [{url: "https://api.example.com/v1"}]
+components:
+  securitySchemes:
+    Bearer: {type: http, scheme: bearer}
+paths:
+  /secret:
+    get:
+      security: [{Bearer: []}]
+      responses: {"204": {description: ok}}
+`
+	for _, opts := range [][]apisec.Option{nil, {apisec.MatchChi()}} {
+		rr, err := apisec.NewResolverFromDocument([]byte(doc), opts...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, target := range []string{"/secret", "http://api.example.com/secret", "http://other.test/secret"} {
+			reqs, ok := rr.For(httptest.NewRequest(http.MethodGet, target, nil))
+			if !ok || reqs.Public() {
+				t.Errorf("For(GET %s) = %v, %v; want the bearer requirement", target, reqs, ok)
+			}
+		}
+	}
+}
+
+func TestExplicitHEAD(t *testing.T) {
+	head := httptest.NewRequest(http.MethodHead, "/single", nil)
+	if reqs, ok := resolver(t).For(head); !ok || !reqs.AllowsScheme("Bearer") {
+		t.Errorf("HEAD on a GET operation = %v, %v; want the GET requirements, as ServeMux serves it", reqs, ok)
+	}
+	doc, err := openapi3.NewLoader().LoadFromData([]byte(spec))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rr, err := apisec.NewResolver(doc, apisec.ExplicitHEAD(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reqs, ok := rr.For(head); ok {
+		t.Errorf("ExplicitHEAD: HEAD on a GET operation = %v, %v; want unresolved", reqs, ok)
+	}
+}

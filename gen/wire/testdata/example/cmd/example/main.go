@@ -18,8 +18,12 @@ func main() {
 		if addr == "" {
 			addr = "127.0.0.1:8080"
 		}
+		adminAddr := os.Getenv("EXAMPLE_ADMIN_ADDR")
+		if adminAddr == "" {
+			adminAddr = "127.0.0.1:9090"
+		}
 		cfg := example.Config{
-			HTTP:     httpapi.Config{Addr: addr},
+			HTTP:     httpapi.Config{Addr: addr, AdminAddr: adminAddr},
 			Greeting: greeter.Config{Greeting: "Hello"},
 		}
 		return wire.Build(ctx, cfg, wire.Overrides{})

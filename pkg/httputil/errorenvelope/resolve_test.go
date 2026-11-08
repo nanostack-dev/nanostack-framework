@@ -279,6 +279,27 @@ func TestResolveRequestMapsBoundaryErrors(t *testing.T) {
 	}
 }
 
+// A hostile body produces at most validate.MaxErrors details: the envelope
+// lists the violations the problem lists, which are bounded.
+func TestResolveRequestBoundsTheDetails(t *testing.T) {
+	t.Parallel()
+	var errs validate.Errors
+	for i := range 10 * validate.MaxErrors {
+		errs.Add(validate.Root.Field("headers").Index(i).Field("name"), validate.CodeRequired, "is required")
+	}
+	rec := write(errorenvelope.ResolveRequest(
+		httptest.NewRequest(http.MethodPost, "/webhooks", nil),
+		decodeErr(t, "application/json", `{"headers":[]}`, errs),
+		errorenvelope.Options{},
+	))
+	if n := strings.Count(rec.Body.String(), `"code":"BAD_REQUEST"`); n != validate.MaxErrors {
+		t.Fatalf("the envelope lists %d details, want %d", n, validate.MaxErrors)
+	}
+	if rec.Body.Len() > 32<<10 {
+		t.Fatalf("envelope of %d bytes", rec.Body.Len())
+	}
+}
+
 // A handler that returns a boundary problem, such as problem.NotFound, gets
 // the boundary mapping too, not the generic Described one.
 func TestResolveMapsABoundaryProblemFromAHandler(t *testing.T) {

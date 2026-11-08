@@ -15,7 +15,19 @@ var Module = nano.Module("apisec", //nolint:gochecknoglobals // A nano module is
 type Document []byte
 
 // NewResolver indexes doc and returns the resolver of its security
-// requirements. It fails when doc does not load or cannot be indexed.
+// requirements, matched like nanohttp.NewRouter with its default options. It
+// fails when doc does not load or cannot be indexed.
+//
+// A service whose router sets RouterOptions.ExplicitHEAD, or that routes
+// with chi, provides its resolver with NewResolverWith and the options of
+// its router instead of listing Module.
 func NewResolver(doc Document) (*apisec.Resolver, error) {
 	return apisec.NewResolverFromDocument(doc)
+}
+
+// NewResolverWith is NewResolver with options that match the router:
+// apisec.ExplicitHEAD with the RouterOptions value, apisec.MatchChi for
+// chi.
+func NewResolverWith(doc Document, opts ...apisec.Option) (*apisec.Resolver, error) {
+	return apisec.NewResolverFromDocument(doc, opts...)
 }
