@@ -120,7 +120,7 @@ The CHANGELOG.md entries land on `main` before the release, in the pull requests
 
 ### 4. gen
 
-One more commit puts `gen/go.mod` in the release form. It drops the three `replace` lines and requires the root tag. `go mod tidy` then requires `db` and `pkg/functional` at their tags where `gen` needs them. Review the `go.mod` diff before you commit. `gen`'s first tag comes with the first release after `v0.23.0-beta.1`; the example keeps the version of the other steps:
+One more commit puts `gen/go.mod` in the release form. It drops the three `replace` lines and requires the root tag. `go mod tidy` then requires `db` and `pkg/functional` at their tags where `gen` needs them. Review the `go.mod` diff before you commit. `gen` must require a root tag that has no `gen/` directory, the root tag of step 3. The real `v0.23.0-beta.1` root tag and older ones still hold the `gen/...` packages, and a consumer that resolves both modules fails with `ambiguous import`; the consumer build of `release.yml` fails the same way. So `gen`'s first tag comes with the first release after `v0.23.0-beta.1`. The example keeps the version of the other steps:
 
 ```sh
 (cd gen &&

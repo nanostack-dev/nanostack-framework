@@ -16,9 +16,9 @@ The framework owns reusable service infrastructure shared by Nanostack applicati
 
 **Nanostack DB:** The `db` module: the framework's fork of go-jet with native `functional.Option` support. Say "Nanostack DB", not "go-jet", for the code in `db/`; [db/UPSTREAM.md](db/UPSTREAM.md) records what differs.
 
-**Released module:** One of the three Go modules that this repository tags: the root module, `db` and `pkg/functional`. Each has its own version and its own tag prefix ([RELEASING.md](RELEASING.md)).
+**Released module:** One of the four Go modules that this repository tags: the root module, `db`, `pkg/functional` and `gen` (the generators and the `nano` CLI). Each has its own version and its own tag prefix ([RELEASING.md](RELEASING.md)).
 
-**Leaves first:** The release order of the released modules: a module is tagged only after every module of this repository that it requires: `pkg/functional`, then `db`, then the root.
+**Leaves first:** The release order of the released modules: a module is tagged only after every module of this repository that it requires: `pkg/functional`, then `db`, then the root, then `gen`.
 
 **Service assembly:** The composition of framework modules and application-owned dependencies into one service.
 

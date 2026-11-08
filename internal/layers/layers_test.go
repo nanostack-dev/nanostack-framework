@@ -212,9 +212,15 @@ func TestToolingIsItsOwnModule(t *testing.T) {
 		}
 	}
 	// No root package, test or integration test included, builds with x/tools.
-	for dep := range strings.Lines(goList(t, "-deps", "-test", "-tags", "integration", "-f", "{{.ImportPath}}", "./...")) {
-		if strings.HasPrefix(strings.TrimSpace(dep), "golang.org/x/tools/") {
-			t.Errorf("a root package depends on %s", strings.TrimSpace(dep))
+	deps := goList(t, "-test", "-tags", "integration", "-f", "{{.ImportPath}}{{range .Deps}} {{.}}{{end}}", "./...")
+	for line := range strings.Lines(deps) {
+		pkg, list, _ := strings.Cut(strings.TrimSpace(line), " ")
+		for dep := range strings.FieldsSeq(list) {
+			if strings.HasPrefix(dep, "golang.org/x/tools/") {
+				t.Errorf("%s depends on %s; move the code that needs golang.org/x/tools into the %s module",
+					pkg, dep, layers.Tooling)
+				break
+			}
 		}
 	}
 }
