@@ -1121,7 +1121,7 @@ type Overrides struct {
 }
 ```
 
-Field names follow the type name. When two types share a name, both are qualified: `*nanopg.DB` becomes `NanopgDB` and `*sql.DB` becomes `SQLDB`. Adding a provider never renames another field.
+Field names follow the type name. When two types share a name, both are qualified by their package name: `*nanopg.DB` becomes `NanopgDB` and `*sql.DB` becomes `SQLDB`. When the packages share a name too, the import path qualifies them: `billing/repository.Repository` and `invoice/repository.Repository` become `BillingRepositoryRepository` and `InvoiceRepositoryRepository`. Reordering providers renames no field; a new provider renames only the fields whose type name it shares ([the rule](generation.md#overrides-and-components)). Variables follow the fields (`nanopgDB`, `needNanopgDB`). The quotes below come from files generated before that: a numbered variable in them (`needServer2`, `db2`) is named after its field in current output (`needNanoserverServer`).
 
 **The demand chain: one `need*` line per value, computed before anything is built** (echopoint `:499-506`):
 

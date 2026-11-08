@@ -51,11 +51,11 @@ func BuildComponents(ctx context.Context, cfg Config, ov Overrides) (_ *nano.App
 
 	// A value is built only when something that runs needs it and no
 	// override replaces the value that needs it.
-	needServer2 := true
-	needGreeter2 := needServer2 && ov.Server == nil
+	needServer := true
+	needGreeter := needServer && ov.Server == nil
 
 	var greeter2 *greeter
-	if needGreeter2 {
+	if needGreeter {
 		if ov.Greeter != nil {
 			greeter2 = ov.Greeter
 		} else {
@@ -64,7 +64,7 @@ func BuildComponents(ctx context.Context, cfg Config, ov Overrides) (_ *nano.App
 	}
 
 	var server2 *server
-	if needServer2 {
+	if needServer {
 		if ov.Server != nil {
 			server2 = ov.Server
 		} else {

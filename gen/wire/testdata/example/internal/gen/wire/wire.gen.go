@@ -65,8 +65,8 @@ func BuildComponents(ctx context.Context, cfg Config, ov Overrides) (_ *nano.App
 	// override replaces the value that needs it.
 	needServer := true
 	needService := needServer && ov.Server == nil
-	needStore2 := true
-	needMemory := needStore2 && ov.Store == nil
+	needStore := true
+	needMemory := needStore && ov.Store == nil
 	needLogger := (needMemory && ov.Memory == nil) || (needService && ov.Service == nil) || (needServer && ov.Server == nil)
 
 	var logger *slog.Logger
@@ -95,7 +95,7 @@ func BuildComponents(ctx context.Context, cfg Config, ov Overrides) (_ *nano.App
 	}
 
 	var store2 greeter.Store
-	if needStore2 {
+	if needStore {
 		if ov.Store != nil {
 			store2 = ov.Store
 			app.Manage("greeter.Store", store2)
