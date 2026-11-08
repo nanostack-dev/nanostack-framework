@@ -1,6 +1,6 @@
 # Releasing
 
-This repository releases three Go modules. This runbook gives the rules for their `go.mod` files, the release steps with exact commands, the verification, the rollback, and the upgrade notes for consumers. The design is in [docs/design/beta-readiness.md](docs/design/beta-readiness.md), section D.
+This repository releases four Go modules. This runbook gives the rules for their `go.mod` files, the release steps with exact commands, the verification, the rollback, and the upgrade notes for consumers. The design is in [docs/design/beta-readiness.md](docs/design/beta-readiness.md), section D.
 
 ## Modules and tags
 
@@ -9,9 +9,11 @@ This repository releases three Go modules. This runbook gives the rules for thei
 | `github.com/nanostack-dev/nanostack-framework/pkg/functional` | `pkg/functional` | `pkg/functional/vX.Y.Z` | `pkg/functional/v0.23.0-beta.1` |
 | `github.com/nanostack-dev/nanostack-framework/db` | `db` | `db/vX.Y.Z` | `db/v0.23.0-beta.1` |
 | `github.com/nanostack-dev/nanostack-framework` | `.` | `vX.Y.Z` | `v0.23.0-beta.1` |
+| `github.com/nanostack-dev/nanostack-framework/gen` | `gen` | `gen/vX.Y.Z` | the first release after `v0.23.0-beta.1` |
 
 - Each module has its own version ([ADR 0014](docs/adr/0014-one-repository-with-nested-modules.md)). The root `go.mod` records the nested versions that it was tested with. Do not tag a module that did not change.
-- `db` requires `pkg/functional`. The root requires `db` and `pkg/functional`. So the tag order is always leaves first: `pkg/functional`, then `db`, then the root.
+- `db` requires `pkg/functional`. The root requires `db` and `pkg/functional`. `gen` requires the root, and through it `db` and `pkg/functional`. So the tag order is always leaves first: `pkg/functional`, then `db`, then the root, then `gen`.
+- `gen` holds the generators and the `nano` CLI (`gen/cmd/nano`). The root never requires `gen`, so `golang.org/x/tools` and the other generator dependencies stay out of the module graph of a runtime consumer. A service pins `nano` with a `tool` directive ([Consumers of nano](#consumers-of-nano)).
 - `db/tests` and `db/examples` are never tagged. They keep their local `replace` lines.
 - The module paths have no `/vN` suffix, so the major version stays 0 or 1.
 - A pre-release suffix (`-beta.N`) keeps `go get ...@latest` and `go get -u` on the last release. Use it while the API can still change.
@@ -20,8 +22,8 @@ This repository releases three Go modules. This runbook gives the rules for thei
 
 `main` is always in the **development form**. A release commit, which only a tag points to, is in the **release form**.
 
-1. Development form (`main` and every branch): a released module requires each other module of this repository at the placeholder `v0.0.0`, with a `replace` to its relative directory (`./db`, `../pkg/functional`). The two always go together. So `GOWORK=off` builds and CI test the modules of one commit together, and one pull request can change `db` and the root at once.
-2. Release form (a tagged commit): no `replace`, no `v0.0.0` and no pseudo-version. A released module requires each other module of this repository at its tag. Consumers ignore `replace`, and `go install module@version` (for example of `cmd/nano`) refuses a `go.mod` that has one.
+1. Development form (`main` and every branch): a released module requires each other module of this repository at the placeholder `v0.0.0`, with a `replace` to its relative directory (`./db`, `../pkg/functional`, `../`). The two always go together. A dependency's `replace` does not apply in the module that requires it, so `gen` also repeats the root's two `replace` lines: the root requires `db` and `pkg/functional` at `v0.0.0`. So `GOWORK=off` builds and CI test the modules of one commit together, and one pull request can change `db` and the root at once.
+2. Release form (a tagged commit): no `replace`, no `v0.0.0` and no pseudo-version. A released module requires each other module of this repository at its tag. Consumers ignore `replace`, and `go install module@version` (for example of `gen/cmd/nano`) refuses a `go.mod` that has one.
 3. A release commit is never merged into `main`. It lives on a `release/vX.Y.Z` branch, and `main` keeps the development form.
 4. `go.work` and `go.work.sum` are for development only. They are git-ignored. CI sets `GOWORK=off` and uses the `replace` lines.
 5. `lint/cmd/lintconfig` stays in the root module at its path, because consumers pin it as a `tool`.
@@ -40,14 +42,14 @@ This repository releases three Go modules. This runbook gives the rules for thei
 
 ## Release steps
 
-A release is a chain of at most two commits on a `release/vX.Y.Z` branch, cut from `origin/main`. The tags go leaves first: `pkg/functional`, then `db`, then the root. Tag only the modules that changed; a module that did not change keeps its last tag, and the others require that tag. The example is the first beta.
+A release is a chain of at most three commits on a `release/vX.Y.Z` branch, cut from `origin/main`. The tags go leaves first: `pkg/functional`, then `db`, then the root, then `gen`. Tag only the modules that changed; a module that did not change keeps its last tag, and the others require that tag. The example is the first beta.
 
 Before you start:
 
 ```sh
 git fetch origin --tags
 git switch -c release/v0.23.0-beta.1 origin/main
-git tag -l 'v*' 'db/v*' 'pkg/functional/v*' --sort=-v:refname | head
+git tag -l 'v*' 'db/v*' 'pkg/functional/v*' 'gen/v*' --sort=-v:refname | head
 ```
 
 Make sure that the new tags do not exist. A tag is never moved or deleted (see [Rollback](#rollback)). Make sure that CI passed on the `origin/main` commit.
@@ -116,10 +118,45 @@ gh release create v0.23.0-beta.1 --prerelease --verify-tag --notes-file <notes>
 
 The CHANGELOG.md entries land on `main` before the release, in the pull requests that make the changes.
 
-### 4. Verify
+### 4. gen
+
+One more commit puts `gen/go.mod` in the release form. It drops the three `replace` lines and requires the root tag. `go mod tidy` then requires `db` and `pkg/functional` at their tags where `gen` needs them. Review the `go.mod` diff before you commit. `gen`'s first tag comes with the first release after `v0.23.0-beta.1`; the example keeps the version of the other steps:
+
+```sh
+(cd gen &&
+  go mod edit \
+    -dropreplace github.com/nanostack-dev/nanostack-framework \
+    -dropreplace github.com/nanostack-dev/nanostack-framework/db \
+    -dropreplace github.com/nanostack-dev/nanostack-framework/pkg/functional \
+    -require github.com/nanostack-dev/nanostack-framework@v0.23.0-beta.1 &&
+  GOWORK=off GOMODCACHE="$(mktemp -d)" go mod tidy &&
+  GOWORK=off go build ./... && GOWORK=off go vet ./... && GOWORK=off go test ./...)
+git diff gen/go.mod
+git commit -am "release: gen v0.23.0-beta.1"
+git push origin release/v0.23.0-beta.1
+gh workflow run release.yml --ref release/v0.23.0-beta.1 -f version=gen/v0.23.0-beta.1   # dry run
+git tag -a gen/v0.23.0-beta.1 -m "gen v0.23.0-beta.1" HEAD
+git push origin gen/v0.23.0-beta.1
+git ls-remote --exit-code --tags origin refs/tags/gen/v0.23.0-beta.1
+```
+
+`release.yml` builds a scratch consumer that pins `gen/cmd/nano` with `go get -tool` and runs `go tool nano`, as a service does.
+
+### 5. Verify
 
 - The push of each tag starts `release.yml`. Make sure that the run for each tag passed: `gh run list --workflow release.yml --limit 5`. To run the verification again: `gh workflow run release.yml --ref main -f version=v0.23.0-beta.1`. Each tag has its own concurrency group, so you can dispatch more than one tag at a time.
-- Do the consumer build check of [docs/runbooks/deployment.md](docs/runbooks/deployment.md) in echopoint and anchor with the published tag, in a scratch copy or a branch. Before the tags exist, that check must replace all three released modules (step 1 of that runbook): a replace of the root module alone leaves `db` and `pkg/functional` at versions that are not tagged.
+- Do the consumer build check of [docs/runbooks/deployment.md](docs/runbooks/deployment.md) in echopoint and anchor with the published tag, in a scratch copy or a branch. Before the tags exist, that check must replace every released module that the service resolves (step 1 of that runbook): a replace of the root module alone leaves `db` and `pkg/functional` at versions that are not tagged, and a service that pins `nano` also resolves `gen`.
+
+## Consumers of nano
+
+A service runs the generators through a `tool` directive in its own `go.mod`. The directive pins the `gen` module, and `go.sum` records it:
+
+```sh
+go get -tool github.com/nanostack-dev/nanostack-framework/gen/cmd/nano@<gen tag>
+go tool nano gen config -dir cmd/app
+```
+
+A `//go:generate` line runs `go tool nano gen <name> [flags]`. The tool's dependencies (`golang.org/x/tools` among them) join the service's module graph, not the graph of a module that only imports the framework's runtime packages. The framework's own root module cannot pin `nano` this way: `gen` requires the root, so a `tool` line in the root `go.mod` would bring `gen` and its dependencies back into the root graph. Its `//go:generate` lines run `go -C <path to gen> run ./cmd/nano` instead.
 
 ## Rollback
 
@@ -132,6 +169,19 @@ The CHANGELOG.md entries land on `main` before the release, in the pull requests
   ```
 
 - A consumer goes back to the last good version with `go get <module>@<version>`, then `go mod tidy`.
+
+## Upgrade from v0.23.0-beta.1
+
+`cmd/nano` moved to the `gen` module, at `gen/cmd/nano`. The root module no longer contains the generators, so `go run github.com/nanostack-dev/nanostack-framework/cmd/nano` fails. Pin the tool once and change each `//go:generate` line:
+
+```sh
+go get -tool github.com/nanostack-dev/nanostack-framework/gen/cmd/nano@<gen tag>
+grep -rl 'nanostack-framework/cmd/nano' --include='*.go' . \
+  | xargs sed -i '' 's#go run github.com/nanostack-dev/nanostack-framework/cmd/nano#go tool nano#g'
+go mod tidy
+```
+
+(On Linux, use `sed -i` without `''`.) A Go file that imports a `gen/...` package (a `genconfig.Run` or `wire.Run` test) resolves it through the `tool` requirement. The generated files do not change.
 
 ## Upgrade from v0.22.0
 

@@ -104,8 +104,9 @@ linters:
             - pkg: log$
               desc: Use log/slog with a context (slog.InfoContext); nanostack-framework/core/log wires the handler
         # The layers of plan section 06: core, then the integrations (http, pg,
-        # redis, otel), then gen and cmd. A package imports only its own layer
-        # and the layers below it. internal/layers tests the same rule on the
+        # redis, otel), then gen. A package imports only its own layer and the
+        # layers below it. gen is its own module with its own rules
+        # (gen/.golangci.local.yml). internal/layers tests the same rule on the
         # import graph.
         core imports no upper layer:
           files:
@@ -123,8 +124,6 @@ linters:
               desc: core is the lowest layer and must not import gen
             - pkg: github.com/nanostack-dev/nanostack-framework/gen/
               desc: core is the lowest layer and must not import gen
-            - pkg: github.com/nanostack-dev/nanostack-framework/cmd/
-              desc: core is the lowest layer and must not import cmd
         integrations import no upper layer:
           files:
             - "**/http/**"
@@ -136,19 +135,15 @@ linters:
               desc: the integration layer sits below gen and must not import it; move the shared code into core
             - pkg: github.com/nanostack-dev/nanostack-framework/gen/
               desc: the integration layer sits below gen and must not import it; move the shared code into core
-            - pkg: github.com/nanostack-dev/nanostack-framework/cmd/
-              desc: the integration layer sits below cmd and must not import it
         # The legacy trees carry Fx and zerolog, which the layers replace.
         # internal/layers tests the same rule on the import graph.
         # pkg/functional is the leaf layer (internal/layers.Leaves), not legacy.
-        core and tooling import no legacy tree:
+        core imports no legacy tree:
           # Lax: everything not denied is allowed, and an allow entry wins over
           # the shorter pkg/ deny.
           list-mode: lax
           files:
             - "**/core/**"
-            - "**/gen/**"
-            - "**/cmd/**"
           allow:
             - github.com/nanostack-dev/nanostack-framework/pkg/functional$
           deny:
@@ -199,8 +194,6 @@ linters:
             - "**/pg/**"
             - "**/redis/**"
             - "**/otel/**"
-            - "**/gen/**"
-            - "**/cmd/**"
           deny:
             - pkg: go.uber.org/fx
               desc: the layers replace Fx; use core/nano and nano gen wire (ADR 0013)

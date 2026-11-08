@@ -5,8 +5,10 @@
 // bind the Config and build the graph.
 //
 // Regenerate with go generate ./internal/nanoexample after a module changes a
-// provider or a config field.
+// provider or a config field. nano lives in the gen module, which requires this
+// module, so the root module cannot pin it as a tool: the lines run it from the
+// gen directory (go -C) and pass this directory back as -dir.
 package nanoexample
 
-//go:generate go run github.com/nanostack-dev/nanostack-framework/cmd/nano gen config -dir .
-//go:generate go run github.com/nanostack-dev/nanostack-framework/cmd/nano gen wire -dir . -out .
+//go:generate go -C ../../gen run ./cmd/nano gen config -dir ../internal/nanoexample
+//go:generate go -C ../../gen run ./cmd/nano gen wire -dir ../internal/nanoexample -out .

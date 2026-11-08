@@ -4,7 +4,7 @@ Developer workflows for creating, validating, generating, and upgrading Nanostac
 
 CLI commands should orchestrate explicit framework tooling rather than hiding OpenAPI, migrations, or go-jet.
 
-> **Superseded in part.** The CLI that exists is `nano` ([`cmd/nano`](../cmd/nano)), whose `nano gen <name>` runs the framework's generators. The `nanostack generate oapi|db` commands below are the original direction and are not built; new commands join `nano`.
+> **Superseded in part.** The CLI that exists is `nano` ([`gen/cmd/nano`](../gen/cmd/nano)), whose `nano gen <name>` runs the framework's generators. The `nanostack generate oapi|db` commands below are the original direction and are not built; new commands join `nano`.
 
 Initial command model:
 

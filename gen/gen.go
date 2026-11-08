@@ -1,5 +1,5 @@
 // Package gen is the contract every Nanostack generator follows, so that
-// cmd/nano routes `nano gen <name>` to any of them the same way. A generator
+// gen/cmd/nano routes `nano gen <name>` to any of them the same way. A generator
 // package exposes:
 //
 //   - Options, the configuration of one run, with a Check field: compare
@@ -35,7 +35,7 @@ type File struct {
 	Data []byte
 }
 
-// Command is a generator's command-line entry point, as cmd/nano calls it
+// Command is a generator's command-line entry point, as gen/cmd/nano calls it
 // with the arguments after `nano gen <name>`.
 type Command func(args []string, stdout, stderr io.Writer) int
 

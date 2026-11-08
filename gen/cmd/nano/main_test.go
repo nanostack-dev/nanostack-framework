@@ -8,13 +8,13 @@ import (
 
 func TestRun(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	fresh := []string{"gen", "wire", "-dir", "../../gen/wire/testdata/signatures", "-check"}
+	fresh := []string{"gen", "wire", "-dir", "../../wire/testdata/signatures", "-check"}
 	if code := run(fresh, &stdout, &stderr); code != 0 {
 		t.Fatalf("check on fresh testdata: exit %d\n%s", code, stderr.String())
 	}
 
 	stderr.Reset()
-	cyclic := []string{"gen", "wire", "-dir", "../../gen/wire/testdata/cycle", "-check"}
+	cyclic := []string{"gen", "wire", "-dir", "../../wire/testdata/cycle", "-check"}
 	if code := run(cyclic, &stdout, &stderr); code != 1 {
 		t.Fatalf("check on a cyclic graph: exit %d, want 1", code)
 	}
@@ -34,12 +34,12 @@ func TestRun(t *testing.T) {
 // TestEveryGeneratorIsRouted runs each generator's -check on its committed
 // testdata through the one nano command.
 func TestEveryGeneratorIsRouted(t *testing.T) {
-	const golden = "../../gen/validate/internal/golden/required"
+	const golden = "../../validate/internal/golden/required"
 	for name, args := range map[string][]string{
-		"config":   {"gen", "config", "-dir", "../../gen/config/testdata/app", "-check"},
-		"errors":   {"gen", "errors", "-dir", "../../gen/errors/testdata/billing", "-check"},
+		"config":   {"gen", "config", "-dir", "../../config/testdata/app", "-check"},
+		"errors":   {"gen", "errors", "-dir", "../../errors/testdata/billing", "-check"},
 		"validate": {"gen", "validate", "-spec", golden + "/openapi.yaml", "-dir", golden, "-check"},
-		"wire":     {"gen", "wire", "-dir", "../../gen/wire/testdata/example", "-out", "internal/gen/wire", "-check"},
+		"wire":     {"gen", "wire", "-dir", "../../wire/testdata/example", "-out", "internal/gen/wire", "-check"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()

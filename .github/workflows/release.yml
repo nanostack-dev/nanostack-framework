@@ -1,8 +1,9 @@
 name: Release
 
-# Release checks for the three released modules: the root module, db and
-# pkg/functional (RELEASING.md). They are tagged leaves first, one commit each:
-# pkg/functional/vX.Y.Z, then db/vX.Y.Z, then vX.Y.Z.
+# Release checks for the four released modules: pkg/functional, db, the root
+# module and gen (RELEASING.md). They are tagged leaves first, one commit each:
+# pkg/functional/vX.Y.Z, then db/vX.Y.Z, then vX.Y.Z, then gen/vX.Y.Z (gen
+# requires the root).
 #
 # - Every pull request: a branch may develop the modules together. A released
 #   go.mod may require another module of this repository at the placeholder
@@ -24,10 +25,11 @@ on:
       - "v*"
       - "db/v*"
       - "pkg/functional/v*"
+      - "gen/v*"
   workflow_dispatch:
     inputs:
       version:
-        description: "Release tag, for example pkg/functional/v0.23.0-beta.1, db/v0.23.0-beta.1 or v0.23.0-beta.1"
+        description: "Release tag, for example pkg/functional/v0.23.0-beta.1, db/v0.23.0-beta.1, v0.23.0-beta.1 or gen/vX.Y.Z"
         required: true
         type: string
 
@@ -35,7 +37,7 @@ permissions:
   contents: read
 
 # One group per release tag. A dispatch runs on a branch ref (main), so a group
-# keyed on github.ref would put the dispatches of three tags in one group, and
+# keyed on github.ref would put the dispatches of several tags in one group, and
 # GitHub cancels a pending run when the next one is queued.
 concurrency:
   group: release-${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref }}
@@ -82,7 +84,7 @@ jobs:
           echo "tag=$tag" >>"$GITHUB_OUTPUT"
           echo "exists=$exists" >>"$GITHUB_OUTPUT"
           echo "tag=${tag:-<none>} exists=$exists commit=$(git rev-parse HEAD)"
-      # RELEASE_TAG empty: check all three modules, pull request rules.
+      # RELEASE_TAG empty: check all four modules, pull request rules.
       # RELEASE_TAG set: check the tagged module, release rules.
       - name: Check the released go.mod files
         env:
@@ -100,6 +102,7 @@ jobs:
               "$repo") echo "" ;;
               "$repo/db") echo "db/" ;;
               "$repo/pkg/functional") echo "pkg/functional/" ;;
+              "$repo/gen") echo "gen/" ;;
               *) return 1 ;;
             esac
           }
@@ -108,6 +111,7 @@ jobs:
               .) echo "$repo" ;;
               db) echo "$repo/db" ;;
               pkg/functional) echo "$repo/pkg/functional" ;;
+              gen) echo "$repo/gen" ;;
             esac
           }
           semver='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$'
@@ -117,8 +121,9 @@ jobs:
             case "$RELEASE_TAG" in
               pkg/functional/v*) dirs=pkg/functional ;;
               db/v*) dirs=db ;;
+              gen/v*) dirs=gen ;;
               v*) dirs=. ;;
-              *) fail "$RELEASE_TAG is not a release tag (vX.Y.Z, db/vX.Y.Z or pkg/functional/vX.Y.Z)"; exit 1 ;;
+              *) fail "$RELEASE_TAG is not a release tag (vX.Y.Z, db/vX.Y.Z, pkg/functional/vX.Y.Z or gen/vX.Y.Z)"; exit 1 ;;
             esac
             version="${RELEASE_TAG##*/}"
             if ! [[ "$version" =~ $semver ]]; then
@@ -127,7 +132,7 @@ jobs:
               fail "$RELEASE_TAG: the module paths have no /vN suffix, so the major version must be 0 or 1"
             fi
           else
-            dirs=". db pkg/functional"
+            dirs=". db pkg/functional gen"
           fi
 
           if [ -n "$(git ls-files go.work go.work.sum)" ]; then
@@ -220,8 +225,9 @@ jobs:
           case "$RELEASE_TAG" in
             pkg/functional/v*) dirs=pkg/functional ;;
             db/v*) dirs=db ;;
+            gen/v*) dirs=gen ;;
             v*) dirs=. ;;
-            *) dirs=". db pkg/functional" ;;
+            *) dirs=". db pkg/functional gen" ;;
           esac
           for dir in $dirs; do
             echo "== $dir"
@@ -255,10 +261,17 @@ jobs:
           set -euo pipefail
           repo=github.com/nanostack-dev/nanostack-framework
           version="${RELEASE_TAG##*/}"
+          # A tool the consumer pins with a tool directive, as services pin nano.
+          tools=()
           case "$RELEASE_TAG" in
             pkg/functional/v*)
               module="$repo/pkg/functional"
               imports=("$repo/pkg/functional")
+              ;;
+            gen/v*)
+              module="$repo/gen"
+              imports=("$repo/gen" "$repo/gen/wire" "$repo/gen/config")
+              tools=("$repo/gen/cmd/nano")
               ;;
             db/v*)
               module="$repo/db"
@@ -288,9 +301,11 @@ jobs:
             echo "func main() {}"
           } >main.go
           go mod tidy
+          for tool in "${tools[@]}"; do go get -tool "$tool@$version"; done
           cat go.mod
           go build ./...
           go vet ./...
+          for tool in "${tools[@]}"; do go tool "${tool##*/}" gen wire -h >/dev/null; done
           # The intra-repository versions the consumer resolved: the tag itself, and
           # tags (never pseudo-versions) for the nested modules it requires.
           resolved="$(go list -m all | grep "^$repo")"

@@ -82,10 +82,10 @@ func TestGoldenOutput(t *testing.T) {
 			}
 			want, err := os.ReadFile(res.Path)
 			if err != nil {
-				t.Fatalf("%v (run go test ./gen/wire -update)", err)
+				t.Fatalf("%v (run go -C gen test ./wire -update)", err)
 			}
 			if string(want) != string(res.Data) {
-				t.Fatalf("%s is stale; run go test ./gen/wire -update and review the diff\n--- generated:\n%s",
+				t.Fatalf("%s is stale; run go -C gen test ./wire -update and review the diff\n--- generated:\n%s",
 					res.Path, res.Data)
 			}
 		})

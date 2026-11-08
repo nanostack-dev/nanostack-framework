@@ -35,7 +35,7 @@ func goldenDirs(t *testing.T) []string {
 
 // TestGolden regenerates every golden package and compares it with the
 // checked-in validate.gen.go. One package per keyword family; update them
-// with go generate ./gen/validate/internal/golden/...
+// with go -C gen generate ./validate/internal/golden/...
 func TestGolden(t *testing.T) {
 	for _, dir := range goldenDirs(t) {
 		t.Run(filepath.Base(dir), func(t *testing.T) {

@@ -2,7 +2,7 @@
 // framework's new packages. A package may import only packages of its own
 // layer or of the layers below it:
 //
-//	tooling       gen, cmd
+//	tooling       gen (its own module, with the nano CLI at gen/cmd/nano)
 //	integrations  http, pg, redis, otel
 //	core          core
 //
@@ -17,10 +17,16 @@
 // may import the pkg primitives of AllowedLegacy, which carry neither Fx nor
 // zerolog, until each one moves to its layered home.
 //
+// The tooling layer is the gen module (gen/go.mod). It requires the root
+// module, and the root module never requires it, so golang.org/x/tools and
+// the other generator dependencies stay out of the module graph of a runtime
+// consumer.
+//
 // The test reads the import graph with go list, test files included, and
 // checks that no layered package depends on Fx or zerolog, directly or
 // through an allowed primitive. The depguard rules in .golangci.local.yml
-// give the same rules in editors and in golangci-lint.
+// and gen/.golangci.local.yml give the same rules in editors and in
+// golangci-lint.
 package layers
 
 import (
@@ -31,8 +37,13 @@ import (
 // Module is the import path of the framework module.
 const Module = "github.com/nanostack-dev/nanostack-framework"
 
-// Trees are the layered top-level directories, lowest layer first.
-var Trees = []string{"core", "http", "pg", "redis", "otel", "gen", "cmd"} //nolint:gochecknoglobals // read-only table.
+// Tooling is the directory of the tooling layer, relative to the repository
+// root. It is the nested module Module + "/gen".
+const Tooling = "gen"
+
+// Trees are the layered top-level directories, lowest layer first. The last
+// one, Tooling, is its own module; the others are in the root module.
+var Trees = []string{"core", "http", "pg", "redis", "otel", Tooling} //nolint:gochecknoglobals // read-only table.
 
 // Leaves are the leaf-layer packages, relative to Module, that every layer
 // may import (plan section 06, LEAF). Each is its own module and imports no
@@ -55,7 +66,7 @@ var AllowedLegacy = []string{ //nolint:gochecknoglobals // read-only table.
 }
 
 // Layer returns the layer rank of a framework package path, relative to
-// Module: 1 for core, 2 for http, pg, redis and otel, 3 for gen and cmd. It
+// Module: 1 for core, 2 for http, pg, redis and otel, 3 for gen. It
 // returns 0 for a path outside the layered trees, such as the legacy pkg and
 // modules, and the Leaves.
 func Layer(rel string) int {
@@ -65,7 +76,7 @@ func Layer(rel string) int {
 		return 1
 	case "http", "pg", "redis", "otel":
 		return 2
-	case "gen", "cmd":
+	case Tooling:
 		return 3
 	}
 	return 0

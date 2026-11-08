@@ -49,7 +49,7 @@ Run oapi-codegen first, then `nano gen validate` on the same package:
 
 ```go
 //go:generate go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.8.2 -config oapi-codegen.yaml openapi.yaml
-//go:generate go run github.com/nanostack-dev/nanostack-framework/cmd/nano gen validate -spec openapi.yaml -dir .
+//go:generate go tool nano gen validate -spec openapi.yaml -dir .
 ```
 
 The override calls the `Validate` and `validateParams` methods that `nano gen validate` writes, so the package does not compile until they exist and match the spec. CI runs `nano gen validate -check` to fail on a stale `validate.gen.go`.
@@ -106,7 +106,19 @@ Outputs, next to the declaration: `errors.gen.go` (a constructor, a typed error 
 
 ## Checking generated files
 
-One command, `nano` (package [`cmd/nano`](../cmd/nano)), holds every generator: `nano gen config`, `nano gen errors`, `nano gen validate` and `nano gen wire`. Each call runs one generator; there is no `nano gen` pipeline that runs them all in order yet ([roadmap](roadmap.md#deferred-generator-outputs)). Run it with `go run github.com/nanostack-dev/nanostack-framework/cmd/nano gen <name> [flags]`, for example from a `//go:generate` line. `nano gen <name> -h` lists the flags of one generator.
+One command, `nano` (package [`gen/cmd/nano`](../gen/cmd/nano)), holds every generator: `nano gen config`, `nano gen errors`, `nano gen validate` and `nano gen wire`. Each call runs one generator; there is no `nano gen` pipeline that runs them all in order yet ([roadmap](roadmap.md#deferred-generator-outputs)). `nano gen <name> -h` lists the flags of one generator.
+
+`nano` and the generators are in the nested module `github.com/nanostack-dev/nanostack-framework/gen`, so their dependencies (`golang.org/x/tools` among them) stay out of the module graph of a service that only imports the runtime packages. A service pins `nano` with a `tool` directive and runs it with `go tool`:
+
+```sh
+go get -tool github.com/nanostack-dev/nanostack-framework/gen/cmd/nano@<gen tag>
+```
+
+```go
+//go:generate go tool nano gen config -dir .
+```
+
+The `gen` module requires the root module, so the framework's own root module cannot pin `nano` as a tool. Its `//go:generate` lines run `go -C <path to gen> run ./cmd/nano` and pass the package directory as `-dir` ([`internal/nanoexample`](../internal/nanoexample/doc.go)). [RELEASING.md](../RELEASING.md#consumers-of-nano) gives the tag order.
 
 Every generator takes `-check`: it writes nothing and exits 1 when a committed output is missing or differs from what the source produces. Run each generator with `-check` in CI next to the tests. Exit codes: 0 on success, 1 on a source error, stale output or (for `validate`) an unacknowledged validation gap, 2 on bad usage. `-h` prints the flags and exits 0.
 
@@ -198,7 +210,7 @@ nano gen wire [-dir .] [-out internal/gen/wire] [-tags a,b] [-check]
 
 `-out` is relative to `-dir`; set it to `.` to generate into the manifest package. `-check` writes nothing and exits 1 when `wire.gen.go` is missing or stale. Output is deterministic. Generated provider errors read `nano: provide *T: pkg.NewT: <cause>`, without a source position, so moving a provider does not change the generated file.
 
-Every generator follows the contract of package [`gen`](../gen/gen.go): `Options` with a `Check` field, `Generate(Options) ([]gen.File, error)`, `Run(Options) error` (stale output wraps `gen.ErrStale`) and `Main(args, stdout, stderr) int`. `gen/validate` is the one variation: its `Generate` returns a `*Result` that holds the `gen.File` and the schema features it does not enforce. Each `Main` writes an error once, after the prefix `nano gen <name>: `; `Generate`, `Run` and `gen.Sync` add no prefix, and a Check run returns a `*gen.StaleError` that lists the stale files. `cmd/nano` routes `nano gen <name>` to each `Main`.
+Every generator follows the contract of package [`gen`](../gen/gen.go): `Options` with a `Check` field, `Generate(Options) ([]gen.File, error)`, `Run(Options) error` (stale output wraps `gen.ErrStale`) and `Main(args, stdout, stderr) int`. `gen/validate` is the one variation: its `Generate` returns a `*Result` that holds the `gen.File` and the schema features it does not enforce. Each `Main` writes an error once, after the prefix `nano gen <name>: `; `Generate`, `Run` and `gen.Sync` add no prefix, and a Check run returns a `*gen.StaleError` that lists the stale files. `gen/cmd/nano` routes `nano gen <name>` to each `Main`.
 
 ## Replacing Shell Scripts
 

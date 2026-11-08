@@ -1,0 +1,59 @@
+# The gen module's additions to lint/base.golangci.yml. It is its own module, so the root
+# configuration does not see it. From the repository root, run
+# `go run ./lint/cmd/lintconfig -dir gen` after changing this file or the base.
+run:
+  relative-path-mode: cfg
+
+formatters:
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/nanostack-dev/nanostack-framework
+
+linters:
+  settings:
+    depguard:
+      rules:
+        # gen is the tooling layer of plan section 06, above core and the integrations, so it
+        # may import any of them. It imports no legacy tree: they carry Fx and zerolog, which
+        # the layers replace. pkg/functional is the leaf layer (internal/layers.Leaves), not
+        # legacy. internal/layers tests the same rule on the import graph.
+        tooling imports no legacy tree:
+          # Lax: everything not denied is allowed, and an allow entry wins over the shorter
+          # pkg/ deny.
+          list-mode: lax
+          files:
+            - $all
+          allow:
+            - github.com/nanostack-dev/nanostack-framework/pkg/functional$
+          deny:
+            - pkg: github.com/nanostack-dev/nanostack-framework/pkg/
+              desc: pkg is legacy; move what the generators need into core
+            - pkg: github.com/nanostack-dev/nanostack-framework/modules/
+              desc: modules is legacy Fx wiring; the layers use core/nano and nano gen wire
+            - pkg: github.com/nanostack-dev/nanostack-framework/app$
+              desc: app is legacy Fx assembly; the layers use core/nano and nano gen wire
+            - pkg: github.com/nanostack-dev/nanostack-framework/app/
+              desc: app is legacy Fx assembly; the layers use core/nano and nano gen wire
+        # zerolog is denied everywhere by the base rules.
+        tooling uses no fx:
+          files:
+            - $all
+          deny:
+            - pkg: go.uber.org/fx
+              desc: the layers replace Fx; use core/nano and nano gen wire (ADR 0013)
+            - pkg: go.uber.org/dig
+              desc: the layers replace Fx; use core/nano and nano gen wire (ADR 0013)
+    gocritic:
+      enabled-checks:
+        - ruleguard
+      settings:
+        ruleguard:
+          # ${base-path} is this directory (relative-path-mode: cfg); the rules live at the root.
+          # They import github.com/quasilyte/go-ruleguard/dsl, which only the root module
+          # requires, so lint runs in the repository's go.work (CI creates one).
+          rules: ${base-path}/../gorules/functional.go,${base-path}/../gorules/transactor.go
+          failOn: all
+nanostack:
+  # One per linter in each rule above; lintconfig fails when they differ.
+  exclusion-budget: 0
