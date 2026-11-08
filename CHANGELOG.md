@@ -2,6 +2,21 @@
 
 One section per module and version, newest first. Each section uses Added, Changed, Deprecated, Removed and Fixed. [RELEASING.md](RELEASING.md) gives the release steps and the upgrade notes.
 
+## Unreleased (gen)
+
+### Added
+- The module `github.com/nanostack-dev/nanostack-framework/gen`: the generators (`gen`, `gen/config`, `gen/errors`, `gen/validate`, `gen/wire`, `gen/oapi`, `gen/jet`) and the `nano` CLI at `gen/cmd/nano`. Its tags are `gen/vX.Y.Z`, cut after the root tag ([RELEASING.md](RELEASING.md)). A service pins the CLI with `go get -tool github.com/nanostack-dev/nanostack-framework/gen/cmd/nano@<tag>` and runs `go tool nano gen <name>`.
+
+## Unreleased (root)
+
+### Removed
+- `gen/...` and `cmd/nano` leave the root module for the `gen` module. `go run github.com/nanostack-dev/nanostack-framework/cmd/nano` no longer resolves; RELEASING.md, "Upgrade from v0.23.0-beta.1", gives the `tool` directive and the `//go:generate` change. The `gen/...` import paths do not change.
+- The root `go.mod` no longer requires `golang.org/x/tools` or `github.com/oapi-codegen/nullable`.
+
+### Changed
+- `internal/layers`: the tooling layer is the `gen` module (`Tooling`); `cmd` is no longer a layered tree.
+- CI: a `gen` job (vet, test, `go mod tidy -diff`, `lintconfig -check -dir gen`, lint), `gen` in the govulncheck matrix, and `go mod tidy -diff` in the root. `release.yml` checks `gen/go.mod` and `gen/vX.Y.Z` tags.
+
 ## v0.23.0-beta.1 (root)
 
 ### Added

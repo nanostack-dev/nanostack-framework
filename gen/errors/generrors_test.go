@@ -32,10 +32,13 @@ func TestGoldenOutput(t *testing.T) {
 		}
 		want, readErr := os.ReadFile(f.Path)
 		if readErr != nil {
-			t.Fatalf("%v; run go test ./gen/errors -update", readErr)
+			t.Fatalf("%v; run go -C gen test ./errors -update", readErr)
 		}
 		if !bytes.Equal(want, f.Data) {
-			t.Errorf("%s differs from generator output; run go test ./gen/errors -update and review the diff", f.Path)
+			t.Errorf(
+				"%s differs from generator output; run go -C gen test ./errors -update and review the diff",
+				f.Path,
+			)
 		}
 	}
 }

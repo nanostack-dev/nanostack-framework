@@ -13,7 +13,7 @@ The repository is a Go module consumed by applications; it does not deploy a pro
 | `gen` | Generator contract: `gen.File`, `gen.ErrStale`, `gen.Sync`, `gen.Command` | [Generator contract](../../gen/README.md) |
 | `gen/wire` | `nano gen wire`: manifest to `wire.gen.go` with `Build`, `BuildComponents`, typed `Overrides`, `-check` | [Wiring guide](../generation.md#wiring-nano-gen-wire) |
 | `gen/config`, `gen/errors` | `nano gen config` (binder, `CONFIG.md`, `.env.example`) and `nano gen errors` (typed errors, `ERRORS.md`) | [Generation](../generation.md) |
-| `cmd/nano` | The one CLI: `nano gen config\|errors\|validate\|wire`, each with `-check` | [Checking generated files](../generation.md#checking-generated-files) |
+| `gen/cmd/nano` | The one CLI: `nano gen config\|errors\|validate\|wire`, each with `-check`. Services run it as a `tool` | [Checking generated files](../generation.md#checking-generated-files) |
 | `core/config`, `core/log`, `core/secret` | Configuration runtime, slog logging and redaction, and the one secret type both use | [core/log](../../core/log/README.md), [Generation](../generation.md) |
 | `gen/oapi`, `gen/validate`, `gen/jet` | Generation configuration conventions; `nano gen validate` writes request validators from the OpenAPI document | [Generation](../generation.md) |
 | `gorules` | Ruleguard rules consumed by application lint configuration | [Functional rules](../../gorules/functional.go), [transaction rules](../../gorules/transactor.go) |
@@ -26,9 +26,9 @@ New code lives in three layers. A package imports only its own layer and the lay
 
 1. `core/`: the runtime that services and generated code call. It imports the standard library, small libraries and other `core/` packages.
 2. The integrations: `http/` (the HTTP boundary) and the nano modules in `pg/`, `redis/` and `otel/`. They import `core/` and each other.
-3. `gen/` and `cmd/nano`: the generators and the CLI. They may import tooling such as `golang.org/x/tools`. No runtime package imports them.
+3. `gen/`: the generators and the CLI (`gen/cmd/nano`). They may import tooling such as `golang.org/x/tools`. `gen` is its own module: it requires the root module, and the root module never requires it, so no runtime package can import it and its dependencies stay out of a runtime consumer's module graph.
 
-No layered package imports the legacy trees `modules/` or `app/`, Fx or zerolog. No layered package imports `pkg/` either, with one listed exception (design B1): an integration package may import the primitives in `internal/layers.AllowedLegacy`, which carry no Fx and no zerolog, until each one moves to its layered home. The [`internal/layers`](../../internal/layers/layers.go) test checks the import graph, test and integration files included, and that no runtime layer depends on Fx or zerolog. The depguard rules in [`.golangci.local.yml`](../../.golangci.local.yml) give the same rules in editors and in lint.
+No layered package imports the legacy trees `modules/` or `app/`, Fx or zerolog. No layered package imports `pkg/` either, with one listed exception (design B1): an integration package may import the primitives in `internal/layers.AllowedLegacy`, which carry no Fx and no zerolog, until each one moves to its layered home. The [`internal/layers`](../../internal/layers/layers.go) test checks the import graph, test and integration files included, and that no runtime layer depends on Fx or zerolog. The depguard rules in [`.golangci.local.yml`](../../.golangci.local.yml) and [`gen/.golangci.local.yml`](../../gen/.golangci.local.yml) give the same rules in editors and in lint.
 
 ## Runtime boundaries
 

@@ -2,6 +2,7 @@ package layers_test
 
 import (
 	"bytes"
+	"encoding/json"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -13,8 +14,8 @@ import (
 func TestLayer(t *testing.T) {
 	for rel, want := range map[string]int{
 		"core/nano": 1, "core": 1, "http/problem": 2, "pg/nanopg": 2, "redis/nanocache": 2, "otel/nanotrace": 2,
-		"gen": 3, "gen/wire": 3, "cmd/nano": 3,
-		"pkg/log": 0, "modules/cache": 0, "internal/layers": 0, "coreutil": 0, "pgx": 0, "pkg/functional": 0,
+		"gen": 3, "gen/wire": 3, "gen/cmd/nano": 3,
+		"cmd/nano": 0, "pkg/log": 0, "modules/cache": 0, "internal/layers": 0, "coreutil": 0, "pgx": 0, "pkg/functional": 0,
 	} {
 		if got := layers.Layer(rel); got != want {
 			t.Errorf("Layer(%q) = %d, want %d", rel, got, want)
@@ -56,7 +57,9 @@ func TestMayImport(t *testing.T) {
 		{"core/config", "pkg/functional", true},
 		{"http/problem", "pkg/functional", true},
 		{"gen/config", "pkg/functional", true},
-		{"cmd/nano", "pkg/functional", true},
+		{"gen/cmd/nano", "pkg/functional", true},
+		{"gen/cmd/nano", "core/nano", true},
+		{"gen/cmd/nano", "pkg/db/transactor", false},
 		{"core/nano", "pkg/functionalx", false},
 		{"core/log", "pg/nanopg", false},
 		{"core/log", "otel/nanotrace", false},
@@ -70,31 +73,52 @@ func TestMayImport(t *testing.T) {
 	}
 }
 
-// listedTrees are the go list patterns of the layered trees.
-func listedTrees() []string {
-	patterns := make([]string, len(layers.Trees))
-	for i, tree := range layers.Trees {
-		patterns[i] = "./" + tree + "/..."
+// rootTrees are the go list patterns of the layered trees of the root module.
+// Tooling is its own module, listed from its directory.
+func rootTrees() []string {
+	var patterns []string
+	for _, tree := range layers.Trees {
+		if tree != layers.Tooling {
+			patterns = append(patterns, "./"+tree+"/...")
+		}
 	}
 	return patterns
 }
 
-// goList runs go list in the root module and returns its output.
-func goList(t *testing.T, args ...string) string {
+// rootDir returns the directory of the root module.
+func rootDir(t *testing.T) string {
 	t.Helper()
 	gomod, err := exec.CommandContext(t.Context(), "go", "env", "GOMOD").Output()
 	if err != nil {
 		t.Fatal(err)
 	}
-	list := exec.CommandContext(t.Context(), "go", append([]string{"list"}, args...)...)
-	list.Dir = filepath.Dir(strings.TrimSpace(string(gomod)))
+	return filepath.Dir(strings.TrimSpace(string(gomod)))
+}
+
+// goCmd runs a go subcommand in dir and returns its output.
+func goCmd(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.CommandContext(t.Context(), "go", args...)
+	cmd.Dir = dir
 	var stderr bytes.Buffer
-	list.Stderr = &stderr
-	out, err := list.Output()
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
 	if err != nil {
-		t.Fatalf("go list %v: %v\n%s", args, err, stderr.String())
+		t.Fatalf("go %v in %s: %v\n%s", args, dir, err, stderr.String())
 	}
 	return string(out)
+}
+
+// goList runs go list in the root module and returns its output.
+func goList(t *testing.T, args ...string) string {
+	t.Helper()
+	return goCmd(t, rootDir(t), append([]string{"list"}, args...)...)
+}
+
+// goListTooling runs go list in the tooling module and returns its output.
+func goListTooling(t *testing.T, args ...string) string {
+	t.Helper()
+	return goCmd(t, filepath.Join(rootDir(t), layers.Tooling), append([]string{"list"}, args...)...)
 }
 
 // TestNoUpwardImports fails when a package, or one of its test files,
@@ -103,9 +127,10 @@ func goList(t *testing.T, args ...string) string {
 // app) that is not in AllowedLegacy for its layer.
 func TestNoUpwardImports(t *testing.T) {
 	// The integration tag lists the container tests too.
-	out := goList(t, append([]string{"-test", "-tags", "integration",
+	args := []string{"-test", "-tags", "integration",
 		"-f", "{{.ImportPath}}{{range .Imports}} {{.}}{{end}}{{range .TestImports}} {{.}}{{end}}" +
-			"{{range .XTestImports}} {{.}}{{end}}"}, listedTrees()...)...)
+			"{{range .XTestImports}} {{.}}{{end}}"}
+	out := goList(t, append(args, rootTrees()...)...) + goListTooling(t, append(args, "./...")...)
 	checked := map[string]bool{}
 	for line := range strings.Lines(out) {
 		fields := strings.Fields(line)
@@ -155,6 +180,46 @@ func TestNoFxOrZerolog(t *testing.T) {
 		for _, b := range banned {
 			if dep == b || strings.HasPrefix(dep, b+"/") {
 				t.Errorf("a runtime layer or an allowed primitive depends on %s", dep)
+			}
+		}
+	}
+}
+
+// TestToolingIsItsOwnModule fails when the generators or the nano CLI come
+// back into the root module, or when the root module requires the tooling
+// module or golang.org/x/tools. A runtime consumer resolves only the root
+// module's graph, so the generator dependencies must stay out of it.
+func TestToolingIsItsOwnModule(t *testing.T) {
+	if got, want := strings.TrimSpace(goListTooling(t, "-m")), layers.Module+"/"+layers.Tooling; got != want {
+		t.Fatalf("the %s directory is module %q, want %q", layers.Tooling, got, want)
+	}
+	for pkg := range strings.Lines(goList(t, "./...")) {
+		rel, _ := strings.CutPrefix(strings.TrimSpace(pkg), layers.Module+"/")
+		top, _, _ := strings.Cut(rel, "/")
+		if top == layers.Tooling || top == "cmd" {
+			t.Errorf("the root module lists %s; tooling belongs in the %s module", pkg, layers.Tooling)
+		}
+	}
+	var mod struct {
+		Require []struct{ Path string }
+	}
+	if err := json.Unmarshal([]byte(goCmd(t, rootDir(t), "mod", "edit", "-json")), &mod); err != nil {
+		t.Fatal(err)
+	}
+	for _, req := range mod.Require {
+		if req.Path == layers.Module+"/"+layers.Tooling || req.Path == "golang.org/x/tools" {
+			t.Errorf("the root go.mod requires %s; only the %s module may", req.Path, layers.Tooling)
+		}
+	}
+	// No root package, test or integration test included, builds with x/tools.
+	deps := goList(t, "-test", "-tags", "integration", "-f", "{{.ImportPath}}{{range .Deps}} {{.}}{{end}}", "./...")
+	for line := range strings.Lines(deps) {
+		pkg, list, _ := strings.Cut(strings.TrimSpace(line), " ")
+		for dep := range strings.FieldsSeq(list) {
+			if strings.HasPrefix(dep, "golang.org/x/tools/") {
+				t.Errorf("%s depends on %s; move the code that needs golang.org/x/tools into the %s module",
+					pkg, dep, layers.Tooling)
+				break
 			}
 		}
 	}
