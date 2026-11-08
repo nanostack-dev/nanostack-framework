@@ -55,9 +55,9 @@ func (r Readiness) Check(ctx context.Context) error { return r.app.Ready(ctx) }
 //
 // While the App runs and every nano HealthChecker passes, the response is
 // the handler's own. Otherwise, such as while the App starts or drains, a
-// success or redirect status of the handler becomes 503 Service
-// Unavailable, so a load balancer and the Docker HEALTHCHECK take the
-// instance out. An error status of the handler (400 and above) stays: the
+// success or redirect status of the handler, or no status at all, becomes
+// 503 Service Unavailable, so a load balancer and the Docker HEALTHCHECK take
+// the instance out. An error status of the handler (400 and above) stays: the
 // handler has already reported a failure.
 func ReadinessMiddleware(app *nano.App) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
@@ -66,7 +66,12 @@ func ReadinessMiddleware(app *nano.App) func(http.Handler) http.Handler {
 				next.ServeHTTP(w, r)
 				return
 			}
-			next.ServeHTTP(&unavailableWriter{ResponseWriter: w}, r)
+			uw := &unavailableWriter{ResponseWriter: w}
+			next.ServeHTTP(uw, r)
+			if !uw.wroteHeader {
+				// The handler wrote nothing: net/http would answer 200.
+				uw.WriteHeader(http.StatusOK)
+			}
 		})
 	}
 }
@@ -101,6 +106,18 @@ func (w *unavailableWriter) Write(p []byte) (int, error) {
 		w.WriteHeader(http.StatusOK)
 	}
 	return w.ResponseWriter.Write(p)
+}
+
+// Flush sends the status first, so that a flush cannot commit the handler's
+// 200 behind the writer's back.
+func (w *unavailableWriter) Flush() { _ = w.FlushError() }
+
+// FlushError is Flush for http.ResponseController.
+func (w *unavailableWriter) FlushError() error {
+	if !w.wroteHeader {
+		w.WriteHeader(http.StatusOK)
+	}
+	return http.NewResponseController(w.ResponseWriter).Flush()
 }
 
 // Unwrap returns the wrapped writer for http.ResponseController.

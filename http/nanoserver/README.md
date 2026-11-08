@@ -23,6 +23,6 @@ The body then gets a `"readiness"` key. A service whose `/health` body is pinned
 router.With(nanoserver.ReadinessMiddleware(app)).Get("/health", healthHandler)
 ```
 
-While the App starts or drains, or a `HealthChecker` fails, a 2xx or 3xx status of the handler becomes 503. An error status of the handler stays.
+While the App starts or drains, or a `HealthChecker` fails, a 2xx or 3xx status of the handler, or no status at all, becomes 503. An error status of the handler stays.
 
 See [docs/modules.md](../../docs/modules.md) for the migration from fx.

@@ -1,11 +1,17 @@
 package nanoserver_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
+	"net/http/httptrace"
+	"net/textproto"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -62,6 +68,18 @@ func pinnedHealth(code int) http.Handler {
 	})
 }
 
+// flushedHealth flushes before it writes, as a streaming handler does: the
+// flush must not commit a 200.
+func flushedHealth() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if err := http.NewResponseController(w).Flush(); err != nil {
+			panic(err)
+		}
+		_, _ = io.WriteString(w, pinnedBody)
+	})
+}
+
 func serveHealth(h http.Handler) *httptest.ResponseRecorder {
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/health", nil))
@@ -91,6 +109,11 @@ func TestReadinessMiddlewareSetsTheStatusAndKeepsTheBody(t *testing.T) {
 
 	check("before start, implicit 200", gate(pinnedHealth(0)), http.StatusServiceUnavailable)
 	check("before start, explicit 200", gate(pinnedHealth(http.StatusOK)), http.StatusServiceUnavailable)
+	check("before start, flushed 200", gate(flushedHealth()), http.StatusServiceUnavailable)
+	silent := http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})
+	if rec := serveHealth(gate(silent)); rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("before start, handler writes nothing: status = %d, want 503", rec.Code)
+	}
 	check("before start, handler 500", gate(pinnedHealth(http.StatusInternalServerError)),
 		http.StatusInternalServerError)
 
@@ -104,6 +127,77 @@ func TestReadinessMiddlewareSetsTheStatusAndKeepsTheBody(t *testing.T) {
 
 	failing = errors.New("connection refused")
 	check("failing check", gate(pinnedHealth(http.StatusOK)), http.StatusServiceUnavailable)
+}
+
+// syncBuffer collects the server's error log, which net/http writes from
+// the connection goroutine.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+// Over a real connection, the middleware passes an informational status
+// through, sends exactly one final status and never makes net/http log a
+// superfluous WriteHeader, whatever order the handler writes in.
+func TestReadinessMiddlewareWritesOneFinalStatus(t *testing.T) {
+	app := nano.NewApp("readiness-writer-test", nano.AppConfig{})
+	app.SetLogger(discard())
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Link", "</style.css>; rel=preload")
+		w.WriteHeader(http.StatusEarlyHints)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, pinnedBody[:10])
+		_ = http.NewResponseController(w).Flush()
+		_, _ = io.WriteString(w, pinnedBody[10:])
+	})
+	var serverLog syncBuffer
+	srv := httptest.NewUnstartedServer(nanoserver.ReadinessMiddleware(app)(handler))
+	srv.Config.ErrorLog = log.New(&serverLog, "", 0)
+	srv.Start()
+	t.Cleanup(srv.Close)
+
+	var informational []int
+	trace := &httptrace.ClientTrace{Got1xxResponse: func(code int, _ textproto.MIMEHeader) error {
+		informational = append(informational, code)
+		return nil
+	}}
+	ctx := httptrace.WithClientTrace(t.Context(), trace)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL+"/health", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := srv.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv.Close() // flushes the server's log
+
+	if resp.StatusCode != http.StatusServiceUnavailable || string(body) != pinnedBody {
+		t.Errorf("GET /health = %d %q, want 503 and the pinned body", resp.StatusCode, body)
+	}
+	if len(informational) != 1 || informational[0] != http.StatusEarlyHints {
+		t.Errorf("informational statuses = %v, want [103]", informational)
+	}
+	if got := serverLog.String(); strings.Contains(got, "superfluous") {
+		t.Errorf("server log = %q, want no superfluous WriteHeader", got)
+	}
 }
 
 // The defect: a service with a pinned /health body kept answering 200 while

@@ -83,7 +83,9 @@ A service whose `/health` body is pinned, such as by a gate flow, wraps its hand
 router.With(nanoserver.ReadinessMiddleware(app)).Get("/health", healthHandler)
 ```
 
-While the App runs and every `HealthChecker` passes, the response is the handler's own. While the App starts or drains, or a check fails, a 2xx or 3xx status becomes 503. An error status of the handler stays. The body still says `"status": "HEALTHY"`: the status code is the readiness signal. The Docker `HEALTHCHECK` (`health.Probe`) and the load balancer read only the code.
+While the App runs and every `HealthChecker` passes, the response is the handler's own. While the App starts or drains, or a check fails, a 2xx or 3xx status, or no status at all, becomes 503. An error status of the handler stays. The body still says `"status": "HEALTHY"`: the status code is the readiness signal. The Docker `HEALTHCHECK` (`health.Probe`) and the load balancer read only the code.
+
+A service that mounts the handler with `health.Mount` passes the wrapped chi router: `health.Mount(router.With(nanoserver.ReadinessMiddleware(app)), cfg)`. Only `GET /health` is wrapped, so other methods keep their 405.
 
 ## Differences from the fx modules
 
