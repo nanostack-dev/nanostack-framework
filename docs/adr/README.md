@@ -25,3 +25,7 @@ Proposed on 2026-11-07, from the framework plan's phase 0. Each stays proposed u
 Accepted on 2026-11-07, with the error catalogue generator:
 
 - [0022: Error catalogues are declared as a Go interface, with explicit codes](0022-error-catalogue-from-go-interface.md)
+
+Accepted on 2026-11-08, with the `nano gen` pipeline:
+
+- [0023: `nano gen` runs every generation step, in a fixed order, from one declaration](0023-nano-gen-pipeline.md)

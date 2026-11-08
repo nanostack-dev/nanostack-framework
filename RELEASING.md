@@ -153,10 +153,10 @@ A service runs the generators through a `tool` directive in its own `go.mod`. Th
 
 ```sh
 go get -tool github.com/nanostack-dev/nanostack-framework/gen/cmd/nano@<gen tag>
-go tool nano gen config -dir cmd/app
+go tool nano gen
 ```
 
-A `//go:generate` line runs `go tool nano gen <name> [flags]`. The tool's dependencies (`golang.org/x/tools` among them) join the service's module graph, not the graph of a module that only imports the framework's runtime packages. The framework's own root module cannot pin `nano` this way: `gen` requires the root, so a `tool` line in the root `go.mod` would bring `gen` and its dependencies back into the root graph. Its `//go:generate` lines run `go -C <path to gen> run ./cmd/nano` instead.
+`go tool nano gen` runs every step in order, and CI runs it with `-check` ([generation](docs/generation.md#the-pipeline-nano-gen)). The pipeline rejects a `//go:generate` line that runs `nano gen`. The tool's dependencies (`golang.org/x/tools` among them) join the service's module graph, not the graph of a module that only imports the framework's runtime packages. The framework's own root module cannot pin `nano` this way: `gen` requires the root, so a `tool` line in the root `go.mod` would bring `gen` and its dependencies back into the root graph. It runs `go -C <path to gen> run ./cmd/nano gen -dir <directory>` instead.
 
 ## Rollback
 

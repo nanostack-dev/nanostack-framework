@@ -15,7 +15,7 @@ Framework home:
 
 - `gen/oapi` contains config conventions and future helpers
 - `gen/validate` is `nano gen validate`, which writes the request validators
-- `cli generate oapi` should orchestrate `oapi-codegen` with visible config files
+- the [pipeline](#the-pipeline-nano-gen) runs `validate` on the spec that `nanogen/project.go` declares; its api step will run `oapi-codegen` in-process
 
 ### Server generation
 
@@ -45,22 +45,29 @@ The overrides are pinned to oapi-codegen v2.8.2 (`oapitemplates.OapiCodegenVersi
 
 ### Generate order
 
-Run oapi-codegen first, then `nano gen validate` on the same package:
+Run oapi-codegen first, then the pipeline. `nanogen/project.go` declares the spec and the server package, and `nano gen` runs `validate` on them before the other steps ([the pipeline](#the-pipeline-nano-gen)):
 
 ```go
 //go:generate go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.8.2 -config oapi-codegen.yaml openapi.yaml
-//go:generate go tool nano gen validate -spec openapi.yaml -dir .
 ```
 
-The override calls the `Validate` and `validateParams` methods that `nano gen validate` writes, so the package does not compile until they exist and match the spec. CI runs `nano gen validate -check` to fail on a stale `validate.gen.go`.
+```sh
+go generate ./internal/api && go tool nano gen
+```
+
+The override calls the `Validate` and `validateParams` methods that `nano gen validate` writes, so the package does not compile until they exist and match the spec. CI runs `nano gen -check` to fail on a stale `validate.gen.go`. Until the pipeline's api step lands (design PR 4), the oapi-codegen line stays in `go generate`.
 
 ### Unenforced schema features
 
-A schema feature the validators cannot enforce, such as a `oneOf` over a Go type that is not an oapi-codegen union, fails `nano gen validate` with exit status 1. The generated file is still written, and it lists every gap. Change the schema, or acknowledge the gap with `-allow` and the schema's JSON Pointer as the message prints it. `-allow` covers that schema and every schema under it, and may be repeated:
+A schema feature the validators cannot enforce, such as a `oneOf` over a Go type that is not an oapi-codegen union, fails `nano gen validate` with exit status 1, at the line of the schema. The generated file is still written, and it lists every gap. Change the schema, or accept the gap with the `x-nano-unenforced` extension. Its value is the reason, which may not be empty. It covers that schema and every schema under it:
 
+```yaml
+Shape:
+  x-nano-unenforced: "the handler checks the variant"
+  oneOf: [...]
 ```
-nano gen validate -spec openapi.yaml -dir . -allow '#/components/schemas/Shape'
-```
+
+An extension that accepts no gap is an error too, so it cannot hide the next one. The extension replaces the `-allow` flag ([ADR 0023](adr/0023-nano-gen-pipeline.md)).
 
 ### Patterns
 
@@ -106,28 +113,87 @@ Source: one Go interface per package whose doc comment holds `//nano:errors name
 
 Outputs, next to the declaration: `errors.gen.go` (a constructor, a typed error and an `Err<Name>` sentinel per error, plus the `Kinds` list) and `ERRORS.md` (the catalogue). The generator type-checks the package and its own output, so a declaration either generates code that compiles or fails with its `file:line`.
 
-## Checking generated files
+## The pipeline: `nano gen`
 
-One command, `nano` (package [`gen/cmd/nano`](../gen/cmd/nano)), holds every generator: `nano gen config`, `nano gen errors`, `nano gen validate` and `nano gen wire`. Each call runs one generator; there is no `nano gen` pipeline that runs them all in order yet ([roadmap](roadmap.md#deferred-generator-outputs)). `nano gen <name> -h` lists the flags of one generator.
+`nano gen` with no generator name runs every generation step of a module, in a fixed order: `validate`, `errors`, `config`, `wire`. [ADR 0023](adr/0023-nano-gen-pipeline.md) records the design; package [`gen/pipeline`](../gen/pipeline) implements it.
+
+```sh
+go tool nano gen                 # run every step, write what changed
+go tool nano gen -check          # write nothing; exit 1 listing every stale, missing or orphaned file
+go tool nano gen -check -diff    # also print the first 20 lines of each diff
+go tool nano gen -only config    # these steps, still in pipeline order (-skip is the inverse)
+go tool nano gen -list           # print the plan: step, package, inputs, outputs
+go tool nano gen -json           # one JSON event per line
+go tool nano gen -dir apps/x     # the directory to run on; default: the module root
+```
+
+**The project declaration.** `nanogen/project.go` holds the inputs that nano cannot discover. It has no build tag, so `go build`, `go vet` and gopls type-check it, and nothing imports it. nano reads its composite literal from source, so every value must be a literal or a constant, and any other use of `Project` (an assignment in `init`, say) is an error. Paths are relative to the directory nano runs on. `API.Server.Dir` must stay inside that directory, because validate writes there; `Env` may sit outside it. A declared `Env` with two `Config` packages is an error, since both would write it.
+
+```go
+// Package nanogen declares the inputs of this module's code generation that
+// cannot be discovered. Run: go tool nano gen
+package nanogen
+
+import "github.com/nanostack-dev/nanostack-framework/core/nano/project"
+
+var Project = project.Project{
+	API: &project.OpenAPI{
+		Spec:   "cmd/http/openapi.yaml",
+		Server: project.Package{Dir: "internal/api"},
+	},
+	Env: "../../.env.example", // default: .env.example next to Config
+}
+```
+
+A module without the file still runs the steps nano discovers. `nano gen -list` then prints a declaration filled with the OpenAPI document and the server package it finds.
+
+**Discovery.** nano parses the tree and never type-checks it, so discovery works on a tree that does not compile. It skips `testdata`, `vendor`, `node_modules`, hidden directories, directories that start with `_`, and nested modules, which run their own `nano gen`.
+
+| Step | Runs on | Writes |
+| --- | --- | --- |
+| validate | the `API` of the declaration | `validate.gen.go` in the server package |
+| errors | each package with a `//nano:errors` declaration | `errors.gen.go`, `ERRORS.md` |
+| config | each package with a `//go:build nanogen` file that calls `nano.Manifest` | `config.gen.go`, `CONFIG.md`, the `Env` file |
+| wire | the same packages | `wire.gen.go`, in the manifest package |
+
+**Order and failures.** Each step loads the fresh output of the steps before it. Without `-check`, a step writes before the next one loads. With `-check`, nothing is written: later loads see the fresh outputs as a `go/packages` overlay. In both modes, an existing output of a later step is replaced in each load by a stub whose function bodies panic, so a stale later output cannot break an earlier step. A failed step skips the steps that need it (config needs validate and errors; wire needs config), and the other steps still run. validate and config read `nanogen/project.go`, so a declaration with an error skips them, and wire. A validation gap fails the run but skips nothing.
+
+**Orphans.** Every output starts with `Code generated by nano gen <step>`. A file with that header, for a step that ran, that the run did not produce, is an orphan: `nano gen` deletes it and `-check` fails on it. So a deleted catalogue cannot leave its generated code behind, and neither can an `API` removed from the declaration. A skipped step has not run, so its files stay. The scan does not run when a Go file fails to parse or holds an unknown `//nano:` directive: a misspelled `//nano:errors` would otherwise delete its catalogue's outputs.
+
+**Guards.** An unknown `//nano:` directive is an error at its line. So is a `//go:generate` line that runs `nano gen`: the pipeline runs that step in its order. Delete the line and run `go tool nano gen`.
+
+**Output.** A clean run prints nothing. Otherwise it prints one line per file (`wrote`, `deleted`, `stale`, `missing`, `orphan`), then each problem:
+
+```text
+stale cmd/app/config.gen.go
+stale cmd/app/wire.gen.go
+  fix: run nano gen without -check, then commit the result
+greeterr/doc.go:3: unknown directive //nano:mapers
+  fix: known directives are //nano:errors and //nano:error
+nano gen wire: skipped: needs config
+```
+
+With `-json`, each event is one line on stdout: `{"step", "level", "file", "line", "msg", "fix"}`, plus `"diff"` with `-diff` and `"inputs"` and `"outputs"` with `-list`. `level` is one of `wrote`, `deleted`, `stale`, `missing`, `orphan`, `skipped`, `error` and `plan`. A problem found before any step runs, in the declaration, in discovery or by a guard, has the step `plan`.
+
+## Running one generator
+
+`nano gen <name>` runs one generator: `nano gen config`, `nano gen errors`, `nano gen validate` or `nano gen wire`. Use it for a single run and in tests; the pipeline runs every step. `nano gen <name> -h` lists the flags of one generator.
 
 `nano` and the generators are in the nested module `github.com/nanostack-dev/nanostack-framework/gen`, so their dependencies (`golang.org/x/tools` among them) stay out of the module graph of a service that only imports the runtime packages. A service pins `nano` with a `tool` directive and runs it with `go tool`:
 
 ```sh
 go get -tool github.com/nanostack-dev/nanostack-framework/gen/cmd/nano@<gen tag>
+go tool nano gen
 ```
 
-```go
-//go:generate go tool nano gen config -dir .
-```
+The `gen` module requires the root module, so the framework's own root module cannot pin `nano` as a tool. It runs `go -C <path to gen> run ./cmd/nano gen -dir <directory>` instead: CI runs it with `-check` on [`internal/nanoexample`](../internal/nanoexample/doc.go). [RELEASING.md](../RELEASING.md#consumers-of-nano) gives the tag order.
 
-The `gen` module requires the root module, so the framework's own root module cannot pin `nano` as a tool. Its `//go:generate` lines run `go -C <path to gen> run ./cmd/nano` and pass the package directory as `-dir` ([`internal/nanoexample`](../internal/nanoexample/doc.go)). [RELEASING.md](../RELEASING.md#consumers-of-nano) gives the tag order.
-
-Every generator takes `-check`: it writes nothing and exits 1 when a committed output is missing or differs from what the source produces. Run each generator with `-check` in CI next to the tests. Exit codes:
+Every generator, and the pipeline, takes `-check`: it writes nothing and exits 1 when a committed output is missing or differs from what the source produces. Run `nano gen -check` in CI next to the tests. Exit codes:
 
 | Code | Meaning |
 | --- | --- |
 | 0 | Success. `-h` prints the flags and exits 0. |
-| 1 | A source error, stale output or (for `validate`) an unacknowledged validation gap. |
+| 1 | A source error, stale output, an orphan, or (for `validate`) a validation gap that no `x-nano-unenforced` accepts. |
 | 2 | Bad usage. |
 | 3 | The environment failed: the go command cannot load packages, or a file cannot be read or written. |
 
@@ -222,7 +288,7 @@ Override a collection as a whole: set the `[]T` field. A non-nil empty slice ove
 | `fx.Replace`, and `fx.Decorate` in tests | A field of `Overrides` |
 | `fx.Decorate` in production that returns the same value (for example it starts a listener on a client) | `nano.Invoke` with a function that takes the value |
 | `fx.Decorate` in production that wraps the value | A provider of a distinct wrapper type, bound with `nano.Bind` where consumers take an interface |
-| `fx.ValidateApp` | `nano gen wire -check` in CI |
+| `fx.ValidateApp` | `nano gen -check` in CI |
 
 ### Commands
 
@@ -230,7 +296,7 @@ Override a collection as a whole: set the `[]T` field. A non-nil empty slice ove
 nano gen wire [-dir .] [-out internal/gen/wire] [-tags a,b] [-check]
 ```
 
-`-out` is relative to `-dir`; set it to `.` to generate into the manifest package. `-check` writes nothing and exits 1 when `wire.gen.go` is missing or stale. Output is deterministic. Generated provider errors read `nano: provide *T: pkg.NewT: <cause>`, without a source position, so moving a provider does not change the generated file.
+`-out` is relative to `-dir`; set it to `.` to generate into the manifest package. The pipeline always writes `wire.gen.go` into the manifest package. `-check` writes nothing and exits 1 when `wire.gen.go` is missing or stale. Output is deterministic. Generated provider errors read `nano: provide *T: pkg.NewT: <cause>`, without a source position, so moving a provider does not change the generated file.
 
 Every generator follows the contract of package [`gen`](../gen/gen.go): `Options` with a `Check` field and an `Overlay` field, `Generate(Options) ([]gen.File, error)`, `Run(Options) error` (stale output wraps `gen.ErrStale`) and `Main(args, stdout, stderr) int`. `gen/validate` is the one variation: its `Generate` returns a `*Result` that holds the `gen.File` and the schema features it does not enforce.
 

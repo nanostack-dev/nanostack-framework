@@ -5,22 +5,22 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"strings"
 
 	"github.com/nanostack-dev/nanostack-framework/gen"
+	"github.com/nanostack-dev/nanostack-framework/gen/validate/internal/oas"
 )
 
 // ErrUnenforced classifies the *gen.Error of a schema feature that the
-// generated validators do not enforce and that no Options.Allow location
-// acknowledges. A validation gap must not ship unnoticed, so it fails the
-// run.
+// generated validators do not enforce and that no x-nano-unenforced
+// extension accepts, and of an extension that accepts no gap. A validation
+// gap must not ship unnoticed, so it fails the run; the file is still
+// written.
 var ErrUnenforced = errors.New("schema feature is not enforced")
 
 // Run generates the validators and writes the file when it changed. With
 // Options.Check it writes nothing and returns an error wrapping gen.ErrStale
-// when the file is missing or differs. It also returns one *gen.Error
-// wrapping ErrUnenforced per diagnostic that Options.Allow does not cover;
-// the file is still written then, and lists the gap.
+// when the file is missing or differs. It also returns the Result's Gaps;
+// the file is still written then, and lists every gap.
 func Run(opts Options) error {
 	_, _, err := run(opts)
 	return err
@@ -32,44 +32,23 @@ func run(opts Options) (*Result, []string, error) {
 		return nil, nil, err
 	}
 	written, syncErr := gen.Sync("validate", []gen.File{res.File}, opts.Check)
-	errs := []error{syncErr}
-	for _, d := range res.Diagnostics {
-		if !allowed(d, opts.Allow) {
-			errs = append(errs, &gen.Error{
-				File: opts.Spec,
-				Msg:  "not enforced: " + d.String(),
-				Fix:  "change the schema, or acknowledge the gap with -allow '" + commentText(d.Loc) + "'",
-				Err:  ErrUnenforced,
-			})
-		}
-	}
-	return res, written, errors.Join(errs...)
+	return res, written, errors.Join(syncErr, res.Gaps())
 }
 
-// allowed reports whether an allow location covers d: the schema itself or
-// one of its ancestors.
-func allowed(d Diagnostic, allow []string) bool {
-	for _, loc := range allow {
-		if d.Loc == loc || strings.HasPrefix(d.Loc, strings.TrimSuffix(loc, "/")+"/") {
-			return true
-		}
-	}
-	return false
-}
-
-// Main runs `nano gen validate -spec file [-dir dir] [-out file]
-// [-allow pointer]... [-check]` and returns the exit code: 0 on success, 1 on
-// a source error, stale output or an unacknowledged validation gap, 2 on bad
-// flags, 3 when the environment fails; -h prints the flags and returns 0. It
-// is a gen.Command.
+// Main runs `nano gen validate -spec file [-dir dir] [-out file] [-check]`
+// and returns the exit code: 0 on success, 1 on a source error, stale output
+// or an unaccepted validation gap, 2 on bad flags, 3 when the environment
+// fails; -h prints the flags and returns 0. It is a gen.Command.
 //
 // A schema feature the validators do not enforce is a failure: a validation
 // gap must not ship unnoticed. The generated file is still written, listing
-// the gap. Acknowledge a gap with -allow and the schema's JSON Pointer, as
-// the message prints it; it covers that schema and every schema under it,
-// and may be repeated:
+// the gap. Accept a gap with the x-nano-unenforced extension on the schema,
+// whose value is the reason; it covers that schema and every schema under
+// it:
 //
-//	nano gen validate -spec openapi.yaml -dir . -allow '#/components/schemas/Shape'
+//	Shape:
+//	  x-nano-unenforced: "the handler checks the variant"
+//	  oneOf: [...]
 func Main(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("nano gen validate", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -78,14 +57,6 @@ func Main(args []string, stdout, stderr io.Writer) int {
 	fs.StringVar(&opts.Dir, "dir", ".", "directory of the oapi-codegen package")
 	fs.StringVar(&opts.Output, "out", DefaultOutput, "generated file name inside -dir")
 	fs.BoolVar(&opts.Check, "check", false, "write nothing; exit 1 if the generated file is stale")
-	fs.Func("allow", "JSON Pointer of a schema whose unenforced features are accepted (repeatable)",
-		func(loc string) error {
-			if !strings.HasPrefix(loc, "#/") {
-				return fmt.Errorf("%q is not a JSON Pointer into the spec, such as #/components/schemas/X", loc)
-			}
-			opts.Allow = append(opts.Allow, loc)
-			return nil
-		})
 	if exit, ok := gen.ParseFlags(fs, args); !ok {
 		return exit
 	}
@@ -96,8 +67,8 @@ func Main(args []string, stdout, stderr io.Writer) int {
 	res, written, err := run(opts)
 	if res != nil {
 		for _, d := range res.Diagnostics {
-			if allowed(d, opts.Allow) {
-				_, _ = fmt.Fprintln(stderr, "not enforced (allowed):", d)
+			if d.Waived != "" {
+				_, _ = fmt.Fprintf(stderr, "not enforced (%s: %s): %s\n", oas.WaiverKey, commentText(d.Waived), d)
 			}
 		}
 	}

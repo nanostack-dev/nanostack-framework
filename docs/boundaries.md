@@ -6,10 +6,10 @@ Nanostack Framework removes repeated service shell code without absorbing produc
 
 New code lives in three layers. A package imports only its own layer and the layers below, and never the legacy trees (`pkg/`, `modules/`, `app/`). [Implemented architecture](technical/architecture.md#layers) states the rule and how it is enforced.
 
-- `core/` owns the runtime that services and generated code call: `core/nano` (lifecycle, `Main`, admin probes, manifest declarations), `core/config` (configuration binding), `core/log` (slog logging and redaction), `core/fault` (the problem contract of error catalogues), `core/validate` (the runtime of request validators) and `core/secret` (the one secret type and every credential-redaction rule).
+- `core/` owns the runtime that services and generated code call: `core/nano` (lifecycle, `Main`, admin probes, manifest declarations; `core/nano/project` holds the project declaration that `nano gen` reads), `core/config` (configuration binding), `core/log` (slog logging and redaction), `core/fault` (the problem contract of error catalogues), `core/validate` (the runtime of request validators) and `core/secret` (the one secret type and every credential-redaction rule).
 - `http/` owns the HTTP boundary between `net/http` and generated handlers: strict decoding (`http/nanohttp`) and RFC 9457 problem responses (`http/problem`). [The HTTP boundary](http-boundary.md) is its contract.
-- `gen/` is its own module. It owns the generators behind `nano gen` (`gen/config`, `gen/errors`, `gen/validate`, `gen/wire`), the generator contract (package `gen`), and the conventions for third-party generators (`gen/oapi` for oapi-codegen, `gen/jet` for go-jet).
-- `gen/cmd/nano` owns the CLI, `nano`. Today it runs `nano gen <name>`.
+- `gen/` is its own module. It owns the generators behind `nano gen` (`gen/config`, `gen/errors`, `gen/validate`, `gen/wire`), the pipeline that runs them in order (`gen/pipeline`), the generator contract (package `gen`), and the conventions for third-party generators (`gen/oapi` for oapi-codegen, `gen/jet` for go-jet).
+- `gen/cmd/nano` owns the CLI, `nano`. Today it runs `nano gen`, the pipeline, and `nano gen <name>`, one generator.
 - `docs/` owns architecture, migration, and decision records.
 
 Legacy trees, which hold the Fx stack until services migrate:

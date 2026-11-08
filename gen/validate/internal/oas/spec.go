@@ -29,7 +29,74 @@ type Spec struct {
 	root    *yaml.Node
 	schemas map[string]*Schema
 	parsing map[*yaml.Node]*Schema
+	lines   map[string]int     // schema location -> line in the document
+	waivers map[string]*Waiver // schema location -> its x-nano-unenforced
 	errs    []error
+}
+
+// WaiverKey is the schema extension that accepts the features of a schema,
+// and of every schema under it, that the generated validators do not
+// enforce. Its value is the reason, which may not be empty.
+const WaiverKey = "x-nano-unenforced"
+
+// Waiver is one x-nano-unenforced extension.
+type Waiver struct {
+	Loc    string // JSON Pointer of the schema that carries it
+	Reason string
+	Line   int
+	used   bool
+}
+
+// waive records the x-nano-unenforced extension v of the schema at loc.
+func (s *Spec) waive(loc string, v *yaml.Node) {
+	if v.Kind != yaml.ScalarNode || strings.TrimSpace(v.Value) == "" || v.Tag == "!!null" {
+		s.errorf(v.Line, WaiverKey+`: "<why the gap is accepted>"`,
+			"%s: %s needs the reason the gap is accepted", loc, WaiverKey)
+		return
+	}
+	if _, ok := s.waivers[loc]; !ok {
+		s.waivers[loc] = &Waiver{Loc: loc, Reason: v.Value, Line: v.Line}
+	}
+}
+
+// Line returns the line of the schema at loc, or 0 when it is unknown.
+func (s *Spec) Line(loc string) int { return s.lines[loc] }
+
+// Waive returns the x-nano-unenforced reason that covers the schema at loc:
+// its own, or the closest one on a schema it is nested in. It marks that
+// waiver used. ok is false when no waiver covers loc.
+func (s *Spec) Waive(loc string) (reason string, ok bool) {
+	for at := loc; at != "" && at != "#"; {
+		if w, found := s.waivers[at]; found {
+			w.used = true
+			return w.Reason, true
+		}
+		i := strings.LastIndexByte(at, '/')
+		if i < 0 {
+			break
+		}
+		at = at[:i]
+	}
+	return "", false
+}
+
+// Unused returns the waivers that Waive never returned, sorted by line, then
+// location: a
+// waiver that covers no gap would hide the next one.
+func (s *Spec) Unused() []Waiver {
+	var out []Waiver
+	for _, w := range s.waivers {
+		if !w.used {
+			out = append(out, *w)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Line != out[j].Line {
+			return out[i].Line < out[j].Line
+		}
+		return out[i].Loc < out[j].Loc // two waivers on one line of a flow mapping
+	})
+	return out
 }
 
 // Operation is one method on one path.
@@ -169,7 +236,14 @@ func ParseSpec(path string, data []byte) (*Spec, error) {
 	if doc.Kind != yaml.DocumentNode || len(doc.Content) != 1 || doc.Content[0].Kind != yaml.MappingNode {
 		return nil, gen.Errorf(path, 0, "pass -spec with an OpenAPI 3.0 or 3.1 document", "not an OpenAPI document")
 	}
-	s := &Spec{Path: path, root: doc.Content[0], schemas: map[string]*Schema{}, parsing: map[*yaml.Node]*Schema{}}
+	s := &Spec{
+		Path:    path,
+		root:    doc.Content[0],
+		schemas: map[string]*Schema{},
+		parsing: map[*yaml.Node]*Schema{},
+		lines:   map[string]int{},
+		waivers: map[string]*Waiver{},
+	}
 	version := scalar(get(s.root, "openapi"))
 	switch {
 	case strings.HasPrefix(version, "3.0."):

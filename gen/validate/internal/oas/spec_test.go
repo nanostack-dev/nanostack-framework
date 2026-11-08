@@ -55,3 +55,34 @@ func (s *Spec) lookupSchema(t *testing.T, name string) *Schema {
 	}
 	return sc
 }
+
+// Waivers that accept no gap come back in a stable order, even when a flow
+// mapping puts two of them on one line.
+func TestUnusedWaiversAreSorted(t *testing.T) {
+	spec := `openapi: 3.0.3
+info: {title: t, version: "1"}
+paths: {}
+components:
+  schemas:
+    Z: {type: object, x-nano-unenforced: z, properties: {b: {type: string, x-nano-unenforced: b}}}
+    A:
+      type: string
+      x-nano-unenforced: a
+`
+	for range 20 {
+		s, err := ParseSpec("spec", []byte(spec))
+		if err != nil {
+			t.Fatal(err)
+		}
+		s.lookupSchema(t, "Z")
+		s.lookupSchema(t, "A")
+		var got []string
+		for _, w := range s.Unused() {
+			got = append(got, w.Loc)
+		}
+		want := "#/components/schemas/Z #/components/schemas/Z/properties/b #/components/schemas/A"
+		if strings.Join(got, " ") != want {
+			t.Fatalf("Unused = %q, want %q", got, want)
+		}
+	}
+}
