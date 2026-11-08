@@ -15,14 +15,14 @@ This repository is private while the architecture, naming, and boundaries are be
 
 ## Layout
 
-New code lives in four trees and three layers: `core/`, then `http/`, then `gen/` with `cmd/nano`. A package imports only its own layer and the layers below:
+New code lives in layered trees. A package imports only its own layer and the layers below; `internal/layers` and depguard check it:
 
-1. `core/`: runtime: `nano` (lifecycle, Main), `config`, `log`, `fault`, `validate`, `secret`.
-2. `http/`: the HTTP boundary: `problem`, `nanohttp`.
-3. `gen/`: generators behind `nano gen` (`wire`, `config`, `errors`, `validate`).
-4. `cmd/nano`: the CLI.
+0. `pkg/functional`: the leaf layer, its own module with no framework dependency. Every layer may import it.
+1. `core/`: the runtime: `nano` (lifecycle, Main), `config`, `log`, `logging`, `fault`, `validate`, `secret`.
+2. Integrations: `http/` (`problem`, `nanohttp`, `nanoserver`, `nanoapisec`, `nanopprof`), `pg/` (`nanopg`, `nanomigrate`, `nanolock`), `redis/nanocache` and `otel/nanotrace`. The nano modules are listed in [docs/modules.md](docs/modules.md).
+3. Tooling: `gen/` (the generators behind `nano gen`: `wire`, `config`, `errors`, `validate`) and `cmd/nano`, the CLI.
 
-`pkg/` and `modules/` hold the legacy Fx stack until services migrate.
+`db/` is Nanostack DB, the go-jet fork, in its own module ([db/UPSTREAM.md](db/UPSTREAM.md)). `pkg/`, `modules/` and `app/` hold the legacy Fx stack until the services migrate; the layered trees do not import them, except the primitives listed in `internal/layers.AllowedLegacy`. [docs/technical/architecture.md](docs/technical/architecture.md) describes the architecture.
 
 ## Initial Direction
 
