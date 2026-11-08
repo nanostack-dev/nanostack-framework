@@ -1,0 +1,22 @@
+openapi: 3.0.3
+info: {title: undeclared, version: "1"}
+tags:
+  - name: Email
+paths:
+  /emails:
+    get:
+      operationId: listEmails
+      tags: [Email]
+      responses:
+        "204": {description: ok}
+  /invoices:
+    get:
+      operationId: listInvoices
+      tags: [Billing]
+      responses:
+        "204": {description: ok}
+    post:
+      operationId: createInvoice
+      tags: [Billing]
+      responses:
+        "204": {description: ok}

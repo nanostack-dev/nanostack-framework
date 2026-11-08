@@ -34,7 +34,7 @@ func TestRun(t *testing.T) {
 		stderr.Reset()
 		code := run(args, &stdout, &stderr)
 		if code != 2 || !strings.Contains(stderr.String(), "usage: nano gen [flags]\n") ||
-			!strings.Contains(stderr.String(), "nano gen {config,errors,validate,wire} [flags]") {
+			!strings.Contains(stderr.String(), "nano gen {api,config,errors,validate,wire} [flags]") {
 			t.Fatalf("run(%q): exit %d stderr %q, want usage and exit 2", args, code, stderr.String())
 		}
 	}
@@ -51,6 +51,7 @@ func TestPipelineIsRouted(t *testing.T) {
 	}
 
 	if code := run([]string{"gen", "-list", "-dir", fixture}, &stdout, &stderr); code != 0 ||
+		!strings.Contains(stdout.String(), "api       api\n  in   api/openapi.yaml\n  out  api/api.gen.go\n") ||
 		!strings.Contains(stdout.String(), "validate  api\n  in   api/openapi.yaml\n") ||
 		!strings.Contains(stdout.String(), "wire      cmd/app\n") {
 		t.Fatalf("nano gen -list: exit %d\nstdout: %s\nstderr: %s", code, stdout.String(), stderr.String())
@@ -66,7 +67,9 @@ func TestPipelineIsRouted(t *testing.T) {
 // testdata through the one nano command.
 func TestEveryGeneratorIsRouted(t *testing.T) {
 	const golden = "../../validate/internal/golden/required"
+	const app = "../../pipeline/testdata/app/api"
 	for name, args := range map[string][]string{
+		"api":      {"gen", "api", "-spec", app + "/openapi.yaml", "-dir", app, "-check"},
 		"config":   {"gen", "config", "-dir", "../../config/testdata/app", "-check"},
 		"errors":   {"gen", "errors", "-dir", "../../errors/testdata/billing", "-check"},
 		"validate": {"gen", "validate", "-spec", golden + "/openapi.yaml", "-dir", golden, "-check"},

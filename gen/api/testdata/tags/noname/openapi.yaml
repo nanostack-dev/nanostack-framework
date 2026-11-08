@@ -1,0 +1,11 @@
+openapi: 3.0.3
+info: {title: noname, version: "1"}
+tags:
+  - name: 2FA
+paths:
+  /factors:
+    get:
+      operationId: listFactors
+      tags: [2FA]
+      responses:
+        "204": {description: ok}

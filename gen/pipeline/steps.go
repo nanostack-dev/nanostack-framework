@@ -3,7 +3,9 @@ package pipeline
 import (
 	"path/filepath"
 
+	"github.com/nanostack-dev/nanostack-framework/core/nano/project"
 	"github.com/nanostack-dev/nanostack-framework/gen"
+	genapi "github.com/nanostack-dev/nanostack-framework/gen/api"
 	genconfig "github.com/nanostack-dev/nanostack-framework/gen/config"
 	generrors "github.com/nanostack-dev/nanostack-framework/gen/errors"
 	genvalidate "github.com/nanostack-dev/nanostack-framework/gen/validate"
@@ -35,21 +37,21 @@ func (r *runner) plan(selected map[string]bool, withProject bool) []*unit {
 			r.skipped(s, projectFile)
 			continue
 		}
-		var own []*unit
-		if s.name != "validate" || r.proj.API != nil {
-			own = r.unitsOf(s)
-		} else if !r.declared {
-			// No declaration: validate has nothing to run on, and it did
-			// not run, so a validate.gen.go is not an orphan.
+		if s.project && !r.declared && (s.name == "api" || s.name == "validate") {
+			// No declaration: api and validate have nothing to run on, and
+			// they did not run, so an api.gen.go or a validate.gen.go is
+			// not an orphan.
 			continue
 		}
+		own := r.unitsOf(s)
 		if len(own) == 0 && r.failedNeed(s) == "" {
 			// A step with no unit, such as errors in a module without a
-			// catalogue, or validate in a declaration without an API, has
-			// run: its orphans are reported. Only a need skipped for the
-			// declaration has failed yet; a step without a unit has nothing
-			// that a later failure could change, and every file with its
-			// header is an orphan. runUnit marks the steps with units.
+			// catalogue, or api and validate in a declaration without an
+			// API, has run: its orphans are reported. Only a need skipped
+			// for the declaration has failed yet; a step without a unit has
+			// nothing that a later failure could change, and every file
+			// with its header is an orphan. runUnit marks the steps with
+			// units.
 			r.ran[s.name] = true
 		}
 		units = append(units, own...)
@@ -61,10 +63,32 @@ func (r *runner) plan(selected map[string]bool, withProject bool) []*unit {
 // declared API.
 func (r *runner) unitsOf(s *step) []*unit {
 	var units []*unit
+	api := r.proj.API
 	switch s.name {
+	case "api":
+		if api == nil {
+			break
+		}
+		u := &unit{step: s, inputs: []string{r.abs(api.Spec)}}
+		if api.Server.Dir != "" {
+			u.dir = r.abs(api.Server.Dir)
+			u.outputs = append(u.outputs, filepath.Join(u.dir, orDefault(api.Server.File, genapi.DefaultServerFile)),
+				filepath.Join(u.dir, genapi.HandlersFile))
+		}
+		for _, c := range api.Clients {
+			dir := r.abs(c.Dir)
+			if u.dir == "" {
+				u.dir = dir
+			}
+			u.outputs = append(u.outputs, filepath.Join(dir, orDefault(c.File, genapi.DefaultClientFile)))
+		}
+		units = append(units, u)
 	case "validate":
-		dir := r.abs(r.proj.API.Server.Dir)
-		units = append(units, &unit{step: s, dir: dir, inputs: []string{r.abs(r.proj.API.Spec)},
+		if api == nil || api.Server.Dir == "" {
+			break
+		}
+		dir := r.abs(api.Server.Dir)
+		units = append(units, &unit{step: s, dir: dir, inputs: []string{r.abs(api.Spec)},
 			outputs: []string{filepath.Join(dir, validateOut)}})
 	case "errors":
 		for _, c := range r.found.catalogues {
@@ -99,6 +123,22 @@ func (r *runner) envPath(dir string) string {
 	return filepath.Join(dir, configEnvOut)
 }
 
+// runAPI generates the server and the clients of the declared API. It
+// reads the spec only, so it takes no overlay.
+func runAPI(r *runner, _ *unit, _ map[string][]byte) (output, error) {
+	api := r.proj.API
+	opts := genapi.Options{Spec: r.abs(api.Spec)}
+	if api.Server.Dir != "" {
+		opts.Server = project.Package{Dir: r.abs(api.Server.Dir), File: api.Server.File}
+	}
+	for _, c := range api.Clients {
+		c.Dir = r.abs(c.Dir)
+		opts.Clients = append(opts.Clients, c)
+	}
+	files, err := genapi.Generate(opts)
+	return output{files: files}, err
+}
+
 func runValidate(_ *runner, u *unit, overlay map[string][]byte) (output, error) {
 	res, err := genvalidate.Generate(genvalidate.Options{Spec: u.inputs[0], Dir: u.dir, Overlay: overlay})
 	if err != nil {
@@ -125,4 +165,11 @@ func runConfig(r *runner, u *unit, overlay map[string][]byte) (output, error) {
 func runWire(r *runner, u *unit, overlay map[string][]byte) (output, error) {
 	files, err := wire.Generate(wire.Options{Dir: u.dir, Out: u.dir, Base: r.root, Overlay: overlay})
 	return output{files: files}, err
+}
+
+func orDefault(s, def string) string {
+	if s == "" {
+		return def
+	}
+	return s
 }

@@ -1,9 +1,12 @@
 openapi: 3.0.3
 info: {title: required, version: "1"}
+tags:
+  - name: Check
 paths:
   /check:
     post:
       operationId: check
+      tags: [Check]
       requestBody:
         required: true
         content:

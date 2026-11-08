@@ -1,0 +1,29 @@
+openapi: 3.0.3
+info: {title: schemaclash, version: "1"}
+tags:
+  - name: Email
+paths:
+  /emails:
+    get:
+      operationId: listEmails
+      tags: [Email]
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  server: {$ref: '#/components/schemas/EmailServer'}
+                  handlers: {$ref: '#/components/schemas/Handlers'}
+components:
+  schemas:
+    EmailServer:
+      type: object
+      properties:
+        host: {type: string}
+    Handlers:
+      type: object
+      properties:
+        count: {type: integer}

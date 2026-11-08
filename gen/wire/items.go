@@ -258,13 +258,17 @@ func (w *walker) bind(pkg *packages.Package, call *ast.CallExpr) *provider {
 	}
 	if !types.AssignableTo(impl, iface) {
 		reason := ""
+		fix := "implement the missing methods on " + w.m.typeString(impl) + ", or bind another type"
 		if method, wrongType := types.MissingMethod(impl, it, true); method != nil {
 			reason = fmt.Sprintf(" (missing method %s)", method.Name())
 			if wrongType {
 				reason = fmt.Sprintf(" (method %s has the wrong signature or receiver)", method.Name())
 			}
+			if decl := methodDecl(impl, method); decl != "" {
+				fix = "give " + w.m.typeString(impl) + " the method " + decl + ", or bind another type"
+			}
 		}
-		w.d.add(w.at(call.Pos()), "implement the missing methods on "+w.m.typeString(impl)+", or bind another type",
+		w.d.add(w.at(call.Pos()), fix,
 			"%s: %s does not implement %s%s", label, w.m.typeString(impl), w.m.typeString(iface), reason)
 		return nil
 	}

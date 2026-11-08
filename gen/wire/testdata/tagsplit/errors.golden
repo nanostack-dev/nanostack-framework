@@ -1,0 +1,4 @@
+nano.go:13: no provider for api.AuthorsServer (needed by api.NewHandlers at api/handlers.gen.go:28)
+  fix: add a provider that returns api.AuthorsServer to nano.Providers in nano.go
+nano.go:13: no provider for api.BooksServer (needed by api.NewHandlers at api/handlers.gen.go:28)
+  fix: add a provider that returns api.BooksServer to nano.Providers in nano.go; give *api.booksHandler the method func (b *booksHandler) GetBook(ctx context.Context, request string) (string, error)

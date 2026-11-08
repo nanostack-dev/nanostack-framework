@@ -135,6 +135,10 @@ func load(opts Options, extra []string) ([]*packages.Package, error) {
 		errs = append(errs, gopkg.CompileErrors(p, rel,
 			"make the manifest package compile with -tags="+strings.Join(tags, ","))...)
 	}
+	// A handler package is a dependency, whose compile errors wire does not
+	// report, except a handler that lacks a method of its tag interface: the
+	// fix names the method to add.
+	errs = append(errs, gopkg.TagMethodErrors(pkgs, opts.Dir, rel)...)
 	if len(errs) > 0 {
 		return nil, errors.Join(errs...)
 	}

@@ -69,6 +69,9 @@ jobs:
       # which requires the root, so it runs from gen/ (go -C).
       - name: Generated code of internal/nanoexample is current (nano gen -check)
         run: go -C gen run ./cmd/nano gen -check -dir ../internal/nanoexample
+      # The api step writes the example's std-http server with the nano templates.
+      - name: Generated code of http/nanohttp/internal/example is current (nano gen -check)
+        run: go -C gen run ./cmd/nano gen -check -dir ../http/nanohttp/internal/example
 
   # The container tests behind the integration tag, which the test job does not
   # build. No -race: golang-migrate's GracefulStop races under -race (see

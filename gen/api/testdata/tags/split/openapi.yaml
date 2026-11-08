@@ -1,0 +1,60 @@
+openapi: 3.0.3
+info: {title: split, version: "1"}
+tags:
+  - name: Webhooks
+  - name: Status pages
+  - name: API keys
+  - name: Type
+  - name: Checked
+paths:
+  /webhooks:
+    post:
+      operationId: createWebhook
+      summary: Create a webhook.
+      tags: [Webhooks]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Body'}
+      responses:
+        "204": {description: created}
+    get:
+      operationId: listWebhooks
+      deprecated: true
+      x-deprecated-reason: use listHooks
+      tags: [Webhooks]
+      responses:
+        "204": {description: ok}
+  /hooks:
+    $ref: '#/paths/~1webhooks'
+  /status-pages:
+    get:
+      tags: [Status pages]
+      responses:
+        "204": {description: ok}
+  /api-keys:
+    delete:
+      operationId: deleteAPIKeys
+      tags: [API keys]
+      responses:
+        "204": {description: deleted}
+  /types:
+    get:
+      operationId: listTypes
+      tags: [Type]
+      responses:
+        "204": {description: ok}
+  /checks:
+    get:
+      operationId: listChecks
+      tags: [Checked]
+      responses:
+        "204": {description: ok}
+components:
+  schemas:
+    Body:
+      type: object
+      required: [name]
+      properties:
+        name: {type: string}

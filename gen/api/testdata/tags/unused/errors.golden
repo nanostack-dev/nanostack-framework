@@ -1,0 +1,2 @@
+testdata/tags/unused/openapi.yaml:5: tag Membership is declared but no operation uses it
+  fix: delete it, or tag an operation with it

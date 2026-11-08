@@ -1,0 +1,121 @@
+# The PlainTypes fixture: the server's Go type hints in the places anchor's
+# spec has them. openapi.client.yaml is the output of anchor's
+# scripts/client-spec.sh, the sed script PlainTypes replaces:
+#
+#   scripts/client-spec.sh openapi.yaml openapi.client.yaml
+#
+# A client generated with PlainTypes from this file must equal a client
+# generated from openapi.client.yaml.
+openapi: 3.0.3
+info: {title: plaintypes, version: "1"}
+tags:
+  - name: Roles
+paths:
+  /roles:
+    get:
+      operationId: listRoles
+      tags: [Roles]
+      parameters:
+        - name: sort
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [name, created_at]
+            x-go-type: role.SortField
+            x-go-type-import:
+              path: example.com/anchor/internal/domain/role
+        - name: direction
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/SortDirection'
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/Role'}
+  /roles/{id}:
+    patch:
+      operationId: updateRole
+      tags: [Roles]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string, x-go-type: string}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                parent_id:
+                  # Server only: a Nullable tells an omitted parent_id from null.
+                  type: string
+                  nullable: true
+                  x-go-type: nullable.Nullable[string]
+                  x-go-type-skip-optional-pointer: true
+                  x-go-type-import:
+                    path: github.com/oapi-codegen/nullable
+                labels:
+                  type: array
+                  items: {type: string}
+                  x-go-type-skip-optional-pointer: true
+                member_ids:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+                    x-go-type: uuid.UUID
+                    x-go-type-import:
+                      path: github.com/google/uuid
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Role'}
+components:
+  schemas:
+    SortDirection:
+      type: string
+      enum: [asc, desc]
+      x-go-type: search.SortDirection
+      x-go-type-import:
+        path: example.com/framework/pkg/search
+    Pagination:
+      type: object
+      x-go-type: search.Pagination
+      x-go-type-import:
+        path: example.com/framework/pkg/search
+      properties:
+        limit: {type: integer}
+        cursor: {type: string}
+    Role:
+      type: object
+      required: [id, name, type]
+      properties:
+        id:
+          type: string
+          x-go-type: string
+        name: {type: string}
+        type:
+          type: string
+          enum: [system, custom]
+          x-go-type: role.Type
+          x-go-type-import:
+            path: example.com/anchor/internal/domain/role
+        page: {$ref: '#/components/schemas/Pagination'}
+        owner:
+          # A hint next to a $ref: oapi-codegen reads it from the reference.
+          $ref: '#/components/schemas/Pagination'
+          x-go-type: role.Owner
+          x-go-type-import:
+            path: example.com/anchor/internal/domain/role

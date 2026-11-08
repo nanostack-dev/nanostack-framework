@@ -17,10 +17,13 @@
 //   - config and wire: each package with a //go:build nanogen file that calls
 //     nano.Manifest. config reads that package's Config; wire writes
 //     wire.gen.go into the package;
-//   - validate: the Project's API, when it declares one.
+//   - api: the Project's API, when it declares one: oapi-codegen writes the
+//     server and each client, and the step splits the server by OpenAPI tag
+//     into handlers.gen.go (package gen/api);
+//   - validate: the server of the Project's API.
 //
-// The steps run one after another in the order validate, errors, config,
-// wire, so each loads the fresh output of the steps before it. Without
+// The steps run one after another in the order api, validate, errors,
+// config, wire, so each loads the fresh output of the steps before it. Without
 // -check each step writes before the next loads. With -check nothing is
 // written: the fresh outputs reach later loads as a go/packages overlay. In
 // both modes an existing output of a later step is replaced, in every load,
@@ -28,7 +31,7 @@
 // break an earlier step.
 //
 // A failed step skips the steps that need it, and the other steps still
-// run, so one run reports every problem. validate and config read
+// run, so one run reports every problem. api, validate and config read
 // nanogen/project.go: a declaration with an error skips them, and wire. A
 // validation gap fails the run but skips nothing: its file is still written.
 //
@@ -36,11 +39,13 @@
 // A file under the directory nano runs on with that header, for a step that
 // ran, that the run did not produce is an orphan: the run deletes it, and
 // -check fails on it. A step with nothing to run on has run, such as errors
-// without a catalogue, or validate in a declaration without an API; a
-// skipped step has not, and validate without nanogen/project.go has not.
+// without a catalogue, or api and validate in a declaration without an
+// API; a skipped step has not, and neither api nor validate has run without
+// nanogen/project.go.
 //
 // Two guards keep generation in the pipeline: an unknown //nano: directive
-// and a //go:generate line that runs nano gen are errors at their line.
+// and a //go:generate line that runs nano gen or oapi-codegen are errors at
+// their line.
 //
 // Exit codes: 0 success, 1 a source error, a validation gap or a stale,
 // missing or orphaned file, 2 bad usage, 3 an environment failure. ADR 0023
@@ -134,10 +139,12 @@ type step struct {
 	base func(r *runner, u *unit) string
 }
 
-// steps is the fixed order. The db, api, mapper and lint steps of the design
-// join it as they land.
+// steps is the fixed order. The db, mapper and lint steps of the design join
+// it as they land.
 var steps = []step{ //nolint:gochecknoglobals // read-only table.
-	{name: "validate", project: true, run: runValidate, base: func(r *runner, _ *unit) string { return r.wd }},
+	{name: "api", project: true, run: runAPI, base: func(r *runner, _ *unit) string { return r.wd }},
+	{name: "validate", needs: []string{"api"}, project: true, run: runValidate,
+		base: func(r *runner, _ *unit) string { return r.wd }},
 	{name: "errors", run: runErrors, base: unitBase},
 	{name: "config", needs: []string{"validate", "errors"}, project: true, run: runConfig, base: unitBase},
 	{name: "wire", needs: []string{"config"}, run: runWire, base: func(r *runner, _ *unit) string { return r.root }},

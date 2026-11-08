@@ -74,7 +74,8 @@ func LoadFailed(dir string, err error) *gen.Error {
 
 // CompileErrors turns the errors go/packages reports for pkg into problems
 // at their file and line, with paths shortened by rel and the same fix on
-// each. The go command's compile report repeats the type errors without
+// each, except an error that says a type lacks a method of a tag interface:
+// its fix is the method to add. The go command's compile report repeats the type errors without
 // positions, so it is dropped when any other error remains.
 func CompileErrors(pkg *packages.Package, rel func(string) string, fix string) []error {
 	kept := make([]packages.Error, 0, len(pkg.Errors))
@@ -86,7 +87,19 @@ func CompileErrors(pkg *packages.Package, rel func(string) string, fix string) [
 	if len(kept) == 0 {
 		kept = pkg.Errors
 	}
-	return Problems(kept, rel, fix)
+	out := make([]error, 0, len(kept))
+	for _, e := range kept {
+		file, line := SplitPos(e.Pos)
+		if file != "" {
+			file = rel(file)
+		}
+		f := fix
+		if tagFix, ok := tagMethodFix(pkg, e.Msg); ok {
+			f = tagFix
+		}
+		out = append(out, gen.Errorf(file, line, f, "%s", e.Msg))
+	}
+	return out
 }
 
 // Problems turns go/packages errors into problems at their file and line,

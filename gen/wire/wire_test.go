@@ -39,6 +39,8 @@ var okCases = []struct {
 
 // errCases fail generation; errors.golden holds the expected diagnostics.
 var errCases = []string{
+	"tagsplit",
+	"tagmethod",
 	"missing",
 	"duplicate",
 	"cycle",

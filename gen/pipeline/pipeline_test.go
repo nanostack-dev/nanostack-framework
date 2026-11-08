@@ -211,7 +211,7 @@ wrote cmd/app/config.gen.go
 wrote cmd/app/CONFIG.md
 wrote cmd/app/.env.example
 wrote cmd/app/wire.gen.go
-`, stderr, `api/openapi.yaml:26: not enforced: #/components/schemas/Body/properties/note: not is not enforced
+`, stderr, `api/openapi.yaml:29: not enforced: #/components/schemas/Body/properties/note: not is not enforced
   fix: change the schema, or accept the gap with x-nano-unenforced: "<reason>" on the schema at #/components/schemas/Body/properties/note
 `)
 }
@@ -318,7 +318,11 @@ func TestJSONEvents(t *testing.T) {
 func TestList(t *testing.T) {
 	t.Parallel()
 	stdout, stderr, code := nano(t, fixture, "-list")
-	wantRun(t, "nano gen -list", code, 0, stdout, `validate  api
+	wantRun(t, "nano gen -list", code, 0, stdout, `api       api
+  in   api/openapi.yaml
+  out  api/api.gen.go
+  out  api/handlers.gen.go
+validate  api
   in   api/openapi.yaml
   out  api/validate.gen.go
 errors    greeterr
