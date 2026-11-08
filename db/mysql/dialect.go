@@ -1,0 +1,488 @@
+// Modified by Nanostack from go-jet (https://github.com/go-jet/jet), commit d0e152c.
+// See db/UPSTREAM.md for the upstream base and the list of changes.
+
+package mysql
+
+import (
+	"encoding/hex"
+	"fmt"
+	"strings"
+
+	"github.com/nanostack-dev/nanostack-framework/db/internal/jet"
+)
+
+// Dialect is implementation of MySQL dialect for SQL Builder serialization.
+var Dialect = newDialect()
+
+func newDialect() jet.Dialect {
+	operatorSerializeOverrides := map[string]jet.SerializeOverride{}
+	operatorSerializeOverrides["IS DISTINCT FROM"] = mysqlISDISTINCTFROM
+	operatorSerializeOverrides["IS NOT DISTINCT FROM"] = mysqlISNOTDISTINCTFROM
+	operatorSerializeOverrides["/"] = mysqlDivision
+	operatorSerializeOverrides["#"] = mysqlBitXor
+	operatorSerializeOverrides[jet.StringConcatOperator] = mysqlCONCAToperator
+
+	mySQLDialectParams := jet.DialectParams{
+		Name:                       "MySQL",
+		PackageName:                "mysql",
+		OperatorSerializeOverrides: operatorSerializeOverrides,
+		AliasQuoteChar:             '"',
+		IdentifierQuoteChar:        '`',
+		ArgumentPlaceholder: func(int) string {
+			return "?"
+		},
+		ArgumentToString: argumentToString,
+		ReservedWords:    reservedWords,
+		SerializeOrderBy: serializeOrderBy,
+		ValuesDefaultColumnName: func(index int) string {
+			return fmt.Sprintf("column_%d", index)
+		},
+		JsonValueEncode: func(expr Expression) Expression {
+			switch e := expr.(type) {
+			case BlobExpression:
+				return TO_BASE64(e)
+
+			// CustomExpression used bellow (instead DATE_FORMAT function) so that only expr is parametrized
+			case TimestampExpression:
+				return jet.AtomicCustomExpression(Token("DATE_FORMAT("), e, Token(",'%Y-%m-%dT%H:%i:%s.%fZ')"))
+			case TimeExpression:
+				return jet.AtomicCustomExpression(Token("CONCAT('0000-01-01T', DATE_FORMAT("), e, Token(",'%H:%i:%s.%fZ'))"))
+			case DateExpression:
+				return jet.AtomicCustomExpression(Token("CONCAT(DATE_FORMAT("), e, Token(",'%Y-%m-%d')"), Token(", 'T00:00:00Z')"))
+			case BoolExpression:
+				return CustomExpression(e, Token(" = 1"))
+			}
+			return expr
+		},
+		RegexpLike: regexpLikeOperator,
+	}
+
+	return jet.NewDialect(mySQLDialectParams)
+}
+
+func argumentToString(value any) (string, bool) {
+	switch bindVal := value.(type) {
+	case []byte:
+		return fmt.Sprintf("X'%s'", hex.EncodeToString(bindVal)), true
+	case string:
+		return stringQuote(bindVal), true
+	}
+
+	return "", false
+}
+
+// MySQL treats backslash as an escape character inside string literals (unless NO_BACKSLASH_ESCAPES sql mode
+// is enabled), so in addition to doubling single quotes, backslashes have to be escaped as well.
+var stringQuoteReplacer = strings.NewReplacer(`\`, `\\`, `'`, `''`)
+
+func stringQuote(value string) string {
+	return `'` + stringQuoteReplacer.Replace(value) + `'`
+}
+
+func mysqlBitXor(expressions ...jet.Serializer) jet.SerializerFunc {
+	return func(statement jet.StatementType, out *jet.SQLBuilder, options ...jet.SerializeOption) {
+		if len(expressions) < 2 {
+			panic("jet: invalid number of expressions for operator XOR")
+		}
+
+		lhs := expressions[0]
+		rhs := expressions[1]
+
+		jet.Serialize(lhs, statement, out, options...)
+
+		out.WriteString("^")
+
+		jet.Serialize(rhs, statement, out, options...)
+	}
+}
+
+func mysqlCONCAToperator(expressions ...jet.Serializer) jet.SerializerFunc {
+	return func(statement jet.StatementType, out *jet.SQLBuilder, options ...jet.SerializeOption) {
+		if len(expressions) < 2 {
+			panic("jet: invalid number of expressions for operator CONCAT")
+		}
+		out.WriteString("CONCAT(")
+
+		jet.Serialize(expressions[0], statement, out, options...)
+
+		out.WriteString(", ")
+
+		jet.Serialize(expressions[1], statement, out, options...)
+
+		out.WriteString(")")
+	}
+}
+
+func mysqlDivision(expressions ...jet.Serializer) jet.SerializerFunc {
+	return func(statement jet.StatementType, out *jet.SQLBuilder, options ...jet.SerializeOption) {
+		if len(expressions) < 2 {
+			panic("jet: invalid number of expressions for operator DIV")
+		}
+
+		lhs := expressions[0]
+		rhs := expressions[1]
+
+		jet.Serialize(lhs, statement, out, options...)
+
+		_, isLhsInt := lhs.(IntegerExpression)
+		_, isRhsInt := rhs.(IntegerExpression)
+
+		if isLhsInt && isRhsInt {
+			out.WriteString("DIV")
+		} else {
+			out.WriteString("/")
+		}
+
+		jet.Serialize(rhs, statement, out, options...)
+	}
+}
+
+func mysqlISNOTDISTINCTFROM(expressions ...jet.Serializer) jet.SerializerFunc {
+	return func(statement jet.StatementType, out *jet.SQLBuilder, options ...jet.SerializeOption) {
+		if len(expressions) < 2 {
+			panic("jet: invalid number of expressions for operator")
+		}
+
+		jet.Serialize(expressions[0], statement, out)
+		out.WriteString("<=>")
+		jet.Serialize(expressions[1], statement, out)
+	}
+}
+
+func mysqlISDISTINCTFROM(expressions ...jet.Serializer) jet.SerializerFunc {
+	return func(statement jet.StatementType, out *jet.SQLBuilder, options ...jet.SerializeOption) {
+		out.WriteString("NOT(")
+		mysqlISNOTDISTINCTFROM(expressions...)(statement, out, options...)
+		out.WriteString(")")
+	}
+}
+
+func regexpLikeOperator(str StringExpression, not bool, pattern StringExpression, caseSensitive bool) jet.SerializerFunc {
+	return func(statement jet.StatementType, out *jet.SQLBuilder, options ...jet.SerializeOption) {
+		jet.Serialize(str, statement, out, options...)
+
+		if not {
+			out.WriteString("NOT")
+		}
+
+		out.WriteString("REGEXP")
+
+		if caseSensitive {
+			out.WriteString("BINARY")
+		}
+
+		jet.Serialize(pattern, statement, out, options...)
+	}
+}
+
+func serializeOrderBy(expression Expression, ascending, nullsFirst *bool) jet.SerializerFunc {
+	return func(statement jet.StatementType, out *jet.SQLBuilder, options ...jet.SerializeOption) {
+
+		if nullsFirst == nil {
+			jet.SerializeForOrderBy(expression, statement, out)
+
+			if ascending != nil {
+				serializeAscending(*ascending, out)
+			}
+			return
+		}
+
+		asc := true
+
+		if ascending != nil {
+			asc = *ascending
+		}
+
+		if asc {
+			if !*nullsFirst {
+				jet.SerializeForOrderBy(expression.IS_NULL(), statement, out)
+				out.WriteString(", ")
+			}
+			jet.SerializeForOrderBy(expression, statement, out)
+			if ascending != nil {
+				serializeAscending(asc, out)
+			}
+		} else {
+			if *nullsFirst {
+				jet.SerializeForOrderBy(expression.IS_NOT_NULL(), statement, out)
+				out.WriteString(", ")
+			}
+
+			jet.SerializeForOrderBy(expression, statement, out)
+			serializeAscending(asc, out)
+		}
+	}
+}
+
+func serializeAscending(ascending bool, out *jet.SQLBuilder) {
+	if ascending {
+		out.WriteString("ASC")
+	} else {
+		out.WriteString("DESC")
+	}
+}
+
+var reservedWords = []string{
+	"ACCESSIBLE",
+	"ADD",
+	"ALL",
+	"ALTER",
+	"ANALYZE",
+	"AND",
+	"AS",
+	"ASC",
+	"ASENSITIVE",
+	"BEFORE",
+	"BETWEEN",
+	"BIGINT",
+	"BINARY",
+	"BLOB",
+	"BOTH",
+	"BY",
+	"CALL",
+	"CASCADE",
+	"CASE",
+	"CHANGE",
+	"CHAR",
+	"CHARACTER",
+	"CHECK",
+	"COLLATE",
+	"COLUMN",
+	"CONDITION",
+	"CONSTRAINT",
+	"CONTINUE",
+	"CONVERT",
+	"CREATE",
+	"CROSS",
+	"CUBE",
+	"CUME_DIST",
+	"CURRENT_DATE",
+	"CURRENT_TIME",
+	"CURRENT_TIMESTAMP",
+	"CURRENT_USER",
+	"CURSOR",
+	"DATABASE",
+	"DATABASES",
+	"DAY_HOUR",
+	"DAY_MICROSECOND",
+	"DAY_MINUTE",
+	"DAY_SECOND",
+	"DEC",
+	"DECIMAL",
+	"DECLARE",
+	"DEFAULT",
+	"DELAYED",
+	"DELETE",
+	"DENSE_RANK",
+	"DESC",
+	"DESCRIBE",
+	"DETERMINISTIC",
+	"DISTINCT",
+	"DISTINCTROW",
+	"DIV",
+	"DOUBLE",
+	"DROP",
+	"DUAL",
+	"EACH",
+	"ELSE",
+	"ELSEIF",
+	"EMPTY",
+	"ENCLOSED",
+	"ESCAPED",
+	"EXCEPT",
+	"EXISTS",
+	"EXIT",
+	"EXPLAIN",
+	"FALSE",
+	"FETCH",
+	"FIRST_VALUE",
+	"FLOAT",
+	"FLOAT4",
+	"FLOAT8",
+	"FOR",
+	"FORCE",
+	"FOREIGN",
+	"FROM",
+	"FULLTEXT",
+	"FUNCTION",
+	"GENERATED",
+	"GET",
+	"GRANT",
+	"GROUP",
+	"GROUPING",
+	"GROUPS",
+	"HAVING",
+	"HIGH_PRIORITY",
+	"HOUR_MICROSECOND",
+	"HOUR_MINUTE",
+	"HOUR_SECOND",
+	"IF",
+	"IGNORE",
+	"IN",
+	"INDEX",
+	"INFILE",
+	"INNER",
+	"INOUT",
+	"INSENSITIVE",
+	"INSERT",
+	"INT",
+	"INT1",
+	"INT2",
+	"INT3",
+	"INT4",
+	"INT8",
+	"INTEGER",
+	"INTERVAL",
+	"INTO",
+	"IO_AFTER_GTIDS",
+	"IO_BEFORE_GTIDS",
+	"IS",
+	"ITERATE",
+	"JOIN",
+	"JSON_TABLE",
+	"KEY",
+	"KEYS",
+	"KILL",
+	"LAG",
+	"LAST_VALUE",
+	"LATERAL",
+	"LEAD",
+	"LEADING",
+	"LEAVE",
+	"LEFT",
+	"LIKE",
+	"LIMIT",
+	"LINEAR",
+	"LINES",
+	"LOAD",
+	"LOCALTIME",
+	"LOCALTIMESTAMP",
+	"LOCK",
+	"LONG",
+	"LONGBLOB",
+	"LONGTEXT",
+	"LOOP",
+	"LOW_PRIORITY",
+	"MASTER_BIND",
+	"MASTER_SSL_VERIFY_SERVER_CERT",
+	"MATCH",
+	"MAXVALUE",
+	"MEDIUMBLOB",
+	"MEDIUMINT",
+	"MEDIUMTEXT",
+	"MIDDLEINT",
+	"MINUTE_MICROSECOND",
+	"MINUTE_SECOND",
+	"MOD",
+	"MODIFIES",
+	"NATURAL",
+	"NOT",
+	"NO_WRITE_TO_BINLOG",
+	"NTH_VALUE",
+	"NTILE",
+	"NULL",
+	"NUMERIC",
+	"OF",
+	"ON",
+	"OPTIMIZE",
+	"OPTIMIZER_COSTS",
+	"OPTION",
+	"OPTIONALLY",
+	"OR",
+	"ORDER",
+	"OUT",
+	"OUTER",
+	"OUTFILE",
+	"OVER",
+	"PARTITION",
+	"PERCENT_RANK",
+	"PRECISION",
+	"PRIMARY",
+	"PROCEDURE",
+	"PURGE",
+	"RANGE",
+	"RANK",
+	"READ",
+	"READS",
+	"READ_WRITE",
+	"REAL",
+	"RECURSIVE",
+	"REFERENCES",
+	"REGEXP",
+	"RELEASE",
+	"RENAME",
+	"REPEAT",
+	"REPLACE",
+	"REQUIRE",
+	"RESIGNAL",
+	"RESTRICT",
+	"RETURN",
+	"RETURNING",
+	"REVOKE",
+	"RIGHT",
+	"RLIKE",
+	"ROW",
+	"ROWS",
+	"ROW_NUMBER",
+	"SCHEMA",
+	"SCHEMAS",
+	"SECOND_MICROSECOND",
+	"SELECT",
+	"SENSITIVE",
+	"SEPARATOR",
+	"SET",
+	"SHOW",
+	"SIGNAL",
+	"SMALLINT",
+	"SPATIAL",
+	"SPECIFIC",
+	"SQL",
+	"SQLEXCEPTION",
+	"SQLSTATE",
+	"SQLWARNING",
+	"SQL_BIG_RESULT",
+	"SQL_CALC_FOUND_ROWS",
+	"SQL_SMALL_RESULT",
+	"SSL",
+	"STARTING",
+	"STORED",
+	"STRAIGHT_JOIN",
+	"SYSTEM",
+	"TABLE",
+	"TERMINATED",
+	"THEN",
+	"TINYBLOB",
+	"TINYINT",
+	"TINYTEXT",
+	"TO",
+	"TRAILING",
+	"TRIGGER",
+	"TRUE",
+	"UNDO",
+	"UNION",
+	"UNIQUE",
+	"UNLOCK",
+	"UNSIGNED",
+	"UPDATE",
+	"USAGE",
+	"USE",
+	"USING",
+	"UTC_DATE",
+	"UTC_TIME",
+	"UTC_TIMESTAMP",
+	"VALUES",
+	"VARBINARY",
+	"VARCHAR",
+	"VARCHARACTER",
+	"VARYING",
+	"VIRTUAL",
+	"WHEN",
+	"WHERE",
+	"WHILE",
+	"WINDOW",
+	"WITH",
+	"WRITE",
+	"XOR",
+	"YEAR_MONTH",
+	"ZEROFILL",
+}

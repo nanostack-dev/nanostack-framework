@@ -1,0 +1,198 @@
+// Modified by Nanostack from go-jet (https://github.com/go-jet/jet), commit d0e152c.
+// See db/UPSTREAM.md for the upstream base and the list of changes.
+
+package postgres
+
+import (
+	"fmt"
+	"strconv"
+
+	"github.com/nanostack-dev/nanostack-framework/db/internal/jet"
+)
+
+// CAST function converts an expr (of any type) into later specified datatype.
+func CAST(expr Expression) *cast {
+	return &cast{
+		expr: expr,
+	}
+}
+
+type cast struct {
+	expr Expression
+}
+
+func (b *cast) AS(castType string) Expression {
+	return jet.AtomicCustomExpression(b.expr, Token("::"+castType))
+}
+
+// AS_BOOL casts expression as bool type
+func (b *cast) AS_BOOL() BoolExpression {
+	return BoolExp(b.AS("boolean"))
+}
+
+// AS_SMALLINT casts expression as smallint type
+func (b *cast) AS_SMALLINT() IntegerExpression {
+	return IntExp(b.AS("smallint"))
+}
+
+// AS_INTEGER casts expression AS integer type
+func (b *cast) AS_INTEGER() IntegerExpression {
+	return IntExp(b.AS("integer"))
+}
+
+// AS_BIGINT casts expression AS bigint type
+func (b *cast) AS_BIGINT() IntegerExpression {
+	return IntExp(b.AS("bigint"))
+}
+
+// AS_NUMERIC casts expression as numeric type, using precision and optionally scale
+func (b *cast) AS_NUMERIC(precisionAndScale ...int) FloatExpression {
+	var castArgs string
+
+	var argLen = len(precisionAndScale)
+	if argLen >= 2 {
+		castArgs = fmt.Sprintf("(%d, %d)", precisionAndScale[0], precisionAndScale[1])
+	} else if argLen == 1 {
+		castArgs = fmt.Sprintf("(%d)", precisionAndScale[0])
+	}
+
+	return FloatExp(b.AS("numeric" + castArgs))
+}
+
+// AS_REAL casts expression AS real type
+func (b *cast) AS_REAL() FloatExpression {
+	return FloatExp(b.AS("real"))
+}
+
+// AS_DOUBLE casts expression AS double precision type
+func (b *cast) AS_DOUBLE() FloatExpression {
+	return FloatExp(b.AS("double precision"))
+}
+
+// AS_TEXT casts expression AS text type
+func (b *cast) AS_TEXT() StringExpression {
+	return StringExp(b.AS("text"))
+}
+
+// AS_CHAR casts expression AS a character type
+func (b *cast) AS_CHAR(length ...int) StringExpression {
+	if len(length) > 0 {
+		return StringExp(b.AS("char(" + strconv.Itoa(length[0]) + ")"))
+	}
+
+	return StringExp(b.AS("char"))
+}
+
+// AS_VARCHAR casts expression AS a character varying type
+func (b *cast) AS_VARCHAR(length ...int) StringExpression {
+	if len(length) > 0 {
+		return StringExp(b.AS("varchar(" + strconv.Itoa(length[0]) + ")"))
+	}
+
+	return StringExp(b.AS("varchar"))
+}
+
+// AS_DATE casts expression AS date type
+func (b *cast) AS_DATE() DateExpression {
+	return DateExp(b.AS("date"))
+}
+
+// AS_DECIMAL casts expression AS decimal type
+func (b *cast) AS_DECIMAL() FloatExpression {
+	return FloatExp(b.AS("decimal"))
+}
+
+// AS_BYTEA casts expression AS bytea type
+func (b *cast) AS_BYTEA() ByteaExpression {
+	return ByteaExp(b.AS("bytea"))
+}
+
+// AS_TIME casts expression AS date type
+func (b *cast) AS_TIME() TimeExpression {
+	return TimeExp(b.AS("time without time zone"))
+}
+
+// AS_TIMEZ casts expression AS time with time timezone type
+func (b *cast) AS_TIMEZ() TimezExpression {
+	return TimezExp(b.AS("time with time zone"))
+}
+
+// AS_TIMESTAMP casts expression AS timestamp type
+func (b *cast) AS_TIMESTAMP() TimestampExpression {
+	return TimestampExp(b.AS("timestamp without time zone"))
+}
+
+// AS_TIMESTAMPZ casts expression AS timestamp with timezone type
+func (b *cast) AS_TIMESTAMPZ() TimestampzExpression {
+	return TimestampzExp(b.AS("timestamp with time zone"))
+}
+
+// AS_INTERVAL casts expression AS interval type
+func (b *cast) AS_INTERVAL() IntervalExpression {
+	return IntervalExp(b.AS("interval"))
+}
+
+// AS_UUID casts expression AS uuid type
+func (b *cast) AS_UUID() StringExpression {
+	return StringExp(b.AS("uuid"))
+}
+
+// AS_BOOL_ARRAY casts expression as boolean array type
+func (b *cast) AS_BOOL_ARRAY() Array[BoolExpression] {
+	return ArrayExp[BoolExpression](b.AS("boolean[]"))
+}
+
+// AS_INTEGER_ARRAY casts expression as integer array type
+func (b *cast) AS_INTEGER_ARRAY() Array[IntegerExpression] {
+	return ArrayExp[IntegerExpression](b.AS("integer[]"))
+}
+
+// AS_BIGINT_ARRAY casts expression as bigint array type
+func (b *cast) AS_BIGINT_ARRAY() Array[IntegerExpression] {
+	return ArrayExp[IntegerExpression](b.AS("bigint[]"))
+}
+
+// AS_REAL_ARRAY casts expression as real array
+func (b *cast) AS_REAL_ARRAY() Array[FloatExpression] {
+	return ArrayExp[FloatExpression](b.AS("real[]"))
+}
+
+// AS_DOUBLE_ARRAY casts expression as double precision array
+func (b *cast) AS_DOUBLE_ARRAY() Array[FloatExpression] {
+	return ArrayExp[FloatExpression](b.AS("double precision[]"))
+}
+
+// AS_TEXT_ARRAY casts expression as text array
+func (b *cast) AS_TEXT_ARRAY() Array[StringExpression] {
+	return ArrayExp[StringExpression](b.AS("text[]"))
+}
+
+// AS_BYTEA_ARRAY casts expression as bytea array
+func (b *cast) AS_BYTEA_ARRAY() Array[ByteaExpression] {
+	return ArrayExp[ByteaExpression](b.AS("bytea[]"))
+}
+
+// AS_DATE_ARRAY casts expression as date array
+func (b *cast) AS_DATE_ARRAY() Array[DateExpression] {
+	return ArrayExp[DateExpression](b.AS("date[]"))
+}
+
+// AS_TIMESTAMP_ARRAY casts expression as timestamp array
+func (b *cast) AS_TIMESTAMP_ARRAY() Array[TimestampExpression] {
+	return ArrayExp[TimestampExpression](b.AS("timestamp without time zone[]"))
+}
+
+// AS_TIMESTAMPZ_ARRAY casts expression as timestamp with time zone array
+func (b *cast) AS_TIMESTAMPZ_ARRAY() Array[TimestampzExpression] {
+	return ArrayExp[TimestampzExpression](b.AS("timestamp with time zone[]"))
+}
+
+// AS_TIME_ARRAY casts expression as time array
+func (b *cast) AS_TIME_ARRAY() Array[TimeExpression] {
+	return ArrayExp[TimeExpression](b.AS("time without time zone[]"))
+}
+
+// AS_TIMEZ_ARRAY casts expression as time with timezone array
+func (b *cast) AS_TIMEZ_ARRAY() Array[TimezExpression] {
+	return ArrayExp[TimezExpression](b.AS("time with time zone[]"))
+}

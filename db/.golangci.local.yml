@@ -1,0 +1,68 @@
+# Nanostack DB's additions to lint/base.golangci.yml. From the repository root, run
+# `go run ./lint/cmd/lintconfig -dir db` after changing this file or the base.
+#
+# One configuration serves the db module and the nested db/tests module: golangci-lint
+# finds it from either, and every path below is relative to this directory.
+run:
+  relative-path-mode: cfg
+  # The PostgreSQL-only range tests in db/tests sit behind this tag, as upstream's do.
+  build-tags:
+    - postgres
+
+formatters:
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/nanostack-dev/nanostack-framework
+
+linters:
+  settings:
+    gocritic:
+      enabled-checks:
+        - ruleguard
+      settings:
+        ruleguard:
+          # ${base-path} is this directory (relative-path-mode: cfg); the rules live at the root.
+          # They import github.com/quasilyte/go-ruleguard/dsl, which only the root module
+          # requires, so lint runs in the repository's go.work (CI creates one).
+          rules: ${base-path}/../gorules/functional.go,${base-path}/../gorules/transactor.go
+          failOn: all
+    misspell:
+      # PENELOPE GUINESS is actor 1 of the sakila and dvds test databases.
+      ignore-rules:
+        - guiness
+    revive:
+      rules:
+        # The tests import the dialect they test with a dot, as go-jet's own tests do.
+        - name: dot-imports
+          arguments:
+            - allowed-packages:
+                - github.com/nanostack-dev/nanostack-framework/db/mysql
+                - github.com/nanostack-dev/nanostack-framework/db/postgres
+                - github.com/nanostack-dev/nanostack-framework/db/sqlite
+
+  # Only Nanostack files are linted. Files taken from go-jet keep upstream's style, so an
+  # upstream diff stays small (UPSTREAM.md, rule 1); new upstream files are left out too.
+  # A new Nanostack file is added to this list. golangci-lint applies it to the formatters
+  # too (formatters.exclusions has no paths-except).
+  exclusions:
+    # Each pattern warns whenever its files are clean, and this overlay has no exclusion
+    # rules for the warning to guard.
+    warn-unused: false
+    paths-except:
+      - ^cmd/jet/nanostack_version(_test)?\.go$
+      - ^cmd/jet/nullable(_test)?\.go$
+      - ^filter/
+      - ^generator/template/nullable(_test)?\.go$
+      - ^internal/jet/optional_arg(_test)?\.go$
+      - ^internal/optional/
+      - ^internal/testutils/option_parity\.go$
+      - ^(mysql|postgres|sqlite)/literal_option(_test)?\.go$
+      - ^(mysql|postgres|sqlite)/statement_option_test\.go$
+      - ^qrm/option(_test)?\.go$
+      - ^query/
+      - ^tools/upstreamsync/
+      - ^tests/dbconfig/nanostack\.go$
+      - ^tests/internal/testenv/
+      - ^tests/tools/
+      - ^tests/(mysql|postgres|sqlite)/(generator_option|nanostack_models|option\w*|query)_test\.go$

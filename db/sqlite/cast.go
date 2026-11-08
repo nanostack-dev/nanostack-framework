@@ -1,0 +1,49 @@
+// Modified by Nanostack from go-jet (https://github.com/go-jet/jet), commit d0e152c.
+// See db/UPSTREAM.md for the upstream base and the list of changes.
+
+package sqlite
+
+import (
+	"github.com/nanostack-dev/nanostack-framework/db/internal/jet"
+)
+
+// CAST function converts an expr (of any type) into later specified datatype.
+func CAST(expr Expression) *cast {
+	return &cast{
+		expr: expr,
+	}
+}
+
+type cast struct {
+	expr Expression
+}
+
+// AS casts expressions to castType
+func (c *cast) AS(castType string) Expression {
+	return jet.AtomicCustomExpression(Token("CAST("), c.expr, Token("AS "+castType+")"))
+}
+
+// AS_TEXT cast expression to TEXT type
+func (c *cast) AS_TEXT() StringExpression {
+	return StringExp(c.AS("TEXT"))
+}
+
+// AS_NUMERIC cast expression to NUMERIC type
+func (c *cast) AS_NUMERIC() FloatExpression {
+	return FloatExp(c.AS("NUMERIC"))
+}
+
+// AS_INTEGER cast expression to INTEGER type
+func (c *cast) AS_INTEGER() IntegerExpression {
+	return IntExp(c.AS("INTEGER"))
+}
+
+// AS_REAL cast expression to REAL type
+func (c *cast) AS_REAL() FloatExpression {
+	return FloatExp(c.AS("REAL"))
+}
+
+// AS_BLOB cast expression to BLOB type
+func (c *cast) AS_BLOB() BlobExpression {
+	return BlobExp(c.AS("BLOB"))
+}
