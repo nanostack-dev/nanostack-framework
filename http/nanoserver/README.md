@@ -4,7 +4,7 @@ The nano module that serves the service's HTTP handler. It replaces the server p
 
 - **Provides:** `*Server` from `NewServer(Config, http.Handler, *slog.Logger)`. The service provides the `http.Handler`: it keeps its router, its middleware order (tracing, request logging, CORS, validation) and its `/health` route.
 - **Lifecycle:** `Server` is a `Runner`. `Run` listens, serves until the App stops, then stops accepting connections and waits up to `shutdown_timeout` for in-flight requests. After that it closes the remaining connections. A listen failure stops the App.
-- **Config** (section `http`), with the defaults of the fx module: `host` (all interfaces), `port` (8080), `read_header_timeout` (30s), `read_timeout` (60s), `write_timeout` (60s), `idle_timeout` (120s), `shutdown_timeout` (5s). Keep `shutdown_timeout` below `APP_STOP_TIMEOUT`.
+- **Config** (section `http`), with the defaults of the fx module: `host` (all interfaces), `port` (8080), `read_header_timeout` (30s), `read_timeout` (60s), `write_timeout` (60s), `idle_timeout` (120s), `shutdown_timeout` (5s). Keep `shutdown_timeout` below `APP_STOP_TIMEOUT`. A zero or negative timeout takes its default, so a `Config{}` built by hand is never a server without timeouts.
 
 ## `/health`
 

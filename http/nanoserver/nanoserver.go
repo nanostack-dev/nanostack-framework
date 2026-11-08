@@ -53,8 +53,35 @@ type Server struct {
 	addr      net.Addr
 }
 
-// NewServer returns the server for handler. It does not listen yet.
+// Defaults of Config. A zero or negative field takes its default, so a zero
+// Config is never a server without timeouts.
+const (
+	DefaultReadHeaderTimeout = 30 * time.Second
+	DefaultReadTimeout       = 60 * time.Second
+	DefaultWriteTimeout      = 60 * time.Second
+	DefaultIdleTimeout       = 120 * time.Second
+	DefaultShutdownTimeout   = 5 * time.Second
+)
+
+func (c Config) withDefaults() Config {
+	orDefault := func(d *time.Duration, def time.Duration) {
+		if *d <= 0 {
+			*d = def
+		}
+	}
+	orDefault(&c.ReadHeaderTimeout, DefaultReadHeaderTimeout)
+	orDefault(&c.ReadTimeout, DefaultReadTimeout)
+	orDefault(&c.WriteTimeout, DefaultWriteTimeout)
+	orDefault(&c.IdleTimeout, DefaultIdleTimeout)
+	orDefault(&c.ShutdownTimeout, DefaultShutdownTimeout)
+	return c
+}
+
+// NewServer returns the server for handler. It does not listen yet. A zero
+// or negative timeout in cfg takes its default (DefaultReadHeaderTimeout and
+// the others).
 func NewServer(cfg Config, handler http.Handler, logger *slog.Logger) *Server {
+	cfg = cfg.withDefaults()
 	return &Server{
 		server: &http.Server{
 			Addr:              net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port)),
