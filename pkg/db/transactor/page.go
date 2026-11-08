@@ -50,9 +50,9 @@ var (
 //
 // Both type parameters are inferred from mapFunc; neither is spelled at a call
 // site. The builder's fields use T and R (the keyset and mapFunc), so they are
-// the builder's own parameters and bind when Page constructs it. The columns
-// are untyped projections, and mapFunc is the only argument that names T and R,
-// which is why it precedes them.
+// the builder's own parameters and bind when Page constructs it. mapFunc is the
+// only argument of Page that names T and R, so Page takes it rather than a later
+// method. It precedes the columns because they are variadic.
 type PageBuilder[T any, R any] struct {
 	db      qrm.DB
 	columns []jet.Projection
