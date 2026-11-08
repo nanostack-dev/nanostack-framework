@@ -1,0 +1,129 @@
+// Modified by Nanostack from go-jet (https://github.com/go-jet/jet), commit d0e152c.
+// See db/UPSTREAM.md for the upstream base and the list of changes.
+
+package postgres
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+
+	"github.com/nanostack-dev/nanostack-framework/db/generator/metadata"
+	postgresdialect "github.com/nanostack-dev/nanostack-framework/db/postgres"
+	"github.com/nanostack-dev/nanostack-framework/db/qrm"
+)
+
+// postgresQuerySet is dialect query set for PostgreSQL
+type postgresQuerySet struct{}
+
+func (p postgresQuerySet) GetTablesMetaData(db *sql.DB, schemaName string, tableType metadata.TableType) ([]metadata.Table, error) {
+	query := `
+SELECT table_name as "table.name", obj_description((quote_ident(table_schema)||'.'||quote_ident(table_name))::regclass, 'pg_class') as "table.comment"
+FROM information_schema.tables
+WHERE table_schema = $1 and table_type = $2
+ORDER BY table_name;
+`
+	var tables []metadata.Table
+
+	_, err := qrm.Query(context.Background(), db, query, []interface{}{schemaName, tableType}, &tables)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query %s metadata: %w", tableType, err)
+	}
+
+	// add materialized views separately, because materialized views are not part of standard information schema
+	if tableType == metadata.ViewTable {
+		matViewQuery := `
+			select matviewname as "table.name"
+			from pg_matviews
+			where schemaname = $1;
+		`
+		var matViews []metadata.Table
+
+		_, err := qrm.Query(context.Background(), db, matViewQuery, []interface{}{schemaName}, &matViews)
+		if err != nil {
+			return nil, fmt.Errorf("failed to query materialized view metadata: %w", err)
+		}
+
+		tables = append(tables, matViews...)
+	}
+
+	for i := range tables {
+		tables[i].Columns, err = getColumnsMetaData(db, schemaName, tables[i].Name)
+		if err != nil {
+			return nil, fmt.Errorf("failed to query %s columns metadata: %w", tableType, err)
+		}
+	}
+
+	return tables, nil
+}
+
+func getColumnsMetaData(db *sql.DB, schemaName string, tableName string) ([]metadata.Column, error) {
+	query := `
+select  
+    attr.attname as "column.Name",
+    col_description(attr.attrelid, attr.attnum) as "column.Comment",
+    exists(
+        select 1
+        from pg_catalog.pg_index indx
+        where attr.attrelid = indx.indrelid and attr.attnum = any(indx.indkey) and indx.indisprimary
+    ) as "column.IsPrimaryKey",
+    not attr.attnotnull as "column.isNullable",
+    attr.attgenerated = 's' as "column.isGenerated",
+    attr.atthasdef as "column.hasDefault",
+    (case when tp.typcategory = 'A' then greatest(1, attr.attndims) --cockroach num dims fix
+          else 0
+        end) as "dataType.dimensions",
+    (case coalesce(elem.typtype, tp.typtype)
+         when 'b' then 'base'
+         when 'd' then 'base'
+         when 'e' then 'enum'
+         when 'r' then 'range'
+        end) as "dataType.Kind",
+    (case when tp.typtype = 'd' then (select pg_type.typname from pg_catalog.pg_type where pg_type.oid = tp.typbasetype)
+          when tp.typcategory = 'A' then elem.typname
+          else tp.typname
+        end) as "dataType.Name",
+    false as "dataType.isUnsigned",
+    $3::text as "dataType.SourceDialect"
+from pg_catalog.pg_attribute as attr
+     join pg_catalog.pg_class as cls on cls.oid = attr.attrelid
+     join pg_catalog.pg_namespace as ns on ns.oid = cls.relnamespace
+     join pg_catalog.pg_type as tp on tp.oid = attr.atttypid
+	 left join pg_catalog.pg_type elem ON tp.typelem = elem.oid -- only for arrays
+where 
+    ns.nspname = $1 and
+    cls.relname = $2 and 
+    not attr.attisdropped and 
+    attr.attnum > 0
+order by 
+    attr.attnum;
+`
+	var columns []metadata.Column
+	_, err := qrm.Query(context.Background(), db, query, []interface{}{schemaName, tableName, postgresdialect.Dialect.Name()}, &columns)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query '%s' columns metadata: %w", tableName, err)
+	}
+
+	return columns, nil
+}
+
+func (p postgresQuerySet) GetEnumsMetaData(db *sql.DB, schemaName string) ([]metadata.Enum, error) {
+	query := `
+SELECT t.typname as "enum.name",  
+	   obj_description(t.oid, 'pg_type') as "enum.comment",
+       e.enumlabel as "values"
+FROM pg_catalog.pg_type t 
+   JOIN pg_catalog.pg_enum e on t.oid = e.enumtypid  
+   JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace
+WHERE n.nspname = $1
+ORDER BY n.nspname, t.typname, e.enumsortorder;`
+
+	var result []metadata.Enum
+
+	_, err := qrm.Query(context.Background(), db, query, []interface{}{schemaName}, &result)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query enums metadata for schema '%s': %w", schemaName, err)
+	}
+
+	return result, nil
+}

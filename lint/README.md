@@ -101,7 +101,7 @@ Go 1.27.0 to 1.27.3 write export data that loses the order of generic methods ([
 1. `consumer` alone, so `listx` arrives from export data;
 2. the whole fixture;
 3. `consumer` alone again, so the linters read `listx`'s facts from the cache. go-tools#1746 fires only on that warm path: a cold run type-checks `listx` from source and keeps facts keyed by the real objects;
-4. `pkg/functional`, the framework's real generic methods, and `pkg/db/transactor`, which imports them;
+4. `pkg/db/transactor`, which imports the framework's real generic methods from `pkg/functional`. That module is linted on its own by the `functional` job in `ci.yml`, because a run from the root cannot load a nested module;
 5. `consumer` while the test holds golangci-lint's global lock, the way a developer's or an editor's lint holds it.
 
 Each run fails on a non-zero exit, on a crash marker such as `panic:` in the output, and on a run longer than 3 minutes, which it stops with `SIGQUIT` so the failure shows every goroutine. The runs pass `--allow-parallel-runners`: without it a run exits when another golangci-lint holds the lock, and with `--allow-serial-runners` it waits, so an editor's lint that holds the lock for minutes would be reported as a hang. Output that still names the lock fails with a message that says so, not as a lint failure.

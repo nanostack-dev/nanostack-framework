@@ -1,0 +1,1919 @@
+// Modified by Nanostack from go-jet (https://github.com/go-jet/jet), commit d0e152c.
+// See db/UPSTREAM.md for the upstream base and the list of changes.
+
+package postgres
+
+import (
+	"bytes"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"reflect"
+	"regexp"
+	"strconv"
+	"strings"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/nanostack-dev/nanostack-framework/db/generator/metadata"
+	"github.com/nanostack-dev/nanostack-framework/db/generator/postgres"
+	"github.com/nanostack-dev/nanostack-framework/db/generator/template"
+	"github.com/nanostack-dev/nanostack-framework/db/internal/testutils"
+	postgres2 "github.com/nanostack-dev/nanostack-framework/db/postgres"
+	"github.com/nanostack-dev/nanostack-framework/db/tests/.gentestdata/jetdb/dvds/model"
+	"github.com/nanostack-dev/nanostack-framework/db/tests/dbconfig"
+	"github.com/nanostack-dev/nanostack-framework/db/tests/internal/utils/file"
+	file2 "github.com/nanostack-dev/nanostack-framework/db/tests/internal/utils/file"
+)
+
+func dsn(host string, port int, dbName, user, password string) string {
+	return fmt.Sprintf("postgresql://%s:%s@%s:%d/%s?sslmode=disable",
+		user,
+		password,
+		host,
+		port,
+		dbName,
+	)
+}
+
+func defaultDSN() string {
+	return dsn(
+		dbconfig.PgHost,
+		dbconfig.PgPort,
+		dbconfig.PgDBName,
+		dbconfig.PgUser,
+		dbconfig.PgPassword,
+	)
+}
+
+func TestGeneratedModel(t *testing.T) {
+	actor := model.Actor{}
+
+	require.Equal(t, reflect.TypeOf(actor.ActorID).String(), "int32")
+	actorIDField, ok := reflect.TypeOf(actor).FieldByName("ActorID")
+	require.True(t, ok)
+	require.Equal(t, actorIDField.Tag.Get("sql"), "primary_key")
+	require.Equal(t, reflect.TypeOf(actor.FirstName).String(), "string")
+	require.Equal(t, reflect.TypeOf(actor.LastName).String(), "string")
+	require.Equal(t, reflect.TypeOf(actor.LastUpdate).String(), "time.Time")
+
+	filmActor := model.FilmActor{}
+
+	require.Equal(t, reflect.TypeOf(filmActor.FilmID).String(), "int16")
+	filmIDField, ok := reflect.TypeOf(filmActor).FieldByName("FilmID")
+	require.True(t, ok)
+	require.Equal(t, filmIDField.Tag.Get("sql"), "primary_key")
+
+	require.Equal(t, reflect.TypeOf(filmActor.ActorID).String(), "int16")
+	actorIDField, ok = reflect.TypeOf(filmActor).FieldByName("ActorID")
+	require.True(t, ok)
+	require.Equal(t, filmIDField.Tag.Get("sql"), "primary_key")
+
+	staff := model.Staff{}
+
+	require.Equal(t, reflect.TypeOf(staff.Email).String(), "*string")
+	require.Equal(t, reflect.TypeOf(staff.Picture).String(), "*[]uint8")
+}
+
+const genTestDir2 = "./.gentestdata2"
+
+func TestCmdGenerator(t *testing.T) {
+	err := os.RemoveAll(genTestDir2)
+	require.NoError(t, err)
+
+	cmd := exec.Command("jet", "-source=PostgreSQL", "-dbname=jetdb", "-host=localhost",
+		"-port="+strconv.Itoa(dbconfig.PgPort),
+		"-user=jet",
+		"-password=jet",
+		"-schema=dvds",
+		"-path="+genTestDir2)
+
+	cmd.Stderr = os.Stderr
+	cmd.Stdout = os.Stdout
+
+	err = cmd.Run()
+	require.NoError(t, err)
+
+	assertGeneratedFiles(t)
+
+	err = os.RemoveAll(genTestDir2)
+	require.NoError(t, err)
+
+	// Check that connection via DSN works
+	cmd = exec.Command("jet", "-dsn="+defaultDSN(), "-schema=dvds", "-path="+genTestDir2)
+	cmd.Stderr = os.Stderr
+	cmd.Stdout = os.Stdout
+
+	err = cmd.Run()
+	require.NoError(t, err)
+
+	assertGeneratedFiles(t)
+
+	err = os.RemoveAll(genTestDir2)
+	require.NoError(t, err)
+}
+
+func TestCmdGeneratorWithPkgNames(t *testing.T) {
+	err := os.RemoveAll(genTestDir2)
+	require.NoError(t, err)
+
+	// Testing with custom package paths
+	modelPath := "./newmodel"
+	tablePath := "./newtable"
+	viewPath := "./newview"
+	enumPath := "./newenum"
+
+	cmd := exec.Command("jet", "-source=PostgreSQL", "-dbname=jetdb", "-host=localhost",
+		"-port="+strconv.Itoa(dbconfig.PgPort),
+		"-user=jet",
+		"-password=jet",
+		"-schema=dvds",
+		"-path="+genTestDir2,
+		"-rel-model-path="+modelPath,
+		"-rel-table-path="+tablePath,
+		"-rel-view-path="+viewPath,
+		"-rel-enum-path="+enumPath)
+
+	cmd.Stderr = os.Stderr
+	cmd.Stdout = os.Stdout
+
+	err = cmd.Run()
+	require.NoError(t, err)
+
+	assertGeneratedFilesWithPkgNames(
+		t,
+		modelPath,
+		tablePath,
+		viewPath,
+		enumPath,
+	)
+
+	err = os.RemoveAll(genTestDir2)
+	require.NoError(t, err)
+
+	// Testing with nested paths
+	modelPath = "./db/newmodel"
+	tablePath = "./db/newtable"
+	viewPath = "./db/newview"
+	enumPath = "./db/newenum"
+
+	cmd = exec.Command("jet", "-source=PostgreSQL", "-dbname=jetdb", "-host=localhost",
+		"-port="+strconv.Itoa(dbconfig.PgPort),
+		"-user=jet",
+		"-password=jet",
+		"-schema=dvds",
+		"-path="+genTestDir2,
+		"-rel-model-path="+modelPath,
+		"-rel-table-path="+tablePath,
+		"-rel-view-path="+viewPath,
+		"-rel-enum-path="+enumPath)
+
+	cmd.Stderr = os.Stderr
+	cmd.Stdout = os.Stdout
+
+	err = cmd.Run()
+	require.NoError(t, err)
+
+	assertGeneratedFilesWithPkgNames(
+		t,
+		modelPath,
+		tablePath,
+		viewPath,
+		enumPath,
+	)
+}
+
+func TestGeneratorIgnoreTables(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{
+			name: "with dsn",
+			args: []string{
+				"-dsn=" + defaultDSN(),
+				"-schema=dvds",
+				"-ignore-tables=actor,ADDRESS,country, Film , cITY,",
+				"-ignore-views=Actor_info, FILM_LIST ,staff_list",
+				"-ignore-enums=mpaa_rating",
+				"-path=" + genTestDir2,
+			},
+		},
+		{
+			name: "without dsn",
+			args: []string{
+				"-source=PostgreSQL",
+				"-host=localhost",
+				"-port=" + strconv.Itoa(dbconfig.PgPort),
+				"-user=jet",
+				"-password=jet",
+				"-dbname=jetdb",
+				"-schema=dvds",
+				"-ignore-tables=actor,ADDRESS,country, Film , cITY,",
+				"-ignore-views=Actor_info, FILM_LIST ,staff_list",
+				"-ignore-enums=mpaa_rating",
+				"-path=" + genTestDir2,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := os.RemoveAll(genTestDir2)
+			require.NoError(t, err)
+
+			cmd := exec.Command("jet", tt.args...)
+
+			fmt.Println(cmd.Args)
+			cmd.Stderr = os.Stderr
+			cmd.Stdout = os.Stdout
+
+			err = cmd.Run()
+			require.NoError(t, err)
+
+			// Table SQL Builder files
+			testutils.AssertFileNamesEqual(t, "./.gentestdata2/jetdb/dvds/table",
+				"category.go", "customer.go", "film_actor.go", "film_category.go", "inventory.go", "language.go",
+				"payment.go", "rental.go", "staff.go", "store.go", "table_use_schema.go")
+
+			// View SQL Builder files
+			testutils.AssertFileNamesEqual(t, "./.gentestdata2/jetdb/dvds/view",
+				"nicer_but_slower_film_list.go", "sales_by_film_category.go", "customer_list.go",
+				"sales_by_store.go", "view_use_schema.go")
+
+			// Enums SQL Builder files
+			file.NotExists(t, "./.gentestdata2/jetdb/dvds/enum", "mpaa_rating.go")
+
+			// Model files
+			testutils.AssertFileNamesEqual(t, "./.gentestdata2/jetdb/dvds/model", "category.go",
+				"customer.go", "film_actor.go", "film_category.go", "inventory.go", "language.go",
+				"payment.go", "rental.go", "staff.go", "store.go",
+				"nicer_but_slower_film_list.go", "sales_by_film_category.go",
+				"customer_list.go", "sales_by_store.go")
+		})
+	}
+}
+
+func TestGenerator(t *testing.T) {
+
+	for i := 0; i < 3; i++ {
+		err := postgres.Generate(genTestDir2, postgres.DBConnection{
+			Host:     dbconfig.PgHost,
+			Port:     dbconfig.PgPort,
+			User:     dbconfig.PgUser,
+			Password: dbconfig.PgPassword,
+			SslMode:  "disable",
+			Params:   "",
+
+			DBName:     dbconfig.PgDBName,
+			SchemaName: "dvds",
+		})
+
+		require.NoError(t, err)
+
+		assertGeneratedFiles(t)
+	}
+
+	for i := 0; i < 3; i++ {
+		err := postgres.GenerateDSN(defaultDSN(), "dvds", genTestDir2)
+		require.NoError(t, err)
+
+		assertGeneratedFiles(t)
+	}
+
+	err := os.RemoveAll(genTestDir2)
+	require.NoError(t, err)
+}
+
+func TestGenerator_TableMetadata(t *testing.T) {
+	var schema metadata.Schema
+	err := postgres.GenerateDSN(defaultDSN(), "dvds", genTestDir2,
+		template.Default(postgres2.Dialect).UseSchema(func(m metadata.Schema) template.Schema {
+			schema = m
+			return template.DefaultSchema(m)
+		}))
+	require.NoError(t, err)
+
+	// Spot check the actor table and assert that the emitted
+	// properties are as expected.
+	var got metadata.Table
+	var specialFeatures metadata.Column
+	for _, table := range schema.TablesMetaData {
+		if table.Name == "actor" {
+			got = table
+		}
+		if table.Name == "film" {
+			for _, column := range table.Columns {
+				if column.Name == "special_features" {
+					specialFeatures = column
+				}
+			}
+		}
+	}
+
+	want := metadata.Table{
+		Name: "actor",
+		Columns: []metadata.Column{
+			{Name: "actor_id", IsPrimaryKey: true, IsNullable: false, IsGenerated: false, HasDefault: true, DataType: metadata.DataType{Name: "int4", Kind: "base", IsUnsigned: false, SourceDialect: "PostgreSQL"}, Comment: ""},
+			{Name: "first_name", IsPrimaryKey: false, IsNullable: false, IsGenerated: false, HasDefault: false, DataType: metadata.DataType{Name: "varchar", Kind: "base", IsUnsigned: false, SourceDialect: "PostgreSQL"}, Comment: ""},
+			{Name: "last_name", IsPrimaryKey: false, IsNullable: false, IsGenerated: false, HasDefault: false, DataType: metadata.DataType{Name: "varchar", Kind: "base", IsUnsigned: false, SourceDialect: "PostgreSQL"}, Comment: ""},
+			{Name: "last_update", IsPrimaryKey: false, IsNullable: false, IsGenerated: false, HasDefault: false, DataType: metadata.DataType{Name: "timestamp", Kind: "base", IsUnsigned: false, SourceDialect: "PostgreSQL"}, Comment: ""},
+		},
+	}
+	require.Equal(t, want, got)
+	require.Equal(t, 1, specialFeatures.DataType.Dimensions)
+}
+
+func TestGeneratorSpecialCharacters(t *testing.T) {
+	t.SkipNow()
+	err := postgres.Generate(genTestDir2, postgres.DBConnection{
+		Host:     dbconfig.PgHost,
+		Port:     dbconfig.PgPort,
+		User:     "!@#$%^&* () {}[];+-",
+		Password: "!@#$%^&* () {}[];+-",
+		SslMode:  "disable",
+		Params:   "",
+
+		DBName:     "!@#$%^&* () {}[];+-",
+		SchemaName: "!@#$%^&* () {}[];+-",
+	})
+
+	require.NoError(t, err)
+}
+
+func TestGenerateErrorCases(t *testing.T) {
+	err := postgres.GenerateDSN("!@#$%&*", "", "")
+	require.ErrorContains(t, err, "failed to parse as DSN")
+	err = postgres.GenerateDSN(dsn(dbconfig.PgHost, -1, "!@!#", "", ""), "", "")
+	require.ErrorContains(t, err, "invalid port")
+	err = postgres.GenerateDSN(dsn(dbconfig.PgHost, dbconfig.PgPort, "!@!#", "", ""), "", "")
+	require.ErrorContains(t, err, "failed to open db connection")
+	//err = postgres.GenerateDSN(dsn(dbconfig.PgHost, dbconfig.PgPort, dbconfig.PgDBName, "", ""), "", "")
+	//require.ErrorContains(t, err, "password authentication failed")
+	//err = postgres.GenerateDSN(dsn(dbconfig.PgHost, dbconfig.PgPort, dbconfig.PgDBName, dbconfig.PgUser, ""), "", "")
+	//require.ErrorContains(t, err, "password authentication failed for user \"jet\"")
+}
+
+func assertGeneratedFiles(t *testing.T) {
+	// Table SQL Builder files
+	testutils.AssertFileNamesEqual(t, "./.gentestdata2/jetdb/dvds/table",
+		"actor.go", "address.go", "category.go", "city.go", "country.go",
+		"customer.go", "film.go", "film_actor.go", "film_category.go", "inventory.go", "language.go",
+		"payment.go", "rental.go", "staff.go", "store.go", "table_use_schema.go")
+
+	testutils.AssertFileContent(t, "./.gentestdata2/jetdb/dvds/table/actor.go", actorSQLBuilderFile)
+	testutils.AssertFileContent(t, "./.gentestdata2/jetdb/dvds/table/table_use_schema.go", tableUseSchemaFile)
+
+	// View SQL Builder files
+	testutils.AssertFileNamesEqual(t, "./.gentestdata2/jetdb/dvds/view",
+		"actor_info.go", "film_list.go", "nicer_but_slower_film_list.go",
+		"sales_by_film_category.go", "customer_list.go", "sales_by_store.go", "staff_list.go", "view_use_schema.go")
+
+	testutils.AssertFileContent(t, "./.gentestdata2/jetdb/dvds/view/actor_info.go", actorInfoSQLBuilderFile)
+	testutils.AssertFileContent(t, "./.gentestdata2/jetdb/dvds/view/view_use_schema.go", viewUseSchemaFile)
+
+	// Enums SQL Builder files
+	testutils.AssertFileNamesEqual(t, "./.gentestdata2/jetdb/dvds/enum", "mpaa_rating.go")
+	testutils.AssertFileContent(t, "./.gentestdata2/jetdb/dvds/enum/mpaa_rating.go", mpaaRatingEnumFile)
+
+	// Model files
+	testutils.AssertFileNamesEqual(t, "./.gentestdata2/jetdb/dvds/model", "actor.go", "address.go", "category.go", "city.go", "country.go",
+		"customer.go", "film.go", "film_actor.go", "film_category.go", "inventory.go", "language.go",
+		"payment.go", "rental.go", "staff.go", "store.go", "mpaa_rating.go",
+		"actor_info.go", "film_list.go", "nicer_but_slower_film_list.go", "sales_by_film_category.go",
+		"customer_list.go", "sales_by_store.go", "staff_list.go")
+
+	testutils.AssertFileContent(t, "./.gentestdata2/jetdb/dvds/model/actor.go", actorModelFile)
+}
+
+func assertGeneratedFilesWithPkgNames(t *testing.T, modelPkgPath, tablePkgPath, viewPkgPath, enumPkgPath string) {
+	// We can get the package names from the base of the package paths for
+	// replacing package names in the default file content strings
+	modelPkg := filepath.Base(modelPkgPath)
+	tablePkg := filepath.Base(tablePkgPath)
+	viewPkg := filepath.Base(viewPkgPath)
+	enumPkg := filepath.Base(enumPkgPath)
+
+	// Table SQL Builder files
+	testutils.AssertFileNamesEqual(
+		t,
+		filepath.Join("./.gentestdata2/jetdb/dvds/", tablePkgPath),
+		"actor.go", "address.go", "category.go", "city.go", "country.go",
+		"customer.go", "film.go", "film_actor.go", "film_category.go", "inventory.go", "language.go",
+		"payment.go", "rental.go", "staff.go", "store.go", "table_use_schema.go",
+	)
+
+	testutils.AssertFileContent(
+		t,
+		filepath.Join("./.gentestdata2/jetdb/dvds/", tablePkgPath, "actor.go"),
+		getFileContentWithNewPkg(tablePkg, actorSQLBuilderFile),
+	)
+
+	testutils.AssertFileContent(
+		t,
+		filepath.Join("./.gentestdata2/jetdb/dvds/", tablePkgPath, "table_use_schema.go"),
+		getFileContentWithNewPkg(tablePkg, tableUseSchemaFile),
+	)
+
+	// View SQL Builder files
+	testutils.AssertFileNamesEqual(
+		t,
+		filepath.Join("./.gentestdata2/jetdb/dvds/", viewPkgPath),
+		"actor_info.go", "film_list.go", "nicer_but_slower_film_list.go",
+		"sales_by_film_category.go", "customer_list.go", "sales_by_store.go", "staff_list.go", "view_use_schema.go",
+	)
+
+	testutils.AssertFileContent(t,
+		filepath.Join("./.gentestdata2/jetdb/dvds/", viewPkgPath, "actor_info.go"),
+		getFileContentWithNewPkg(viewPkg, actorInfoSQLBuilderFile),
+	)
+
+	testutils.AssertFileContent(
+		t,
+		filepath.Join("./.gentestdata2/jetdb/dvds/", viewPkgPath, "view_use_schema.go"),
+		getFileContentWithNewPkg(viewPkg, viewUseSchemaFile),
+	)
+
+	// Enums SQL Builder files
+	testutils.AssertFileNamesEqual(
+		t,
+		filepath.Join("./.gentestdata2/jetdb/dvds/", enumPkgPath),
+		"mpaa_rating.go",
+	)
+
+	testutils.AssertFileContent(
+		t,
+		filepath.Join("./.gentestdata2/jetdb/dvds/", enumPkgPath, "mpaa_rating.go"),
+		getFileContentWithNewPkg(enumPkg, mpaaRatingEnumFile),
+	)
+
+	// Model files
+	testutils.AssertFileNamesEqual(
+		t,
+		filepath.Join("./.gentestdata2/jetdb/dvds/", modelPkgPath),
+		"actor.go", "address.go", "category.go", "city.go", "country.go",
+		"customer.go", "film.go", "film_actor.go", "film_category.go", "inventory.go", "language.go",
+		"payment.go", "rental.go", "staff.go", "store.go", "mpaa_rating.go",
+		"actor_info.go", "film_list.go", "nicer_but_slower_film_list.go", "sales_by_film_category.go",
+		"customer_list.go", "sales_by_store.go", "staff_list.go",
+	)
+
+	testutils.AssertFileContent(
+		t,
+		filepath.Join("./.gentestdata2/jetdb/dvds/", modelPkgPath, "actor.go"),
+		getFileContentWithNewPkg(modelPkg, actorModelFile),
+	)
+}
+
+func getFileContentWithNewPkg(pkgName, fileContent string) string {
+	regex := regexp.MustCompile(`package \w+`)
+	return regex.ReplaceAllString(fileContent, "package "+pkgName)
+}
+
+var mpaaRatingEnumFile = `
+//
+// Code generated by go-jet DO NOT EDIT.
+//
+// WARNING: Changes to this file may cause incorrect behavior
+// and will be lost if the code is regenerated
+//
+
+package enum
+
+import "github.com/nanostack-dev/nanostack-framework/db/postgres"
+
+var MpaaRating = &struct {
+	G    postgres.StringExpression
+	Pg   postgres.StringExpression
+	Pg13 postgres.StringExpression
+	R    postgres.StringExpression
+	Nc17 postgres.StringExpression
+}{
+	G:    postgres.NewEnumValue("G"),
+	Pg:   postgres.NewEnumValue("PG"),
+	Pg13: postgres.NewEnumValue("PG-13"),
+	R:    postgres.NewEnumValue("R"),
+	Nc17: postgres.NewEnumValue("NC-17"),
+}
+`
+
+var actorSQLBuilderFile = `
+//
+// Code generated by go-jet DO NOT EDIT.
+//
+// WARNING: Changes to this file may cause incorrect behavior
+// and will be lost if the code is regenerated
+//
+
+package table
+
+import (
+	"github.com/nanostack-dev/nanostack-framework/db/postgres"
+)
+
+var Actor = newActorTable("dvds", "actor", "")
+
+type actorTable struct {
+	postgres.Table
+
+	// Columns
+	ActorID    postgres.ColumnInteger
+	FirstName  postgres.ColumnString
+	LastName   postgres.ColumnString
+	LastUpdate postgres.ColumnTimestamp
+
+	AllColumns     postgres.ColumnList
+	MutableColumns postgres.ColumnList
+	DefaultColumns postgres.ColumnList
+}
+
+type ActorTable struct {
+	actorTable
+
+	EXCLUDED actorTable
+}
+
+// AS creates new ActorTable with assigned alias
+func (a ActorTable) AS(alias string) *ActorTable {
+	return newActorTable(a.SchemaName(), a.TableName(), alias)
+}
+
+// Schema creates new ActorTable with assigned schema name
+func (a ActorTable) FromSchema(schemaName string) *ActorTable {
+	return newActorTable(schemaName, a.TableName(), a.Alias())
+}
+
+// WithPrefix creates new ActorTable with assigned table prefix
+func (a ActorTable) WithPrefix(prefix string) *ActorTable {
+	return newActorTable(a.SchemaName(), prefix+a.TableName(), a.TableName())
+}
+
+// WithSuffix creates new ActorTable with assigned table suffix
+func (a ActorTable) WithSuffix(suffix string) *ActorTable {
+	return newActorTable(a.SchemaName(), a.TableName()+suffix, a.TableName())
+}
+
+func newActorTable(schemaName, tableName, alias string) *ActorTable {
+	return &ActorTable{
+		actorTable: newActorTableImpl(schemaName, tableName, alias),
+		EXCLUDED:   newActorTableImpl("", "excluded", ""),
+	}
+}
+
+func newActorTableImpl(schemaName, tableName, alias string) actorTable {
+	var (
+		ActorIDColumn    = postgres.IntegerColumn("actor_id")
+		FirstNameColumn  = postgres.StringColumn("first_name")
+		LastNameColumn   = postgres.StringColumn("last_name")
+		LastUpdateColumn = postgres.TimestampColumn("last_update")
+		allColumns       = postgres.ColumnList{ActorIDColumn, FirstNameColumn, LastNameColumn, LastUpdateColumn}
+		mutableColumns   = postgres.ColumnList{FirstNameColumn, LastNameColumn, LastUpdateColumn}
+		defaultColumns   = postgres.ColumnList{ActorIDColumn}
+	)
+
+	return actorTable{
+		Table: postgres.NewTable(schemaName, tableName, alias, allColumns...),
+
+		//Columns
+		ActorID:    ActorIDColumn,
+		FirstName:  FirstNameColumn,
+		LastName:   LastNameColumn,
+		LastUpdate: LastUpdateColumn,
+
+		AllColumns:     allColumns,
+		MutableColumns: mutableColumns,
+		DefaultColumns: defaultColumns,
+	}
+}
+`
+
+var tableUseSchemaFile = `
+//
+// Code generated by go-jet DO NOT EDIT.
+//
+// WARNING: Changes to this file may cause incorrect behavior
+// and will be lost if the code is regenerated
+//
+
+package table
+
+// UseSchema sets a new schema name for all generated table SQL builder types. It is recommended to invoke
+// this method only once at the beginning of the program.
+func UseSchema(schema string) {
+	Actor = Actor.FromSchema(schema)
+	Address = Address.FromSchema(schema)
+	Category = Category.FromSchema(schema)
+	City = City.FromSchema(schema)
+	Country = Country.FromSchema(schema)
+	Customer = Customer.FromSchema(schema)
+	Film = Film.FromSchema(schema)
+	FilmActor = FilmActor.FromSchema(schema)
+	FilmCategory = FilmCategory.FromSchema(schema)
+	Inventory = Inventory.FromSchema(schema)
+	Language = Language.FromSchema(schema)
+	Payment = Payment.FromSchema(schema)
+	Rental = Rental.FromSchema(schema)
+	Staff = Staff.FromSchema(schema)
+	Store = Store.FromSchema(schema)
+}
+`
+
+var actorModelFile = `
+//
+// Code generated by go-jet DO NOT EDIT.
+//
+// WARNING: Changes to this file may cause incorrect behavior
+// and will be lost if the code is regenerated
+//
+
+package model
+
+import (
+	"time"
+)
+
+type Actor struct {
+	ActorID    int32 ` + "`sql:\"primary_key\"`" + `
+	FirstName  string
+	LastName   string
+	LastUpdate time.Time
+}
+`
+
+var actorInfoSQLBuilderFile = `
+//
+// Code generated by go-jet DO NOT EDIT.
+//
+// WARNING: Changes to this file may cause incorrect behavior
+// and will be lost if the code is regenerated
+//
+
+package view
+
+import (
+	"github.com/nanostack-dev/nanostack-framework/db/postgres"
+)
+
+var ActorInfo = newActorInfoTable("dvds", "actor_info", "")
+
+type actorInfoTable struct {
+	postgres.Table
+
+	// Columns
+	ActorID   postgres.ColumnInteger
+	FirstName postgres.ColumnString
+	LastName  postgres.ColumnString
+	FilmInfo  postgres.ColumnString
+
+	AllColumns     postgres.ColumnList
+	MutableColumns postgres.ColumnList
+	DefaultColumns postgres.ColumnList
+}
+
+type ActorInfoTable struct {
+	actorInfoTable
+
+	EXCLUDED actorInfoTable
+}
+
+// AS creates new ActorInfoTable with assigned alias
+func (a ActorInfoTable) AS(alias string) *ActorInfoTable {
+	return newActorInfoTable(a.SchemaName(), a.TableName(), alias)
+}
+
+// Schema creates new ActorInfoTable with assigned schema name
+func (a ActorInfoTable) FromSchema(schemaName string) *ActorInfoTable {
+	return newActorInfoTable(schemaName, a.TableName(), a.Alias())
+}
+
+// WithPrefix creates new ActorInfoTable with assigned table prefix
+func (a ActorInfoTable) WithPrefix(prefix string) *ActorInfoTable {
+	return newActorInfoTable(a.SchemaName(), prefix+a.TableName(), a.TableName())
+}
+
+// WithSuffix creates new ActorInfoTable with assigned table suffix
+func (a ActorInfoTable) WithSuffix(suffix string) *ActorInfoTable {
+	return newActorInfoTable(a.SchemaName(), a.TableName()+suffix, a.TableName())
+}
+
+func newActorInfoTable(schemaName, tableName, alias string) *ActorInfoTable {
+	return &ActorInfoTable{
+		actorInfoTable: newActorInfoTableImpl(schemaName, tableName, alias),
+		EXCLUDED:       newActorInfoTableImpl("", "excluded", ""),
+	}
+}
+
+func newActorInfoTableImpl(schemaName, tableName, alias string) actorInfoTable {
+	var (
+		ActorIDColumn   = postgres.IntegerColumn("actor_id")
+		FirstNameColumn = postgres.StringColumn("first_name")
+		LastNameColumn  = postgres.StringColumn("last_name")
+		FilmInfoColumn  = postgres.StringColumn("film_info")
+		allColumns      = postgres.ColumnList{ActorIDColumn, FirstNameColumn, LastNameColumn, FilmInfoColumn}
+		mutableColumns  = postgres.ColumnList{ActorIDColumn, FirstNameColumn, LastNameColumn, FilmInfoColumn}
+		defaultColumns  = postgres.ColumnList{}
+	)
+
+	return actorInfoTable{
+		Table: postgres.NewTable(schemaName, tableName, alias, allColumns...),
+
+		//Columns
+		ActorID:   ActorIDColumn,
+		FirstName: FirstNameColumn,
+		LastName:  LastNameColumn,
+		FilmInfo:  FilmInfoColumn,
+
+		AllColumns:     allColumns,
+		MutableColumns: mutableColumns,
+		DefaultColumns: defaultColumns,
+	}
+}
+`
+
+var viewUseSchemaFile = `
+//
+// Code generated by go-jet DO NOT EDIT.
+//
+// WARNING: Changes to this file may cause incorrect behavior
+// and will be lost if the code is regenerated
+//
+
+package view
+
+// UseSchema sets a new schema name for all generated view SQL builder types. It is recommended to invoke
+// this method only once at the beginning of the program.
+func UseSchema(schema string) {
+	ActorInfo = ActorInfo.FromSchema(schema)
+	CustomerList = CustomerList.FromSchema(schema)
+	FilmList = FilmList.FromSchema(schema)
+	NicerButSlowerFilmList = NicerButSlowerFilmList.FromSchema(schema)
+	SalesByFilmCategory = SalesByFilmCategory.FromSchema(schema)
+	SalesByStore = SalesByStore.FromSchema(schema)
+	StaffList = StaffList.FromSchema(schema)
+}
+`
+
+func TestGeneratedAllTypesSQLBuilderFiles(t *testing.T) {
+	enumDir := filepath.Join(testRoot, "/.gentestdata/jetdb/test_sample/enum/")
+	modelDir := filepath.Join(testRoot, "/.gentestdata/jetdb/test_sample/model/")
+	tableDir := filepath.Join(testRoot, "/.gentestdata/jetdb/test_sample/table/")
+	viewDir := filepath.Join(testRoot, "/.gentestdata/jetdb/test_sample/view/")
+
+	testutils.AssertFileNamesEqual(t, enumDir, "mood.go", "level.go")
+	testutils.AssertFileContent(t, enumDir+"/mood.go", moodEnumContent)
+
+	if sourceIsPostgres() {
+		testutils.AssertFileContent(t, enumDir+"/level.go", levelEnumContent)
+	}
+
+	var cockroachModels = []string{"all_types.go", "all_types_view.go", "employee.go", "link.go",
+		"mood.go", "person.go", "person_phone.go", "weird_names_table.go", "level.go", "user.go", "floats.go", "people.go",
+		"components.go", "vulnerabilities.go", "all_types_materialized_view.go", "sample_arrays.go"}
+
+	var postgresModels = append(cockroachModels, "sample_ranges.go")
+
+	if sourceIsCockroachDB() {
+		testutils.AssertFileNamesEqual(t, modelDir, cockroachModels...)
+	} else {
+		testutils.AssertFileNamesEqual(t, modelDir, postgresModels...)
+	}
+
+	if sourceIsCockroachDB() {
+		enumFileData, err := os.ReadFile(modelDir + "/all_types.go") // #nosec G304
+
+		require.NoError(t, err)
+
+		r := strings.NewReplacer(
+			"Smallserial          int64", "Smallserial          int16",
+			"Serial               int64", "Serial               int32",
+		)
+
+		require.Equal(t, "\n"+r.Replace(string(enumFileData)), allTypesModelContent)
+	} else {
+		testutils.AssertFileContent(t, modelDir+"/all_types.go", allTypesModelContent)
+	}
+
+	testutils.AssertFileContent(t, modelDir+"/link.go", linkModelContent)
+
+	var cdbSqlBuilders = []string{"all_types.go", "employee.go", "link.go",
+		"person.go", "person_phone.go", "weird_names_table.go", "user.go", "floats.go", "people.go", "table_use_schema.go",
+		"components.go", "vulnerabilities.go", "sample_arrays.go"}
+	var postgresSqlBuilders = append(cdbSqlBuilders, "sample_ranges.go")
+
+	if sourceIsCockroachDB() {
+		testutils.AssertFileNamesEqual(t, tableDir, cdbSqlBuilders...)
+	} else {
+		testutils.AssertFileNamesEqual(t, tableDir, postgresSqlBuilders...)
+	}
+
+	testutils.AssertFileContent(t, tableDir+"/all_types.go", allTypesTableContent)
+
+	if sourceIsPostgres() {
+		testutils.AssertFileContent(t, tableDir+"/sample_ranges.go", sampleRangeTableContent)
+	}
+
+	testutils.AssertFileContent(t, tableDir+"/link.go", linkTableContent)
+
+	testutils.AssertFileNamesEqual(t, viewDir, "all_types_materialized_view.go", "all_types_view.go",
+		"view_use_schema.go")
+}
+
+var moodEnumContent = `
+//
+// Code generated by go-jet DO NOT EDIT.
+//
+// WARNING: Changes to this file may cause incorrect behavior
+// and will be lost if the code is regenerated
+//
+
+package enum
+
+import "github.com/nanostack-dev/nanostack-framework/db/postgres"
+
+var Mood = &struct {
+	Sad   postgres.StringExpression
+	Ok    postgres.StringExpression
+	Happy postgres.StringExpression
+}{
+	Sad:   postgres.NewEnumValue("sad"),
+	Ok:    postgres.NewEnumValue("ok"),
+	Happy: postgres.NewEnumValue("happy"),
+}
+`
+
+var levelEnumContent = `
+//
+// Code generated by go-jet DO NOT EDIT.
+//
+// WARNING: Changes to this file may cause incorrect behavior
+// and will be lost if the code is regenerated
+//
+
+package enum
+
+import "github.com/nanostack-dev/nanostack-framework/db/postgres"
+
+// Level enum
+var Level = &struct {
+	Level1 postgres.StringExpression
+	Level2 postgres.StringExpression
+	Level3 postgres.StringExpression
+	Level4 postgres.StringExpression
+	Level5 postgres.StringExpression
+}{
+	Level1: postgres.NewEnumValue("1"),
+	Level2: postgres.NewEnumValue("2"),
+	Level3: postgres.NewEnumValue("3"),
+	Level4: postgres.NewEnumValue("4"),
+	Level5: postgres.NewEnumValue("5"),
+}
+`
+
+var allTypesModelContent = `
+//
+// Code generated by go-jet DO NOT EDIT.
+//
+// WARNING: Changes to this file may cause incorrect behavior
+// and will be lost if the code is regenerated
+//
+
+package model
+
+import (
+	"github.com/google/uuid"
+	"github.com/lib/pq"
+	"github.com/shopspring/decimal"
+	"time"
+)
+
+type AllTypes struct {
+	SmallIntPtr          *int16
+	SmallInt             int16
+	IntegerPtr           *int32
+	Integer              int32
+	BigIntPtr            *int64
+	BigInt               int64
+	DecimalPtr           *decimal.Decimal
+	Decimal              decimal.Decimal
+	NumericPtr           *decimal.Decimal
+	Numeric              decimal.Decimal
+	RealPtr              *float32
+	Real                 float32
+	DoublePrecisionPtr   *float64
+	DoublePrecision      float64
+	Smallserial          int16
+	Serial               int32 ` + "`sql:\"primary_key\"`" + `
+	Bigserial            int64
+	VarCharPtr           *string
+	VarChar              string
+	CharPtr              *string
+	Char                 string
+	TextPtr              *string
+	Text                 string
+	ByteaPtr             *[]byte
+	Bytea                []byte
+	TimestampzPtr        *time.Time
+	Timestampz           time.Time
+	TimestampPtr         *time.Time
+	Timestamp            time.Time
+	DatePtr              *time.Time
+	Date                 time.Time
+	TimezPtr             *time.Time
+	Timez                time.Time
+	TimePtr              *time.Time
+	Time                 time.Time
+	IntervalPtr          *string
+	Interval             string
+	BooleanPtr           *bool
+	Boolean              bool
+	PointPtr             *string
+	BitPtr               *string
+	Bit                  string
+	BitVaryingPtr        *string
+	BitVarying           string
+	TsvectorPtr          *string
+	Tsvector             string
+	UUIDPtr              *uuid.UUID
+	UUID                 uuid.UUID
+	XMLPtr               *string
+	XML                  string
+	JSONPtr              *string
+	JSON                 string
+	JsonbPtr             *string
+	Jsonb                string
+	IntegerArrayPtr      *pq.Int32Array
+	IntegerArray         pq.Int32Array
+	TextArrayPtr         *pq.StringArray
+	TextArray            pq.StringArray
+	JsonbArray           pq.StringArray
+	TextMultiDimArrayPtr *string
+	TextMultiDimArray    string
+	MoodPtr              *Mood
+	Mood                 Mood
+}
+`
+
+var linkModelContent = `
+//
+// Code generated by go-jet DO NOT EDIT.
+//
+// WARNING: Changes to this file may cause incorrect behavior
+// and will be lost if the code is regenerated
+//
+
+package model
+
+// Link table
+type Link struct {
+	ID          int64   ` + "`sql:\"primary_key\"`" + ` // this is link id
+	URL         string  // link url
+	Name        string  // Unicode characters comment ₲鬼佬℧⇄↻
+	Description *string // '"Z\%_
+}
+`
+
+var allTypesTableContent = `
+//
+// Code generated by go-jet DO NOT EDIT.
+//
+// WARNING: Changes to this file may cause incorrect behavior
+// and will be lost if the code is regenerated
+//
+
+package table
+
+import (
+	"github.com/nanostack-dev/nanostack-framework/db/postgres"
+)
+
+var AllTypes = newAllTypesTable("test_sample", "all_types", "")
+
+type allTypesTable struct {
+	postgres.Table
+
+	// Columns
+	SmallIntPtr          postgres.ColumnInteger
+	SmallInt             postgres.ColumnInteger
+	IntegerPtr           postgres.ColumnInteger
+	Integer              postgres.ColumnInteger
+	BigIntPtr            postgres.ColumnInteger
+	BigInt               postgres.ColumnInteger
+	DecimalPtr           postgres.ColumnFloat
+	Decimal              postgres.ColumnFloat
+	NumericPtr           postgres.ColumnFloat
+	Numeric              postgres.ColumnFloat
+	RealPtr              postgres.ColumnFloat
+	Real                 postgres.ColumnFloat
+	DoublePrecisionPtr   postgres.ColumnFloat
+	DoublePrecision      postgres.ColumnFloat
+	Smallserial          postgres.ColumnInteger
+	Serial               postgres.ColumnInteger
+	Bigserial            postgres.ColumnInteger
+	VarCharPtr           postgres.ColumnString
+	VarChar              postgres.ColumnString
+	CharPtr              postgres.ColumnString
+	Char                 postgres.ColumnString
+	TextPtr              postgres.ColumnString
+	Text                 postgres.ColumnString
+	ByteaPtr             postgres.ColumnBytea
+	Bytea                postgres.ColumnBytea
+	TimestampzPtr        postgres.ColumnTimestampz
+	Timestampz           postgres.ColumnTimestampz
+	TimestampPtr         postgres.ColumnTimestamp
+	Timestamp            postgres.ColumnTimestamp
+	DatePtr              postgres.ColumnDate
+	Date                 postgres.ColumnDate
+	TimezPtr             postgres.ColumnTimez
+	Timez                postgres.ColumnTimez
+	TimePtr              postgres.ColumnTime
+	Time                 postgres.ColumnTime
+	IntervalPtr          postgres.ColumnInterval
+	Interval             postgres.ColumnInterval
+	BooleanPtr           postgres.ColumnBool
+	Boolean              postgres.ColumnBool
+	PointPtr             postgres.ColumnString
+	BitPtr               postgres.ColumnString
+	Bit                  postgres.ColumnString
+	BitVaryingPtr        postgres.ColumnString
+	BitVarying           postgres.ColumnString
+	TsvectorPtr          postgres.ColumnString
+	Tsvector             postgres.ColumnString
+	UUIDPtr              postgres.ColumnString
+	UUID                 postgres.ColumnString
+	XMLPtr               postgres.ColumnString
+	XML                  postgres.ColumnString
+	JSONPtr              postgres.ColumnString
+	JSON                 postgres.ColumnString
+	JsonbPtr             postgres.ColumnString
+	Jsonb                postgres.ColumnString
+	IntegerArrayPtr      postgres.ColumnIntegerArray
+	IntegerArray         postgres.ColumnIntegerArray
+	TextArrayPtr         postgres.ColumnStringArray
+	TextArray            postgres.ColumnStringArray
+	JsonbArray           postgres.ColumnStringArray
+	TextMultiDimArrayPtr postgres.ColumnString
+	TextMultiDimArray    postgres.ColumnString
+	MoodPtr              postgres.ColumnString
+	Mood                 postgres.ColumnString
+
+	AllColumns     postgres.ColumnList
+	MutableColumns postgres.ColumnList
+	DefaultColumns postgres.ColumnList
+}
+
+type AllTypesTable struct {
+	allTypesTable
+
+	EXCLUDED allTypesTable
+}
+
+// AS creates new AllTypesTable with assigned alias
+func (a AllTypesTable) AS(alias string) *AllTypesTable {
+	return newAllTypesTable(a.SchemaName(), a.TableName(), alias)
+}
+
+// Schema creates new AllTypesTable with assigned schema name
+func (a AllTypesTable) FromSchema(schemaName string) *AllTypesTable {
+	return newAllTypesTable(schemaName, a.TableName(), a.Alias())
+}
+
+// WithPrefix creates new AllTypesTable with assigned table prefix
+func (a AllTypesTable) WithPrefix(prefix string) *AllTypesTable {
+	return newAllTypesTable(a.SchemaName(), prefix+a.TableName(), a.TableName())
+}
+
+// WithSuffix creates new AllTypesTable with assigned table suffix
+func (a AllTypesTable) WithSuffix(suffix string) *AllTypesTable {
+	return newAllTypesTable(a.SchemaName(), a.TableName()+suffix, a.TableName())
+}
+
+func newAllTypesTable(schemaName, tableName, alias string) *AllTypesTable {
+	return &AllTypesTable{
+		allTypesTable: newAllTypesTableImpl(schemaName, tableName, alias),
+		EXCLUDED:      newAllTypesTableImpl("", "excluded", ""),
+	}
+}
+
+func newAllTypesTableImpl(schemaName, tableName, alias string) allTypesTable {
+	var (
+		SmallIntPtrColumn          = postgres.IntegerColumn("small_int_ptr")
+		SmallIntColumn             = postgres.IntegerColumn("small_int")
+		IntegerPtrColumn           = postgres.IntegerColumn("integer_ptr")
+		IntegerColumn              = postgres.IntegerColumn("integer")
+		BigIntPtrColumn            = postgres.IntegerColumn("big_int_ptr")
+		BigIntColumn               = postgres.IntegerColumn("big_int")
+		DecimalPtrColumn           = postgres.FloatColumn("decimal_ptr")
+		DecimalColumn              = postgres.FloatColumn("decimal")
+		NumericPtrColumn           = postgres.FloatColumn("numeric_ptr")
+		NumericColumn              = postgres.FloatColumn("numeric")
+		RealPtrColumn              = postgres.FloatColumn("real_ptr")
+		RealColumn                 = postgres.FloatColumn("real")
+		DoublePrecisionPtrColumn   = postgres.FloatColumn("double_precision_ptr")
+		DoublePrecisionColumn      = postgres.FloatColumn("double_precision")
+		SmallserialColumn          = postgres.IntegerColumn("smallserial")
+		SerialColumn               = postgres.IntegerColumn("serial")
+		BigserialColumn            = postgres.IntegerColumn("bigserial")
+		VarCharPtrColumn           = postgres.StringColumn("var_char_ptr")
+		VarCharColumn              = postgres.StringColumn("var_char")
+		CharPtrColumn              = postgres.StringColumn("char_ptr")
+		CharColumn                 = postgres.StringColumn("char")
+		TextPtrColumn              = postgres.StringColumn("text_ptr")
+		TextColumn                 = postgres.StringColumn("text")
+		ByteaPtrColumn             = postgres.ByteaColumn("bytea_ptr")
+		ByteaColumn                = postgres.ByteaColumn("bytea")
+		TimestampzPtrColumn        = postgres.TimestampzColumn("timestampz_ptr")
+		TimestampzColumn           = postgres.TimestampzColumn("timestampz")
+		TimestampPtrColumn         = postgres.TimestampColumn("timestamp_ptr")
+		TimestampColumn            = postgres.TimestampColumn("timestamp")
+		DatePtrColumn              = postgres.DateColumn("date_ptr")
+		DateColumn                 = postgres.DateColumn("date")
+		TimezPtrColumn             = postgres.TimezColumn("timez_ptr")
+		TimezColumn                = postgres.TimezColumn("timez")
+		TimePtrColumn              = postgres.TimeColumn("time_ptr")
+		TimeColumn                 = postgres.TimeColumn("time")
+		IntervalPtrColumn          = postgres.IntervalColumn("interval_ptr")
+		IntervalColumn             = postgres.IntervalColumn("interval")
+		BooleanPtrColumn           = postgres.BoolColumn("boolean_ptr")
+		BooleanColumn              = postgres.BoolColumn("boolean")
+		PointPtrColumn             = postgres.StringColumn("point_ptr")
+		BitPtrColumn               = postgres.StringColumn("bit_ptr")
+		BitColumn                  = postgres.StringColumn("bit")
+		BitVaryingPtrColumn        = postgres.StringColumn("bit_varying_ptr")
+		BitVaryingColumn           = postgres.StringColumn("bit_varying")
+		TsvectorPtrColumn          = postgres.StringColumn("tsvector_ptr")
+		TsvectorColumn             = postgres.StringColumn("tsvector")
+		UUIDPtrColumn              = postgres.StringColumn("uuid_ptr")
+		UUIDColumn                 = postgres.StringColumn("uuid")
+		XMLPtrColumn               = postgres.StringColumn("xml_ptr")
+		XMLColumn                  = postgres.StringColumn("xml")
+		JSONPtrColumn              = postgres.StringColumn("json_ptr")
+		JSONColumn                 = postgres.StringColumn("json")
+		JsonbPtrColumn             = postgres.StringColumn("jsonb_ptr")
+		JsonbColumn                = postgres.StringColumn("jsonb")
+		IntegerArrayPtrColumn      = postgres.IntegerArrayColumn("integer_array_ptr")
+		IntegerArrayColumn         = postgres.IntegerArrayColumn("integer_array")
+		TextArrayPtrColumn         = postgres.StringArrayColumn("text_array_ptr")
+		TextArrayColumn            = postgres.StringArrayColumn("text_array")
+		JsonbArrayColumn           = postgres.StringArrayColumn("jsonb_array")
+		TextMultiDimArrayPtrColumn = postgres.StringColumn("text_multi_dim_array_ptr")
+		TextMultiDimArrayColumn    = postgres.StringColumn("text_multi_dim_array")
+		MoodPtrColumn              = postgres.StringColumn("mood_ptr")
+		MoodColumn                 = postgres.StringColumn("mood")
+		allColumns                 = postgres.ColumnList{SmallIntPtrColumn, SmallIntColumn, IntegerPtrColumn, IntegerColumn, BigIntPtrColumn, BigIntColumn, DecimalPtrColumn, DecimalColumn, NumericPtrColumn, NumericColumn, RealPtrColumn, RealColumn, DoublePrecisionPtrColumn, DoublePrecisionColumn, SmallserialColumn, SerialColumn, BigserialColumn, VarCharPtrColumn, VarCharColumn, CharPtrColumn, CharColumn, TextPtrColumn, TextColumn, ByteaPtrColumn, ByteaColumn, TimestampzPtrColumn, TimestampzColumn, TimestampPtrColumn, TimestampColumn, DatePtrColumn, DateColumn, TimezPtrColumn, TimezColumn, TimePtrColumn, TimeColumn, IntervalPtrColumn, IntervalColumn, BooleanPtrColumn, BooleanColumn, PointPtrColumn, BitPtrColumn, BitColumn, BitVaryingPtrColumn, BitVaryingColumn, TsvectorPtrColumn, TsvectorColumn, UUIDPtrColumn, UUIDColumn, XMLPtrColumn, XMLColumn, JSONPtrColumn, JSONColumn, JsonbPtrColumn, JsonbColumn, IntegerArrayPtrColumn, IntegerArrayColumn, TextArrayPtrColumn, TextArrayColumn, JsonbArrayColumn, TextMultiDimArrayPtrColumn, TextMultiDimArrayColumn, MoodPtrColumn, MoodColumn}
+		mutableColumns             = postgres.ColumnList{SmallIntPtrColumn, SmallIntColumn, IntegerPtrColumn, IntegerColumn, BigIntPtrColumn, BigIntColumn, DecimalPtrColumn, DecimalColumn, NumericPtrColumn, NumericColumn, RealPtrColumn, RealColumn, DoublePrecisionPtrColumn, DoublePrecisionColumn, SmallserialColumn, BigserialColumn, VarCharPtrColumn, VarCharColumn, CharPtrColumn, CharColumn, TextPtrColumn, TextColumn, ByteaPtrColumn, ByteaColumn, TimestampzPtrColumn, TimestampzColumn, TimestampPtrColumn, TimestampColumn, DatePtrColumn, DateColumn, TimezPtrColumn, TimezColumn, TimePtrColumn, TimeColumn, IntervalPtrColumn, IntervalColumn, BooleanPtrColumn, BooleanColumn, PointPtrColumn, BitPtrColumn, BitColumn, BitVaryingPtrColumn, BitVaryingColumn, TsvectorPtrColumn, TsvectorColumn, UUIDPtrColumn, UUIDColumn, XMLPtrColumn, XMLColumn, JSONPtrColumn, JSONColumn, JsonbPtrColumn, JsonbColumn, IntegerArrayPtrColumn, IntegerArrayColumn, TextArrayPtrColumn, TextArrayColumn, JsonbArrayColumn, TextMultiDimArrayPtrColumn, TextMultiDimArrayColumn, MoodPtrColumn, MoodColumn}
+		defaultColumns             = postgres.ColumnList{SmallIntColumn, IntegerColumn, BigIntColumn, DecimalColumn, NumericColumn, RealColumn, DoublePrecisionColumn, SmallserialColumn, SerialColumn, BigserialColumn, VarCharColumn, CharColumn, TextColumn, ByteaColumn, TimestampzColumn, TimestampColumn, DateColumn, TimezColumn, TimeColumn, IntervalColumn, BooleanColumn, BitColumn, BitVaryingColumn, TsvectorColumn, UUIDColumn, XMLColumn, JSONColumn, JsonbColumn, IntegerArrayColumn, TextArrayColumn, JsonbArrayColumn, TextMultiDimArrayColumn, MoodColumn}
+	)
+
+	return allTypesTable{
+		Table: postgres.NewTable(schemaName, tableName, alias, allColumns...),
+
+		//Columns
+		SmallIntPtr:          SmallIntPtrColumn,
+		SmallInt:             SmallIntColumn,
+		IntegerPtr:           IntegerPtrColumn,
+		Integer:              IntegerColumn,
+		BigIntPtr:            BigIntPtrColumn,
+		BigInt:               BigIntColumn,
+		DecimalPtr:           DecimalPtrColumn,
+		Decimal:              DecimalColumn,
+		NumericPtr:           NumericPtrColumn,
+		Numeric:              NumericColumn,
+		RealPtr:              RealPtrColumn,
+		Real:                 RealColumn,
+		DoublePrecisionPtr:   DoublePrecisionPtrColumn,
+		DoublePrecision:      DoublePrecisionColumn,
+		Smallserial:          SmallserialColumn,
+		Serial:               SerialColumn,
+		Bigserial:            BigserialColumn,
+		VarCharPtr:           VarCharPtrColumn,
+		VarChar:              VarCharColumn,
+		CharPtr:              CharPtrColumn,
+		Char:                 CharColumn,
+		TextPtr:              TextPtrColumn,
+		Text:                 TextColumn,
+		ByteaPtr:             ByteaPtrColumn,
+		Bytea:                ByteaColumn,
+		TimestampzPtr:        TimestampzPtrColumn,
+		Timestampz:           TimestampzColumn,
+		TimestampPtr:         TimestampPtrColumn,
+		Timestamp:            TimestampColumn,
+		DatePtr:              DatePtrColumn,
+		Date:                 DateColumn,
+		TimezPtr:             TimezPtrColumn,
+		Timez:                TimezColumn,
+		TimePtr:              TimePtrColumn,
+		Time:                 TimeColumn,
+		IntervalPtr:          IntervalPtrColumn,
+		Interval:             IntervalColumn,
+		BooleanPtr:           BooleanPtrColumn,
+		Boolean:              BooleanColumn,
+		PointPtr:             PointPtrColumn,
+		BitPtr:               BitPtrColumn,
+		Bit:                  BitColumn,
+		BitVaryingPtr:        BitVaryingPtrColumn,
+		BitVarying:           BitVaryingColumn,
+		TsvectorPtr:          TsvectorPtrColumn,
+		Tsvector:             TsvectorColumn,
+		UUIDPtr:              UUIDPtrColumn,
+		UUID:                 UUIDColumn,
+		XMLPtr:               XMLPtrColumn,
+		XML:                  XMLColumn,
+		JSONPtr:              JSONPtrColumn,
+		JSON:                 JSONColumn,
+		JsonbPtr:             JsonbPtrColumn,
+		Jsonb:                JsonbColumn,
+		IntegerArrayPtr:      IntegerArrayPtrColumn,
+		IntegerArray:         IntegerArrayColumn,
+		TextArrayPtr:         TextArrayPtrColumn,
+		TextArray:            TextArrayColumn,
+		JsonbArray:           JsonbArrayColumn,
+		TextMultiDimArrayPtr: TextMultiDimArrayPtrColumn,
+		TextMultiDimArray:    TextMultiDimArrayColumn,
+		MoodPtr:              MoodPtrColumn,
+		Mood:                 MoodColumn,
+
+		AllColumns:     allColumns,
+		MutableColumns: mutableColumns,
+		DefaultColumns: defaultColumns,
+	}
+}
+`
+
+var sampleRangeTableContent = `
+//
+// Code generated by go-jet DO NOT EDIT.
+//
+// WARNING: Changes to this file may cause incorrect behavior
+// and will be lost if the code is regenerated
+//
+
+package table
+
+import (
+	"github.com/nanostack-dev/nanostack-framework/db/postgres"
+)
+
+var SampleRanges = newSampleRangesTable("test_sample", "sample_ranges", "")
+
+type sampleRangesTable struct {
+	postgres.Table
+
+	// Columns
+	DateRange       postgres.ColumnDateRange
+	TimestampRange  postgres.ColumnTimestampRange
+	TimestampzRange postgres.ColumnTimestampzRange
+	Int4Range       postgres.ColumnInt4Range
+	Int8Range       postgres.ColumnInt8Range
+	NumRange        postgres.ColumnNumericRange
+
+	AllColumns     postgres.ColumnList
+	MutableColumns postgres.ColumnList
+	DefaultColumns postgres.ColumnList
+}
+
+type SampleRangesTable struct {
+	sampleRangesTable
+
+	EXCLUDED sampleRangesTable
+}
+
+// AS creates new SampleRangesTable with assigned alias
+func (a SampleRangesTable) AS(alias string) *SampleRangesTable {
+	return newSampleRangesTable(a.SchemaName(), a.TableName(), alias)
+}
+
+// Schema creates new SampleRangesTable with assigned schema name
+func (a SampleRangesTable) FromSchema(schemaName string) *SampleRangesTable {
+	return newSampleRangesTable(schemaName, a.TableName(), a.Alias())
+}
+
+// WithPrefix creates new SampleRangesTable with assigned table prefix
+func (a SampleRangesTable) WithPrefix(prefix string) *SampleRangesTable {
+	return newSampleRangesTable(a.SchemaName(), prefix+a.TableName(), a.TableName())
+}
+
+// WithSuffix creates new SampleRangesTable with assigned table suffix
+func (a SampleRangesTable) WithSuffix(suffix string) *SampleRangesTable {
+	return newSampleRangesTable(a.SchemaName(), a.TableName()+suffix, a.TableName())
+}
+
+func newSampleRangesTable(schemaName, tableName, alias string) *SampleRangesTable {
+	return &SampleRangesTable{
+		sampleRangesTable: newSampleRangesTableImpl(schemaName, tableName, alias),
+		EXCLUDED:          newSampleRangesTableImpl("", "excluded", ""),
+	}
+}
+
+func newSampleRangesTableImpl(schemaName, tableName, alias string) sampleRangesTable {
+	var (
+		DateRangeColumn       = postgres.DateRangeColumn("date_range")
+		TimestampRangeColumn  = postgres.TimestampRangeColumn("timestamp_range")
+		TimestampzRangeColumn = postgres.TimestampzRangeColumn("timestampz_range")
+		Int4RangeColumn       = postgres.Int4RangeColumn("int4_range")
+		Int8RangeColumn       = postgres.Int8RangeColumn("int8_range")
+		NumRangeColumn        = postgres.NumericRangeColumn("num_range")
+		allColumns            = postgres.ColumnList{DateRangeColumn, TimestampRangeColumn, TimestampzRangeColumn, Int4RangeColumn, Int8RangeColumn, NumRangeColumn}
+		mutableColumns        = postgres.ColumnList{DateRangeColumn, TimestampRangeColumn, TimestampzRangeColumn, Int4RangeColumn, Int8RangeColumn, NumRangeColumn}
+		defaultColumns        = postgres.ColumnList{DateRangeColumn, TimestampRangeColumn, TimestampzRangeColumn, Int4RangeColumn, Int8RangeColumn, NumRangeColumn}
+	)
+
+	return sampleRangesTable{
+		Table: postgres.NewTable(schemaName, tableName, alias, allColumns...),
+
+		//Columns
+		DateRange:       DateRangeColumn,
+		TimestampRange:  TimestampRangeColumn,
+		TimestampzRange: TimestampzRangeColumn,
+		Int4Range:       Int4RangeColumn,
+		Int8Range:       Int8RangeColumn,
+		NumRange:        NumRangeColumn,
+
+		AllColumns:     allColumns,
+		MutableColumns: mutableColumns,
+		DefaultColumns: defaultColumns,
+	}
+}
+`
+
+var linkTableContent = `
+//
+// Code generated by go-jet DO NOT EDIT.
+//
+// WARNING: Changes to this file may cause incorrect behavior
+// and will be lost if the code is regenerated
+//
+
+package table
+
+import (
+	"github.com/nanostack-dev/nanostack-framework/db/postgres"
+)
+
+var Link = newLinkTable("test_sample", "link", "")
+
+// Link table
+type linkTable struct {
+	postgres.Table
+
+	// Columns
+	ID          postgres.ColumnInteger // this is link id
+	URL         postgres.ColumnString  // link url
+	Name        postgres.ColumnString  // Unicode characters comment ₲鬼佬℧⇄↻
+	Description postgres.ColumnString  // '"Z\%_
+
+	AllColumns     postgres.ColumnList
+	MutableColumns postgres.ColumnList
+	DefaultColumns postgres.ColumnList
+}
+
+type LinkTable struct {
+	linkTable
+
+	EXCLUDED linkTable
+}
+
+// AS creates new LinkTable with assigned alias
+func (a LinkTable) AS(alias string) *LinkTable {
+	return newLinkTable(a.SchemaName(), a.TableName(), alias)
+}
+
+// Schema creates new LinkTable with assigned schema name
+func (a LinkTable) FromSchema(schemaName string) *LinkTable {
+	return newLinkTable(schemaName, a.TableName(), a.Alias())
+}
+
+// WithPrefix creates new LinkTable with assigned table prefix
+func (a LinkTable) WithPrefix(prefix string) *LinkTable {
+	return newLinkTable(a.SchemaName(), prefix+a.TableName(), a.TableName())
+}
+
+// WithSuffix creates new LinkTable with assigned table suffix
+func (a LinkTable) WithSuffix(suffix string) *LinkTable {
+	return newLinkTable(a.SchemaName(), a.TableName()+suffix, a.TableName())
+}
+
+func newLinkTable(schemaName, tableName, alias string) *LinkTable {
+	return &LinkTable{
+		linkTable: newLinkTableImpl(schemaName, tableName, alias),
+		EXCLUDED:  newLinkTableImpl("", "excluded", ""),
+	}
+}
+
+func newLinkTableImpl(schemaName, tableName, alias string) linkTable {
+	var (
+		IDColumn          = postgres.IntegerColumn("id")
+		URLColumn         = postgres.StringColumn("url")
+		NameColumn        = postgres.StringColumn("name")
+		DescriptionColumn = postgres.StringColumn("description")
+		allColumns        = postgres.ColumnList{IDColumn, URLColumn, NameColumn, DescriptionColumn}
+		mutableColumns    = postgres.ColumnList{URLColumn, NameColumn, DescriptionColumn}
+		defaultColumns    = postgres.ColumnList{IDColumn}
+	)
+
+	return linkTable{
+		Table: postgres.NewTable(schemaName, tableName, alias, allColumns...),
+
+		//Columns
+		ID:          IDColumn,
+		URL:         URLColumn,
+		Name:        NameColumn,
+		Description: DescriptionColumn,
+
+		AllColumns:     allColumns,
+		MutableColumns: mutableColumns,
+		DefaultColumns: defaultColumns,
+	}
+}
+`
+
+func TestAllowTablesViewsEnums(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{
+			name: "with dsn",
+			args: []string{
+				"-dsn=" + defaultDSN(),
+				"-schema=dvds",
+				"-tables=actor,ADDRESS,country, Film , cITY,",
+				"-views=Actor_info, FILM_LIST ,staff_list",
+				"-enums=mpaa_rating",
+				"-path=" + genTestDir2,
+			},
+		},
+		{
+			name: "without dsn",
+			args: []string{
+				"-source=PostgreSQL",
+				"-host=localhost",
+				"-port=" + strconv.Itoa(dbconfig.PgPort),
+				"-user=jet",
+				"-password=jet",
+				"-dbname=jetdb",
+				"-schema=dvds",
+				"-tables=actor,ADDRESS,country, Film , cITY,",
+				"-views=Actor_info, FILM_LIST ,staff_list",
+				"-enums=mpaa_rating",
+				"-path=" + genTestDir2,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := os.RemoveAll(genTestDir2)
+			require.NoError(t, err)
+
+			cmd := exec.Command("jet", tt.args...)
+
+			fmt.Println(cmd.Args)
+			cmd.Stderr = os.Stderr
+			cmd.Stdout = os.Stdout
+
+			err = cmd.Run()
+			require.NoError(t, err)
+
+			// Table SQL Builder files
+			testutils.AssertFileNamesEqual(t, "./.gentestdata2/jetdb/dvds/table", "actor.go", "address.go",
+				"country.go", "film.go", "city.go", "table_use_schema.go")
+
+			// View SQL Builder files
+			testutils.AssertFileNamesEqual(t, "./.gentestdata2/jetdb/dvds/view", "actor_info.go", "film_list.go",
+				"staff_list.go", "view_use_schema.go")
+
+			// Enums SQL Builder files
+			file.Exists(t, "./.gentestdata2/jetdb/dvds/enum", "mpaa_rating.go")
+
+			// Model files
+			testutils.AssertFileNamesEqual(t, "./.gentestdata2/jetdb/dvds/model", "actor.go", "address.go",
+				"country.go", "film.go", "city.go", "actor_info.go", "film_list.go", "staff_list.go", "mpaa_rating.go")
+		})
+	}
+}
+
+func TestAllowAndIgnoreEnums(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{
+			name: "with dsn",
+			args: []string{
+				"-dsn=" + defaultDSN(),
+				"-schema=dvds",
+				"-enums=mpaa_rating",
+				"-ignore-enums=mpaa_rating",
+				"-path=" + genTestDir2,
+			},
+		},
+		{
+			name: "without dsn",
+			args: []string{
+				"-source=PostgreSQL",
+				"-host=localhost",
+				"-port=" + strconv.Itoa(dbconfig.PgPort),
+				"-user=jet",
+				"-password=jet",
+				"-dbname=jetdb",
+				"-schema=dvds",
+				"-enums=mpaa_rating",
+				"-ignore-enums=mpaa_rating",
+				"-path=" + genTestDir2,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := os.RemoveAll(genTestDir2)
+			require.NoError(t, err)
+
+			cmd := exec.Command("jet", tt.args...)
+
+			fmt.Println(cmd.Args)
+			var stdOut bytes.Buffer
+			cmd.Stderr = os.Stderr
+			cmd.Stdout = &stdOut
+
+			err = cmd.Run()
+			require.Error(t, err)
+			require.Equal(t, "exit status 1", err.Error())
+
+			stdOutput := stdOut.String()
+			require.Contains(t, stdOutput, "ERROR: cannot use both -enums and -ignore-enums flags simultaneously. Please specify only one option.")
+		})
+	}
+}
+
+func TestJsonInvalidModelTags(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{
+			name: "with invalid json tag",
+			args: []string{
+				"-dsn=" + defaultDSN(),
+				"-schema=dvds",
+				"-tables=actor,ADDRESS,country, Film , cITY,",
+				"-views=Actor_info, FILM_LIST ,staff_list",
+				"-enums=mpaa_rating",
+				"-path=" + genTestDir2,
+				"-model-json-tag=invalid",
+			},
+		},
+		{
+			name: "with invalid json tag",
+			args: []string{
+				"-dsn=" + defaultDSN(),
+				"-schema=dvds",
+				"-tables=actor,ADDRESS,country, Film , cITY,",
+				"-views=Actor_info, FILM_LIST ,staff_list",
+				"-enums=mpaa_rating",
+				"-path=" + genTestDir2,
+				"-model-json-tag= invalid",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := exec.Command("jet", tt.args...)
+
+			var stdOut bytes.Buffer
+			cmd.Stderr = os.Stderr
+			cmd.Stdout = &stdOut
+
+			err := cmd.Run()
+			require.Error(t, err)
+			require.Equal(t, "exit status 1", err.Error())
+
+			stdOutput := stdOut.String()
+			require.Contains(t, stdOutput, "ERROR: json tag does not contain correct value")
+		})
+	}
+}
+
+func TestSnakeCaseModelJsonTag(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{
+			name: "with snake-case",
+			args: []string{
+				"-dsn=" + defaultDSN(),
+				"-schema=dvds",
+				"-views=Actor_info",
+				"-tables=actor",
+				"-path=" + genTestDir2,
+				"-model-json-tag=snake-case",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := exec.Command("jet", tt.args...)
+
+			var stdOut bytes.Buffer
+			cmd.Stderr = os.Stderr
+			cmd.Stdout = &stdOut
+
+			err := cmd.Run()
+			require.Nil(t, err)
+
+			actor := file2.Exists(t, genTestDir2+"/jetdb/dvds/model/actor.go")
+			require.Contains(t, actor, `json:"actor_id"`)
+			require.Contains(t, actor, `json:"first_name"`)
+			require.Contains(t, actor, `json:"last_name"`)
+			require.Contains(t, actor, `json:"last_update"`)
+
+			actorInfo := file2.Exists(t, genTestDir2+"/jetdb/dvds/model/actor_info.go")
+			require.Contains(t, actorInfo, `json:"actor_id"`)
+			require.Contains(t, actorInfo, `json:"first_name"`)
+			require.Contains(t, actorInfo, `json:"last_name"`)
+			require.Contains(t, actorInfo, `json:"film_info"`)
+		})
+	}
+}
+
+func TestPascalCaseModelJsonTag(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{
+			name: "with pascal-case",
+			args: []string{
+				"-dsn=" + defaultDSN(),
+				"-schema=dvds",
+				"-views=Actor_info",
+				"-tables=actor",
+				"-path=" + genTestDir2,
+				"-model-json-tag=pascal-case",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := exec.Command("jet", tt.args...)
+
+			var stdOut bytes.Buffer
+			cmd.Stderr = os.Stderr
+			cmd.Stdout = &stdOut
+
+			err := cmd.Run()
+			require.Nil(t, err)
+
+			actor := file2.Exists(t, genTestDir2+"/jetdb/dvds/model/actor.go")
+			require.Contains(t, actor, `json:"ActorID"`)
+			require.Contains(t, actor, `json:"FirstName"`)
+			require.Contains(t, actor, `json:"LastName"`)
+			require.Contains(t, actor, `json:"LastUpdate"`)
+
+			actorInfo := file2.Exists(t, genTestDir2+"/jetdb/dvds/model/actor_info.go")
+			require.Contains(t, actorInfo, `json:"ActorID"`)
+			require.Contains(t, actorInfo, `json:"FirstName"`)
+			require.Contains(t, actorInfo, `json:"LastName"`)
+			require.Contains(t, actorInfo, `json:"FilmInfo"`)
+		})
+	}
+}
+
+func TestCamelCaseModelJsonTag(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{
+			name: "with camel-case",
+			args: []string{
+				"-dsn=" + defaultDSN(),
+				"-schema=dvds",
+				"-views=Actor_info",
+				"-tables=actor",
+				"-path=" + genTestDir2,
+				"-model-json-tag=camel-case",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := exec.Command("jet", tt.args...)
+
+			var stdOut bytes.Buffer
+			cmd.Stderr = os.Stderr
+			cmd.Stdout = &stdOut
+
+			err := cmd.Run()
+			require.Nil(t, err)
+
+			actor := file2.Exists(t, genTestDir2+"/jetdb/dvds/model/actor.go")
+			require.Contains(t, actor, `json:"actorID"`)
+			require.Contains(t, actor, `json:"firstName"`)
+			require.Contains(t, actor, `json:"lastName"`)
+			require.Contains(t, actor, `json:"lastUpdate"`)
+
+			actorInfo := file2.Exists(t, genTestDir2+"/jetdb/dvds/model/actor_info.go")
+			require.Contains(t, actorInfo, `json:"actorID"`)
+			require.Contains(t, actorInfo, `json:"firstName"`)
+			require.Contains(t, actorInfo, `json:"lastName"`)
+			require.Contains(t, actorInfo, `json:"filmInfo"`)
+		})
+	}
+}
+
+func TestGeneratorTestSample(t *testing.T) {
+
+	err := postgres.GenerateDSN(defaultDSN(), "test_sample", genTestDir2)
+	require.NoError(t, err)
+
+	modelDir := filepath.Join(testRoot, "/postgres/.gentestdata2/jetdb/test_sample/model/")
+	tableDir := filepath.Join(testRoot, "/postgres/.gentestdata2/jetdb/test_sample/table/")
+
+	testutils.AssertFileContent(t, modelDir+"/sample_arrays.go", `
+//
+// Code generated by go-jet DO NOT EDIT.
+//
+// WARNING: Changes to this file may cause incorrect behavior
+// and will be lost if the code is regenerated
+//
+
+package model
+
+import (
+	"github.com/lib/pq"
+)
+
+type SampleArrays struct {
+	ID               int32 `+"`sql:\"primary_key\"`"+`
+	BoolArray        *pq.BoolArray
+	Int2ArrayPtr     *pq.StringArray
+	Int4Array        pq.Int32Array
+	Int8Array        pq.Int64Array
+	NumericArray     pq.StringArray
+	DecimalArray     pq.StringArray
+	RealArray        pq.Float32Array
+	DoubleArray      pq.Float64Array
+	TextArray        pq.StringArray
+	VarcharArray     pq.StringArray
+	CharArray        pq.StringArray
+	ByteaArray       pq.ByteaArray
+	DateArray        pq.StringArray
+	TimestampArray   *pq.StringArray
+	TimestamptzArray pq.StringArray
+	TimeArray        pq.StringArray
+	TimetzArray      pq.StringArray
+	IntervalArray    pq.StringArray
+	UUIDArray        pq.StringArray
+	MoodEnumArray    pq.StringArray
+}
+`)
+
+	testutils.AssertFileContent(t, tableDir+"/sample_arrays.go", `
+//
+// Code generated by go-jet DO NOT EDIT.
+//
+// WARNING: Changes to this file may cause incorrect behavior
+// and will be lost if the code is regenerated
+//
+
+package table
+
+import (
+	"github.com/nanostack-dev/nanostack-framework/db/postgres"
+)
+
+var SampleArrays = newSampleArraysTable("test_sample", "sample_arrays", "")
+
+type sampleArraysTable struct {
+	postgres.Table
+
+	// Columns
+	ID               postgres.ColumnInteger
+	BoolArray        postgres.ColumnBoolArray
+	Int2ArrayPtr     postgres.ColumnIntegerArray
+	Int4Array        postgres.ColumnIntegerArray
+	Int8Array        postgres.ColumnIntegerArray
+	NumericArray     postgres.ColumnFloatArray
+	DecimalArray     postgres.ColumnFloatArray
+	RealArray        postgres.ColumnFloatArray
+	DoubleArray      postgres.ColumnFloatArray
+	TextArray        postgres.ColumnStringArray
+	VarcharArray     postgres.ColumnStringArray
+	CharArray        postgres.ColumnStringArray
+	ByteaArray       postgres.ColumnByteaArray
+	DateArray        postgres.ColumnDateArray
+	TimestampArray   postgres.ColumnTimestampArray
+	TimestamptzArray postgres.ColumnTimestampzArray
+	TimeArray        postgres.ColumnTimeArray
+	TimetzArray      postgres.ColumnTimezArray
+	IntervalArray    postgres.ColumnIntervalArray
+	UUIDArray        postgres.ColumnStringArray
+	MoodEnumArray    postgres.ColumnStringArray
+
+	AllColumns     postgres.ColumnList
+	MutableColumns postgres.ColumnList
+	DefaultColumns postgres.ColumnList
+}
+
+type SampleArraysTable struct {
+	sampleArraysTable
+
+	EXCLUDED sampleArraysTable
+}
+
+// AS creates new SampleArraysTable with assigned alias
+func (a SampleArraysTable) AS(alias string) *SampleArraysTable {
+	return newSampleArraysTable(a.SchemaName(), a.TableName(), alias)
+}
+
+// Schema creates new SampleArraysTable with assigned schema name
+func (a SampleArraysTable) FromSchema(schemaName string) *SampleArraysTable {
+	return newSampleArraysTable(schemaName, a.TableName(), a.Alias())
+}
+
+// WithPrefix creates new SampleArraysTable with assigned table prefix
+func (a SampleArraysTable) WithPrefix(prefix string) *SampleArraysTable {
+	return newSampleArraysTable(a.SchemaName(), prefix+a.TableName(), a.TableName())
+}
+
+// WithSuffix creates new SampleArraysTable with assigned table suffix
+func (a SampleArraysTable) WithSuffix(suffix string) *SampleArraysTable {
+	return newSampleArraysTable(a.SchemaName(), a.TableName()+suffix, a.TableName())
+}
+
+func newSampleArraysTable(schemaName, tableName, alias string) *SampleArraysTable {
+	return &SampleArraysTable{
+		sampleArraysTable: newSampleArraysTableImpl(schemaName, tableName, alias),
+		EXCLUDED:          newSampleArraysTableImpl("", "excluded", ""),
+	}
+}
+
+func newSampleArraysTableImpl(schemaName, tableName, alias string) sampleArraysTable {
+	var (
+		IDColumn               = postgres.IntegerColumn("id")
+		BoolArrayColumn        = postgres.BoolArrayColumn("bool_array")
+		Int2ArrayPtrColumn     = postgres.IntegerArrayColumn("int2_array_ptr")
+		Int4ArrayColumn        = postgres.IntegerArrayColumn("int4_array")
+		Int8ArrayColumn        = postgres.IntegerArrayColumn("int8_array")
+		NumericArrayColumn     = postgres.FloatArrayColumn("numeric_array")
+		DecimalArrayColumn     = postgres.FloatArrayColumn("decimal_array")
+		RealArrayColumn        = postgres.FloatArrayColumn("real_array")
+		DoubleArrayColumn      = postgres.FloatArrayColumn("double_array")
+		TextArrayColumn        = postgres.StringArrayColumn("text_array")
+		VarcharArrayColumn     = postgres.StringArrayColumn("varchar_array")
+		CharArrayColumn        = postgres.StringArrayColumn("char_array")
+		ByteaArrayColumn       = postgres.ByteaArrayColumn("bytea_array")
+		DateArrayColumn        = postgres.DateArrayColumn("date_array")
+		TimestampArrayColumn   = postgres.TimestampArrayColumn("timestamp_array")
+		TimestamptzArrayColumn = postgres.TimestampzArrayColumn("timestamptz_array")
+		TimeArrayColumn        = postgres.TimeArrayColumn("time_array")
+		TimetzArrayColumn      = postgres.TimezArrayColumn("timetz_array")
+		IntervalArrayColumn    = postgres.IntervalArrayColumn("interval_array")
+		UUIDArrayColumn        = postgres.StringArrayColumn("uuid_array")
+		MoodEnumArrayColumn    = postgres.StringArrayColumn("mood_enum_array")
+		allColumns             = postgres.ColumnList{IDColumn, BoolArrayColumn, Int2ArrayPtrColumn, Int4ArrayColumn, Int8ArrayColumn, NumericArrayColumn, DecimalArrayColumn, RealArrayColumn, DoubleArrayColumn, TextArrayColumn, VarcharArrayColumn, CharArrayColumn, ByteaArrayColumn, DateArrayColumn, TimestampArrayColumn, TimestamptzArrayColumn, TimeArrayColumn, TimetzArrayColumn, IntervalArrayColumn, UUIDArrayColumn, MoodEnumArrayColumn}
+		mutableColumns         = postgres.ColumnList{BoolArrayColumn, Int2ArrayPtrColumn, Int4ArrayColumn, Int8ArrayColumn, NumericArrayColumn, DecimalArrayColumn, RealArrayColumn, DoubleArrayColumn, TextArrayColumn, VarcharArrayColumn, CharArrayColumn, ByteaArrayColumn, DateArrayColumn, TimestampArrayColumn, TimestamptzArrayColumn, TimeArrayColumn, TimetzArrayColumn, IntervalArrayColumn, UUIDArrayColumn, MoodEnumArrayColumn}
+		defaultColumns         = postgres.ColumnList{IDColumn, Int4ArrayColumn, Int8ArrayColumn, TextArrayColumn}
+	)
+
+	return sampleArraysTable{
+		Table: postgres.NewTable(schemaName, tableName, alias, allColumns...),
+
+		//Columns
+		ID:               IDColumn,
+		BoolArray:        BoolArrayColumn,
+		Int2ArrayPtr:     Int2ArrayPtrColumn,
+		Int4Array:        Int4ArrayColumn,
+		Int8Array:        Int8ArrayColumn,
+		NumericArray:     NumericArrayColumn,
+		DecimalArray:     DecimalArrayColumn,
+		RealArray:        RealArrayColumn,
+		DoubleArray:      DoubleArrayColumn,
+		TextArray:        TextArrayColumn,
+		VarcharArray:     VarcharArrayColumn,
+		CharArray:        CharArrayColumn,
+		ByteaArray:       ByteaArrayColumn,
+		DateArray:        DateArrayColumn,
+		TimestampArray:   TimestampArrayColumn,
+		TimestamptzArray: TimestamptzArrayColumn,
+		TimeArray:        TimeArrayColumn,
+		TimetzArray:      TimetzArrayColumn,
+		IntervalArray:    IntervalArrayColumn,
+		UUIDArray:        UUIDArrayColumn,
+		MoodEnumArray:    MoodEnumArrayColumn,
+
+		AllColumns:     allColumns,
+		MutableColumns: mutableColumns,
+		DefaultColumns: defaultColumns,
+	}
+}
+`)
+}

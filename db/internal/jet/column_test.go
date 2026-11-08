@@ -1,0 +1,16 @@
+// Modified by Nanostack from go-jet (https://github.com/go-jet/jet), commit d0e152c.
+// See db/UPSTREAM.md for the upstream base and the list of changes.
+
+package jet
+
+import "testing"
+
+func TestColumn(t *testing.T) {
+	column := NewColumnImpl("col", "", nil)
+
+	assertClauseSerialize(t, column, "col")
+	column.setTableName("table1")
+	assertClauseSerialize(t, column, "table1.col")
+	assertProjectionSerialize(t, column, `table1.col AS "table1.col"`)
+	assertProjectionSerialize(t, column.AS("alias1"), `table1.col AS "alias1"`)
+}

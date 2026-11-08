@@ -1,0 +1,3 @@
+# Upstream commits the quick-start models although db/.gitignore (also upstream) ignores
+# every .gen directory. Nanostack: re-include them so the example compiles from a checkout.
+!/quick-start/.gen/

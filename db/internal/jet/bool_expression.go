@@ -1,0 +1,119 @@
+// Modified by Nanostack from go-jet (https://github.com/go-jet/jet), commit d0e152c.
+// See db/UPSTREAM.md for the upstream base and the list of changes.
+
+package jet
+
+// BoolExpression interface
+type BoolExpression interface {
+	Expression
+
+	// Check if this expression is equal to rhs
+	EQ(rhs BoolExpression) BoolExpression
+	// Check if this expression is not equal to rhs
+	NOT_EQ(rhs BoolExpression) BoolExpression
+	// Check if this expression is distinct to rhs
+	IS_DISTINCT_FROM(rhs BoolExpression) BoolExpression
+	// Check if this expression is not distinct to rhs
+	IS_NOT_DISTINCT_FROM(rhs BoolExpression) BoolExpression
+
+	// Check if this expression is true
+	IS_TRUE() BoolExpression
+	// Check if this expression is not true
+	IS_NOT_TRUE() BoolExpression
+	// Check if this expression is false
+	IS_FALSE() BoolExpression
+	// Check if this expression is not false
+	IS_NOT_FALSE() BoolExpression
+	// Check if this expression is unknown
+	IS_UNKNOWN() BoolExpression
+	// Check if this expression is not unknown
+	IS_NOT_UNKNOWN() BoolExpression
+
+	// expression AND operator rhs
+	AND(rhs BoolExpression) BoolExpression
+	// expression OR operator rhs
+	OR(rhs BoolExpression) BoolExpression
+}
+
+type boolInterfaceImpl struct {
+	root BoolExpression
+}
+
+func (b *boolInterfaceImpl) EQ(expression BoolExpression) BoolExpression {
+	return Eq(b.root, expression)
+}
+
+func (b *boolInterfaceImpl) NOT_EQ(expression BoolExpression) BoolExpression {
+	return NotEq(b.root, expression)
+}
+
+func (b *boolInterfaceImpl) IS_DISTINCT_FROM(rhs BoolExpression) BoolExpression {
+	return IsDistinctFrom(b.root, rhs)
+}
+
+func (b *boolInterfaceImpl) IS_NOT_DISTINCT_FROM(rhs BoolExpression) BoolExpression {
+	return IsNotDistinctFrom(b.root, rhs)
+}
+
+func (b *boolInterfaceImpl) AND(expression BoolExpression) BoolExpression {
+	return newBinaryBoolOperatorExpression(b.root, expression, "AND")
+}
+
+func (b *boolInterfaceImpl) OR(expression BoolExpression) BoolExpression {
+	return newBinaryBoolOperatorExpression(b.root, expression, "OR")
+}
+
+func (b *boolInterfaceImpl) IS_TRUE() BoolExpression {
+	return newPostfixBoolOperatorExpression(b.root, "IS TRUE")
+}
+
+func (b *boolInterfaceImpl) IS_NOT_TRUE() BoolExpression {
+	return newPostfixBoolOperatorExpression(b.root, "IS NOT TRUE")
+}
+
+func (b *boolInterfaceImpl) IS_FALSE() BoolExpression {
+	return newPostfixBoolOperatorExpression(b.root, "IS FALSE")
+}
+
+func (b *boolInterfaceImpl) IS_NOT_FALSE() BoolExpression {
+	return newPostfixBoolOperatorExpression(b.root, "IS NOT FALSE")
+}
+
+func (b *boolInterfaceImpl) IS_UNKNOWN() BoolExpression {
+	return newPostfixBoolOperatorExpression(b.root, "IS UNKNOWN")
+}
+
+func (b *boolInterfaceImpl) IS_NOT_UNKNOWN() BoolExpression {
+	return newPostfixBoolOperatorExpression(b.root, "IS NOT UNKNOWN")
+}
+
+func newBinaryBoolOperatorExpression(lhs, rhs Expression, operator string, additionalParams ...Expression) BoolExpression {
+	return BoolExp(NewBinaryOperatorExpression(lhs, rhs, operator, additionalParams...))
+}
+
+func newPrefixBoolOperatorExpression(expression Expression, operator string) BoolExpression {
+	return BoolExp(newPrefixOperatorExpression(expression, operator))
+}
+
+func newPostfixBoolOperatorExpression(expression Expression, operator string) BoolExpression {
+	return BoolExp(newPostfixOperatorExpression(expression, operator))
+}
+
+type boolExpressionWrapper struct {
+	boolInterfaceImpl
+	expressionWrapper
+}
+
+func newBoolExpressionWrap(expression Expression) BoolExpression {
+	boolExpressionWrap := &boolExpressionWrapper{}
+	boolExpressionWrap.boolInterfaceImpl.root = boolExpressionWrap
+	boolExpressionWrap.expressionWrapper = newExpressionWrapper(expression, boolExpressionWrap)
+	return boolExpressionWrap
+}
+
+// BoolExp is bool expression wrapper around arbitrary expression.
+// Allows go compiler to see any expression as bool expression.
+// Does not add sql cast to generated sql builder output.
+func BoolExp(expression Expression) BoolExpression {
+	return newBoolExpressionWrap(expression)
+}

@@ -215,6 +215,14 @@ v, ok := m[key]; o := functional.OptionOf(v, ok)
 
 `ToPtr` turns absence into `nil` — the same shape a generated OpenAPI struct already expects for an optional field. `Option` carries no error, so there is nothing this bridge could lose: the two states on either side of it line up exactly.
 
+## Databases and JSON
+
+`Option` reads from `database/sql` and reads and writes JSON, so a struct can use `Option[T]` where it used `*T`:
+
+- **Scan.** `*Option[T]` implements `sql.Scanner`: NULL gives `None`, a value gives `Some`. Conversions are the ones `database/sql` applies to a plain `*T` (it delegates to `sql.Null[T]`), so `rows.Scan(&opt)` behaves like `rows.Scan(&ptr)`. A value that already has type `T` is stored as it is; a `[]byte` is always copied.
+- **Arguments.** `Option` cannot be a `driver.Valuer`: its `Value() T` method already uses that name. Nanostack DB (`db/`) statements unwrap an Option argument themselves (absent is `NULL`). For raw `database/sql`, pass `opt.ToPtr()`: a nil pointer is `NULL`.
+- **JSON.** `MarshalJSON` writes `null` for `None` and the value otherwise (`Some(0)` is `0`). `UnmarshalJSON` reads `null` as `None`. Add `omitzero` to a tag to leave an absent Option out of an object. Before these methods existed, an Option field encoded as `{}` and never decoded; a struct that relied on that now encodes its value.
+
 ## Why each type hand-rolls its own Map/FlatMap
 
 Go has no higher-kinded types, so there is no `Functor`/`Monad` interface to implement once and share — `Option` and `Result` each need their own. What Go 1.27 *does* add is generic methods ([go.dev/issue/77273](https://go.dev/issue/77273)), so `Map`/`FlatMap` can be real methods carrying their own type parameter for the target type. That is what makes `opt.Map(f).Filter(pred).OrElse(v)` read left-to-right, instead of the nested package-level helper calls (`mo.Map(mo.Filter(opt, pred), f)`) that libraries predating generic methods still require.

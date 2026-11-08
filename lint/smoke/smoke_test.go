@@ -60,9 +60,10 @@ func TestLintSmoke(t *testing.T) {
 		// go-tools#1746 fires only on that warm path; a cold run type-checks
 		// listx from source and keeps facts keyed by the real objects.
 		{name: "importer-warm", patterns: []string{"./lint/smoke/consumer/"}},
-		// The framework's real generic methods, and a package that imports
-		// them, under the same crash and hang guard.
-		{name: "functional", patterns: []string{"./pkg/functional/..."}},
+		// A root package that imports the framework's real generic methods, under
+		// the same crash and hang guard. pkg/functional itself is its own module,
+		// so a run from the root cannot load it; the functional job in ci.yml lints
+		// it in its own directory.
 		{name: "functional-importer", patterns: []string{"./pkg/db/transactor/"}},
 	}
 	for _, run := range runs {
