@@ -20,22 +20,33 @@ const (
 	configEnvOut = ".env.example"
 )
 
-// plan returns the units of the selected steps, in pipeline order. The
-// validate unit needs the project; withProject is false when it could not
-// be read.
+// plan returns the units of the selected steps, in pipeline order.
+// withProject is false when nanogen/project.go could not be read: the steps
+// that read it are skipped, so a broken declaration cannot move an output
+// or delete the declared one as an orphan.
 func (r *runner) plan(selected map[string]bool, withProject bool) []*unit {
 	var units []*unit
 	for i := range steps {
 		s := &steps[i]
-		applies := s.name != "validate" || (withProject && r.proj.API != nil)
-		if !selected[s.name] || !applies {
+		if !selected[s.name] {
 			continue
 		}
-		own := r.unitsOf(s)
-		if len(own) == 0 {
+		if s.project && !withProject {
+			r.skipped(s, projectFile)
+			continue
+		}
+		var own []*unit
+		if s.name != "validate" || r.proj.API != nil {
+			own = r.unitsOf(s)
+		} else if !r.declared {
+			// No declaration: validate has nothing to run on, and it did
+			// not run, so a validate.gen.go is not an orphan.
+			continue
+		}
+		if len(own) == 0 && r.failedNeed(s) == "" {
 			// A step with no unit, such as errors in a module without a
-			// catalogue, has run: its orphans are reported. runUnit marks
-			// the others.
+			// catalogue, or validate in a declaration without an API, has
+			// run: its orphans are reported. runUnit marks the others.
 			r.ran[s.name] = true
 		}
 		units = append(units, own...)

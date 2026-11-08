@@ -241,6 +241,7 @@ func TestNonLiteralProjectValue(t *testing.T) {
 	wantRun(t, "nano gen -check", code, 1, stdout, "", stderr,
 		`nanogen/project.go:13: project values must be literals or constants; API.Spec is specPath()
   fix: replace specPath() with a string
+nano gen validate: skipped: needs nanogen/project.go
 `)
 }
 
@@ -250,7 +251,8 @@ func TestMissingSpec(t *testing.T) {
 	dir := copyFixture(t)
 	edit(t, dir, "nanogen/project.go", `const spec = "api/openapi.yaml"`, `const spec = "api/openapi.yml"`)
 	_, stderr, code := nano(t, dir, "-check", "-only", "validate")
-	want := "nanogen/project.go:11: API.Spec api/openapi.yml does not exist\n  fix: the module has api/openapi.yaml\n"
+	want := "nanogen/project.go:11: API.Spec api/openapi.yml does not exist\n  fix: the module has api/openapi.yaml\n" +
+		"nano gen validate: skipped: needs nanogen/project.go\n"
 	if code != 1 || stderr != want {
 		t.Fatalf("exit %d, stderr:\n%s\nwant:\n%s", code, stderr, want)
 	}

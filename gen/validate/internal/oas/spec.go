@@ -80,7 +80,8 @@ func (s *Spec) Waive(loc string) (reason string, ok bool) {
 	return "", false
 }
 
-// Unused returns the waivers that Waive never returned, sorted by line: a
+// Unused returns the waivers that Waive never returned, sorted by line, then
+// location: a
 // waiver that covers no gap would hide the next one.
 func (s *Spec) Unused() []Waiver {
 	var out []Waiver
@@ -89,7 +90,12 @@ func (s *Spec) Unused() []Waiver {
 			out = append(out, *w)
 		}
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Line < out[j].Line })
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Line != out[j].Line {
+			return out[i].Line < out[j].Line
+		}
+		return out[i].Loc < out[j].Loc // two waivers on one line of a flow mapping
+	})
 	return out
 }
 

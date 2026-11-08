@@ -33,12 +33,19 @@ const (
 var projectPkg = reflect.TypeFor[project.Project]().PkgPath() //nolint:gochecknoglobals // a constant in effect.
 
 // readProject reads nanogen/project.go under root. A root without the file
-// has the zero Project. Values must be literals or constants: the file is
-// type-checked, then its composite literal is read from the syntax tree.
-func readProject(root string) (project.Project, error) {
-	if _, err := os.Stat(filepath.Join(root, projectFile)); errors.Is(err, os.ErrNotExist) {
-		return project.Project{}, nil
+// has the zero Project, and declared is false. Values must be literals or
+// constants: the file is type-checked, then its composite literal is read
+// from the syntax tree.
+func readProject(root string) (p project.Project, declared bool, err error) {
+	if _, statErr := os.Stat(filepath.Join(root, projectFile)); errors.Is(statErr, os.ErrNotExist) {
+		return project.Project{}, false, nil
 	}
+	p, err = readDeclaration(root)
+	return p, err == nil, err
+}
+
+// readDeclaration reads the Project literal of nanogen/project.go.
+func readDeclaration(root string) (project.Project, error) {
 	fset := token.NewFileSet()
 	cfg := &packages.Config{
 		Mode: packages.NeedName | packages.NeedTypes | packages.NeedSyntax | packages.NeedTypesInfo |
