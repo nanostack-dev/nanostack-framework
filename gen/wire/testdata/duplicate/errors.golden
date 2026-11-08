@@ -1,0 +1,2 @@
+nano.go:10: duplicate provider for *duplicate.Store: duplicate.NewStore (nano.go:9) and duplicate.NewOtherStore (nano.go:10); keep one
+nano.go:11: duplicate.NewDBConfig provides duplicate.DBConfig, which Config.DB already provides; remove the provider

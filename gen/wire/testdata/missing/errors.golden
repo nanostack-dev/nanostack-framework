@@ -1,0 +1,2 @@
+nano.go:10: no provider for missing.Store (needed by missing.NewService at providers.go:20); bind an implementation with nano.Bind[missing.Store, *missing.PGStore]()
+nano.go:10: no provider for *missing.Clock (needed by missing.NewService at providers.go:20); add a function returning *missing.Clock to nano.Providers

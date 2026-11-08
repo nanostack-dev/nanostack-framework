@@ -1,0 +1,1 @@
+nano.go:9: dependency cycle: *cycle.A (cycle.NewA, nano.go:9) -> *cycle.B (cycle.NewB, nano.go:10) -> *cycle.C (cycle.NewC, nano.go:11) -> *cycle.A; break it with an interface, or by moving the shared part into its own provider

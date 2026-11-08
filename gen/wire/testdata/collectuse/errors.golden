@@ -1,0 +1,1 @@
+nano.go:8: no provider for collectuse.Route (needed by collectuse.NewServer at providers.go:16); nano.Collect[collectuse.Route] collects collectuse.Route values; take []collectuse.Route
