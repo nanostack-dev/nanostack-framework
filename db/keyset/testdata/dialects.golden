@@ -1,0 +1,105 @@
+## created ascending (NOT NULL keys)
+postgres SELECT id AS "id" FROM public.widgets WHERE ROW(widgets.created, widgets.id) > ROW('2026-03-04 10:11:12.345678Z'::timestamp without time zone, 'w_7'::text) ORDER BY widgets.created ASC, widgets.id ASC LIMIT 11;
+mysql    SELECT id AS "id" FROM db.widgets WHERE (widgets.created > '2026-03-04 10:11:12.345678') OR ((widgets.created = '2026-03-04 10:11:12.345678') AND (widgets.id > 'w_7')) ORDER BY widgets.created ASC, widgets.id ASC LIMIT 11;
+sqlite   SELECT id AS "id" FROM widgets WHERE (widgets.created, widgets.id) > ('2026-03-04 10:11:12.345678+00:00', 'w_7') ORDER BY widgets.created ASC, widgets.id ASC LIMIT 11;
+
+## created descending (NOT NULL keys)
+postgres SELECT id AS "id" FROM public.widgets WHERE ROW(widgets.created, widgets.id) < ROW('2026-03-04 10:11:12.345678Z'::timestamp without time zone, 'w_7'::text) ORDER BY widgets.created DESC, widgets.id DESC LIMIT 11;
+mysql    SELECT id AS "id" FROM db.widgets WHERE (widgets.created < '2026-03-04 10:11:12.345678') OR ((widgets.created = '2026-03-04 10:11:12.345678') AND (widgets.id < 'w_7')) ORDER BY widgets.created DESC, widgets.id DESC LIMIT 11;
+sqlite   SELECT id AS "id" FROM widgets WHERE (widgets.created, widgets.id) < ('2026-03-04 10:11:12.345678+00:00', 'w_7') ORDER BY widgets.created DESC, widgets.id DESC LIMIT 11;
+
+## rank, then name descending
+postgres SELECT id AS "id" FROM public.widgets WHERE ((widgets.rank > 42::bigint) OR ((widgets.rank = 42::bigint) AND (widgets.name < 'apple'::text))) OR (((widgets.rank = 42::bigint) AND (widgets.name = 'apple'::text)) AND (widgets.id < 'w_7'::text)) ORDER BY widgets.rank ASC, widgets.name DESC, widgets.id DESC LIMIT 11;
+mysql    SELECT id AS "id" FROM db.widgets WHERE ((widgets.`rank` > CAST(42 AS SIGNED)) OR ((widgets.`rank` = CAST(42 AS SIGNED)) AND (widgets.name < 'apple'))) OR (((widgets.`rank` = CAST(42 AS SIGNED)) AND (widgets.name = 'apple')) AND (widgets.id < 'w_7')) ORDER BY widgets.`rank` ASC, widgets.name DESC, widgets.id DESC LIMIT 11;
+sqlite   SELECT id AS "id" FROM widgets WHERE ((widgets.rank > 42) OR ((widgets.rank = 42) AND (widgets.name < 'apple'))) OR (((widgets.rank = 42) AND (widgets.name = 'apple')) AND (widgets.id < 'w_7')) ORDER BY widgets.rank ASC, widgets.name DESC, widgets.id DESC LIMIT 11;
+
+## nullable note ascending
+postgres SELECT id AS "id" FROM public.widgets WHERE ((widgets.note > 'beta'::text) OR (widgets.note IS NULL)) OR ((widgets.note = 'beta'::text) AND (widgets.id > 'w_7'::text)) ORDER BY widgets.note ASC, widgets.id ASC LIMIT 11;
+mysql    SELECT id AS "id" FROM db.widgets WHERE ((widgets.note > 'beta') OR (widgets.note IS NULL)) OR ((widgets.note = 'beta') AND (widgets.id > 'w_7')) ORDER BY widgets.note IS NULL, widgets.note ASC, widgets.id ASC LIMIT 11;
+sqlite   SELECT id AS "id" FROM widgets WHERE ((widgets.note > 'beta') OR (widgets.note IS NULL)) OR ((widgets.note = 'beta') AND (widgets.id > 'w_7')) ORDER BY widgets.note ASC NULLS LAST, widgets.id ASC LIMIT 11;
+
+## nullable note ascending after a NULL
+postgres SELECT id AS "id" FROM public.widgets WHERE (widgets.note IS NULL) AND (widgets.id > 'w_7'::text) ORDER BY widgets.note ASC, widgets.id ASC LIMIT 11;
+mysql    SELECT id AS "id" FROM db.widgets WHERE (widgets.note IS NULL) AND (widgets.id > 'w_7') ORDER BY widgets.note IS NULL, widgets.note ASC, widgets.id ASC LIMIT 11;
+sqlite   SELECT id AS "id" FROM widgets WHERE (widgets.note IS NULL) AND (widgets.id > 'w_7') ORDER BY widgets.note ASC NULLS LAST, widgets.id ASC LIMIT 11;
+
+## nullable note descending
+postgres SELECT id AS "id" FROM public.widgets WHERE (widgets.note < 'beta'::text) OR ((widgets.note = 'beta'::text) AND (widgets.id < 'w_7'::text)) ORDER BY widgets.note DESC, widgets.id DESC LIMIT 11;
+mysql    SELECT id AS "id" FROM db.widgets WHERE (widgets.note < 'beta') OR ((widgets.note = 'beta') AND (widgets.id < 'w_7')) ORDER BY widgets.note IS NOT NULL, widgets.note DESC, widgets.id DESC LIMIT 11;
+sqlite   SELECT id AS "id" FROM widgets WHERE (widgets.note < 'beta') OR ((widgets.note = 'beta') AND (widgets.id < 'w_7')) ORDER BY widgets.note DESC NULLS FIRST, widgets.id DESC LIMIT 11;
+
+## nullable note descending after a NULL
+postgres SELECT id AS "id" FROM public.widgets WHERE (widgets.note IS NOT NULL) OR ((widgets.note IS NULL) AND (widgets.id < 'w_7'::text)) ORDER BY widgets.note DESC, widgets.id DESC LIMIT 11;
+mysql    SELECT id AS "id" FROM db.widgets WHERE (widgets.note IS NOT NULL) OR ((widgets.note IS NULL) AND (widgets.id < 'w_7')) ORDER BY widgets.note IS NOT NULL, widgets.note DESC, widgets.id DESC LIMIT 11;
+sqlite   SELECT id AS "id" FROM widgets WHERE (widgets.note IS NOT NULL) OR ((widgets.note IS NULL) AND (widgets.id < 'w_7')) ORDER BY widgets.note DESC NULLS FIRST, widgets.id DESC LIMIT 11;
+
+## nullable note ascending, NULLs first
+postgres SELECT id AS "id" FROM public.widgets WHERE (widgets.note > 'beta'::text) OR ((widgets.note = 'beta'::text) AND (widgets.id > 'w_7'::text)) ORDER BY widgets.note ASC NULLS FIRST, widgets.id ASC LIMIT 11;
+mysql    SELECT id AS "id" FROM db.widgets WHERE (widgets.note > 'beta') OR ((widgets.note = 'beta') AND (widgets.id > 'w_7')) ORDER BY widgets.note ASC, widgets.id ASC LIMIT 11;
+sqlite   SELECT id AS "id" FROM widgets WHERE (widgets.note > 'beta') OR ((widgets.note = 'beta') AND (widgets.id > 'w_7')) ORDER BY widgets.note ASC, widgets.id ASC LIMIT 11;
+
+## nullable note descending, NULLs last
+postgres SELECT id AS "id" FROM public.widgets WHERE ((widgets.note < 'beta'::text) OR (widgets.note IS NULL)) OR ((widgets.note = 'beta'::text) AND (widgets.id < 'w_7'::text)) ORDER BY widgets.note DESC NULLS LAST, widgets.id DESC LIMIT 11;
+mysql    SELECT id AS "id" FROM db.widgets WHERE ((widgets.note < 'beta') OR (widgets.note IS NULL)) OR ((widgets.note = 'beta') AND (widgets.id < 'w_7')) ORDER BY widgets.note DESC, widgets.id DESC LIMIT 11;
+sqlite   SELECT id AS "id" FROM widgets WHERE ((widgets.note < 'beta') OR (widgets.note IS NULL)) OR ((widgets.note = 'beta') AND (widgets.id < 'w_7')) ORDER BY widgets.note DESC, widgets.id DESC LIMIT 11;
+
+## enum ascending after a middle label
+postgres SELECT id AS "id" FROM public.widgets WHERE ROW(widgets.status, widgets.id) > ROW('active'::text::widget_status, 'w_7'::text) ORDER BY widgets.status ASC, widgets.id ASC LIMIT 11;
+mysql    SELECT id AS "id" FROM db.widgets WHERE (widgets.status IN ('archived')) OR ((widgets.status = 'active') AND (widgets.id > 'w_7')) ORDER BY widgets.status ASC, widgets.id ASC LIMIT 11;
+sqlite   SELECT id AS "id" FROM widgets WHERE (widgets.status IN ('archived')) OR ((widgets.status = 'active') AND (widgets.id > 'w_7')) ORDER BY (CASE WHEN widgets.status = 'pending' THEN 0 WHEN widgets.status = 'active' THEN 1 WHEN widgets.status = 'archived' THEN 2 WHEN widgets.status IS NOT NULL THEN -1 END) ASC, widgets.id ASC LIMIT 11;
+
+## enum ascending after the last label
+postgres SELECT id AS "id" FROM public.widgets WHERE ROW(widgets.status, widgets.id) > ROW('archived'::text::widget_status, 'w_7'::text) ORDER BY widgets.status ASC, widgets.id ASC LIMIT 11;
+mysql    SELECT id AS "id" FROM db.widgets WHERE (widgets.status = 'archived') AND (widgets.id > 'w_7') ORDER BY widgets.status ASC, widgets.id ASC LIMIT 11;
+sqlite   SELECT id AS "id" FROM widgets WHERE (widgets.status = 'archived') AND (widgets.id > 'w_7') ORDER BY (CASE WHEN widgets.status = 'pending' THEN 0 WHEN widgets.status = 'active' THEN 1 WHEN widgets.status = 'archived' THEN 2 WHEN widgets.status IS NOT NULL THEN -1 END) ASC, widgets.id ASC LIMIT 11;
+
+## enum descending after the first label
+postgres SELECT id AS "id" FROM public.widgets WHERE ROW(widgets.status, widgets.id) < ROW('pending'::text::widget_status, 'w_7'::text) ORDER BY widgets.status DESC, widgets.id DESC LIMIT 11;
+mysql    SELECT id AS "id" FROM db.widgets WHERE (widgets.status NOT IN ('pending', 'active', 'archived')) OR ((widgets.status = 'pending') AND (widgets.id < 'w_7')) ORDER BY widgets.status DESC, widgets.id DESC LIMIT 11;
+sqlite   SELECT id AS "id" FROM widgets WHERE (widgets.status NOT IN ('pending', 'active', 'archived')) OR ((widgets.status = 'pending') AND (widgets.id < 'w_7')) ORDER BY (CASE WHEN widgets.status = 'pending' THEN 0 WHEN widgets.status = 'active' THEN 1 WHEN widgets.status = 'archived' THEN 2 WHEN widgets.status IS NOT NULL THEN -1 END) DESC, widgets.id DESC LIMIT 11;
+
+## nullable enum ascending
+postgres SELECT id AS "id" FROM public.widgets WHERE ((widgets.status_p > 'active'::text::widget_status) OR (widgets.status_p IS NULL)) OR ((widgets.status_p = 'active'::text::widget_status) AND (widgets.id > 'w_7'::text)) ORDER BY widgets.status_p ASC, widgets.id ASC LIMIT 11;
+mysql    SELECT id AS "id" FROM db.widgets WHERE ((widgets.status_p IN ('archived')) OR (widgets.status_p IS NULL)) OR ((widgets.status_p = 'active') AND (widgets.id > 'w_7')) ORDER BY widgets.status_p IS NULL, widgets.status_p ASC, widgets.id ASC LIMIT 11;
+sqlite   SELECT id AS "id" FROM widgets WHERE ((widgets.status_p IN ('archived')) OR (widgets.status_p IS NULL)) OR ((widgets.status_p = 'active') AND (widgets.id > 'w_7')) ORDER BY (CASE WHEN widgets.status_p = 'pending' THEN 0 WHEN widgets.status_p = 'active' THEN 1 WHEN widgets.status_p = 'archived' THEN 2 WHEN widgets.status_p IS NOT NULL THEN -1 END) ASC NULLS LAST, widgets.id ASC LIMIT 11;
+
+## nullable enum ascending after a NULL
+postgres SELECT id AS "id" FROM public.widgets WHERE (widgets.status_p IS NULL) AND (widgets.id > 'w_7'::text) ORDER BY widgets.status_p ASC, widgets.id ASC LIMIT 11;
+mysql    SELECT id AS "id" FROM db.widgets WHERE (widgets.status_p IS NULL) AND (widgets.id > 'w_7') ORDER BY widgets.status_p IS NULL, widgets.status_p ASC, widgets.id ASC LIMIT 11;
+sqlite   SELECT id AS "id" FROM widgets WHERE (widgets.status_p IS NULL) AND (widgets.id > 'w_7') ORDER BY (CASE WHEN widgets.status_p = 'pending' THEN 0 WHEN widgets.status_p = 'active' THEN 1 WHEN widgets.status_p = 'archived' THEN 2 WHEN widgets.status_p IS NOT NULL THEN -1 END) ASC NULLS LAST, widgets.id ASC LIMIT 11;
+
+## uuid ascending
+postgres SELECT id AS "id" FROM public.widgets WHERE ROW(widgets.ref, widgets.id) > ROW('018f6b8e-0000-7000-8000-000000000001'::uuid, 'w_7'::text) ORDER BY widgets.ref ASC, widgets.id ASC LIMIT 11;
+mysql    SELECT id AS "id" FROM db.widgets WHERE (widgets.ref > '018f6b8e-0000-7000-8000-000000000001') OR ((widgets.ref = '018f6b8e-0000-7000-8000-000000000001') AND (widgets.id > 'w_7')) ORDER BY widgets.ref ASC, widgets.id ASC LIMIT 11;
+sqlite   SELECT id AS "id" FROM widgets WHERE (widgets.ref, widgets.id) > ('018f6b8e-0000-7000-8000-000000000001', 'w_7') ORDER BY widgets.ref ASC, widgets.id ASC LIMIT 11;
+
+## nullable float ascending
+postgres SELECT id AS "id" FROM public.widgets WHERE ((widgets.score > 2.25::double precision) OR (widgets.score IS NULL)) OR ((widgets.score = 2.25::double precision) AND (widgets.id > 'w_7'::text)) ORDER BY widgets.score ASC, widgets.id ASC LIMIT 11;
+mysql    SELECT id AS "id" FROM db.widgets WHERE ((widgets.score > 2.25) OR (widgets.score IS NULL)) OR ((widgets.score = 2.25) AND (widgets.id > 'w_7')) ORDER BY widgets.score IS NULL, widgets.score ASC, widgets.id ASC LIMIT 11;
+sqlite   SELECT id AS "id" FROM widgets WHERE ((widgets.score > 2.25) OR (widgets.score IS NULL)) OR ((widgets.score = 2.25) AND (widgets.id > 'w_7')) ORDER BY widgets.score ASC NULLS LAST, widgets.id ASC LIMIT 11;
+
+## real ascending
+postgres SELECT id AS "id" FROM public.widgets WHERE ROW(widgets.ratio, widgets.id) > ROW(0.10000000149011612::real, 'w_7'::text) ORDER BY widgets.ratio ASC, widgets.id ASC LIMIT 11;
+mysql    SELECT id AS "id" FROM db.widgets WHERE (widgets.ratio > 0.10000000149011612) OR ((widgets.ratio = 0.10000000149011612) AND (widgets.id > 'w_7')) ORDER BY widgets.ratio ASC, widgets.id ASC LIMIT 11;
+sqlite   SELECT id AS "id" FROM widgets WHERE (widgets.ratio, widgets.id) > (0.10000000149011612, 'w_7') ORDER BY widgets.ratio ASC, widgets.id ASC LIMIT 11;
+
+## MySQL timestamp ascending
+postgres ErrDialect
+mysql    SELECT id AS "id" FROM db.widgets WHERE (widgets.stamp > '2026-03-04 10:11:12') OR ((widgets.stamp = '2026-03-04 10:11:12') AND (widgets.id > 'w_7')) ORDER BY widgets.stamp ASC, widgets.id ASC LIMIT 11;
+sqlite   ErrDialect
+
+## timestamptz ascending
+postgres SELECT id AS "id" FROM public.widgets WHERE ROW(widgets.at, widgets.id) > ROW('2026-03-04 10:11:12Z'::timestamp with time zone, 'w_7'::text) ORDER BY widgets.at ASC, widgets.id ASC LIMIT 11;
+mysql    ErrDialect
+sqlite   ErrDialect
+
+## inet ascending
+postgres SELECT id AS "id" FROM public.widgets WHERE ROW(widgets.ip, widgets.id) > ROW('10.0.0.1'::text::inet, 'w_7'::text) ORDER BY widgets.ip ASC, widgets.id ASC LIMIT 11;
+mysql    ErrDialect
+sqlite   ErrDialect
+
+## enum ascending after MySQL's empty value
+postgres ErrInvalidCursor
+mysql    SELECT id AS "id" FROM db.widgets WHERE (widgets.status IN ('pending', 'active', 'archived')) OR ((widgets.status NOT IN ('pending', 'active', 'archived')) AND (widgets.id > 'w_7')) ORDER BY widgets.status ASC, widgets.id ASC LIMIT 11;
+sqlite   SELECT id AS "id" FROM widgets WHERE (widgets.status IN ('pending', 'active', 'archived')) OR ((widgets.status NOT IN ('pending', 'active', 'archived')) AND (widgets.id > 'w_7')) ORDER BY (CASE WHEN widgets.status = 'pending' THEN 0 WHEN widgets.status = 'active' THEN 1 WHEN widgets.status = 'archived' THEN 2 WHEN widgets.status IS NOT NULL THEN -1 END) ASC, widgets.id ASC LIMIT 11;
+

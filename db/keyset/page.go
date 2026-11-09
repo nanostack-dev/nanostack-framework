@@ -10,11 +10,11 @@ import (
 	"github.com/nanostack-dev/nanostack-framework/pkg/functional"
 )
 
-// Source is the table or join a page reads. It is a ReadableTable of
-// db/postgres today. The dialect packages have no common table interface
+// Source is the table or join a page reads: a ReadableTable of db/postgres,
+// db/mysql or db/sqlite. The dialect packages have no common table interface
 // (INNER_JOIN returns a different type in each), so Run resolves Source with
-// a type switch. Any other value, a table of db/mysql or db/sqlite included,
-// is ErrDialect.
+// a type switch, and writes the SQL of that dialect. Any other value is
+// ErrDialect.
 type Source = any
 
 // PageBuilder runs the count-then-page pair behind a search.Result.
@@ -127,18 +127,18 @@ func (b *PageBuilder[T, R]) Keyset(order Order[T]) *PageBuilder[T, R] {
 // Run checks the cursor with Pagination.Validate. It does not check the limit:
 // a search checks it with search.CheckPage before it builds the page.
 func (b *PageBuilder[T, R]) Run(ctx context.Context, page search.Pagination) (search.Result[R], error) {
-	table, seek, err := b.prepare(page)
+	source, seek, err := b.prepare(page)
 	if err != nil {
 		return search.Result[R]{}, err
 	}
-	total, err := query.Count(ctx, b.db, b.countStatement(table))
+	total, err := query.Count(ctx, b.db, source.count(b.where))
 	if err != nil {
 		return search.Result[R]{}, err
 	}
 	if total == 0 {
 		return search.Result[R]{Items: []R{}}, nil
 	}
-	rows, next, err := b.fetch(ctx, table, page, seek)
+	rows, next, err := b.fetch(ctx, source, page, seek)
 	if err != nil {
 		return search.Result[R]{}, err
 	}
@@ -150,8 +150,8 @@ func (b *PageBuilder[T, R]) Run(ctx context.Context, page search.Pagination) (se
 }
 
 // prepare refuses a page that cannot run, before any statement runs.
-func (b *PageBuilder[T, R]) prepare(page search.Pagination) (jet.ReadableTable, jet.BoolExpression, error) {
-	table, err := readable(b.source)
+func (b *PageBuilder[T, R]) prepare(page search.Pagination) (pageSource, jet.BoolExpression, error) {
+	source, err := resolveSource(b.source)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -168,36 +168,27 @@ func (b *PageBuilder[T, R]) prepare(page search.Pagination) (jet.ReadableTable, 
 		if page.Cursor != "" {
 			return nil, nil, fmt.Errorf("%w: this search has no keyset ordering", search.ErrInvalidCursor)
 		}
-		return table, nil, nil
+		return source, nil, nil
 	}
-	seek, err := b.keyset.Seek(page.Cursor)
+	if err = b.keyset.supports(source.dialect()); err != nil {
+		return nil, nil, err
+	}
+	seek, err := b.keyset.seek(source.dialect(), page.Cursor)
 	if err != nil {
 		return nil, nil, err
 	}
-	return table, seek, nil
-}
-
-// readable resolves the source to a PostgreSQL table or join.
-func readable(source Source) (jet.ReadableTable, error) {
-	switch table := source.(type) {
-	case nil:
-		return nil, ErrPageSourceMissing
-	case jet.ReadableTable:
-		return table, nil
-	default:
-		return nil, fmt.Errorf("%w: %T is not a PostgreSQL table or join", ErrDialect, source)
-	}
+	return source, seek, nil
 }
 
 // fetch reads the page rows and, with a keyset, the next cursor.
 func (b *PageBuilder[T, R]) fetch(
-	ctx context.Context, table jet.ReadableTable, page search.Pagination, seek jet.BoolExpression,
+	ctx context.Context, source pageSource, page search.Pagination, seek jet.BoolExpression,
 ) ([]T, string, error) {
 	if b.keyset == nil {
-		rows, err := query.All[T](ctx, b.db, b.pageStatement(table, page))
+		rows, err := query.All[T](ctx, b.db, b.pageStatement(source, page))
 		return rows, "", err
 	}
-	rows, err := query.All[T](ctx, b.db, b.keysetStatement(table, page, seek))
+	rows, err := query.All[T](ctx, b.db, b.keysetStatement(source, page, seek))
 	if err != nil {
 		return nil, "", err
 	}
@@ -221,37 +212,20 @@ func (b *PageBuilder[T, R]) mapRows(ctx context.Context, rows []T) ([]R, error) 
 	return items, nil
 }
 
-func (b *PageBuilder[T, R]) countStatement(table jet.ReadableTable) jet.Statement {
-	stmt := table.SELECT(jet.COUNT(jet.STAR))
-	if b.where != nil {
-		stmt = stmt.WHERE(b.where)
-	}
-	return stmt
-}
-
-func (b *PageBuilder[T, R]) pageStatement(table jet.ReadableTable, page search.Pagination) jet.Statement {
-	stmt := table.SELECT(b.columns[0], b.columns[1:]...)
-	if b.where != nil {
-		stmt = stmt.WHERE(b.where)
-	}
-	if len(b.orderBy) > 0 {
-		stmt = stmt.ORDER_BY(b.orderBy...)
-	}
-	return stmt.LIMIT(int64(page.Limit)).OFFSET(int64(page.Offset))
+func (b *PageBuilder[T, R]) pageStatement(source pageSource, page search.Pagination) jet.Statement {
+	return source.rows(b.columns, b.where, b.orderBy, int64(page.Limit), int64(page.Offset))
 }
 
 // keysetStatement fetches one row past the page, so Trim can tell whether
 // another page follows without a second query.
 func (b *PageBuilder[T, R]) keysetStatement(
-	table jet.ReadableTable, page search.Pagination, seek jet.BoolExpression,
+	source pageSource, page search.Pagination, seek jet.BoolExpression,
 ) jet.Statement {
-	stmt := table.SELECT(b.columns[0], b.columns[1:]...)
-	if where := and(b.where, seek); where != nil {
-		stmt = stmt.WHERE(where)
-	}
-	stmt = stmt.ORDER_BY(b.keyset.OrderBy()...).LIMIT(int64(page.Limit) + 1)
+	offset := int64(-1)
 	if page.Offset > 0 {
-		stmt = stmt.OFFSET(int64(page.Offset))
+		offset = int64(page.Offset)
 	}
-	return stmt
+	return source.rows(
+		b.columns, and(b.where, seek), b.keyset.orderBy(source.dialect()), int64(page.Limit)+1, offset,
+	)
 }

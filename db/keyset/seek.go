@@ -3,15 +3,24 @@ package keyset
 import (
 	"fmt"
 
+	ijet "github.com/nanostack-dev/nanostack-framework/db/internal/jet"
 	jet "github.com/nanostack-dev/nanostack-framework/db/postgres"
 	"github.com/nanostack-dev/nanostack-framework/db/search"
+	"github.com/nanostack-dev/nanostack-framework/db/sqlite"
 )
 
 // Seek returns the predicate that selects the rows strictly after cursor in
 // this ordering, or nil for an empty cursor. A cursor issued for another
 // ordering, or one that does not decode, is search.ErrInvalidCursor. The
-// predicate is PostgreSQL SQL: use it only in a db/postgres statement.
+// predicate is PostgreSQL SQL: use it only in a db/postgres statement. Page
+// writes the seek of its source's dialect itself.
 func (o Order[T]) Seek(cursor string) (jet.BoolExpression, error) {
+	return o.seek(dialectPostgres, cursor)
+}
+
+// seek is Seek for d. The values are checked against what d's columns can
+// hold, so a value valid on one dialect can be ErrInvalidCursor on another.
+func (o Order[T]) seek(d dialect, cursor string) (jet.BoolExpression, error) {
 	if cursor == "" {
 		return nil, nil
 	}
@@ -27,34 +36,45 @@ func (o Order[T]) Seek(cursor string) (jet.BoolExpression, error) {
 	}
 	bounds := make([]keyBound, len(o.keys))
 	for i, k := range o.keys {
-		if bounds[i], err = k.key.bound(decoded.Values[i]); err != nil {
+		if bounds[i], err = k.key.bound(d, decoded.Values[i]); err != nil {
 			return nil, err
 		}
 	}
-	if row := o.rowSeek(bounds); row != nil {
+	if row := o.rowSeek(d, bounds); row != nil {
 		return row, nil
 	}
 	return o.expandedSeek(bounds), nil
 }
 
-// rowSeek uses a row-value comparison, which PostgreSQL answers with one range
-// scan of a matching composite index. It applies only when every key is NOT
-// NULL and all keys share a direction. Otherwise it returns nil.
-func (o Order[T]) rowSeek(bounds []keyBound) jet.BoolExpression {
+// rowSeek uses a row-value comparison, which PostgreSQL and SQLite answer
+// with one range scan of a matching composite index. It applies only when
+// every key is NOT NULL, all keys share a direction, and each column's own
+// comparison follows its key order (not an enum on SQLite). MySQL does not
+// use a range scan for a row-value inequality (its manual, "Row Constructor
+// Expression Optimization"), so it always gets the expanded form. Otherwise
+// rowSeek returns nil.
+func (o Order[T]) rowSeek(d dialect, bounds []keyBound) jet.BoolExpression {
+	if d == dialectMySQL {
+		return nil
+	}
 	direction := o.keys[0].direction
-	columns := make([]jet.Expression, len(o.keys))
-	literals := make([]jet.Expression, len(o.keys))
+	columns := make([]ijet.Expression, len(o.keys))
+	literals := make([]ijet.Expression, len(o.keys))
 	for i, k := range o.keys {
-		if k.key.nullable || k.direction != direction {
+		if k.key.nullable || k.direction != direction || !k.key.comparesInOrder(d) {
 			return nil
 		}
 		columns[i] = k.key.column
 		literals[i] = bounds[i].literal
 	}
-	if direction == search.SortDescending {
-		return jet.ROW(columns...).LT(jet.ROW(literals...))
+	row := jet.ROW
+	if d == dialectSQLite {
+		row = sqlite.ROW
 	}
-	return jet.ROW(columns...).GT(jet.ROW(literals...))
+	if direction == search.SortDescending {
+		return row(columns...).LT(row(literals...))
+	}
+	return row(columns...).GT(row(literals...))
 }
 
 // expandedSeek writes the comparison out key by key:
@@ -97,7 +117,8 @@ func afterBound[T any](k orderedKey[T], bound keyBound) jet.BoolExpression {
 		after = bound.lt
 	}
 	if k.key.nullable && nullsAfter {
-		return after.OR(column.IS_NULL())
+		// or keeps a nil side out: an enum's last label has no later label.
+		return or(after, column.IS_NULL())
 	}
 	return after
 }

@@ -7,24 +7,37 @@ import (
 
 // Test-only hooks, so the external test package can assert the SQL of a page
 // without a database. They resolve the source as Run does and panic when it
-// is not a PostgreSQL table, which a test never passes.
+// is not a table, which a test never passes.
 
 func (b *PageBuilder[T, R]) CountStatementForTest() jet.Statement {
-	return b.countStatement(b.mustTable())
+	return b.mustSource().count(b.where)
 }
 
 func (b *PageBuilder[T, R]) PageStatementForTest(page search.Pagination) jet.Statement {
-	return b.pageStatement(b.mustTable(), page)
+	return b.pageStatement(b.mustSource(), page)
 }
 
 func (b *PageBuilder[T, R]) KeysetStatementForTest(page search.Pagination, seek jet.BoolExpression) jet.Statement {
-	return b.keysetStatement(b.mustTable(), page, seek)
+	return b.keysetStatement(b.mustSource(), page, seek)
 }
 
-func (b *PageBuilder[T, R]) mustTable() jet.ReadableTable {
-	table, err := readable(b.source)
+func (b *PageBuilder[T, R]) mustSource() pageSource {
+	source, err := resolveSource(b.source)
 	if err != nil {
 		panic(err)
 	}
-	return table
+	return source
+}
+
+// StatementsForTest resolves the page as Run does and returns the count and
+// row statements Run would send, without a database.
+func (b *PageBuilder[T, R]) StatementsForTest(page search.Pagination) (jet.Statement, jet.Statement, error) {
+	source, seek, err := b.prepare(page)
+	if err != nil {
+		return nil, nil, err
+	}
+	if b.keyset == nil {
+		return source.count(b.where), b.pageStatement(source, page), nil
+	}
+	return source.count(b.where), b.keysetStatement(source, page, seek), nil
 }

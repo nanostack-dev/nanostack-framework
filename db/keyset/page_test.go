@@ -119,6 +119,8 @@ func TestKeysetStatement(t *testing.T) {
 
 func TestRunRefusesABadPageBeforeQuerying(t *testing.T) {
 	order := mustOrder[sortField](t, nil, keyColumns(), idKey())
+	byCreated := mustOrder(t,
+		[]search.Sort[sortField]{{Field: sortByCreated, Direction: search.SortAscending}}, keyColumns(), idKey())
 	mysqlTable := mysql.NewTable("db", "widgets", "", mysql.StringColumn("id"))
 	sqliteTable := sqlite.NewTable("", "widgets", "", sqlite.StringColumn("id"))
 	for name, tc := range map[string]struct {
@@ -130,11 +132,11 @@ func TestRunRefusesABadPageBeforeQuerying(t *testing.T) {
 			keyset.Page(nil, func(r keyRow) keyRow { return r }, colID), search.Pagination{Limit: 1},
 			keyset.ErrPageSourceMissing,
 		},
-		"a MySQL table": {
-			keysetBuilder().From(mysqlTable), search.Pagination{Limit: 1}, keyset.ErrDialect,
+		"a timestamptz key on a MySQL table": {
+			keysetBuilder().From(mysqlTable).Keyset(byCreated), search.Pagination{Limit: 1}, keyset.ErrDialect,
 		},
-		"a SQLite table": {
-			keysetBuilder().From(sqliteTable), search.Pagination{Limit: 1}, keyset.ErrDialect,
+		"a timestamptz key on a SQLite table": {
+			keysetBuilder().From(sqliteTable).Keyset(byCreated), search.Pagination{Limit: 1}, keyset.ErrDialect,
 		},
 		"not a table": {keysetBuilder().From("widgets"), search.Pagination{Limit: 1}, keyset.ErrDialect},
 		"cursor with offset": {

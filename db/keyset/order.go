@@ -23,7 +23,9 @@ type orderedKey[T any] struct {
 // query does not fit PageBuilder uses OrderBy, Seek and Trim directly.
 //
 // Seek and OrderBy write PostgreSQL SQL. Use them only in a db/postgres
-// statement. PageBuilder refuses any other source with ErrDialect.
+// statement. PageBuilder reads the dialect of its source (db/postgres,
+// db/mysql or db/sqlite) and writes that dialect's SQL, so one Order runs on
+// any of them.
 type Order[T any] struct {
 	keys      []orderedKey[T]
 	signature string
@@ -130,19 +132,34 @@ func (o Order[T]) Signature() string {
 	return o.signature
 }
 
-// OrderBy returns the ORDER BY clauses, tiebreak included. The PostgreSQL
-// defaults apply to NULLs, unless a key asks for NullsFirst or NullsLast:
-// last when ascending, first when descending. Seek relies on exactly that
-// placement. The clauses are PostgreSQL SQL: use them only in a db/postgres
-// statement.
+// OrderBy returns the ORDER BY clauses, tiebreak included, in PostgreSQL SQL:
+// use them only in a db/postgres statement. Page writes the clauses of its
+// source's dialect itself. The PostgreSQL defaults apply to NULLs, unless a
+// key asks for NullsFirst or NullsLast: last when ascending, first when
+// descending. Seek relies on exactly that placement.
 func (o Order[T]) OrderBy() []jet.OrderByClause {
+	return o.orderBy(dialectPostgres)
+}
+
+// orderBy writes the ORDER BY clauses for d. The NULL placement is the same
+// contract on every dialect: last when ascending, first when descending,
+// unless a key asks for NullsFirst or NullsLast.
+//
+// PostgreSQL's defaults are the contract, so it names a placement only when a
+// key asks, as before. MySQL and SQLite put NULLs first when ascending, so
+// they name it for a nullable key whose placement differs from that default
+// (MySQL emulates it with "col IS NULL, col"). A NOT NULL key has no NULL to
+// place and stays a plain "col ASC", so an index on the columns serves the
+// walk.
+func (o Order[T]) orderBy(d dialect) []jet.OrderByClause {
 	clauses := make([]jet.OrderByClause, len(o.keys))
 	for i, k := range o.keys {
-		clause := k.key.column.ASC()
+		expression := k.key.orderExpression(d)
+		clause := expression.ASC()
 		if k.direction == search.SortDescending {
-			clause = k.key.column.DESC()
+			clause = expression.DESC()
 		}
-		switch k.key.nulls {
+		switch o.placement(d, k) {
 		case nullsFirst:
 			clause = clause.NULLS_FIRST()
 		case nullsLast:
@@ -152,4 +169,35 @@ func (o Order[T]) OrderBy() []jet.OrderByClause {
 		clauses[i] = clause
 	}
 	return clauses
+}
+
+// placement is the NULL placement that the ORDER BY clause of k must name on
+// d, or nullsDefault when the dialect's default already gives the contract.
+func (o Order[T]) placement(d dialect, k orderedKey[T]) nullPlacement {
+	if d == dialectPostgres {
+		return k.key.nulls
+	}
+	if !k.key.nullable {
+		return nullsDefault
+	}
+	// MySQL and SQLite: NULLs sort first when ascending, last when descending.
+	dialectAfter := k.direction == search.SortDescending
+	switch after := k.key.nullsAfter(k.direction); {
+	case after == dialectAfter:
+		return nullsDefault
+	case after:
+		return nullsLast
+	default:
+		return nullsFirst
+	}
+}
+
+// supports reports ErrDialect when a key of the order does not exist on d.
+func (o Order[T]) supports(d dialect) error {
+	for _, k := range o.keys {
+		if err := k.key.supports(d); err != nil {
+			return err
+		}
+	}
+	return nil
 }
