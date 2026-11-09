@@ -32,8 +32,6 @@ const (
 	ksIP      ksField = "IP"
 )
 
-var ksStatusLabels = []string{"pending", "active", "archived"}
-
 type ksRow struct {
 	ID      string     `alias:"it_keyset.id"`
 	Tenant  string     `alias:"it_keyset.tenant"`
