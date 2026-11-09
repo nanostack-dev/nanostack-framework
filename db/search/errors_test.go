@@ -24,6 +24,7 @@ var clientErrors = []error{ //nolint:gochecknoglobals // read-only test table.
 	search.ErrInvalidOffset,
 	search.ErrTooManyValues,
 	search.ErrTermTooLong,
+	search.ErrInvalidSortDirection,
 }
 
 func TestIsClientError(t *testing.T) {

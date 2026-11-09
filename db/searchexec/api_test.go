@@ -93,22 +93,30 @@ func TestAPISort(t *testing.T) {
 	name, rank := apiSort(itemSortName), apiSort(itemSortRank)
 	asc, desc := apiDirection(search.SortAscending), apiDirection(search.SortDescending)
 	cases := map[string]struct {
-		field     *apiSort
-		direction *apiDirection
-		want      []search.Sort[itemSort]
+		field          *apiSort
+		direction      *apiDirection
+		fieldDirection search.SortDirection
+		want           []search.Sort[itemSort]
 	}{
-		"neither keeps the default sort": {nil, nil, []search.Sort[itemSort]{searchexec.Desc(itemSortRank)}},
-		"sort_by alone sorts DESC":       {&name, nil, []search.Sort[itemSort]{searchexec.Desc(itemSortName)}},
-		"sort_direction alone applies to the default sort": {
-			nil, &asc, []search.Sort[itemSort]{searchexec.Asc(itemSortRank)},
+		"neither keeps the default sort": {
+			nil, nil, search.SortAscending, []search.Sort[itemSort]{searchexec.Desc(itemSortRank)},
 		},
-		"both":           {&name, &asc, []search.Sort[itemSort]{searchexec.Asc(itemSortName)}},
-		"both, DESC":     {&rank, &desc, []search.Sort[itemSort]{searchexec.Desc(itemSortRank)}},
-		"both, the same": {&rank, &asc, []search.Sort[itemSort]{searchexec.Asc(itemSortRank)}},
+		"sort_by alone sorts in the field direction, DESC": {
+			&name, nil, search.SortDescending, []search.Sort[itemSort]{searchexec.Desc(itemSortName)},
+		},
+		"sort_by alone sorts in the field direction, ASC": {
+			&name, nil, search.SortAscending, []search.Sort[itemSort]{searchexec.Asc(itemSortName)},
+		},
+		"sort_direction alone applies to the default sort": {
+			nil, &asc, search.SortDescending, []search.Sort[itemSort]{searchexec.Asc(itemSortRank)},
+		},
+		"both":           {&name, &asc, search.SortDescending, []search.Sort[itemSort]{searchexec.Asc(itemSortName)}},
+		"both, DESC":     {&rank, &desc, search.SortAscending, []search.Sort[itemSort]{searchexec.Desc(itemSortRank)}},
+		"both, the same": {&rank, &asc, search.SortDescending, []search.Sort[itemSort]{searchexec.Asc(itemSortRank)}},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			got := searchexec.APISort(q, q.SortBy, tc.field, tc.direction, itemSortRank)
+			got := searchexec.APISort(q, q.SortBy, tc.field, tc.direction, itemSortRank, tc.fieldDirection)
 
 			assert.Equal(t, tc.want, sorts(t, got))
 		})
@@ -119,7 +127,7 @@ func TestAPISortTakesTheSearchDirectionType(t *testing.T) {
 	q := newItemSearch(fullScope())
 	name, direction := apiSort(itemSortName), search.SortAscending
 
-	got := searchexec.APISort(q, q.SortBy, &name, &direction, itemSortRank)
+	got := searchexec.APISort(q, q.SortBy, &name, &direction, itemSortRank, search.SortDescending)
 
 	assert.Equal(t, []search.Sort[itemSort]{searchexec.Asc(itemSortName)}, sorts(t, got))
 }
@@ -129,7 +137,7 @@ func TestAPISortLeavesAnUnknownFieldToRun(t *testing.T) {
 	unknown := apiSort("ip_address")
 	rec := &recorder{}
 
-	got := searchexec.APISort(q, q.SortBy, &unknown, (*apiDirection)(nil), itemSortRank)
+	got := searchexec.APISort(q, q.SortBy, &unknown, (*apiDirection)(nil), itemSortRank, search.SortDescending)
 	_, err := searchexec.Run(t.Context(), rec, itemSpec, got.Query, identity)
 
 	require.ErrorIs(t, err, search.ErrUnknownSort)
@@ -147,6 +155,47 @@ func TestAPIDirectionAppliesToTheDefaultSort(t *testing.T) {
 		sorts(t, searchexec.APIDirection(q, q.SortBy, itemSortRank, &asc)))
 	assert.Equal(t, []search.Sort[itemSort]{searchexec.Desc(itemSortRank)},
 		sorts(t, searchexec.APIDirection(q, q.SortBy, itemSortRank, &desc)))
+}
+
+// An ASC default proves that a request with no sort_direction keeps the direction of the
+// default sort, and does not pick DESC.
+func TestAPISortKeepsAnAscendingDefault(t *testing.T) {
+	def := itemDef()
+	def.Default = searchexec.Asc(itemSortRank)
+	spec := searchexec.DefineSpec(def)
+	q := searchexec.New[itemSearch](spec, fullScope())
+	resolve := func(q itemSearch) []search.Sort[itemSort] {
+		plan, err := searchexec.Resolve(t.Context(), spec, q.Query)
+		require.NoError(t, err)
+		return plan.Sorts()
+	}
+	want := []search.Sort[itemSort]{searchexec.Asc(itemSortRank)}
+
+	assert.Equal(t, want, resolve(searchexec.APISort(
+		q, q.SortBy, (*apiSort)(nil), (*apiDirection)(nil), itemSortRank, search.SortDescending)))
+	assert.Equal(t, want, resolve(searchexec.APIDirection(q, q.SortBy, itemSortRank, (*apiDirection)(nil))))
+}
+
+// A direction that is not ASC or DESC is the client's error: the helpers keep it as sent,
+// and Run refuses it before any statement runs. It never falls back to ASC.
+func TestAPISortRefusesAnInvalidDirection(t *testing.T) {
+	q := newItemSearch(fullScope())
+	name := apiSort(itemSortName)
+	for _, d := range []apiDirection{"desc", "", "Desc", "DROP TABLE"} {
+		t.Run(string(d), func(t *testing.T) {
+			for label, got := range map[string]itemSearch{
+				"APISort":      searchexec.APISort(q, q.SortBy, &name, &d, itemSortRank, search.SortDescending),
+				"APIDirection": searchexec.APIDirection(q, q.SortBy, itemSortRank, &d),
+			} {
+				rec := &recorder{}
+				_, err := searchexec.Run(t.Context(), rec, itemSpec, got.Query, identity)
+
+				require.ErrorIs(t, err, search.ErrInvalidSortDirection, label)
+				assert.True(t, search.IsClientError(err), label)
+				assert.Empty(t, rec.queries, "%s: no statement runs", label)
+			}
+		})
+	}
 }
 
 // apiPage resolves the query that APIPage returns and gives its page.
@@ -251,7 +300,7 @@ func TestAPIMapper(t *testing.T) {
 			q = searchexec.Opt(q, q.Owner().Present, f.HasOwner)
 		}
 		q = searchexec.Opt(q, q.Text().Contains, b.FullTextSearch)
-		q = searchexec.APISort(q, q.SortBy, b.SortBy, b.SortDirection, itemSortRank)
+		q = searchexec.APISort(q, q.SortBy, b.SortBy, b.SortDirection, itemSortRank, search.SortDescending)
 		return searchexec.APIPage(q.Query, b.Pagination)
 	}
 	q := newItemSearch(fullScope())

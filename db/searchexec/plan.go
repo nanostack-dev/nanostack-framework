@@ -130,6 +130,7 @@ var errUnresolved = fmt.Errorf("%w: the plan was not returned by Resolve", searc
 //   - the first error that a filter recorded: more than search.MaxInValues values
 //     (search.ErrTooManyValues), a term longer than search.MaxTermLength characters
 //     (search.ErrTermTooLong), or a child table of another dialect (keyset.ErrDialect);
+//   - a sort direction other than ASC or DESC (search.ErrInvalidSortDirection);
 //   - a page that search.CheckPage refuses (search.ErrInvalidLimit, search.ErrInvalidOffset,
 //     search.ErrInvalidCursor, search.ErrCursorWithOffset);
 //   - a source that is not a db/postgres table or join (keyset.ErrDialect).
@@ -166,6 +167,11 @@ func Resolve[T any, Q Builder[T, Q, S, P], S ~string, P comparable](
 	}
 	if q.err != nil {
 		return Plan[T, S]{}, q.err
+	}
+	for _, sort := range q.sorts {
+		if sort.Direction != search.SortAscending && sort.Direction != search.SortDescending {
+			return Plan[T, S]{}, fmt.Errorf("%w: %q", search.ErrInvalidSortDirection, sort.Direction)
+		}
 	}
 	if err := search.CheckPage(q.page); err != nil {
 		return Plan[T, S]{}, err

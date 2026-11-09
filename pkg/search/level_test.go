@@ -34,12 +34,13 @@ func TestClientErrorsLogAtDebug(t *testing.T) {
 }
 
 // TestContractErrorsLogAtTheirLevel pins the level of the errors that only
-// db/search declares: the four new client errors log at Debug, and
+// db/search declares: the five new client errors log at Debug, and
 // ErrUnscoped, a programming error that answers 500, logs at Error.
 func TestContractErrorsLogAtTheirLevel(t *testing.T) {
 	t.Parallel()
 	for _, sentinel := range []error{
 		dbsearch.ErrInvalidLimit, dbsearch.ErrInvalidOffset, dbsearch.ErrTooManyValues, dbsearch.ErrTermTooLong,
+		dbsearch.ErrInvalidSortDirection,
 	} {
 		wrapped := fmt.Errorf("search flows: %w", fmt.Errorf("%w: detail", sentinel))
 		if got := log.LevelFor(wrapped); got != slog.LevelDebug {

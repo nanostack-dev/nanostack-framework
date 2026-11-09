@@ -23,6 +23,10 @@ var (
 	// than the client asked.
 	ErrUnknownSort error = &clientError{"search: unknown sort field"}
 
+	// ErrInvalidSortDirection reports a sort direction other than ASC or DESC.
+	// A silent fallback to ASC would sort in the order the client did not ask.
+	ErrInvalidSortDirection error = &clientError{"search: invalid sort direction"}
+
 	// ErrInvalidLimit reports a page size outside 1 to MaxLimit.
 	ErrInvalidLimit error = &clientError{"search: limit out of range"}
 

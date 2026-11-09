@@ -106,6 +106,9 @@ func TestResolveWritesTheBytesOfWriteJSON(t *testing.T) {
 		{"unknown sort", search.ErrUnknownSort, &fault.Error{Status: http.StatusBadRequest,
 			Details: []fault.Detail{{Code: "INVALID_SORT", Field: "sort_by",
 				Message: "The search cannot sort by this field."}}}, false},
+		{"invalid sort direction", fmt.Errorf("%w: %q", dbsearch.ErrInvalidSortDirection, "desc"),
+			&fault.Error{Status: http.StatusBadRequest, Details: []fault.Detail{{Code: "INVALID_SORT",
+				Field: "sort_direction", Message: "The sort direction must be ASC or DESC."}}}, false},
 		{"db/search invalid cursor", dbsearch.ErrInvalidCursor, cursor, false},
 		{
 			"invalid limit",

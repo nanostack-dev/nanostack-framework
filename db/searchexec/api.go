@@ -6,7 +6,7 @@ import "github.com/nanostack-dev/nanostack-framework/db/search"
 // into a builder. They apply the rules of the API contract, which differ from the rules of a
 // Go caller: in the API, a property that is not sent filters nothing. They do no checks of
 // their own. Resolve, Run and RunPage refuse what the builder refuses: an unknown sort, a
-// page outside the limits, too many values.
+// sort direction other than ASC or DESC, a page outside the limits, too many values.
 
 // Some applies set when vs is not empty, and returns q unchanged when it is. In the API an
 // empty or missing list filters nothing. From Go, a field's In with no values matches no row.
@@ -43,21 +43,26 @@ func OrZero[B any](body *B) B {
 // APISort applies the sort_by and sort_direction properties of an API request:
 //
 //   - neither: q is unchanged, and the spec's default sort applies with its own direction;
-//   - sort_by alone: the field, DESC;
+//   - sort_by alone: the field, in fieldDirection;
 //   - sort_direction alone: def, the field of the default sort, in that direction;
 //   - both: the field in that direction.
+//
+// fieldDirection is the direction that the API contract gives to a sort_by sent alone. It
+// differs from one API to the next (one contract says ASC, another DESC), so the caller
+// gives it and nano gen repo emits it from the API's declaration.
 //
 // sortBy is the builder's SortBy. A is the API's sort enum and D its direction enum (the
 // x-go-type of the body), converted by their string values. nano gen repo checks at
 // generation time that the values of A are the sorts of the search; Run refuses another
-// value with search.ErrUnknownSort.
+// value with search.ErrUnknownSort. Resolve refuses a direction other than ASC or DESC with
+// search.ErrInvalidSortDirection: the helpers keep the value as sent.
 func APISort[Q any, S ~string, A ~string, D ~string](
-	q Q, sortBy func(S, search.SortDirection) Q, field *A, direction *D, def S,
+	q Q, sortBy func(S, search.SortDirection) Q, field *A, direction *D, def S, fieldDirection search.SortDirection,
 ) Q {
 	if field == nil {
 		return APIDirection(q, sortBy, def, direction)
 	}
-	dir := search.SortDescending
+	dir := fieldDirection
 	if direction != nil {
 		dir = search.SortDirection(*direction)
 	}
@@ -66,7 +71,8 @@ func APISort[Q any, S ~string, A ~string, D ~string](
 
 // APIDirection applies the sort_direction property of an API request that has no sort_by:
 // the direction applies to def, the field of the default sort. A nil direction returns q
-// unchanged, so the spec's default sort applies with its own direction.
+// unchanged, so the spec's default sort applies with its own direction. Resolve refuses a
+// direction other than ASC or DESC with search.ErrInvalidSortDirection.
 func APIDirection[Q any, S ~string, D ~string](
 	q Q, sortBy func(S, search.SortDirection) Q, def S, direction *D,
 ) Q {
