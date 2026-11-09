@@ -83,6 +83,28 @@ if err := search.CheckPage(page); err != nil { // ErrInvalidLimit, ErrInvalidOff
 }
 ```
 
+**Keyset pager** (`db/keyset`): the one keyset pager (ADR 0001). A `Key` reads one ordering
+column from a row; `OrderOf` builds a total order (the requested sorts, then a unique
+tiebreak) and refuses an unknown sort with `search.ErrUnknownSort`. `Page` and `PageOf` count
+the matches and read one page through `db/query`, with the executor as a parameter: they never
+read a transaction from a context. `RequireWhere` refuses a page with no `WHERE`
+(`search.ErrUnscoped`). The pager supports PostgreSQL; a MySQL or SQLite table is `ErrDialect`.
+
+```go
+order, err := keyset.OrderOf(page.Sort, map[SortField]keyset.Key[model.Invoice]{
+	SortCreatedAt: keyset.TimeKey(Invoice.CreatedAt, func(m model.Invoice) time.Time { return m.CreatedAt }),
+}, keyset.StringKey(Invoice.ID, func(m model.Invoice) string { return m.ID }))
+if err != nil {
+	return search.Result[model.Invoice]{}, err // ErrUnknownSort
+}
+return keyset.Page(db, func(m model.Invoice) model.Invoice { return m }, Invoice.AllColumns).
+	From(Invoice).
+	Where(Invoice.TenantID.EQ(UUID(tenant))).
+	RequireWhere().
+	Keyset(order).
+	Run(ctx, page.Pagination)
+```
+
 The complete list of changes, the upstream commit we started from, and how we merge upstream
 releases are in [UPSTREAM.md](UPSTREAM.md). The go-jet README, which documents the statement
 builder in depth, is kept in [docs/upstream/README.md](docs/upstream/README.md); go-jet's

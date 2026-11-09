@@ -1,781 +1,142 @@
 package transactor
 
 import (
-	"encoding/json"
-	"fmt"
-	"math"
-	"net/netip"
-	"slices"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
 
+	"github.com/nanostack-dev/nanostack-framework/db/keyset"
 	jet "github.com/nanostack-dev/nanostack-framework/db/postgres"
-	"github.com/nanostack-dev/nanostack-framework/pkg/jetx"
 	"github.com/nanostack-dev/nanostack-framework/pkg/search"
 )
 
-// Key is one column of a keyset ordering over scanned rows of T: the column
-// to order and compare on, and how to read that column's value from a row.
-//
-// Build keys with the typed constructors (StringKey, UUIDKey, InetKey, EnumKey,
-// TimeKey, LocalTimeKey, IntKey, FloatKey and their Nullable variants) so the
-// cursor value and the SQL literal share one type. A constructor rejects a
-// cursor value its column cannot hold with search.ErrInvalidCursor, before
-// any query runs.
-type Key[T any] struct {
-	column   jet.Column
-	nullable bool
-	nulls    nullPlacement
-	// value reads the row's value, nil for SQL NULL.
-	value func(T) any
-	// bound decodes a cursor value into the comparisons against it. A JSON
-	// null decodes to a bound with isNull set.
-	bound func(json.RawMessage) (keyBound, error)
-}
+// The keyset pager lives in db/keyset. The names below forward to it, so
+// existing callers keep compiling and keep their cursors byte for byte. New
+// code uses db/keyset.
 
-// nullPlacement says where NULLs sort. The zero value follows Postgres:
-// last ascending, first descending.
-type nullPlacement int
+// Key is keyset.Key. Use db/keyset.
+type Key[T any] = keyset.Key[T]
 
-const (
-	nullsDefault nullPlacement = iota
-	nullsFirst
-	nullsLast
-)
+// Order is keyset.Order. Use db/keyset.
+type Order[T any] = keyset.Order[T]
 
-// NullsFirst returns the key with NULLs sorted before every value, in both
-// directions. Use it when the API promises a placement that must not flip
-// with the direction; Postgres needs a matching index (… NULLS FIRST) to
-// serve it without a sort.
-func (k Key[T]) NullsFirst() Key[T] {
-	k.nulls = nullsFirst
-	return k
-}
-
-// NullsLast returns the key with NULLs sorted after every value, in both
-// directions, for example "unlicensed organizations last".
-func (k Key[T]) NullsLast() Key[T] {
-	k.nulls = nullsLast
-	return k
-}
-
-// nullsAfter reports whether NULLs follow every value in direction.
-func (k Key[T]) nullsAfter(direction search.SortDirection) bool {
-	switch k.nulls {
-	case nullsFirst:
-		return false
-	case nullsLast:
-		return true
-	default:
-		return direction != search.SortDescending
-	}
-}
-
-// keyBound holds the comparisons of one column against one cursor value.
-type keyBound struct {
-	isNull  bool
-	literal jet.Expression
-	gt      jet.BoolExpression
-	lt      jet.BoolExpression
-	eq      jet.BoolExpression
-}
-
-// keyCodec converts a column value to and from its cursor form. encode runs
-// when a cursor is issued; decode when one comes back, and must reject any
-// value the column cannot hold so a forged cursor fails as ErrInvalidCursor
-// rather than as a database error.
-type keyCodec[V any] struct {
-	encode func(V) any
-	decode func(json.RawMessage) (V, error)
-}
-
-func jsonCodec[V any]() keyCodec[V] {
-	return keyCodec[V]{
-		encode: func(v V) any { return v },
-		decode: func(raw json.RawMessage) (V, error) {
-			var v V
-			err := json.Unmarshal(raw, &v)
-			return v, err
-		},
-	}
-}
-
-func newKey[T any, V any](
-	column jet.Column,
-	nullable bool,
-	value func(T) *V,
-	literal func(V) jet.Expression,
-	compare func(V) (gt, lt, eq jet.BoolExpression),
-) Key[T] {
-	return newCodecKey(column, nullable, value, jsonCodec[V](), literal, compare)
-}
-
-func newCodecKey[T any, V any](
-	column jet.Column,
-	nullable bool,
-	value func(T) *V,
-	codec keyCodec[V],
-	literal func(V) jet.Expression,
-	compare func(V) (gt, lt, eq jet.BoolExpression),
-) Key[T] {
-	return Key[T]{
-		column:   column,
-		nullable: nullable,
-		value: func(row T) any {
-			if v := value(row); v != nil {
-				return codec.encode(*v)
-			}
-			return nil
-		},
-		bound: func(raw json.RawMessage) (keyBound, error) {
-			if string(raw) == "null" {
-				if !nullable {
-					return keyBound{}, fmt.Errorf(
-						"%w: null for non-null column %s",
-						search.ErrInvalidCursor,
-						column.Name(),
-					)
-				}
-				return keyBound{isNull: true, eq: column.IS_NULL()}, nil
-			}
-			v, err := codec.decode(raw)
-			if err != nil {
-				return keyBound{}, fmt.Errorf("%w: value for column %s", search.ErrInvalidCursor, column.Name())
-			}
-			gt, lt, eq := compare(v)
-			return keyBound{literal: literal(v), gt: gt, lt: lt, eq: eq}, nil
-		},
-	}
-}
-
-func ptrOf[T any, V any](value func(T) V) func(T) *V {
-	return func(row T) *V {
-		v := value(row)
-		return &v
-	}
-}
-
-// StringKey orders on a NOT NULL text column.
+// StringKey is keyset.StringKey. Use db/keyset.
 func StringKey[T any](column jet.ColumnString, value func(T) string) Key[T] {
-	return stringKey(column, false, ptrOf(value))
+	return keyset.StringKey(column, value)
 }
 
-// NullableStringKey orders on a nullable text column.
+// NullableStringKey is keyset.NullableStringKey. Use db/keyset.
 func NullableStringKey[T any](column jet.ColumnString, value func(T) *string) Key[T] {
-	return stringKey(column, true, value)
+	return keyset.NullableStringKey(column, value)
 }
 
-// textCodec rejects a NUL byte, which Postgres text cannot hold: binding it
-// would fail in the database rather than as an invalid cursor.
-func textCodec() keyCodec[string] {
-	return keyCodec[string]{
-		encode: func(v string) any { return v },
-		decode: func(raw json.RawMessage) (string, error) {
-			var v string
-			if err := json.Unmarshal(raw, &v); err != nil {
-				return "", err
-			}
-			if strings.ContainsRune(v, 0) {
-				return "", fmt.Errorf("text contains NUL")
-			}
-			return v, nil
-		},
-	}
-}
-
-func stringKey[T any](column jet.ColumnString, nullable bool, value func(T) *string) Key[T] {
-	return newCodecKey(column, nullable, value, textCodec(),
-		func(v string) jet.Expression { return jet.String(v) },
-		func(v string) (jet.BoolExpression, jet.BoolExpression, jet.BoolExpression) {
-			return column.GT(jet.String(v)), column.LT(jet.String(v)), column.EQ(jet.String(v))
-		})
-}
-
-// EnumKey orders on a NOT NULL Postgres enum column. Postgres orders an enum
-// by declaration order and refuses to compare it with text, so the cursor value
-// is cast to enumType, the enum's SQL type name. labels lists the enum's
-// values: a cursor carrying any other value is rejected before the cast could
-// fail in the database.
-//
-// A text column holding enum-like values is a StringKey: it sorts as text.
+// EnumKey is keyset.EnumKey. Use db/keyset.
 func EnumKey[T any](column jet.ColumnString, enumType string, labels []string, value func(T) string) Key[T] {
-	return enumKey(column, enumType, labels, false, ptrOf(value))
+	return keyset.EnumKey(column, enumType, labels, value)
 }
 
-// NullableEnumKey orders on a nullable Postgres enum column.
+// NullableEnumKey is keyset.NullableEnumKey. Use db/keyset.
 func NullableEnumKey[T any](column jet.ColumnString, enumType string, labels []string, value func(T) *string) Key[T] {
-	return enumKey(column, enumType, labels, true, value)
+	return keyset.NullableEnumKey(column, enumType, labels, value)
 }
 
-func enumKey[T any](
-	column jet.ColumnString,
-	enumType string,
-	labels []string,
-	nullable bool,
-	value func(T) *string,
-) Key[T] {
-	typed := func(v string) jet.StringExpression {
-		return jet.StringExp(jet.CAST(jet.String(v)).AS(enumType))
-	}
-	allowed := slices.Clone(labels)
-	codec := keyCodec[string]{
-		encode: func(v string) any { return v },
-		decode: func(raw json.RawMessage) (string, error) {
-			var v string
-			if err := json.Unmarshal(raw, &v); err != nil {
-				return "", err
-			}
-			if !slices.Contains(allowed, v) {
-				return "", fmt.Errorf("not a %s label", enumType)
-			}
-			return v, nil
-		},
-	}
-	return newCodecKey(column, nullable, value, codec,
-		func(v string) jet.Expression { return typed(v) },
-		func(v string) (jet.BoolExpression, jet.BoolExpression, jet.BoolExpression) {
-			return column.GT(typed(v)), column.LT(typed(v)), column.EQ(typed(v))
-		})
-}
-
-// InetKey orders on a NOT NULL inet column, read as its text form. Postgres
-// refuses to compare inet with text, so the cursor value is cast to inet, and
-// a value that is not an address or network is rejected before the cast.
+// InetKey is keyset.InetKey. Use db/keyset.
 func InetKey[T any](column jet.ColumnString, value func(T) string) Key[T] {
-	return inetKey(column, false, ptrOf(value))
+	return keyset.InetKey(column, value)
 }
 
-// NullableInetKey orders on a nullable inet column.
+// NullableInetKey is keyset.NullableInetKey. Use db/keyset.
 func NullableInetKey[T any](column jet.ColumnString, value func(T) *string) Key[T] {
-	return inetKey(column, true, value)
+	return keyset.NullableInetKey(column, value)
 }
 
-func inetKey[T any](column jet.ColumnString, nullable bool, value func(T) *string) Key[T] {
-	text := textCodec()
-	codec := keyCodec[string]{
-		encode: text.encode,
-		decode: func(raw json.RawMessage) (string, error) {
-			v, err := text.decode(raw)
-			if err != nil {
-				return "", err
-			}
-			if _, addrErr := netip.ParseAddr(v); addrErr == nil {
-				return v, nil
-			}
-			if _, prefixErr := netip.ParsePrefix(v); prefixErr == nil {
-				return v, nil
-			}
-			return "", fmt.Errorf("not an inet value")
-		},
-	}
-	typed := func(v string) jet.StringExpression { return jet.StringExp(jet.CAST(jet.String(v)).AS("inet")) }
-	return newCodecKey(column, nullable, value, codec,
-		func(v string) jet.Expression { return typed(v) },
-		func(v string) (jet.BoolExpression, jet.BoolExpression, jet.BoolExpression) {
-			return column.GT(typed(v)), column.LT(typed(v)), column.EQ(typed(v))
-		})
-}
-
-// UUIDKey orders on a NOT NULL uuid column. A cursor value that does not
-// parse as a UUID is rejected before the uuid cast could fail in the database.
+// UUIDKey is keyset.UUIDKey. Use db/keyset.
 func UUIDKey[T any](column jet.ColumnString, value func(T) uuid.UUID) Key[T] {
-	return uuidKey(column, false, ptrOf(value))
+	return keyset.UUIDKey(column, value)
 }
 
-// NullableUUIDKey orders on a nullable uuid column.
+// NullableUUIDKey is keyset.NullableUUIDKey. Use db/keyset.
 func NullableUUIDKey[T any](column jet.ColumnString, value func(T) *uuid.UUID) Key[T] {
-	return uuidKey(column, true, value)
+	return keyset.NullableUUIDKey(column, value)
 }
 
-func uuidKey[T any](column jet.ColumnString, nullable bool, value func(T) *uuid.UUID) Key[T] {
-	codec := keyCodec[uuid.UUID]{
-		encode: func(v uuid.UUID) any { return v.String() },
-		decode: func(raw json.RawMessage) (uuid.UUID, error) {
-			var text string
-			if err := json.Unmarshal(raw, &text); err != nil {
-				return uuid.Nil, err
-			}
-			return uuid.Parse(text)
-		},
-	}
-	return newCodecKey(column, nullable, value, codec,
-		func(v uuid.UUID) jet.Expression { return jet.UUID(v) },
-		func(v uuid.UUID) (jet.BoolExpression, jet.BoolExpression, jet.BoolExpression) {
-			return column.GT(jet.UUID(v)), column.LT(jet.UUID(v)), column.EQ(jet.UUID(v))
-		})
-}
-
-// TimeKey orders on a NOT NULL timestamptz column.
+// TimeKey is keyset.TimeKey. Use db/keyset.
 func TimeKey[T any](column jet.ColumnTimestampz, value func(T) time.Time) Key[T] {
-	return timeKey(column, false, ptrOf(value))
+	return keyset.TimeKey(column, value)
 }
 
-// NullableTimeKey orders on a nullable timestamptz column.
+// NullableTimeKey is keyset.NullableTimeKey. Use db/keyset.
 func NullableTimeKey[T any](column jet.ColumnTimestampz, value func(T) *time.Time) Key[T] {
-	return timeKey(column, true, value)
+	return keyset.NullableTimeKey(column, value)
 }
 
-// Postgres stores timestamps from 4714-11-24 BC to 294276-12-31 AD at
-// microsecond precision.
-var (
-	postgresMinTime = time.Date(-4713, time.November, 24, 0, 0, 0, 0, time.UTC)
-	postgresMaxTime = time.Date(294276, time.December, 31, 23, 59, 59, 999_999_000, time.UTC)
-	// postgresEpochUnix is 2000-01-01 UTC, the Postgres timestamp epoch.
-	postgresEpochUnix = time.Date(2000, time.January, 1, 0, 0, 0, 0, time.UTC).Unix()
-)
-
-// microsCodec encodes an instant as microseconds since 2000-01-01 UTC, the
-// representation Postgres itself stores. It is exact across the whole
-// Postgres range, which Unix microseconds overflow past year 294247, where
-// RFC 3339 loses seconds offsets and cannot write years past 9999, and a
-// decoded value carries no zone the database could refuse. The arithmetic
-// goes through seconds, since a time.Duration overflows after 292 years.
-func microsCodec() keyCodec[time.Time] {
-	return keyCodec[time.Time]{
-		encode: func(v time.Time) any {
-			return (v.Unix()-postgresEpochUnix)*1_000_000 + int64(v.Nanosecond()/1_000)
-		},
-		decode: func(raw json.RawMessage) (time.Time, error) {
-			var micros int64
-			if err := json.Unmarshal(raw, &micros); err != nil {
-				return time.Time{}, err
-			}
-			seconds, remainder := micros/1_000_000, micros%1_000_000
-			if remainder < 0 {
-				seconds, remainder = seconds-1, remainder+1_000_000
-			}
-			decoded := time.Unix(postgresEpochUnix+seconds, remainder*1_000).UTC()
-			if decoded.Before(postgresMinTime) || decoded.After(postgresMaxTime) {
-				return time.Time{}, fmt.Errorf("timestamp outside the Postgres range")
-			}
-			return decoded, nil
-		},
-	}
-}
-
-func timeKey[T any](column jet.ColumnTimestampz, nullable bool, value func(T) *time.Time) Key[T] {
-	return newCodecKey(column, nullable, value, microsCodec(),
-		func(v time.Time) jet.Expression { return jet.TimestampzT(v) },
-		func(v time.Time) (jet.BoolExpression, jet.BoolExpression, jet.BoolExpression) {
-			return column.GT(jet.TimestampzT(v)), column.LT(jet.TimestampzT(v)), column.EQ(jet.TimestampzT(v))
-		})
-}
-
-// LocalTimeKey orders on a NOT NULL timestamp (without time zone) column.
+// LocalTimeKey is keyset.LocalTimeKey. Use db/keyset.
 func LocalTimeKey[T any](column jet.ColumnTimestamp, value func(T) time.Time) Key[T] {
-	return localTimeKey(column, false, ptrOf(value))
+	return keyset.LocalTimeKey(column, value)
 }
 
-// NullableLocalTimeKey orders on a nullable timestamp (without time zone) column.
+// NullableLocalTimeKey is keyset.NullableLocalTimeKey. Use db/keyset.
 func NullableLocalTimeKey[T any](column jet.ColumnTimestamp, value func(T) *time.Time) Key[T] {
-	return localTimeKey(column, true, value)
+	return keyset.NullableLocalTimeKey(column, value)
 }
 
-func localTimeKey[T any](column jet.ColumnTimestamp, nullable bool, value func(T) *time.Time) Key[T] {
-	// A timestamp has no zone; its wall clock is the value. Read the wall
-	// clock as if it were UTC, so the microseconds round trip cannot shift it.
-	micros := microsCodec()
-	codec := keyCodec[time.Time]{
-		encode: func(v time.Time) any {
-			return micros.encode(
-				time.Date(v.Year(), v.Month(), v.Day(), v.Hour(), v.Minute(), v.Second(), v.Nanosecond(), time.UTC),
-			)
-		},
-		decode: micros.decode,
-	}
-	return newCodecKey(column, nullable, value, codec,
-		func(v time.Time) jet.Expression { return jet.TimestampT(v) },
-		func(v time.Time) (jet.BoolExpression, jet.BoolExpression, jet.BoolExpression) {
-			return column.GT(jet.TimestampT(v)), column.LT(jet.TimestampT(v)), column.EQ(jet.TimestampT(v))
-		})
-}
-
-// IntKey orders on a NOT NULL integer column.
+// IntKey is keyset.IntKey. Use db/keyset.
 func IntKey[T any](column jet.ColumnInteger, value func(T) int64) Key[T] {
-	return intKey(column, false, ptrOf(value))
+	return keyset.IntKey(column, value)
 }
 
-// NullableIntKey orders on a nullable integer column.
+// NullableIntKey is keyset.NullableIntKey. Use db/keyset.
 func NullableIntKey[T any](column jet.ColumnInteger, value func(T) *int64) Key[T] {
-	return intKey(column, true, value)
+	return keyset.NullableIntKey(column, value)
 }
 
-func intKey[T any](column jet.ColumnInteger, nullable bool, value func(T) *int64) Key[T] {
-	// The literal is cast to bigint: a bare parameter would take the column's
-	// type, and a forged value past smallint or integer would fail to bind.
-	// Postgres compares integer widths across one btree family, so an index
-	// on the column still serves the comparison.
-	typed := func(v int64) jet.IntegerExpression { return jet.IntExp(jet.CAST(jet.Int(v)).AS_BIGINT()) }
-	return newKey(column, nullable, value,
-		func(v int64) jet.Expression { return typed(v) },
-		func(v int64) (jet.BoolExpression, jet.BoolExpression, jet.BoolExpression) {
-			return column.GT(typed(v)), column.LT(typed(v)), column.EQ(typed(v))
-		})
-}
-
-// FloatKey orders on a NOT NULL double precision column. It does not fit
-// numeric, where float64 rounding would repeat a row forever, nor real, which
-// takes RealKey. NaN and the infinities, which Postgres orders above every
-// number, round-trip exactly.
+// FloatKey is keyset.FloatKey. Use db/keyset.
 func FloatKey[T any](column jet.ColumnFloat, value func(T) float64) Key[T] {
-	return floatKey(column, false, ptrOf(value))
+	return keyset.FloatKey(column, value)
 }
 
-// NullableFloatKey orders on a nullable double precision column.
+// NullableFloatKey is keyset.NullableFloatKey. Use db/keyset.
 func NullableFloatKey[T any](column jet.ColumnFloat, value func(T) *float64) Key[T] {
-	return floatKey(column, true, value)
+	return keyset.NullableFloatKey(column, value)
 }
 
-// typedFloat casts the literal to double precision explicitly.
-func typedFloat(v float64) jet.FloatExpression {
-	return jet.FloatExp(jet.CAST(jet.Float(v)).AS_DOUBLE())
-}
-
-// RealKey orders on a NOT NULL real column. A real compared with a double
-// literal is promoted, and 0.1 stored as real is not 0.1 as double, so the
-// boundary row would match itself and repeat. The key compares as real, and
-// rejects a cursor value outside real's range before the cast could fail.
+// RealKey is keyset.RealKey. Use db/keyset.
 func RealKey[T any](column jet.ColumnFloat, value func(T) float32) Key[T] {
-	return realKey(column, false, func(row T) *float32 {
-		v := value(row)
-		return &v
-	})
+	return keyset.RealKey(column, value)
 }
 
-// NullableRealKey orders on a nullable real column.
+// NullableRealKey is keyset.NullableRealKey. Use db/keyset.
 func NullableRealKey[T any](column jet.ColumnFloat, value func(T) *float32) Key[T] {
-	return realKey(column, true, value)
+	return keyset.NullableRealKey(column, value)
 }
 
-func realKey[T any](column jet.ColumnFloat, nullable bool, value func(T) *float32) Key[T] {
-	double := floatCodec()
-	codec := keyCodec[float32]{
-		encode: func(v float32) any { return double.encode(float64(v)) },
-		decode: func(raw json.RawMessage) (float32, error) {
-			v, err := double.decode(raw)
-			if err != nil {
-				return 0, err
-			}
-			if !math.IsInf(v, 0) && !math.IsNaN(v) && math.Abs(v) > math.MaxFloat32 {
-				return 0, fmt.Errorf("outside the real range")
-			}
-			return float32(v), nil
-		},
-	}
-	typed := func(v float32) jet.FloatExpression {
-		return jet.FloatExp(jet.CAST(jet.Float(float64(v))).AS_REAL())
-	}
-	return newCodecKey(column, nullable, value, codec,
-		func(v float32) jet.Expression { return typed(v) },
-		func(v float32) (jet.BoolExpression, jet.BoolExpression, jet.BoolExpression) {
-			return column.GT(typed(v)), column.LT(typed(v)), column.EQ(typed(v))
-		})
-}
-
-// floatCodec writes NaN and the infinities as words, which JSON numbers
-// cannot express.
-func floatCodec() keyCodec[float64] {
-	return keyCodec[float64]{
-		encode: func(v float64) any {
-			switch {
-			case math.IsNaN(v):
-				return "NaN"
-			case math.IsInf(v, 1):
-				return "Infinity"
-			case math.IsInf(v, -1):
-				return "-Infinity"
-			default:
-				return v
-			}
-		},
-		decode: func(raw json.RawMessage) (float64, error) {
-			var text string
-			if json.Unmarshal(raw, &text) == nil {
-				switch text {
-				case "NaN":
-					return math.NaN(), nil
-				case "Infinity":
-					return math.Inf(1), nil
-				case "-Infinity":
-					return math.Inf(-1), nil
-				default:
-					return 0, fmt.Errorf("unknown float %q", text)
-				}
-			}
-			var v float64
-			err := json.Unmarshal(raw, &v)
-			return v, err
-		},
-	}
-}
-
-func floatKey[T any](column jet.ColumnFloat, nullable bool, value func(T) *float64) Key[T] {
-	codec := floatCodec()
-	return newCodecKey(column, nullable, value, codec,
-		func(v float64) jet.Expression { return typedFloat(v) },
-		func(v float64) (jet.BoolExpression, jet.BoolExpression, jet.BoolExpression) {
-			return column.GT(typedFloat(v)), column.LT(typedFloat(v)), column.EQ(typedFloat(v))
-		})
-}
-
-type orderedKey[T any] struct {
-	key       Key[T]
-	direction search.SortDirection
-}
-
-// Order is a total keyset ordering over rows of T: the requested sort columns
-// followed by a unique tiebreak column. Because the tiebreak is unique, every
-// row has exactly one position, so a cursor (the last row's values) splits the
-// result into the rows before it and the rows after it with no skips or
-// repeats, however rows are inserted or deleted between pages.
+// Keys builds the keyset ordering of a search, and drops each sort field
+// absent from columns. Use db/keyset: keyset.OrderOf refuses an unknown sort,
+// as StrictKeys does. Ordering by another column than the client asked
+// answers another question.
 //
-// Build one with Keys and hand it to PageBuilder.Keyset. A repository whose
-// query does not fit PageBuilder uses OrderBy, Seek and Trim directly.
-type Order[T any] struct {
-	keys      []orderedKey[T]
-	signature string
-}
-
-// Keys builds the keyset ordering for a search's sort fields.
-//
-// columns maps each sortable field to its key; fields absent from the map are
-// ignored, as with SortColumns. Searches use StrictKeys, which refuses them. The tiebreak keys must together be unique and
-// NOT NULL within the rows the search can return, normally the primary key.
-// A table with a composite key passes every column the search scope does not
-// already fix, for example the member id for a search scoped to one
-// organization, or both columns otherwise. The tiebreak sorts in the direction
-// of the last requested field (ascending when none), so a composite index on
-// (sort, id) serves the query in one direction scan. A column requested twice
-// keeps its first position, and a tiebreak column is not repeated when it was
-// requested.
+// Keys drops the unknown fields, then builds the order with keyset.OrderOf,
+// which documents the tiebreak and the directions.
 func Keys[S ~string, T any](sorts []search.Sort[S], columns map[S]Key[T], tiebreak Key[T], more ...Key[T]) Order[T] {
-	order := Order[T]{}
-	seen := map[string]bool{}
-	direction := search.SortAscending
+	known := make([]search.Sort[S], 0, len(sorts))
 	for _, sort := range sorts {
-		key, ok := columns[sort.Field]
-		if !ok {
-			continue
-		}
-		name := qualifiedName(key.column)
-		if seen[name] {
-			continue
-		}
-		seen[name] = true
-		direction = normalizeDirection(sort.Direction)
-		order.keys = append(order.keys, orderedKey[T]{key: key, direction: direction})
-	}
-	for _, key := range append([]Key[T]{tiebreak}, more...) {
-		name := qualifiedName(key.column)
-		if seen[name] {
-			continue
-		}
-		seen[name] = true
-		order.keys = append(order.keys, orderedKey[T]{key: key, direction: direction})
-	}
-	parts := make([]string, len(order.keys))
-	for i, k := range order.keys {
-		parts[i] = qualifiedName(k.key.column) + ":" + string(k.direction)
-		switch k.key.nulls {
-		case nullsFirst:
-			parts[i] += ":NULLS_FIRST"
-		case nullsLast:
-			parts[i] += ":NULLS_LAST"
+		if _, ok := columns[sort.Field]; ok {
+			known = append(known, sort)
 		}
 	}
-	order.signature = strings.Join(parts, ",")
+	order, err := keyset.OrderOf(toDBSorts(known), columns, tiebreak, more...)
+	if err != nil {
+		// keyset.OrderOf fails only on a sort absent from columns, and the
+		// loop above dropped each one.
+		panic("transactor: Keys: " + err.Error())
+	}
 	return order
 }
 
-// StrictKeys is Keys for searches: a requested sort field absent from columns
-// fails with search.ErrUnknownSort, naming it, instead of being dropped.
-// Ordering by a silently different column answers another question than the
-// client asked. A search resolves its documented default to a mapped field
-// before calling it.
+// StrictKeys is keyset.OrderOf for the sorts of pkg/search: a requested sort
+// field absent from columns is search.ErrUnknownSort, naming it.
 func StrictKeys[S ~string, T any](
 	sorts []search.Sort[S], columns map[S]Key[T], tiebreak Key[T], more ...Key[T],
 ) (Order[T], error) {
-	var unknown []string
-	for _, sort := range sorts {
-		if _, ok := columns[sort.Field]; !ok {
-			unknown = append(unknown, string(sort.Field))
-		}
-	}
-	if len(unknown) > 0 {
-		return Order[T]{}, fmt.Errorf("%w: %s", search.ErrUnknownSort, strings.Join(unknown, ", "))
-	}
-	return Keys(sorts, columns, tiebreak, more...), nil
-}
-
-func normalizeDirection(direction search.SortDirection) search.SortDirection {
-	if direction == search.SortDescending {
-		return search.SortDescending
-	}
-	return search.SortAscending
-}
-
-// qualifiedName identifies a column by the SQL that references it, so two
-// keys collide only when they are the same column. A column projected from a
-// subquery renders as "alias.table.column" and stays distinct from its base
-// table column.
-func qualifiedName(column jet.Column) string {
-	const marker = " IS NULL"
-	rendered := jet.SELECT(jet.Int(1)).WHERE(column.IS_NULL()).DebugSql()
-	if _, after, ok := strings.Cut(rendered, "WHERE "); ok {
-		rest := after
-		if before, _, ok := strings.Cut(rest, marker); ok {
-			return strings.ReplaceAll(strings.Trim(before, "()"), `"`, "")
-		}
-	}
-	if table := column.TableName(); table != "" {
-		return table + "." + column.Name()
-	}
-	return column.Name()
-}
-
-// Signature identifies the ordering, for example
-// "widgets.created_at:DESC,widgets.id:DESC". Cursors embed it.
-func (o Order[T]) Signature() string {
-	return o.signature
-}
-
-// OrderBy returns the ORDER BY clauses, tiebreak included. Postgres defaults
-// apply to NULLs: last when ascending, first when descending. Seek relies on
-// exactly that placement.
-func (o Order[T]) OrderBy() []jet.OrderByClause {
-	clauses := make([]jet.OrderByClause, len(o.keys))
-	for i, k := range o.keys {
-		clause := jetx.OrderBy(k.key.column, k.direction)
-		switch k.key.nulls {
-		case nullsFirst:
-			clause = clause.NULLS_FIRST()
-		case nullsLast:
-			clause = clause.NULLS_LAST()
-		}
-		clauses[i] = clause
-	}
-	return clauses
-}
-
-// Seek returns the predicate selecting the rows strictly after cursor in this
-// ordering, or nil for an empty cursor. A cursor issued for another ordering,
-// or one that does not decode, fails with search.ErrInvalidCursor.
-func (o Order[T]) Seek(cursor string) (jet.BoolExpression, error) {
-	if cursor == "" {
-		return nil, nil
-	}
-	decoded, err := search.DecodeCursor(cursor)
-	if err != nil {
-		return nil, err
-	}
-	if decoded.Order != o.signature {
-		return nil, fmt.Errorf("%w: issued for a different sort", search.ErrInvalidCursor)
-	}
-	if len(decoded.Values) != len(o.keys) {
-		return nil, fmt.Errorf("%w: wrong number of values", search.ErrInvalidCursor)
-	}
-	bounds := make([]keyBound, len(o.keys))
-	for i, k := range o.keys {
-		if bounds[i], err = k.key.bound(decoded.Values[i]); err != nil {
-			return nil, err
-		}
-	}
-	if row := o.rowSeek(bounds); row != nil {
-		return row, nil
-	}
-	return o.expandedSeek(bounds), nil
-}
-
-// rowSeek uses a row-value comparison, which Postgres can answer with one
-// range scan of a matching composite index. It only applies when every key is
-// NOT NULL and all keys share a direction; otherwise it returns nil.
-func (o Order[T]) rowSeek(bounds []keyBound) jet.BoolExpression {
-	direction := o.keys[0].direction
-	columns := make([]jet.Expression, len(o.keys))
-	literals := make([]jet.Expression, len(o.keys))
-	for i, k := range o.keys {
-		if k.key.nullable || k.direction != direction {
-			return nil
-		}
-		columns[i] = k.key.column
-		literals[i] = bounds[i].literal
-	}
-	if direction == search.SortDescending {
-		return jet.ROW(columns...).LT(jet.ROW(literals...))
-	}
-	return jet.ROW(columns...).GT(jet.ROW(literals...))
-}
-
-// expandedSeek spells the comparison out key by key:
-//
-//	(k1 after v1) OR (k1 = v1 AND k2 after v2) OR ... (... AND id after vid)
-//
-// "after" follows the ORDER BY placement of NULLs: where they sort last
-// (ascending by default, or NullsLast), every non-null value has NULLs after
-// it and only NULLs follow a NULL; where they sort first (descending by
-// default, or NullsFirst), a NULL is followed by every non-null value.
-func (o Order[T]) expandedSeek(bounds []keyBound) jet.BoolExpression {
-	var disjuncts []jet.BoolExpression
-	var prefix []jet.BoolExpression
-	for i, k := range o.keys {
-		if after := afterBound(k, bounds[i]); after != nil {
-			disjuncts = append(
-				disjuncts,
-				jetx.CombineFilters(append(append([]jet.BoolExpression{}, prefix...), after)...),
-			)
-		}
-		prefix = append(prefix, bounds[i].eq)
-	}
-	if len(disjuncts) == 0 {
-		// Only reachable when every value is a trailing ascending NULL, which a
-		// unique NOT NULL tiebreak rules out; select nothing rather than all.
-		return jet.Bool(false)
-	}
-	return jetx.CombineFiltersWithOr(disjuncts...)
-}
-
-func afterBound[T any](k orderedKey[T], bound keyBound) jet.BoolExpression {
-	column := k.key.column
-	nullsAfter := k.key.nullsAfter(k.direction)
-	if bound.isNull {
-		if nullsAfter {
-			// Only NULLs follow a NULL; the later keys order them.
-			return nil
-		}
-		return column.IS_NOT_NULL()
-	}
-	after := bound.gt
-	if k.direction == search.SortDescending {
-		after = bound.lt
-	}
-	if k.key.nullable && nullsAfter {
-		return after.OR(column.IS_NULL())
-	}
-	return after
-}
-
-// Cursor encodes the position of row, the last row of a page.
-func (o Order[T]) Cursor(row T) (string, error) {
-	values := make([]any, len(o.keys))
-	for i, k := range o.keys {
-		values[i] = k.key.value(row)
-	}
-	return search.EncodeCursor(o.signature, values)
-}
-
-// Trim cuts rows fetched with LIMIT limit+1 down to one page. When the extra
-// row is present it returns the cursor of the page's last row; otherwise the
-// page is the end and the cursor is empty.
-func (o Order[T]) Trim(rows []T, limit int) ([]T, string, error) {
-	if limit <= 0 || len(rows) <= limit {
-		return rows, "", nil
-	}
-	page := rows[:limit]
-	next, err := o.Cursor(page[limit-1])
-	if err != nil {
-		return nil, "", err
-	}
-	return page, next, nil
+	return keyset.OrderOf(toDBSorts(sorts), columns, tiebreak, more...)
 }

@@ -1,0 +1,518 @@
+{
+  "E:ASC/empty": {
+    "signature": "golden.e:ASC,golden.id:ASC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLmU6QVNDLGdvbGRlbi5pZDpBU0MiLCJrIjpbInBlbmRpbmciLCJ3XzIiXX0",
+    "order_by": "\nSELECT 1\nORDER BY golden.e ASC, golden.id ASC;\n",
+    "seek": "\nSELECT 1\nWHERE ROW(golden.e, golden.id) \u003e ROW('pending'::text::golden_status, 'w_2'::text);\n"
+  },
+  "E:ASC/full": {
+    "signature": "golden.e:ASC,golden.id:ASC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLmU6QVNDLGdvbGRlbi5pZDpBU0MiLCJrIjpbImFjdGl2ZSIsIndfMSJdfQ",
+    "order_by": "\nSELECT 1\nORDER BY golden.e ASC, golden.id ASC;\n",
+    "seek": "\nSELECT 1\nWHERE ROW(golden.e, golden.id) \u003e ROW('active'::text::golden_status, 'w_1'::text);\n"
+  },
+  "E:DESC/empty": {
+    "signature": "golden.e:DESC,golden.id:DESC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLmU6REVTQyxnb2xkZW4uaWQ6REVTQyIsImsiOlsicGVuZGluZyIsIndfMiJdfQ",
+    "order_by": "\nSELECT 1\nORDER BY golden.e DESC, golden.id DESC;\n",
+    "seek": "\nSELECT 1\nWHERE ROW(golden.e, golden.id) \u003c ROW('pending'::text::golden_status, 'w_2'::text);\n"
+  },
+  "E:DESC/full": {
+    "signature": "golden.e:DESC,golden.id:DESC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLmU6REVTQyxnb2xkZW4uaWQ6REVTQyIsImsiOlsiYWN0aXZlIiwid18xIl19",
+    "order_by": "\nSELECT 1\nORDER BY golden.e DESC, golden.id DESC;\n",
+    "seek": "\nSELECT 1\nWHERE ROW(golden.e, golden.id) \u003c ROW('active'::text::golden_status, 'w_1'::text);\n"
+  },
+  "EP:ASC/empty": {
+    "signature": "golden.e:ASC,golden.id:ASC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLmU6QVNDLGdvbGRlbi5pZDpBU0MiLCJrIjpbbnVsbCwid18yIl19",
+    "order_by": "\nSELECT 1\nORDER BY golden.e ASC, golden.id ASC;\n",
+    "seek": "\nSELECT 1\nWHERE (golden.e IS NULL) AND (golden.id \u003e 'w_2'::text);\n"
+  },
+  "EP:ASC/full": {
+    "signature": "golden.e:ASC,golden.id:ASC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLmU6QVNDLGdvbGRlbi5pZDpBU0MiLCJrIjpbImFyY2hpdmVkIiwid18xIl19",
+    "order_by": "\nSELECT 1\nORDER BY golden.e ASC, golden.id ASC;\n",
+    "seek": "\nSELECT 1\nWHERE ((golden.e \u003e 'archived'::text::golden_status) OR (golden.e IS NULL)) OR ((golden.e = 'archived'::text::golden_status) AND (golden.id \u003e 'w_1'::text));\n"
+  },
+  "EP:DESC/empty": {
+    "signature": "golden.e:DESC,golden.id:DESC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLmU6REVTQyxnb2xkZW4uaWQ6REVTQyIsImsiOltudWxsLCJ3XzIiXX0",
+    "order_by": "\nSELECT 1\nORDER BY golden.e DESC, golden.id DESC;\n",
+    "seek": "\nSELECT 1\nWHERE (golden.e IS NOT NULL) OR ((golden.e IS NULL) AND (golden.id \u003c 'w_2'::text));\n"
+  },
+  "EP:DESC/full": {
+    "signature": "golden.e:DESC,golden.id:DESC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLmU6REVTQyxnb2xkZW4uaWQ6REVTQyIsImsiOlsiYXJjaGl2ZWQiLCJ3XzEiXX0",
+    "order_by": "\nSELECT 1\nORDER BY golden.e DESC, golden.id DESC;\n",
+    "seek": "\nSELECT 1\nWHERE (golden.e \u003c 'archived'::text::golden_status) OR ((golden.e = 'archived'::text::golden_status) AND (golden.id \u003c 'w_1'::text));\n"
+  },
+  "F:ASC/empty": {
+    "signature": "golden.f:ASC,golden.id:ASC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLmY6QVNDLGdvbGRlbi5pZDpBU0MiLCJrIjpbIk5hTiIsIndfMiJdfQ",
+    "order_by": "\nSELECT 1\nORDER BY golden.f ASC, golden.id ASC;\n",
+    "seek": "\nSELECT 1\nWHERE ROW(golden.f, golden.id) \u003e ROW(NaN::double precision, 'w_2'::text);\n"
+  },
+  "F:ASC/full": {
+    "signature": "golden.f:ASC,golden.id:ASC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLmY6QVNDLGdvbGRlbi5pZDpBU0MiLCJrIjpbMi4yNSwid18xIl19",
+    "order_by": "\nSELECT 1\nORDER BY golden.f ASC, golden.id ASC;\n",
+    "seek": "\nSELECT 1\nWHERE ROW(golden.f, golden.id) \u003e ROW(2.25::double precision, 'w_1'::text);\n"
+  },
+  "F:DESC/empty": {
+    "signature": "golden.f:DESC,golden.id:DESC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLmY6REVTQyxnb2xkZW4uaWQ6REVTQyIsImsiOlsiTmFOIiwid18yIl19",
+    "order_by": "\nSELECT 1\nORDER BY golden.f DESC, golden.id DESC;\n",
+    "seek": "\nSELECT 1\nWHERE ROW(golden.f, golden.id) \u003c ROW(NaN::double precision, 'w_2'::text);\n"
+  },
+  "F:DESC/full": {
+    "signature": "golden.f:DESC,golden.id:DESC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLmY6REVTQyxnb2xkZW4uaWQ6REVTQyIsImsiOlsyLjI1LCJ3XzEiXX0",
+    "order_by": "\nSELECT 1\nORDER BY golden.f DESC, golden.id DESC;\n",
+    "seek": "\nSELECT 1\nWHERE ROW(golden.f, golden.id) \u003c ROW(2.25::double precision, 'w_1'::text);\n"
+  },
+  "FP:ASC/empty": {
+    "signature": "golden.f:ASC,golden.id:ASC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLmY6QVNDLGdvbGRlbi5pZDpBU0MiLCJrIjpbbnVsbCwid18yIl19",
+    "order_by": "\nSELECT 1\nORDER BY golden.f ASC, golden.id ASC;\n",
+    "seek": "\nSELECT 1\nWHERE (golden.f IS NULL) AND (golden.id \u003e 'w_2'::text);\n"
+  },
+  "FP:ASC/full": {
+    "signature": "golden.f:ASC,golden.id:ASC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLmY6QVNDLGdvbGRlbi5pZDpBU0MiLCJrIjpbIi1JbmZpbml0eSIsIndfMSJdfQ",
+    "order_by": "\nSELECT 1\nORDER BY golden.f ASC, golden.id ASC;\n",
+    "seek": "\nSELECT 1\nWHERE ((golden.f \u003e -Inf::double precision) OR (golden.f IS NULL)) OR ((golden.f = -Inf::double precision) AND (golden.id \u003e 'w_1'::text));\n"
+  },
+  "FP:DESC/empty": {
+    "signature": "golden.f:DESC,golden.id:DESC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLmY6REVTQyxnb2xkZW4uaWQ6REVTQyIsImsiOltudWxsLCJ3XzIiXX0",
+    "order_by": "\nSELECT 1\nORDER BY golden.f DESC, golden.id DESC;\n",
+    "seek": "\nSELECT 1\nWHERE (golden.f IS NOT NULL) OR ((golden.f IS NULL) AND (golden.id \u003c 'w_2'::text));\n"
+  },
+  "FP:DESC/full": {
+    "signature": "golden.f:DESC,golden.id:DESC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLmY6REVTQyxnb2xkZW4uaWQ6REVTQyIsImsiOlsiLUluZmluaXR5Iiwid18xIl19",
+    "order_by": "\nSELECT 1\nORDER BY golden.f DESC, golden.id DESC;\n",
+    "seek": "\nSELECT 1\nWHERE (golden.f \u003c -Inf::double precision) OR ((golden.f = -Inf::double precision) AND (golden.id \u003c 'w_1'::text));\n"
+  },
+  "I:ASC/empty": {
+    "signature": "golden.i:ASC,golden.id:ASC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLmk6QVNDLGdvbGRlbi5pZDpBU0MiLCJrIjpbMCwid18yIl19",
+    "order_by": "\nSELECT 1\nORDER BY golden.i ASC, golden.id ASC;\n",
+    "seek": "\nSELECT 1\nWHERE ROW(golden.i, golden.id) \u003e ROW(0::bigint, 'w_2'::text);\n"
+  },
+  "I:ASC/full": {
+    "signature": "golden.i:ASC,golden.id:ASC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLmk6QVNDLGdvbGRlbi5pZDpBU0MiLCJrIjpbLTQyLCJ3XzEiXX0",
+    "order_by": "\nSELECT 1\nORDER BY golden.i ASC, golden.id ASC;\n",
+    "seek": "\nSELECT 1\nWHERE ROW(golden.i, golden.id) \u003e ROW(-42::bigint, 'w_1'::text);\n"
+  },
+  "I:DESC/empty": {
+    "signature": "golden.i:DESC,golden.id:DESC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLmk6REVTQyxnb2xkZW4uaWQ6REVTQyIsImsiOlswLCJ3XzIiXX0",
+    "order_by": "\nSELECT 1\nORDER BY golden.i DESC, golden.id DESC;\n",
+    "seek": "\nSELECT 1\nWHERE ROW(golden.i, golden.id) \u003c ROW(0::bigint, 'w_2'::text);\n"
+  },
+  "I:DESC/full": {
+    "signature": "golden.i:DESC,golden.id:DESC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLmk6REVTQyxnb2xkZW4uaWQ6REVTQyIsImsiOlstNDIsIndfMSJdfQ",
+    "order_by": "\nSELECT 1\nORDER BY golden.i DESC, golden.id DESC;\n",
+    "seek": "\nSELECT 1\nWHERE ROW(golden.i, golden.id) \u003c ROW(-42::bigint, 'w_1'::text);\n"
+  },
+  "IP:ASC/empty": {
+    "signature": "golden.ip:ASC,golden.id:ASC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLmlwOkFTQyxnb2xkZW4uaWQ6QVNDIiwiayI6WyI6OjEiLCJ3XzIiXX0",
+    "order_by": "\nSELECT 1\nORDER BY golden.ip ASC, golden.id ASC;\n",
+    "seek": "\nSELECT 1\nWHERE ROW(golden.ip, golden.id) \u003e ROW('::1'::text::inet, 'w_2'::text);\n"
+  },
+  "IP:ASC/full": {
+    "signature": "golden.ip:ASC,golden.id:ASC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLmlwOkFTQyxnb2xkZW4uaWQ6QVNDIiwiayI6WyIxMC4wLjAuMiIsIndfMSJdfQ",
+    "order_by": "\nSELECT 1\nORDER BY golden.ip ASC, golden.id ASC;\n",
+    "seek": "\nSELECT 1\nWHERE ROW(golden.ip, golden.id) \u003e ROW('10.0.0.2'::text::inet, 'w_1'::text);\n"
+  },
+  "IP:DESC/empty": {
+    "signature": "golden.ip:DESC,golden.id:DESC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLmlwOkRFU0MsZ29sZGVuLmlkOkRFU0MiLCJrIjpbIjo6MSIsIndfMiJdfQ",
+    "order_by": "\nSELECT 1\nORDER BY golden.ip DESC, golden.id DESC;\n",
+    "seek": "\nSELECT 1\nWHERE ROW(golden.ip, golden.id) \u003c ROW('::1'::text::inet, 'w_2'::text);\n"
+  },
+  "IP:DESC/full": {
+    "signature": "golden.ip:DESC,golden.id:DESC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLmlwOkRFU0MsZ29sZGVuLmlkOkRFU0MiLCJrIjpbIjEwLjAuMC4yIiwid18xIl19",
+    "order_by": "\nSELECT 1\nORDER BY golden.ip DESC, golden.id DESC;\n",
+    "seek": "\nSELECT 1\nWHERE ROW(golden.ip, golden.id) \u003c ROW('10.0.0.2'::text::inet, 'w_1'::text);\n"
+  },
+  "IPP:ASC/empty": {
+    "signature": "golden.ip:ASC,golden.id:ASC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLmlwOkFTQyxnb2xkZW4uaWQ6QVNDIiwiayI6W251bGwsIndfMiJdfQ",
+    "order_by": "\nSELECT 1\nORDER BY golden.ip ASC, golden.id ASC;\n",
+    "seek": "\nSELECT 1\nWHERE (golden.ip IS NULL) AND (golden.id \u003e 'w_2'::text);\n"
+  },
+  "IPP:ASC/full": {
+    "signature": "golden.ip:ASC,golden.id:ASC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLmlwOkFTQyxnb2xkZW4uaWQ6QVNDIiwiayI6WyIyMDAxOmRiODo6LzMyIiwid18xIl19",
+    "order_by": "\nSELECT 1\nORDER BY golden.ip ASC, golden.id ASC;\n",
+    "seek": "\nSELECT 1\nWHERE ((golden.ip \u003e '2001:db8::/32'::text::inet) OR (golden.ip IS NULL)) OR ((golden.ip = '2001:db8::/32'::text::inet) AND (golden.id \u003e 'w_1'::text));\n"
+  },
+  "IPP:DESC/empty": {
+    "signature": "golden.ip:DESC,golden.id:DESC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLmlwOkRFU0MsZ29sZGVuLmlkOkRFU0MiLCJrIjpbbnVsbCwid18yIl19",
+    "order_by": "\nSELECT 1\nORDER BY golden.ip DESC, golden.id DESC;\n",
+    "seek": "\nSELECT 1\nWHERE (golden.ip IS NOT NULL) OR ((golden.ip IS NULL) AND (golden.id \u003c 'w_2'::text));\n"
+  },
+  "IPP:DESC/full": {
+    "signature": "golden.ip:DESC,golden.id:DESC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLmlwOkRFU0MsZ29sZGVuLmlkOkRFU0MiLCJrIjpbIjIwMDE6ZGI4OjovMzIiLCJ3XzEiXX0",
+    "order_by": "\nSELECT 1\nORDER BY golden.ip DESC, golden.id DESC;\n",
+    "seek": "\nSELECT 1\nWHERE (golden.ip \u003c '2001:db8::/32'::text::inet) OR ((golden.ip = '2001:db8::/32'::text::inet) AND (golden.id \u003c 'w_1'::text));\n"
+  },
+  "IPtr:ASC/empty": {
+    "signature": "golden.i:ASC,golden.id:ASC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLmk6QVNDLGdvbGRlbi5pZDpBU0MiLCJrIjpbbnVsbCwid18yIl19",
+    "order_by": "\nSELECT 1\nORDER BY golden.i ASC, golden.id ASC;\n",
+    "seek": "\nSELECT 1\nWHERE (golden.i IS NULL) AND (golden.id \u003e 'w_2'::text);\n"
+  },
+  "IPtr:ASC/full": {
+    "signature": "golden.i:ASC,golden.id:ASC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLmk6QVNDLGdvbGRlbi5pZDpBU0MiLCJrIjpbMTA5OTUxMTYyNzc3Niwid18xIl19",
+    "order_by": "\nSELECT 1\nORDER BY golden.i ASC, golden.id ASC;\n",
+    "seek": "\nSELECT 1\nWHERE ((golden.i \u003e 1099511627776::bigint) OR (golden.i IS NULL)) OR ((golden.i = 1099511627776::bigint) AND (golden.id \u003e 'w_1'::text));\n"
+  },
+  "IPtr:DESC/empty": {
+    "signature": "golden.i:DESC,golden.id:DESC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLmk6REVTQyxnb2xkZW4uaWQ6REVTQyIsImsiOltudWxsLCJ3XzIiXX0",
+    "order_by": "\nSELECT 1\nORDER BY golden.i DESC, golden.id DESC;\n",
+    "seek": "\nSELECT 1\nWHERE (golden.i IS NOT NULL) OR ((golden.i IS NULL) AND (golden.id \u003c 'w_2'::text));\n"
+  },
+  "IPtr:DESC/full": {
+    "signature": "golden.i:DESC,golden.id:DESC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLmk6REVTQyxnb2xkZW4uaWQ6REVTQyIsImsiOlsxMDk5NTExNjI3Nzc2LCJ3XzEiXX0",
+    "order_by": "\nSELECT 1\nORDER BY golden.i DESC, golden.id DESC;\n",
+    "seek": "\nSELECT 1\nWHERE (golden.i \u003c 1099511627776::bigint) OR ((golden.i = 1099511627776::bigint) AND (golden.id \u003c 'w_1'::text));\n"
+  },
+  "LT:ASC/empty": {
+    "signature": "golden.lt:ASC,golden.id:ASC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLmx0OkFTQyxnb2xkZW4uaWQ6QVNDIiwiayI6Wy05NDY2ODQ4MDAwMDAwMDAsIndfMiJdfQ",
+    "order_by": "\nSELECT 1\nORDER BY golden.lt ASC, golden.id ASC;\n",
+    "seek": "\nSELECT 1\nWHERE ROW(golden.lt, golden.id) \u003e ROW('1970-01-01 00:00:00Z'::timestamp without time zone, 'w_2'::text);\n"
+  },
+  "LT:ASC/full": {
+    "signature": "golden.lt:ASC,golden.id:ASC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLmx0OkFTQyxnb2xkZW4uaWQ6QVNDIiwiayI6WzgyNTkxNTk2NzEyMzQ1Niwid18xIl19",
+    "order_by": "\nSELECT 1\nORDER BY golden.lt ASC, golden.id ASC;\n",
+    "seek": "\nSELECT 1\nWHERE ROW(golden.lt, golden.id) \u003e ROW('2026-03-04 05:06:07.123456Z'::timestamp without time zone, 'w_1'::text);\n"
+  },
+  "LT:DESC/empty": {
+    "signature": "golden.lt:DESC,golden.id:DESC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLmx0OkRFU0MsZ29sZGVuLmlkOkRFU0MiLCJrIjpbLTk0NjY4NDgwMDAwMDAwMCwid18yIl19",
+    "order_by": "\nSELECT 1\nORDER BY golden.lt DESC, golden.id DESC;\n",
+    "seek": "\nSELECT 1\nWHERE ROW(golden.lt, golden.id) \u003c ROW('1970-01-01 00:00:00Z'::timestamp without time zone, 'w_2'::text);\n"
+  },
+  "LT:DESC/full": {
+    "signature": "golden.lt:DESC,golden.id:DESC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLmx0OkRFU0MsZ29sZGVuLmlkOkRFU0MiLCJrIjpbODI1OTE1OTY3MTIzNDU2LCJ3XzEiXX0",
+    "order_by": "\nSELECT 1\nORDER BY golden.lt DESC, golden.id DESC;\n",
+    "seek": "\nSELECT 1\nWHERE ROW(golden.lt, golden.id) \u003c ROW('2026-03-04 05:06:07.123456Z'::timestamp without time zone, 'w_1'::text);\n"
+  },
+  "LTP:ASC/empty": {
+    "signature": "golden.lt:ASC,golden.id:ASC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLmx0OkFTQyxnb2xkZW4uaWQ6QVNDIiwiayI6W251bGwsIndfMiJdfQ",
+    "order_by": "\nSELECT 1\nORDER BY golden.lt ASC, golden.id ASC;\n",
+    "seek": "\nSELECT 1\nWHERE (golden.lt IS NULL) AND (golden.id \u003e 'w_2'::text);\n"
+  },
+  "LTP:ASC/full": {
+    "signature": "golden.lt:ASC,golden.id:ASC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLmx0OkFTQyxnb2xkZW4uaWQ6QVNDIiwiayI6WzMxNTU2OTUyMDAwMDAwMDAwMSwid18xIl19",
+    "order_by": "\nSELECT 1\nORDER BY golden.lt ASC, golden.id ASC;\n",
+    "seek": "\nSELECT 1\nWHERE ((golden.lt \u003e '12000-01-01 00:00:00.000001Z'::timestamp without time zone) OR (golden.lt IS NULL)) OR ((golden.lt = '12000-01-01 00:00:00.000001Z'::timestamp without time zone) AND (golden.id \u003e 'w_1'::text));\n"
+  },
+  "LTP:DESC/empty": {
+    "signature": "golden.lt:DESC,golden.id:DESC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLmx0OkRFU0MsZ29sZGVuLmlkOkRFU0MiLCJrIjpbbnVsbCwid18yIl19",
+    "order_by": "\nSELECT 1\nORDER BY golden.lt DESC, golden.id DESC;\n",
+    "seek": "\nSELECT 1\nWHERE (golden.lt IS NOT NULL) OR ((golden.lt IS NULL) AND (golden.id \u003c 'w_2'::text));\n"
+  },
+  "LTP:DESC/full": {
+    "signature": "golden.lt:DESC,golden.id:DESC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLmx0OkRFU0MsZ29sZGVuLmlkOkRFU0MiLCJrIjpbMzE1NTY5NTIwMDAwMDAwMDAxLCJ3XzEiXX0",
+    "order_by": "\nSELECT 1\nORDER BY golden.lt DESC, golden.id DESC;\n",
+    "seek": "\nSELECT 1\nWHERE (golden.lt \u003c '12000-01-01 00:00:00.000001Z'::timestamp without time zone) OR ((golden.lt = '12000-01-01 00:00:00.000001Z'::timestamp without time zone) AND (golden.id \u003c 'w_1'::text));\n"
+  },
+  "R:ASC/empty": {
+    "signature": "golden.r:ASC,golden.id:ASC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLnI6QVNDLGdvbGRlbi5pZDpBU0MiLCJrIjpbIkluZmluaXR5Iiwid18yIl19",
+    "order_by": "\nSELECT 1\nORDER BY golden.r ASC, golden.id ASC;\n",
+    "seek": "\nSELECT 1\nWHERE ROW(golden.r, golden.id) \u003e ROW(+Inf::real, 'w_2'::text);\n"
+  },
+  "R:ASC/full": {
+    "signature": "golden.r:ASC,golden.id:ASC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLnI6QVNDLGdvbGRlbi5pZDpBU0MiLCJrIjpbMC4xMDAwMDAwMDE0OTAxMTYxMiwid18xIl19",
+    "order_by": "\nSELECT 1\nORDER BY golden.r ASC, golden.id ASC;\n",
+    "seek": "\nSELECT 1\nWHERE ROW(golden.r, golden.id) \u003e ROW(0.10000000149011612::real, 'w_1'::text);\n"
+  },
+  "R:DESC/empty": {
+    "signature": "golden.r:DESC,golden.id:DESC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLnI6REVTQyxnb2xkZW4uaWQ6REVTQyIsImsiOlsiSW5maW5pdHkiLCJ3XzIiXX0",
+    "order_by": "\nSELECT 1\nORDER BY golden.r DESC, golden.id DESC;\n",
+    "seek": "\nSELECT 1\nWHERE ROW(golden.r, golden.id) \u003c ROW(+Inf::real, 'w_2'::text);\n"
+  },
+  "R:DESC/full": {
+    "signature": "golden.r:DESC,golden.id:DESC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLnI6REVTQyxnb2xkZW4uaWQ6REVTQyIsImsiOlswLjEwMDAwMDAwMTQ5MDExNjEyLCJ3XzEiXX0",
+    "order_by": "\nSELECT 1\nORDER BY golden.r DESC, golden.id DESC;\n",
+    "seek": "\nSELECT 1\nWHERE ROW(golden.r, golden.id) \u003c ROW(0.10000000149011612::real, 'w_1'::text);\n"
+  },
+  "RP:ASC/empty": {
+    "signature": "golden.r:ASC,golden.id:ASC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLnI6QVNDLGdvbGRlbi5pZDpBU0MiLCJrIjpbbnVsbCwid18yIl19",
+    "order_by": "\nSELECT 1\nORDER BY golden.r ASC, golden.id ASC;\n",
+    "seek": "\nSELECT 1\nWHERE (golden.r IS NULL) AND (golden.id \u003e 'w_2'::text);\n"
+  },
+  "RP:ASC/full": {
+    "signature": "golden.r:ASC,golden.id:ASC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLnI6QVNDLGdvbGRlbi5pZDpBU0MiLCJrIjpbLTMuNSwid18xIl19",
+    "order_by": "\nSELECT 1\nORDER BY golden.r ASC, golden.id ASC;\n",
+    "seek": "\nSELECT 1\nWHERE ((golden.r \u003e -3.5::real) OR (golden.r IS NULL)) OR ((golden.r = -3.5::real) AND (golden.id \u003e 'w_1'::text));\n"
+  },
+  "RP:DESC/empty": {
+    "signature": "golden.r:DESC,golden.id:DESC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLnI6REVTQyxnb2xkZW4uaWQ6REVTQyIsImsiOltudWxsLCJ3XzIiXX0",
+    "order_by": "\nSELECT 1\nORDER BY golden.r DESC, golden.id DESC;\n",
+    "seek": "\nSELECT 1\nWHERE (golden.r IS NOT NULL) OR ((golden.r IS NULL) AND (golden.id \u003c 'w_2'::text));\n"
+  },
+  "RP:DESC/full": {
+    "signature": "golden.r:DESC,golden.id:DESC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLnI6REVTQyxnb2xkZW4uaWQ6REVTQyIsImsiOlstMy41LCJ3XzEiXX0",
+    "order_by": "\nSELECT 1\nORDER BY golden.r DESC, golden.id DESC;\n",
+    "seek": "\nSELECT 1\nWHERE (golden.r \u003c -3.5::real) OR ((golden.r = -3.5::real) AND (golden.id \u003c 'w_1'::text));\n"
+  },
+  "S:ASC/empty": {
+    "signature": "golden.s:ASC,golden.id:ASC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLnM6QVNDLGdvbGRlbi5pZDpBU0MiLCJrIjpbIiIsIndfMiJdfQ",
+    "order_by": "\nSELECT 1\nORDER BY golden.s ASC, golden.id ASC;\n",
+    "seek": "\nSELECT 1\nWHERE ROW(golden.s, golden.id) \u003e ROW(''::text, 'w_2'::text);\n"
+  },
+  "S:ASC/full": {
+    "signature": "golden.s:ASC,golden.id:ASC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLnM6QVNDLGdvbGRlbi5pZDpBU0MiLCJrIjpbImFwcGxlIMOpIiwid18xIl19",
+    "order_by": "\nSELECT 1\nORDER BY golden.s ASC, golden.id ASC;\n",
+    "seek": "\nSELECT 1\nWHERE ROW(golden.s, golden.id) \u003e ROW('apple é'::text, 'w_1'::text);\n"
+  },
+  "S:DESC/empty": {
+    "signature": "golden.s:DESC,golden.id:DESC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLnM6REVTQyxnb2xkZW4uaWQ6REVTQyIsImsiOlsiIiwid18yIl19",
+    "order_by": "\nSELECT 1\nORDER BY golden.s DESC, golden.id DESC;\n",
+    "seek": "\nSELECT 1\nWHERE ROW(golden.s, golden.id) \u003c ROW(''::text, 'w_2'::text);\n"
+  },
+  "S:DESC/full": {
+    "signature": "golden.s:DESC,golden.id:DESC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLnM6REVTQyxnb2xkZW4uaWQ6REVTQyIsImsiOlsiYXBwbGUgw6kiLCJ3XzEiXX0",
+    "order_by": "\nSELECT 1\nORDER BY golden.s DESC, golden.id DESC;\n",
+    "seek": "\nSELECT 1\nWHERE ROW(golden.s, golden.id) \u003c ROW('apple é'::text, 'w_1'::text);\n"
+  },
+  "SP:ASC/empty": {
+    "signature": "golden.s:ASC,golden.id:ASC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLnM6QVNDLGdvbGRlbi5pZDpBU0MiLCJrIjpbbnVsbCwid18yIl19",
+    "order_by": "\nSELECT 1\nORDER BY golden.s ASC, golden.id ASC;\n",
+    "seek": "\nSELECT 1\nWHERE (golden.s IS NULL) AND (golden.id \u003e 'w_2'::text);\n"
+  },
+  "SP:ASC/full": {
+    "signature": "golden.s:ASC,golden.id:ASC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLnM6QVNDLGdvbGRlbi5pZDpBU0MiLCJrIjpbIkJhbmFuYSIsIndfMSJdfQ",
+    "order_by": "\nSELECT 1\nORDER BY golden.s ASC, golden.id ASC;\n",
+    "seek": "\nSELECT 1\nWHERE ((golden.s \u003e 'Banana'::text) OR (golden.s IS NULL)) OR ((golden.s = 'Banana'::text) AND (golden.id \u003e 'w_1'::text));\n"
+  },
+  "SP:DESC/empty": {
+    "signature": "golden.s:DESC,golden.id:DESC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLnM6REVTQyxnb2xkZW4uaWQ6REVTQyIsImsiOltudWxsLCJ3XzIiXX0",
+    "order_by": "\nSELECT 1\nORDER BY golden.s DESC, golden.id DESC;\n",
+    "seek": "\nSELECT 1\nWHERE (golden.s IS NOT NULL) OR ((golden.s IS NULL) AND (golden.id \u003c 'w_2'::text));\n"
+  },
+  "SP:DESC/full": {
+    "signature": "golden.s:DESC,golden.id:DESC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLnM6REVTQyxnb2xkZW4uaWQ6REVTQyIsImsiOlsiQmFuYW5hIiwid18xIl19",
+    "order_by": "\nSELECT 1\nORDER BY golden.s DESC, golden.id DESC;\n",
+    "seek": "\nSELECT 1\nWHERE (golden.s \u003c 'Banana'::text) OR ((golden.s = 'Banana'::text) AND (golden.id \u003c 'w_1'::text));\n"
+  },
+  "SPNF:ASC/empty": {
+    "signature": "golden.s:ASC:NULLS_FIRST,golden.id:ASC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLnM6QVNDOk5VTExTX0ZJUlNULGdvbGRlbi5pZDpBU0MiLCJrIjpbbnVsbCwid18yIl19",
+    "order_by": "\nSELECT 1\nORDER BY golden.s ASC NULLS FIRST, golden.id ASC;\n",
+    "seek": "\nSELECT 1\nWHERE (golden.s IS NOT NULL) OR ((golden.s IS NULL) AND (golden.id \u003e 'w_2'::text));\n"
+  },
+  "SPNF:ASC/full": {
+    "signature": "golden.s:ASC:NULLS_FIRST,golden.id:ASC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLnM6QVNDOk5VTExTX0ZJUlNULGdvbGRlbi5pZDpBU0MiLCJrIjpbIkJhbmFuYSIsIndfMSJdfQ",
+    "order_by": "\nSELECT 1\nORDER BY golden.s ASC NULLS FIRST, golden.id ASC;\n",
+    "seek": "\nSELECT 1\nWHERE (golden.s \u003e 'Banana'::text) OR ((golden.s = 'Banana'::text) AND (golden.id \u003e 'w_1'::text));\n"
+  },
+  "SPNF:DESC/empty": {
+    "signature": "golden.s:DESC:NULLS_FIRST,golden.id:DESC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLnM6REVTQzpOVUxMU19GSVJTVCxnb2xkZW4uaWQ6REVTQyIsImsiOltudWxsLCJ3XzIiXX0",
+    "order_by": "\nSELECT 1\nORDER BY golden.s DESC NULLS FIRST, golden.id DESC;\n",
+    "seek": "\nSELECT 1\nWHERE (golden.s IS NOT NULL) OR ((golden.s IS NULL) AND (golden.id \u003c 'w_2'::text));\n"
+  },
+  "SPNF:DESC/full": {
+    "signature": "golden.s:DESC:NULLS_FIRST,golden.id:DESC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLnM6REVTQzpOVUxMU19GSVJTVCxnb2xkZW4uaWQ6REVTQyIsImsiOlsiQmFuYW5hIiwid18xIl19",
+    "order_by": "\nSELECT 1\nORDER BY golden.s DESC NULLS FIRST, golden.id DESC;\n",
+    "seek": "\nSELECT 1\nWHERE (golden.s \u003c 'Banana'::text) OR ((golden.s = 'Banana'::text) AND (golden.id \u003c 'w_1'::text));\n"
+  },
+  "SPNL:ASC/empty": {
+    "signature": "golden.s:ASC:NULLS_LAST,golden.id:ASC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLnM6QVNDOk5VTExTX0xBU1QsZ29sZGVuLmlkOkFTQyIsImsiOltudWxsLCJ3XzIiXX0",
+    "order_by": "\nSELECT 1\nORDER BY golden.s ASC NULLS LAST, golden.id ASC;\n",
+    "seek": "\nSELECT 1\nWHERE (golden.s IS NULL) AND (golden.id \u003e 'w_2'::text);\n"
+  },
+  "SPNL:ASC/full": {
+    "signature": "golden.s:ASC:NULLS_LAST,golden.id:ASC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLnM6QVNDOk5VTExTX0xBU1QsZ29sZGVuLmlkOkFTQyIsImsiOlsiQmFuYW5hIiwid18xIl19",
+    "order_by": "\nSELECT 1\nORDER BY golden.s ASC NULLS LAST, golden.id ASC;\n",
+    "seek": "\nSELECT 1\nWHERE ((golden.s \u003e 'Banana'::text) OR (golden.s IS NULL)) OR ((golden.s = 'Banana'::text) AND (golden.id \u003e 'w_1'::text));\n"
+  },
+  "SPNL:DESC/empty": {
+    "signature": "golden.s:DESC:NULLS_LAST,golden.id:DESC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLnM6REVTQzpOVUxMU19MQVNULGdvbGRlbi5pZDpERVNDIiwiayI6W251bGwsIndfMiJdfQ",
+    "order_by": "\nSELECT 1\nORDER BY golden.s DESC NULLS LAST, golden.id DESC;\n",
+    "seek": "\nSELECT 1\nWHERE (golden.s IS NULL) AND (golden.id \u003c 'w_2'::text);\n"
+  },
+  "SPNL:DESC/full": {
+    "signature": "golden.s:DESC:NULLS_LAST,golden.id:DESC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLnM6REVTQzpOVUxMU19MQVNULGdvbGRlbi5pZDpERVNDIiwiayI6WyJCYW5hbmEiLCJ3XzEiXX0",
+    "order_by": "\nSELECT 1\nORDER BY golden.s DESC NULLS LAST, golden.id DESC;\n",
+    "seek": "\nSELECT 1\nWHERE ((golden.s \u003c 'Banana'::text) OR (golden.s IS NULL)) OR ((golden.s = 'Banana'::text) AND (golden.id \u003c 'w_1'::text));\n"
+  },
+  "T:ASC/empty": {
+    "signature": "golden.t:ASC,golden.id:ASC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLnQ6QVNDLGdvbGRlbi5pZDpBU0MiLCJrIjpbLTk0NjY4NDgwMDAwMDAwMCwid18yIl19",
+    "order_by": "\nSELECT 1\nORDER BY golden.t ASC, golden.id ASC;\n",
+    "seek": "\nSELECT 1\nWHERE ROW(golden.t, golden.id) \u003e ROW('1970-01-01 00:00:00Z'::timestamp with time zone, 'w_2'::text);\n"
+  },
+  "T:ASC/full": {
+    "signature": "golden.t:ASC,golden.id:ASC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLnQ6QVNDLGdvbGRlbi5pZDpBU0MiLCJrIjpbODI1OTEyMzY3MTIzNDU2LCJ3XzEiXX0",
+    "order_by": "\nSELECT 1\nORDER BY golden.t ASC, golden.id ASC;\n",
+    "seek": "\nSELECT 1\nWHERE ROW(golden.t, golden.id) \u003e ROW('2026-03-04 04:06:07.123456Z'::timestamp with time zone, 'w_1'::text);\n"
+  },
+  "T:DESC/empty": {
+    "signature": "golden.t:DESC,golden.id:DESC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLnQ6REVTQyxnb2xkZW4uaWQ6REVTQyIsImsiOlstOTQ2Njg0ODAwMDAwMDAwLCJ3XzIiXX0",
+    "order_by": "\nSELECT 1\nORDER BY golden.t DESC, golden.id DESC;\n",
+    "seek": "\nSELECT 1\nWHERE ROW(golden.t, golden.id) \u003c ROW('1970-01-01 00:00:00Z'::timestamp with time zone, 'w_2'::text);\n"
+  },
+  "T:DESC/full": {
+    "signature": "golden.t:DESC,golden.id:DESC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLnQ6REVTQyxnb2xkZW4uaWQ6REVTQyIsImsiOls4MjU5MTIzNjcxMjM0NTYsIndfMSJdfQ",
+    "order_by": "\nSELECT 1\nORDER BY golden.t DESC, golden.id DESC;\n",
+    "seek": "\nSELECT 1\nWHERE ROW(golden.t, golden.id) \u003c ROW('2026-03-04 04:06:07.123456Z'::timestamp with time zone, 'w_1'::text);\n"
+  },
+  "TP:ASC/empty": {
+    "signature": "golden.t:ASC,golden.id:ASC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLnQ6QVNDLGdvbGRlbi5pZDpBU0MiLCJrIjpbbnVsbCwid18yIl19",
+    "order_by": "\nSELECT 1\nORDER BY golden.t ASC, golden.id ASC;\n",
+    "seek": "\nSELECT 1\nWHERE (golden.t IS NULL) AND (golden.id \u003e 'w_2'::text);\n"
+  },
+  "TP:ASC/full": {
+    "signature": "golden.t:ASC,golden.id:ASC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLnQ6QVNDLGdvbGRlbi5pZDpBU0MiLCJrIjpbLTMxNTU2NzM2MDAwMDAwMDAsIndfMSJdfQ",
+    "order_by": "\nSELECT 1\nORDER BY golden.t ASC, golden.id ASC;\n",
+    "seek": "\nSELECT 1\nWHERE ((golden.t \u003e '1900-01-01 00:00:00Z'::timestamp with time zone) OR (golden.t IS NULL)) OR ((golden.t = '1900-01-01 00:00:00Z'::timestamp with time zone) AND (golden.id \u003e 'w_1'::text));\n"
+  },
+  "TP:DESC/empty": {
+    "signature": "golden.t:DESC,golden.id:DESC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLnQ6REVTQyxnb2xkZW4uaWQ6REVTQyIsImsiOltudWxsLCJ3XzIiXX0",
+    "order_by": "\nSELECT 1\nORDER BY golden.t DESC, golden.id DESC;\n",
+    "seek": "\nSELECT 1\nWHERE (golden.t IS NOT NULL) OR ((golden.t IS NULL) AND (golden.id \u003c 'w_2'::text));\n"
+  },
+  "TP:DESC/full": {
+    "signature": "golden.t:DESC,golden.id:DESC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLnQ6REVTQyxnb2xkZW4uaWQ6REVTQyIsImsiOlstMzE1NTY3MzYwMDAwMDAwMCwid18xIl19",
+    "order_by": "\nSELECT 1\nORDER BY golden.t DESC, golden.id DESC;\n",
+    "seek": "\nSELECT 1\nWHERE (golden.t \u003c '1900-01-01 00:00:00Z'::timestamp with time zone) OR ((golden.t = '1900-01-01 00:00:00Z'::timestamp with time zone) AND (golden.id \u003c 'w_1'::text));\n"
+  },
+  "U:ASC/empty": {
+    "signature": "golden.u:ASC,golden.id:ASC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLnU6QVNDLGdvbGRlbi5pZDpBU0MiLCJrIjpbIjAwMDAwMDAwLTAwMDAtMDAwMC0wMDAwLTAwMDAwMDAwMDAwMCIsIndfMiJdfQ",
+    "order_by": "\nSELECT 1\nORDER BY golden.u ASC, golden.id ASC;\n",
+    "seek": "\nSELECT 1\nWHERE ROW(golden.u, golden.id) \u003e ROW('00000000-0000-0000-0000-000000000000'::uuid, 'w_2'::text);\n"
+  },
+  "U:ASC/full": {
+    "signature": "golden.u:ASC,golden.id:ASC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLnU6QVNDLGdvbGRlbi5pZDpBU0MiLCJrIjpbImY0N2FjMTBiLTU4Y2MtNDM3Mi1hNTY3LTBlMDJiMmMzZDQ3OSIsIndfMSJdfQ",
+    "order_by": "\nSELECT 1\nORDER BY golden.u ASC, golden.id ASC;\n",
+    "seek": "\nSELECT 1\nWHERE ROW(golden.u, golden.id) \u003e ROW('f47ac10b-58cc-4372-a567-0e02b2c3d479'::uuid, 'w_1'::text);\n"
+  },
+  "U:DESC/empty": {
+    "signature": "golden.u:DESC,golden.id:DESC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLnU6REVTQyxnb2xkZW4uaWQ6REVTQyIsImsiOlsiMDAwMDAwMDAtMDAwMC0wMDAwLTAwMDAtMDAwMDAwMDAwMDAwIiwid18yIl19",
+    "order_by": "\nSELECT 1\nORDER BY golden.u DESC, golden.id DESC;\n",
+    "seek": "\nSELECT 1\nWHERE ROW(golden.u, golden.id) \u003c ROW('00000000-0000-0000-0000-000000000000'::uuid, 'w_2'::text);\n"
+  },
+  "U:DESC/full": {
+    "signature": "golden.u:DESC,golden.id:DESC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLnU6REVTQyxnb2xkZW4uaWQ6REVTQyIsImsiOlsiZjQ3YWMxMGItNThjYy00MzcyLWE1NjctMGUwMmIyYzNkNDc5Iiwid18xIl19",
+    "order_by": "\nSELECT 1\nORDER BY golden.u DESC, golden.id DESC;\n",
+    "seek": "\nSELECT 1\nWHERE ROW(golden.u, golden.id) \u003c ROW('f47ac10b-58cc-4372-a567-0e02b2c3d479'::uuid, 'w_1'::text);\n"
+  },
+  "UP:ASC/empty": {
+    "signature": "golden.u:ASC,golden.id:ASC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLnU6QVNDLGdvbGRlbi5pZDpBU0MiLCJrIjpbbnVsbCwid18yIl19",
+    "order_by": "\nSELECT 1\nORDER BY golden.u ASC, golden.id ASC;\n",
+    "seek": "\nSELECT 1\nWHERE (golden.u IS NULL) AND (golden.id \u003e 'w_2'::text);\n"
+  },
+  "UP:ASC/full": {
+    "signature": "golden.u:ASC,golden.id:ASC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLnU6QVNDLGdvbGRlbi5pZDpBU0MiLCJrIjpbIjAxOGY2YjhlLTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDAwMSIsIndfMSJdfQ",
+    "order_by": "\nSELECT 1\nORDER BY golden.u ASC, golden.id ASC;\n",
+    "seek": "\nSELECT 1\nWHERE ((golden.u \u003e '018f6b8e-0000-7000-8000-000000000001'::uuid) OR (golden.u IS NULL)) OR ((golden.u = '018f6b8e-0000-7000-8000-000000000001'::uuid) AND (golden.id \u003e 'w_1'::text));\n"
+  },
+  "UP:DESC/empty": {
+    "signature": "golden.u:DESC,golden.id:DESC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLnU6REVTQyxnb2xkZW4uaWQ6REVTQyIsImsiOltudWxsLCJ3XzIiXX0",
+    "order_by": "\nSELECT 1\nORDER BY golden.u DESC, golden.id DESC;\n",
+    "seek": "\nSELECT 1\nWHERE (golden.u IS NOT NULL) OR ((golden.u IS NULL) AND (golden.id \u003c 'w_2'::text));\n"
+  },
+  "UP:DESC/full": {
+    "signature": "golden.u:DESC,golden.id:DESC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLnU6REVTQyxnb2xkZW4uaWQ6REVTQyIsImsiOlsiMDE4ZjZiOGUtMDAwMC03MDAwLTgwMDAtMDAwMDAwMDAwMDAxIiwid18xIl19",
+    "order_by": "\nSELECT 1\nORDER BY golden.u DESC, golden.id DESC;\n",
+    "seek": "\nSELECT 1\nWHERE (golden.u \u003c '018f6b8e-0000-7000-8000-000000000001'::uuid) OR ((golden.u = '018f6b8e-0000-7000-8000-000000000001'::uuid) AND (golden.id \u003c 'w_1'::text));\n"
+  },
+  "mixed/empty": {
+    "signature": "golden.s:DESC,golden.f:ASC,golden.t:DESC,golden.id:DESC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLnM6REVTQyxnb2xkZW4uZjpBU0MsZ29sZGVuLnQ6REVTQyxnb2xkZW4uaWQ6REVTQyIsImsiOltudWxsLG51bGwsLTk0NjY4NDgwMDAwMDAwMCwid18yIl19",
+    "order_by": "\nSELECT 1\nORDER BY golden.s DESC, golden.f ASC, golden.t DESC, golden.id DESC;\n",
+    "seek": "\nSELECT 1\nWHERE ((golden.s IS NOT NULL) OR (((golden.s IS NULL) AND (golden.f IS NULL)) AND (golden.t \u003c '1970-01-01 00:00:00Z'::timestamp with time zone))) OR ((((golden.s IS NULL) AND (golden.f IS NULL)) AND (golden.t = '1970-01-01 00:00:00Z'::timestamp with time zone)) AND (golden.id \u003c 'w_2'::text));\n"
+  },
+  "mixed/full": {
+    "signature": "golden.s:DESC,golden.f:ASC,golden.t:DESC,golden.id:DESC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLnM6REVTQyxnb2xkZW4uZjpBU0MsZ29sZGVuLnQ6REVTQyxnb2xkZW4uaWQ6REVTQyIsImsiOlsiQmFuYW5hIiwiLUluZmluaXR5Iiw4MjU5MTIzNjcxMjM0NTYsIndfMSJdfQ",
+    "order_by": "\nSELECT 1\nORDER BY golden.s DESC, golden.f ASC, golden.t DESC, golden.id DESC;\n",
+    "seek": "\nSELECT 1\nWHERE (((golden.s \u003c 'Banana'::text) OR ((golden.s = 'Banana'::text) AND ((golden.f \u003e -Inf::double precision) OR (golden.f IS NULL)))) OR (((golden.s = 'Banana'::text) AND (golden.f = -Inf::double precision)) AND (golden.t \u003c '2026-03-04 04:06:07.123456Z'::timestamp with time zone))) OR ((((golden.s = 'Banana'::text) AND (golden.f = -Inf::double precision)) AND (golden.t = '2026-03-04 04:06:07.123456Z'::timestamp with time zone)) AND (golden.id \u003c 'w_1'::text));\n"
+  },
+  "none/empty": {
+    "signature": "golden.id:ASC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLmlkOkFTQyIsImsiOlsid18yIl19",
+    "order_by": "\nSELECT 1\nORDER BY golden.id ASC;\n",
+    "seek": "\nSELECT 1\nWHERE ROW(golden.id) \u003e ROW('w_2'::text);\n"
+  },
+  "none/full": {
+    "signature": "golden.id:ASC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLmlkOkFTQyIsImsiOlsid18xIl19",
+    "order_by": "\nSELECT 1\nORDER BY golden.id ASC;\n",
+    "seek": "\nSELECT 1\nWHERE ROW(golden.id) \u003e ROW('w_1'::text);\n"
+  },
+  "uniform/empty": {
+    "signature": "golden.t:ASC,golden.i:ASC,golden.u:ASC,golden.id:ASC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLnQ6QVNDLGdvbGRlbi5pOkFTQyxnb2xkZW4udTpBU0MsZ29sZGVuLmlkOkFTQyIsImsiOlstOTQ2Njg0ODAwMDAwMDAwLDAsIjAwMDAwMDAwLTAwMDAtMDAwMC0wMDAwLTAwMDAwMDAwMDAwMCIsIndfMiJdfQ",
+    "order_by": "\nSELECT 1\nORDER BY golden.t ASC, golden.i ASC, golden.u ASC, golden.id ASC;\n",
+    "seek": "\nSELECT 1\nWHERE ROW(golden.t, golden.i, golden.u, golden.id) \u003e ROW('1970-01-01 00:00:00Z'::timestamp with time zone, 0::bigint, '00000000-0000-0000-0000-000000000000'::uuid, 'w_2'::text);\n"
+  },
+  "uniform/full": {
+    "signature": "golden.t:ASC,golden.i:ASC,golden.u:ASC,golden.id:ASC",
+    "cursor": "eyJ2IjoxLCJvIjoiZ29sZGVuLnQ6QVNDLGdvbGRlbi5pOkFTQyxnb2xkZW4udTpBU0MsZ29sZGVuLmlkOkFTQyIsImsiOls4MjU5MTIzNjcxMjM0NTYsLTQyLCJmNDdhYzEwYi01OGNjLTQzNzItYTU2Ny0wZTAyYjJjM2Q0NzkiLCJ3XzEiXX0",
+    "order_by": "\nSELECT 1\nORDER BY golden.t ASC, golden.i ASC, golden.u ASC, golden.id ASC;\n",
+    "seek": "\nSELECT 1\nWHERE ROW(golden.t, golden.i, golden.u, golden.id) \u003e ROW('2026-03-04 04:06:07.123456Z'::timestamp with time zone, -42::bigint, 'f47ac10b-58cc-4372-a567-0e02b2c3d479'::uuid, 'w_1'::text);\n"
+  }
+}

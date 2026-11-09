@@ -354,7 +354,6 @@ linters:
       - {linters: [depguard], path: ^pkg/queueworker/lifecycle\.go$} # imports zerolog; legacy, deleted after the slog migration
       - {linters: [depguard], path: ^pkg/queueworker/lifecycle_test\.go$} # imports zerolog; legacy, deleted after the slog migration
       - {linters: [depguard], path: ^pkg/redisx/topic\.go$} # imports zerolog; legacy, deleted after the slog migration
-      - {linters: [exhaustive], path: ^pkg/db/transactor/keyset\.go$} # 2 switches on nulls skip nullsDefault
       - {linters: [exhaustive], path: ^pkg/db/transactor/keyset_test\.go$} # 4 Key maps list only the sorts a test uses
       - {linters: [funlen], path: ^pkg/testkit/searchtest/searchtest\.go$} # CheckRefusals, 63 statements
       - {linters: [gocognit], path: ^modules/httpserver/module\.go$} # setupRouter, complexity 21
@@ -366,9 +365,6 @@ linters:
       - {linters: [govet], path: ^modules/migrations/migrator\.go$} # shadow: err
       - {linters: [govet], path: ^modules/pglock/pglock\.go$} # shadow: err x3
       - {linters: [govet], path: ^modules/postgres/postgres\.go$} # shadow: err
-      - {linters: [govet], path: ^pkg/db/transactor/keyset\.go$} # shadow: ok
-      - {linters: [govet], path: ^pkg/db/transactor/keyset_test\.go$} # shadow x6
-      - {linters: [govet], path: ^pkg/db/transactor/page\.go$} # shadow: err
       - {linters: [govet], path: ^pkg/search/cursor_test\.go$} # shadow: err
       - {linters: [govet], path: ^pkg/search/search_test\.go$} # shadow: err
       - {linters: [govet], path: ^pkg/secrets/versioned_cipher\.go$} # shadow: err
@@ -377,8 +373,6 @@ linters:
       - {linters: [govet], path: ^pkg/testkit/searchtest/searchtest_test\.go$} # shadow: err x2
       - {linters: [govet], path: ^pkg/tracing/provider_test\.go$} # shadow: err x2
       - {linters: [govet], path: ^pkg/validate/validator\.go$} # shadow: err x12
-      - {linters: [revive], path: ^pkg/db/transactor/keyset\.go$} # 587 lines, limit 400
-      - {linters: [revive], path: ^pkg/db/transactor/keyset_test\.go$} # 450 lines, limit 400
       - {linters: [revive], path: ^pkg/validate/default_validator\.go$} # ValidateStruct stutters; renaming breaks callers
       - {linters: [unparam], path: ^pkg/tracing/http_test\.go$} # serve always gets GET
 issues:

@@ -6,10 +6,20 @@ One section per module and version, newest first. Each section uses Added, Chang
 
 ### Added
 - `internal/jet`: `DialectSwitch(func(Dialect) Expression)` and its typed forms (`BoolDialectSwitch`, `IntDialectSwitch`, `StringDialectSwitch`, ...). The statement's dialect selects the expression when the statement is serialized, so one value serves PostgreSQL, MySQL and SQLite. Search uses it for the SQL that differs per dialect.
+- `keyset`: the db module now holds the keyset pager. It moves from `pkg/db/transactor` with the same behaviour on PostgreSQL, and the cursors stay byte for byte the same (a golden test pins them against the old pager). It holds the key constructors (`StringKey`, `UUIDKey`, `InetKey`, `EnumKey`, `TimeKey`, `LocalTimeKey`, `IntKey`, `FloatKey`, `RealKey` and their `Nullable` forms), `Order`, `OrderOf` (the strict form: an unknown sort is `search.ErrUnknownSort`), `Seek`, `Trim` and `Cursor`, and `Page`, which counts the matches and reads one page. `PageOf` is `Page` with a mapper that reads the whole page at once. `RequireWhere` refuses a page with no `WHERE` with `search.ErrUnscoped`. The executor is a parameter, and every statement runs through `query`. The pager supports PostgreSQL: a table of `mysql` or `sqlite`, or any other source, is `ErrDialect`. `Seek` and `OrderBy` write PostgreSQL SQL, so use them only in a `db/postgres` statement. `EnumKey` panics when its type name is not a plain identifier (`^[a-z_][a-z0-9_.]*$`), because the name goes into the SQL as raw text. `InetKey` refuses a cursor address with an IPv6 zone (`fe80::1%eth0`) with `search.ErrInvalidCursor`, where the cast failed in the database before.
+- `query.Executor`, an alias of `qrm.Queryable`: the executor that the query helpers and `keyset` take.
 
 ### Fixed
 - The SQL builder writes an alias that contains a quote or a backslash with the identifier quote character, doubled inside the alias (`AS "a""b"` on PostgreSQL, ``AS `a"b` `` on MySQL and SQLite). It also doubles the quote character in a quoted identifier, so a subquery column or a CTE name that refers to the alias agrees with it. Before, a quote in an alias or in a reference to it ended the quoted name, and on MySQL a backslash before a quote did the same; the rest of the name was read as SQL.
 - On MySQL, `SELECT_JSON_OBJ` sends a JSON object key that contains a backslash as a bound argument. Before, `\'` in an alias ended the key literal, and the rest of the alias was read as SQL. The server now returns such a key unchanged; before, it read `\t` or `\n` in it as an escape.
+
+## Unreleased (root)
+
+### Added
+- `pkg/db/transactor`: `ErrRowLockSearch`. `Page(...).Run` returns it under a requested row lock (`ForShare`, `ForUpdate`, `WithRowLock` and the others), inside or outside a transaction, and runs nothing. Before, PostgreSQL refused the locked count with a less clear error, or the page returned `ErrRowLockOutsideTx`.
+
+### Changed
+- `pkg/db/transactor`: the keyset pager moves to `db/keyset`. `Key` and `Order` are aliases of the `db/keyset` types; `StringKey`, `TimeKey` and the other key constructors, `Keys` and `StrictKeys` call `db/keyset`; `Page(...).Run` runs `keyset.Page` with `Executor(ctx, db)`. The key constructors and `Keys` say in their doc to use `db/keyset`. The behaviour and the cursors do not change, apart from `ErrRowLockSearch`, the `EnumKey` type name check and the `InetKey` zone refusal (see the db section). `ErrPageSourceMissing` and `ErrPageOrderConflict` are the values of `db/keyset`, and their messages start with `keyset:`. The statements of a page now run through `db/query`, so a database error is wrapped once (`query.Count: ...`, `query.All[...]: ...`); `errors.Is`, `errors.As` and the `On*` translations still find the driver's error.
 
 ## gen/v0.23.0-beta.3
 

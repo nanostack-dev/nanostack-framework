@@ -86,9 +86,11 @@ template, err := templates.Find(transactor.ForShare(txCtx), templateID)
 - Pass the locked context inline, to one call. Every query run with it is locked, so assigning it to `txCtx` locks every later read in the transaction.
 - `Exec` and `ExecAffected` refuse a locked context like every other helper: they never run the statement.
 - A locked query outside a transaction returns `ErrRowLockOutsideTx`: the lock would end with the statement. A locked context on a statement that is not a SELECT returns `ErrRowLockNotSelect`.
-- Postgres refuses a lock on an aggregate, `GROUP BY` or `DISTINCT` query, so a locked `PageBuilder` count fails.
+- A page never locks rows: `Page(...).Run` under a requested row lock returns `ErrRowLockSearch` and runs nothing. Lock the rows in the statement that writes them.
 
 ## Paginating a search
+
+The keyset pager lives in [`db/keyset`](../../../db/keyset) (`keyset.Page`, `keyset.OrderOf` and the key constructors). New code builds its keys and its order with `db/keyset` (`transactor.Key` and `Order` are the same types), and runs the page with `transactor.Page`. `transactor.Page` uses the context transaction and refuses a requested row lock with `ErrRowLockSearch`. Call `keyset.Page` directly only with an executor that you hold outside a row-locked context: `keyset.Page` does not read the row lock of the context, so it would read without the lock and say nothing. The names below forward to it, so existing callers keep their behaviour and their cursors byte for byte: `Key` and `Order` are aliases, `StringKey`, `TimeKey` and the other key constructors call `db/keyset`, `StrictKeys` is `keyset.OrderOf` for the sorts of `pkg/search`, and `Page(...).Run` runs `keyset.Page` in the context transaction.
 
 `Page` runs the count-then-page pair behind a `search.Result`. Order a search with `Keyset`, not `OrderBy`: a keyset ends the ordering with a unique tiebreak, so every row has exactly one position, and pages are cut with a cursor rather than an offset.
 
@@ -111,7 +113,7 @@ return transactor.Page(r.db, r.mapper.ToDomain, table.Workspaces.AllColumns).
     Value()
 ```
 
-- Build a search's ordering with `StrictKeys`: a requested sort field missing from the map fails with `search.ErrUnknownSort` (400 `INVALID_SORT` through `StrictErrorHandler`) instead of silently ordering by something else. Resolve the documented default sort to a mapped field before calling it. `Keys` keeps the lenient behaviour for non-search orderings. Pass the error through every service layer unchanged; a service that wraps unknown repository errors as 500 hides it.
+- Build a search's ordering with `StrictKeys`: a requested sort field missing from the map fails with `search.ErrUnknownSort` (400 `INVALID_SORT` through `StrictErrorHandler`) instead of silently ordering by something else. Resolve the documented default sort to a mapped field before calling it. `Keys` keeps the lenient behaviour for non-search orderings; use `db/keyset` for new code, which has only the strict form. Pass the error through every service layer unchanged; a service that wraps unknown repository errors as 500 hides it.
 - `Run` starts after `Pagination.Cursor` and sets `Result.NextCursor` when another row follows. An empty `NextCursor` is the last page. `Total` still counts every match of the filter.
 - Offset pages get a `NextCursor` too, so a client can move from offsets to cursors at any page. A cursor with a non-zero offset fails with `search.ErrCursorWithOffset`.
 - A cursor that does not decode, or was issued for another sort, fails with `search.ErrInvalidCursor`. Map both errors to HTTP 400. `search.IsClientError` matches all three search refusals; log them through `log.Error(ctx, err)` or `log.Event`, which pick debug level for them as for any 4xx (each has a `Level()` method that `core/log` reads). A direct `.Error().Err(err)` logs a client's bad cursor as a service error.

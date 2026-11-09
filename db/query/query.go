@@ -17,6 +17,12 @@ import (
 // Statement is any statement built with the postgres, mysql or sqlite packages.
 type Statement = jet.Statement
 
+// Executor runs the statements of this package and of the packages built on it
+// (db/keyset): a *sql.DB, a *sql.Tx, a *sql.Conn or a statement cache. It is
+// the one name for the executor, so a change of the scan path changes this
+// alias and the code below it, not every signature that takes an executor.
+type Executor = qrm.Queryable
+
 // ErrTooManyRows is returned (wrapped, with the count) by One and Count when the result
 // maps to more than one value.
 var ErrTooManyRows = errors.New("query: statement returned more than one result")
@@ -33,7 +39,7 @@ var ErrTooManyRows = errors.New("query: statement returned more than one result"
 // struct, so duplicates are detected. SELECT_JSON_ARR works; SELECT_JSON_OBJ does not
 // (its destination is one object, not rows: qrm panics), use stmt.QueryContext for it.
 // T must not be a functional.Option.
-func One[T any](ctx context.Context, db qrm.Queryable, stmt Statement) (functional.Option[T], error) {
+func One[T any](ctx context.Context, db Executor, stmt Statement) (functional.Option[T], error) {
 	rows, err := scan[T](ctx, db, stmt)
 	if err != nil {
 		return functional.None[T](), fmt.Errorf("query.One[%s]: %w", typeName[T](), err)
@@ -57,7 +63,7 @@ func One[T any](ctx context.Context, db qrm.Queryable, stmt Statement) (function
 // cannot be chained.
 func OneMap[T, R any](
 	ctx context.Context,
-	db qrm.Queryable,
+	db Executor,
 	stmt Statement,
 	f func(T) R,
 ) (functional.Option[R], error) {
@@ -71,7 +77,7 @@ func OneMap[T, R any](
 // All runs stmt and returns every value its result maps to. The result is never nil:
 // no rows give an empty Seq. Rows that map to no value (every mapped column NULL) are
 // left out. SELECT_JSON_ARR works; SELECT_JSON_OBJ does not (see One).
-func All[T any](ctx context.Context, db qrm.Queryable, stmt Statement) (functional.Seq[T], error) {
+func All[T any](ctx context.Context, db Executor, stmt Statement) (functional.Seq[T], error) {
 	rows, err := scan[T](ctx, db, stmt)
 	if err != nil {
 		return functional.Seq[T]{}, fmt.Errorf("query.All[%s]: %w", typeName[T](), err)
@@ -83,7 +89,7 @@ func All[T any](ctx context.Context, db qrm.Queryable, stmt Statement) (function
 }
 
 // AllMap is All followed by Seq.Map. The result is never nil.
-func AllMap[T, R any](ctx context.Context, db qrm.Queryable, stmt Statement, f func(T) R) (functional.Seq[R], error) {
+func AllMap[T, R any](ctx context.Context, db Executor, stmt Statement, f func(T) R) (functional.Seq[R], error) {
 	all, err := All[T](ctx, db, stmt)
 	if err != nil {
 		return functional.Seq[R]{}, err
@@ -103,7 +109,7 @@ func Exec(ctx context.Context, db qrm.Executable, stmt Statement) (sql.Result, e
 // Count runs a statement whose single column is an integer, such as SELECT COUNT(*).
 // It returns 0 when the statement yields no row (COUNT ... GROUP BY with no groups) or
 // NULL, and ErrTooManyRows when it yields more than one non-NULL row.
-func Count(ctx context.Context, db qrm.Queryable, stmt Statement) (int64, error) {
+func Count(ctx context.Context, db Executor, stmt Statement) (int64, error) {
 	rows, err := scan[int64](ctx, db, stmt)
 	if err != nil {
 		return 0, fmt.Errorf("query.Count: %w", err)
@@ -120,7 +126,7 @@ func Count(ctx context.Context, db qrm.Queryable, stmt Statement) (int64, error)
 
 // scan runs stmt into a []T. A no-rows error, which some Queryable wrappers return,
 // is absence, not failure.
-func scan[T any](ctx context.Context, db qrm.Queryable, stmt Statement) ([]T, error) {
+func scan[T any](ctx context.Context, db Executor, stmt Statement) ([]T, error) {
 	var rows []T
 	if err := stmt.QueryContext(ctx, db, &rows); err != nil {
 		if isNoRows(err) {

@@ -92,6 +92,7 @@ linters:
       - ^internal/jet/optional_arg(_test)?\.go$
       - ^internal/optional/
       - ^internal/testutils/option_parity\.go$
+      - ^keyset/
       - ^nanorepo/
       - ^(mysql|postgres|sqlite)/literal_option(_test)?\.go$
       - ^(mysql|postgres|sqlite)/statement_option_test\.go$
@@ -103,4 +104,4 @@ linters:
       - ^tests/dbconfig/nanostack\.go$
       - ^tests/internal/testenv/
       - ^tests/tools/
-      - ^tests/(mysql|postgres|sqlite)/(generator_option|nanostack_alias|nanostack_models|option\w*|query)_test\.go$
+      - ^tests/(mysql|postgres|sqlite)/(generator_option|keyset\w*|nanostack_alias|nanostack_models|option\w*|query)_test\.go$
