@@ -86,7 +86,7 @@ template, err := templates.Find(transactor.ForShare(txCtx), templateID)
 - Pass the locked context inline, to one call. Every query run with it is locked, so assigning it to `txCtx` locks every later read in the transaction.
 - `Exec` and `ExecAffected` refuse a locked context like every other helper: they never run the statement.
 - A locked query outside a transaction returns `ErrRowLockOutsideTx`: the lock would end with the statement. A locked context on a statement that is not a SELECT returns `ErrRowLockNotSelect`.
-- A page never locks rows: `Page(...).Run` under a requested row lock returns `ErrRowLockSearch` and runs nothing. Lock the rows in the statement that writes them.
+- A page never locks rows: `Page(...).Run`, `Search`, `SearchPage`, `RunPlan` and `RunPlanPage` under a requested row lock return `ErrRowLockSearch` and run nothing. Lock the rows in the statement that writes them.
 
 ## Paginating a search
 
@@ -123,6 +123,33 @@ return transactor.Page(r.db, r.mapper.ToDomain, table.Workspaces.AllColumns).
 - Sort only on bounded columns. A cursor holds the last row's sort values and may be at most `search.MaxCursorLength` (8 KiB) long; issuing a longer one fails.
 - When every key is NOT NULL and shares a direction, the seek is one row comparison, `(created_at, id) < ($1, $2)`, which a composite index on `(tenant, created_at, id)` answers with one range scan. Add that index for large tables.
 - A query that does not fit `Page` uses the same `Order` directly: `OrderBy()` for the clauses, `Seek(cursor)` for the predicate, `LIMIT limit+1`, then `Trim(rows, limit)` for the page and its next cursor.
+
+## Running a generated search
+
+A search that `nano gen repo` generates is a `db/searchexec` spec and builder. Repository code runs it with one of four functions. Each runs on `Executor(ctx, db)`, so it uses the context transaction, and each refuses a requested row lock with `ErrRowLockSearch` before any statement runs:
+
+- `Search(ctx, db, spec, q, toDomain)` runs the search: it is `searchexec.Run` in the context transaction. It refuses what `searchexec.Run` refuses, also a query built from another spec (`search.ErrUnscoped`).
+- `SearchPage` is `Search` with a mapper that maps the whole page in one call.
+- `RunPlan(ctx, db, plan, order, toDomain)` runs a plan that a hand-written method got from `searchexec.Resolve`, after `plan.And` and `plan.Order`: it is `plan.Run` in the context transaction. Pass the order that `plan.Order` returns: the zero `keyset.Order` is an error, and no statement runs.
+- `RunPlanPage` is `RunPlan` with a mapper that maps the whole page.
+
+```go
+plan, err := searchexec.Resolve(ctx, webhookSearchSpec, q.Query)
+if err != nil {
+    return search.Result[webhook.Webhook]{}, err
+}
+order, err := plan.Order(map[webhook.SortField]keyset.Key[webhookRow]{
+    webhook.SortFieldRequestCount: requestCountKey,
+})
+if err != nil {
+    return search.Result[webhook.Webhook]{}, err
+}
+return transactor.RunPlan(ctx, r.db, plan, order, r.toDomain).Value()
+```
+
+Do not call `searchexec.Run`, `RunPage`, `plan.Run` or `plan.RunPage` from repository code. They run on the executor they get: they do not read the context transaction and do not refuse a row lock, so they would read outside the transaction, or without the lock, and say nothing.
+
+The four take and return the types of `db/search` (in the example, `search` is `db/search`), not of `pkg/search`. They return a `Result`, so the `On*` translations compose on them before `Value`.
 
 Check every search end to end with [`searchtest`](../../testkit/searchtest/README.md) from the consumer's component tests.
 

@@ -17,9 +17,10 @@ var (
 	// that is not a SELECT, which has no row lock clause.
 	ErrRowLockNotSelect = errors.New("transactor: row lock requested on a statement that is not a SELECT")
 	// ErrRowLockSearch is returned when a page runs under a requested row
-	// lock. A page reads with a count, which PostgreSQL cannot lock, and a
-	// page never locks the rows it shows. Lock the rows in the statement that
-	// writes them instead.
+	// lock: Page(...).Run, Search, SearchPage, RunPlan and RunPlanPage. A page
+	// reads with a count, which PostgreSQL cannot lock, and a page never locks
+	// the rows it shows. Lock the rows in the statement that writes them
+	// instead.
 	ErrRowLockSearch = errors.New("transactor: row lock requested on a search page")
 )
 
