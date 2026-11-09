@@ -10,10 +10,13 @@ import (
 const textFix = "use nanorepo.Range(...), Eq or In, or nanorepo.FullTextExpr on a typed expression " +
 	"(CAST(...).AS_TEXT(), host(...))"
 
-// checkSearch checks a search that reads without a problem: the text
-// operators (E2), FilterAs (E13), the default sort (E14) and the order
-// (E3, E4).
+// checkSearch checks a search that reads without a problem: the columns
+// of the options (E5), the text operators (E2), FilterAs (E13), the default
+// sort (E14) and the order (E3, E4).
 func (c *collector) checkSearch(s *searchDecl) {
+	if !c.checkColumnsRead(s) {
+		return
+	}
 	for _, f := range s.filters {
 		c.checkFilter(f)
 	}
@@ -69,7 +72,8 @@ func (c *collector) checkDefaultSort(s *searchDecl) {
 		return
 	}
 	for _, sort := range s.sorts {
-		if d.col != nil && sort.col != nil && sort.col.table == d.col.table && sort.col.col.field == d.col.col.field {
+		if d.col != nil && sort.col != nil && sort.col.table == d.col.table && sort.col.alias == d.col.alias &&
+			sort.col.col.field == d.col.col.field {
 			return
 		}
 		if d.col == nil && sort.kind == "SortExpr" && sort.field == d.field {
@@ -132,26 +136,22 @@ func (c *collector) order(s *searchDecl) {
 	}
 	var fields []string
 	for _, col := range s.tiebreak {
-		if slices.Contains(fields, col.col.field) && col.table == t {
+		if slices.Contains(fields, col.col.field) && s.root.is(col.table, col.alias) {
 			c.errorf(col.expr, "name each column once",
 				"search %s: Tiebreak names %s twice", s.name, col)
 			return
 		}
-		if col.table != t {
+		if !s.root.is(col.table, col.alias) {
 			c.errorf(col.expr, "name columns of "+t.sqlName+" that cover one of its unique keys, "+
 				"or remove Tiebreak to use the primary key",
 				"search %s: Tiebreak(%s) names %s; a tiebreak orders the rows of %s, the table of the search",
-				s.name, col, col.table.sqlName, t.sqlName)
+				s.name, col, s.instanceOf(col), t.sqlName)
 			return
 		}
 		fields = append(fields, col.col.field)
 		s.order = append(s.order, col.col)
 	}
-	keys := slices.Clone(t.keys) // the primary key first, so -explain names it when it is covered
-	slices.SortStableFunc(keys, func(a, b uniqueKey) int {
-		return boolRank(isPrimaryKey(t, b)) - boolRank(isPrimaryKey(t, a))
-	})
-	for _, k := range keys {
+	for _, k := range keysPrimaryFirst(t) { // so -explain names the primary key when it is covered
 		if ordersEveryRow(t, k) == "" && !slices.ContainsFunc(k.fields, func(f string) bool {
 			return !slices.Contains(fields, f)
 		}) {
@@ -315,4 +315,81 @@ func boolRank(b bool) int {
 		return 1
 	}
 	return 0
+}
+
+// optionColumn is one column that an option names, with the option.
+type optionColumn struct {
+	option string // Scope, Filter, Sort, ...
+	col    *colRef
+}
+
+// optionColumns returns every column that an option names on the read
+// set: all but the child columns of FilterExists.
+func (s *searchDecl) optionColumns() []optionColumn {
+	var out []optionColumn
+	for _, sc := range s.scopes {
+		for _, col := range sc.cols {
+			out = append(out, optionColumn{sc.kind, col})
+		}
+	}
+	for _, sf := range s.scopeFuncs {
+		out = append(out, optionColumn{"ScopeFunc", sf.col})
+	}
+	for _, u := range s.unscoped {
+		out = append(out, optionColumn{"Unscoped", u.col})
+	}
+	for _, f := range s.filters {
+		if f.col != nil && f.kind != "FilterExists" {
+			out = append(out, optionColumn{f.kind, f.col})
+		}
+	}
+	for _, col := range s.fullText {
+		out = append(out, optionColumn{"FullText", col})
+	}
+	for _, sort := range s.sorts {
+		if sort.col != nil {
+			out = append(out, optionColumn{sort.kind, sort.col})
+		}
+	}
+	for _, col := range s.tiebreak {
+		out = append(out, optionColumn{"Tiebreak", col})
+	}
+	if s.defaultSort != nil && s.defaultSort.col != nil {
+		out = append(out, optionColumn{"DefaultSort", s.defaultSort.col})
+	}
+	return out
+}
+
+// checkColumnsRead reports each column of an option on an instance that the
+// search does not read (E5), and a FilterExists column that is not a column
+// of its child table.
+func (c *collector) checkColumnsRead(s *searchDecl) bool {
+	ok := true
+	for _, oc := range s.optionColumns() {
+		if s.instanceOf(oc.col) != nil {
+			continue
+		}
+		ok = false
+		inst := &instance{table: oc.col.table, alias: oc.col.alias, text: oc.col.tableText}
+		names := make([]string, len(s.reads))
+		for i, read := range s.reads {
+			names[i] = read.String()
+		}
+		c.errorf(oc.col.expr, c.joinFix(s, inst), "search %s: %s(%s) names %s, which search %s does not read "+
+			"(it reads %s)", s.name, oc.option, oc.col, inst, s.name, strings.Join(names, ", "))
+	}
+	for _, f := range s.filters {
+		if f.kind != "FilterExists" {
+			continue
+		}
+		for _, col := range []*colRef{f.link, f.col} {
+			if col.table != f.child || col.alias != "" {
+				ok = false
+				c.errorf(col.expr, "name a column of "+f.child.sqlName+", the child table of FilterExists",
+					"search %s: FilterExists(%s, ...) names %s, which is not a column of %s", s.name,
+					f.child.sqlName, col, f.child.sqlName)
+			}
+		}
+	}
+	return ok
 }

@@ -17,7 +17,7 @@ search ItemByTenantSku on items (rows model.Items)
 search ItemWithTenant on items (rows model.Items)
   from       itemsWithTheirTenant
   read       items; root; nullable weight, released_on, local_at, opens_at, deleted_at, external_id, tags; tenant tenant_id
-  read       tenants; INNER JOIN; ON table.Tenants.ID.EQ(table.Items.TenantID)
+  read       tenants; INNER JOIN; ON table.Tenants.ID.EQ(table.Items.TenantID); one row by tenants_pkey (id)
   map        MapPage(summarizePage)
   scope      Scope items.tenant_id, tenants.id
   scope      ScopeFunc tenantFilter on tenants.name
@@ -37,7 +37,7 @@ search ItemWithTenant on items (rows model.Items)
 search ItemOptionalTenant on items (rows model.Items)
   from       itemsAndTheirTenant
   read       items; root; nullable weight, released_on, local_at, opens_at, deleted_at, external_id, tags; tenant tenant_id
-  read       tenants; LEFT JOIN; ON table.Tenants.ID.EQ(table.Items.TenantID); every column nullable
+  read       tenants; LEFT JOIN; ON table.Tenants.ID.EQ(table.Items.TenantID); one row by tenants_pkey (id); every column nullable
   filter     Name: Present on tenants.name (text, string)
   sort       name: tenants.name, nullable
   sort       created_at: items.created_at
@@ -46,6 +46,22 @@ search ItemOptionalTenant on items (rows model.Items)
 search ItemAliasedTenant on items (rows model.Items)
   from       itemsWithAnAliasedTenant
   read       items; root; nullable weight, released_on, local_at, opens_at, deleted_at, external_id, tags; tenant tenant_id
-  read       tenants AS owner; INNER JOIN; ON table.Tenants.AS("owner").ID.EQ(table.Items.TenantID)
+  read       tenants AS owner; INNER JOIN; ON table.Tenants.AS("owner").ID.EQ(table.Items.TenantID); one row by tenants_pkey (id)
+  filter     Name: Eq on owner.name (text, string)
+  filter     OwnerName: Eq on ownerName()
   sort       name: items.name
+  sort       owner_name: owner.name
+  tiebreak   id: the primary key items_pkey (id), by default
+search ItemOfNamedTenant on items (rows model.Items)
+  from       itemsOfNamedTenant
+  read       items; root; nullable weight, released_on, local_at, opens_at, deleted_at, external_id, tags; tenant tenant_id
+  read       tenants; INNER JOIN; ON table.Tenants.Name.EQ(postgres.String(s.TenantName)); one row by tenants_name_key (name)
+  subquery   SortExpr Siblings siblingCount reads items AS sibling; WHERE table.Items.AS("sibling").TenantID.EQ(table.Items.TenantID)
+  subquery   Flag HasSiblings hasSiblings reads items AS sibling; WHERE table.Items.AS("sibling").TenantID.EQ(table.Items.TenantID).AND(table.Items.AS("sibling").ID.NOT_EQ(table.Items.ID))
+  subquery   Flag HasSiblings hasSiblings reads tenants AS sibling_tenant; INNER JOIN; ON table.Tenants.AS("sibling_tenant").ID.EQ(table.Items.AS("sibling").TenantID)
+  filter     HasSiblings: Is on hasSiblings()
+  filter     LowerName: Eq on lowerName()
+  fulltext   skuText()
+  sort       siblings: field Siblings = siblingCount()
+  sort       created_day: field CreatedDay = createdDay()
   tiebreak   id: the primary key items_pkey (id), by default
