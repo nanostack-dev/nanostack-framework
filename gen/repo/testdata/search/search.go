@@ -97,10 +97,14 @@ func _() {
 	// A From function that calls a helper, which nano gen repo follows; an
 	// ON condition that equates the unique key tenants_name_key with a field
 	// of the scope value, so the join adds one row; and expression functions
-	// with Func, CAST and a subquery whose instance has an alias.
+	// with Func, CAST, DATE_TRUNC with a constant time zone, and subqueries
+	// whose instances have an alias. The join links no column of items to
+	// tenants: the tenant check refuses this shape, and only the one-row
+	// rule is shown here.
 	nanorepo.Search[model.Items]("ItemOfNamedTenant", table.Items,
 		nanorepo.From(itemsOfNamedTenant),
 		nanorepo.SortExpr("Siblings", siblingCount),
+		nanorepo.SortExpr("CreatedDay", createdDay),
 		nanorepo.Flag("HasSiblings", hasSiblings),
 		nanorepo.FilterExpr("LowerName", lowerName, nanorepo.Eq),
 		nanorepo.FullTextExpr(skuText),
@@ -122,9 +126,15 @@ func siblingCount() postgres.IntegerExpression {
 		WHERE(table.Items.AS("sibling").TenantID.EQ(table.Items.TenantID)))
 }
 
+func createdDay() postgres.TimestampExpression {
+	return postgres.DATE_TRUNC(postgres.DAY, table.Items.CreatedAt, "UTC")
+}
+
 func hasSiblings() postgres.BoolExpression {
 	return postgres.EXISTS(postgres.SELECT(postgres.Int(1)).
-		FROM(table.Items.AS("sibling")).
+		FROM(table.Items.AS("sibling").
+			INNER_JOIN(table.Tenants.AS("sibling_tenant"),
+				table.Tenants.AS("sibling_tenant").ID.EQ(table.Items.AS("sibling").TenantID))).
 		WHERE(table.Items.AS("sibling").TenantID.EQ(table.Items.TenantID).
 			AND(table.Items.AS("sibling").ID.NOT_EQ(table.Items.ID))))
 }

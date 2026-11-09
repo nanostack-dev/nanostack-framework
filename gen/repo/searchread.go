@@ -29,7 +29,7 @@ var refusedJoins = []string{"RIGHT_JOIN", "FULL_JOIN", "CROSS_JOIN"} //nolint:go
 // literalConstructors are the Nanostack DB functions that take a string or
 // an untyped value and pass it as a bound value, never as SQL text.
 var literalConstructors = []string{ //nolint:gochecknoglobals // read-only.
-	"String", "Text", "Decimal", "StringArray", "Json", "Bytea", "Timestampz", "Timez", "DATE_TRUNC",
+	"String", "Text", "Decimal", "StringArray", "Json", "Bytea", "Timestampz", "Timez",
 }
 
 // readWalk checks one From or expression function, and the functions of
@@ -45,6 +45,7 @@ type readWalk struct {
 	uses     []instanceUse
 	subs     []*subquery
 	chains   map[token.Pos]token.Pos // the start of a SELECT chain -> its end
+	wheres   map[token.Pos]ast.Expr  // the start of a SELECT chain -> its WHERE condition
 }
 
 // instanceUse is one place where a function names a table instance.
@@ -66,7 +67,7 @@ type subquery struct {
 // walkFunc checks the function decl. role names it in messages.
 func (c *collector) walkFunc(s *searchDecl, role string, decl *ast.FuncDecl) *readWalk {
 	w := &readWalk{c: c, s: s, role: role, followed: map[*types.Func]bool{}, reported: map[string]bool{},
-		chains: make(map[token.Pos]token.Pos)}
+		chains: make(map[token.Pos]token.Pos), wheres: make(map[token.Pos]ast.Expr)}
 	if fn, ok := c.l.pkg.TypesInfo.Defs[decl.Name].(*types.Func); ok {
 		w.followed[fn] = true
 	}
@@ -213,6 +214,13 @@ func (w *readWalk) dbFunction(call *ast.CallExpr, name string, sig *types.Signat
 	case name == "Func":
 		w.constantName(call, 0, `pass the function name as a string constant, such as postgres.Func("lower", x)`)
 	case name == "CAST" || name == "SELECT":
+	case name == "DATE_TRUNC":
+		for i := 2; i < len(call.Args); i++ {
+			if tv := w.c.l.pkg.TypesInfo.Types[call.Args[i]]; tv.Value == nil {
+				w.refuse(call, `pass the time zone as a string constant, such as "UTC"`,
+					"calls %s with the time zone %s, which is not a constant", callee, w.c.source(call.Args[i]))
+			}
+		}
 	case takesText(sig) && !slices.Contains(literalConstructors, name):
 		w.refuse(call, rawFix, "calls %s: it takes a string that becomes SQL text", callee)
 	case !w.c.expressions(sig.Results()):
@@ -311,6 +319,9 @@ func (w *readWalk) dbMethod(call *ast.CallExpr, f *ast.SelectorExpr, fn *types.F
 func (w *readWalk) selectClause(call *ast.CallExpr, name string) bool {
 	switch name {
 	case "WHERE":
+		if len(call.Args) == 1 {
+			w.wheres[call.Pos()] = call.Args[0]
+		}
 	case "FROM":
 		w.subqueryFrom(call)
 	default:
@@ -447,8 +458,8 @@ func (w *readWalk) subqueryFrom(call *ast.CallExpr) {
 		return
 	}
 	sub := &subquery{pos: call.Pos()}
-	for _, operand := range joinOperands(call.Args[0]) {
-		alias := ""
+	for _, op := range joinOperands(call.Args[0]) {
+		operand, alias := op.table, ""
 		if as, isAS := w.c.aliasCall(operand); isAS {
 			tv := w.c.l.pkg.TypesInfo.Types[as.Args[0]]
 			if tv.Value == nil || tv.Value.Kind() != constant.String {
@@ -458,7 +469,8 @@ func (w *readWalk) subqueryFrom(call *ast.CallExpr) {
 		}
 		if t := w.c.quietTable(w.s, operand); t != nil {
 			text := w.c.source(tableOperand(operand))
-			sub.reads = append(sub.reads, &instance{table: t, alias: alias, text: text, node: operand})
+			sub.reads = append(sub.reads, &instance{table: t, alias: alias, text: text, node: operand, join: op.kind,
+				on: op.on, nullable: op.kind == "LEFT JOIN"})
 		}
 	}
 	w.subs = append(w.subs, sub)

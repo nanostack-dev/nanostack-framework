@@ -6,16 +6,28 @@ import (
 	"strings"
 )
 
+// joinOperand is one table of a join expression, with its join kind and
+// ON condition; both are empty for the first table.
+type joinOperand struct {
+	table ast.Expr
+	kind  string
+	on    ast.Expr
+}
+
 // joinOperands returns the tables of a join expression, left to right.
-func joinOperands(e ast.Expr) []ast.Expr {
+func joinOperands(e ast.Expr) []joinOperand {
 	call, isCall := ast.Unparen(e).(*ast.CallExpr)
 	if isCall {
 		if sel, isSel := ast.Unparen(call.Fun).(*ast.SelectorExpr); isSel && len(call.Args) > 0 &&
 			strings.HasSuffix(sel.Sel.Name, "_JOIN") {
-			return append(joinOperands(sel.X), call.Args[0])
+			op := joinOperand{table: call.Args[0], kind: joins[sel.Sel.Name]}
+			if len(call.Args) > 1 {
+				op.on = call.Args[1]
+			}
+			return append(joinOperands(sel.X), op)
 		}
 	}
-	return []ast.Expr{e}
+	return []joinOperand{{table: e}}
 }
 
 // tableOperand returns the table variable of X or X.AS(alias).

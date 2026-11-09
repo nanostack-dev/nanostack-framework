@@ -96,10 +96,12 @@ type exprFunc struct {
 }
 
 // innerRead is an instance that a subquery reads, inside the function of
-// role.
+// role, with its join kind and ON condition. The first instance of a
+// subquery carries the WHERE condition that correlates it.
 type innerRead struct {
-	role string
-	inst *instance
+	role  string
+	inst  *instance
+	where ast.Expr
 }
 
 // nullable reports whether col of the instance can be NULL in a result row.

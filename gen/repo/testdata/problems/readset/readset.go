@@ -48,6 +48,7 @@ func _() {
 	nanorepo.Search[model.Items]("TokenConversion", table.Items, nanorepo.Condition(tokenConversion))
 	nanorepo.Search[model.Items]("FuncVariable", table.Items, nanorepo.FilterExpr("Lower", lowerByName, nanorepo.Eq))
 	nanorepo.Search[model.Items]("CastVariable", table.Items, nanorepo.FullTextExpr(castByName))
+	nanorepo.Search[model.Items]("ZoneVariable", table.Items, nanorepo.SortExpr("Day", dayInZone))
 	nanorepo.Search[model.Items]("PackageTable", table.Items, nanorepo.From(itemsWithParent))
 	nanorepo.Search[model.Items]("PackageExpr", table.Items, nanorepo.Condition(prebuilt))
 	nanorepo.Search[model.Items]("OtherSchema", table.Items, nanorepo.From(itemsInOtherSchema))
@@ -109,6 +110,11 @@ func lowerByName() postgres.StringExpression {
 
 func castByName() postgres.StringExpression {
 	return postgres.StringExp(postgres.CAST(table.Items.Sku).AS("text; DROP TABLE items"))
+}
+
+func dayInZone() postgres.TimestampExpression {
+	zone := "UTC"
+	return postgres.DATE_TRUNC(postgres.DAY, table.Items.CreatedAt, zone)
 }
 
 func itemsWithParent() postgres.ReadableTable {

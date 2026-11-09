@@ -46,7 +46,14 @@ func (c *collector) explainSearch(s *searchDecl) SearchExplanation {
 		add("read", "%s", c.explainInstance(s, inst))
 	}
 	for _, in := range s.inner {
-		add("subquery", "%s reads %s", in.role, in.inst)
+		text := in.role + " reads " + in.inst.String()
+		if in.inst.join != "" {
+			text += "; " + in.inst.join + "; ON " + c.source(in.inst.on)
+		}
+		if in.where != nil {
+			text += "; WHERE " + c.source(in.where)
+		}
+		add("subquery", "%s", text)
 	}
 	if s.mapper != nil {
 		kind := "Map"

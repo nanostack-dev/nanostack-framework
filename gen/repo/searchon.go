@@ -66,8 +66,12 @@ func (c *collector) walkExprs(s *searchDecl) []*readWalk {
 // subquery.
 func (c *collector) checkUses(s *searchDecl, w *readWalk) {
 	for _, sub := range w.subs {
-		for _, inst := range sub.reads {
-			s.inner = append(s.inner, innerRead{role: w.role, inst: inst})
+		for i, inst := range sub.reads {
+			in := innerRead{role: w.role, inst: inst}
+			if i == 0 {
+				in.where = w.wheres[sub.pos]
+			}
+			s.inner = append(s.inner, in)
 		}
 	}
 	reported := map[string]bool{}

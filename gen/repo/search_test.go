@@ -31,7 +31,9 @@ func TestSearchExplain(t *testing.T) {
 			"every column nullable\n",
 		"ON table.Tenants.Name.EQ(postgres.String(s.TenantName)); one row by tenants_name_key (name)\n",
 		"sort       owner_name: owner.name\n",
-		"subquery   SortExpr Siblings siblingCount reads items AS sibling\n",
+		"subquery   SortExpr Siblings siblingCount reads items AS sibling; WHERE " +
+			"table.Items.AS(\"sibling\").TenantID.EQ(table.Items.TenantID)\n",
+		"subquery   Flag HasSiblings hasSiblings reads tenants AS sibling_tenant; INNER JOIN; ON ",
 		"tiebreak   id: the primary key items_pkey (id), by default\n",
 		"sort       name: tenants.name, nullable\n",
 		"read       tenants AS owner; INNER JOIN; ",
