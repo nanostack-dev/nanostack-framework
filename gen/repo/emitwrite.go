@@ -115,9 +115,11 @@ func (w *writer) upsert() {
 func (w *writer) result() {
 	m, e, via := w.m, w.e, w.via
 	maps := e.onUnique(w.b.onUnique)
-	noRows := e.ref("database/sql", "sql", "ErrNoRows")
+	// A create never meets no row: it imports database/sql only where
+	// a shape below uses it.
+	noRows := func() string { return e.ref("database/sql", "sql", "ErrNoRows") }
 	if m.op != opCreate {
-		maps += ".\n\t\tOnNoRows(" + noRows + ")"
+		maps += ".\n\t\tOnNoRows(" + noRows() + ")"
 	}
 	switch m.shape {
 	case shapeOne:
@@ -126,7 +128,7 @@ func (w *writer) result() {
 		none := e.ref(functionalPath, "functional", "None") + "[" + e.typ(w.b.table.domain) + "]()"
 		w.p(".\n\t\tRETURNING(%s)\n\tfound, err := %squeryRow(ctx, stmt)%s.\n\t\tValue()\n", w.col("AllColumns"),
 			via, maps)
-		w.p("\tif %s(err, %s) {\n\t\treturn %s, nil\n\t}\n", e.ref("errors", "errors", "Is"), noRows, none)
+		w.p("\tif %s(err, %s) {\n\t\treturn %s, nil\n\t}\n", e.ref("errors", "errors", "Is"), noRows(), none)
 		w.p("\tif err != nil {\n\t\treturn %s, err\n\t}\n", none)
 		w.p("\treturn %s(found), nil\n", e.ref(functionalPath, "functional", "Some"))
 	case shapeErr:
@@ -135,7 +137,7 @@ func (w *writer) result() {
 			return
 		}
 		w.p("\n\tn, err := %sexecAffected(ctx, stmt)%s.\n\t\tValue()\n", via, e.onUnique(w.b.onUnique))
-		w.p("\tif err == nil && n == 0 {\n\t\terr = %s\n\t}\n\treturn err\n", noRows)
+		w.p("\tif err == nil && n == 0 {\n\t\terr = %s\n\t}\n\treturn err\n", noRows())
 	case shapeSlice, shapeBool, shapeInt64, shapeDeleted, shapeAffected:
 		panic("a derived write has no " + strconv.Itoa(int(m.shape)) + " shape")
 	}

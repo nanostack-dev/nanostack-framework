@@ -2,6 +2,11 @@
 
 One section per module and version, newest first. Each section uses Added, Changed, Deprecated, Removed and Fixed. [RELEASING.md](RELEASING.md) gives the release steps and the upgrade notes.
 
+## gen (unreleased)
+
+### Fixed
+- `nanostack gen repo` no longer imports `database/sql` into a generated file whose only derived write is a create, such as `CreateInOrgAndWorkspace`. Before the fix, the file did not compile ("imported and not used").
+
 ## gen/v0.23.0-beta.10, v0.23.0-beta.7 and db/v0.23.0-beta.5
 
 Repository writes derive from their names ([ADR 0026](docs/adr/0026-nano-gen-repo.md#amendment-2026-11-09-derived-writes)). `db/v0.23.0-beta.5` adds the options of `nanorepo.Implement`; root `v0.23.0-beta.7` adds `Postgres.DatabaseColumns` and `ContextScope.Stamp` to `core/nano/project`; `gen/v0.23.0-beta.10` requires both. `pkg/functional/v0.23.0-beta.1` does not change. Upgrade with [RELEASING.md](RELEASING.md#upgrade-from-v0230-beta6).
