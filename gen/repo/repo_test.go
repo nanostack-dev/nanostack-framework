@@ -156,6 +156,28 @@ func TestBaseWithOnlyMappedTables(t *testing.T) {
 	}
 }
 
+// A binding whose derived methods return no row does not name the row type
+// in its derived file, so that file must not import the row's package.
+func TestDerivedFileWithoutRows(t *testing.T) {
+	t.Parallel()
+	res, err := Generate(Options{Dir: "testdata/scalaronly"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var derived string
+	for _, f := range res.Files {
+		if filepath.Base(f.Path) == "scalaronly_repo.gen.go" {
+			derived = string(f.Data)
+		}
+	}
+	if derived == "" {
+		t.Fatal("no derived file generated")
+	}
+	if strings.Contains(derived, "/public/model\"") {
+		t.Error("the derived file imports the model package, which it does not use")
+	}
+}
+
 // report renders a run as Main prints it: the warnings, then the errors.
 func report(warnings []*gen.Error, err error) []byte {
 	var b bytes.Buffer

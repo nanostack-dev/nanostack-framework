@@ -41,6 +41,11 @@ One section per module and version, newest first. Each section uses Added, Chang
 - RELEASING.md, steps 3 and 4: at the release commits, `internal/layers` and the fixture tests of `gen/pipeline` and `gen/repo` fail because they need the development form. The runbook says so, and gives a consumer check outside the repository for the `gen` release form.
 
 
+## gen/v0.23.0-beta.5
+
+### Fixed
+- `nano gen repo` no longer imports the package of the domain type into a derived file whose derived methods return no row, such as only `CountBy...`, `ExistsBy...` or `DeleteBy...`. Go refused that file with `imported and not used`, and the run stopped with "the generated ..._repo.gen.go does not compile". Run `go tool nano gen repo`: a derived file that generated before does not change.
+
 ## gen/v0.23.0-beta.4
 
 ### Fixed
