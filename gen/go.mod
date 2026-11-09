@@ -12,9 +12,9 @@ require (
 	github.com/getkin/kin-openapi v0.149.0
 	github.com/google/uuid v1.6.0
 	github.com/lib/pq v1.12.3
-	github.com/nanostack-dev/nanostack-framework v0.0.0
-	github.com/nanostack-dev/nanostack-framework/db v0.0.0
-	github.com/nanostack-dev/nanostack-framework/pkg/functional v0.0.0
+	github.com/nanostack-dev/nanostack-framework v0.23.0-beta.7
+	github.com/nanostack-dev/nanostack-framework/db v0.23.0-beta.5
+	github.com/nanostack-dev/nanostack-framework/pkg/functional v0.23.0-beta.1
 	github.com/oapi-codegen/nullable v1.1.0
 	github.com/oapi-codegen/oapi-codegen/v2 v2.8.2
 	github.com/oapi-codegen/runtime v1.8.0
@@ -86,14 +86,4 @@ require (
 	golang.org/x/sync v0.24.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/text v0.43.0 // indirect
-)
-
-// The root module is a module of this repository. Until a release tags it, gen uses
-// the copy in this repository. The root requires db and pkg/functional at v0.0.0,
-// and a dependency's replace does not apply here, so its replaces are repeated.
-// The release removes these lines (RELEASING.md).
-replace (
-	github.com/nanostack-dev/nanostack-framework => ../
-	github.com/nanostack-dev/nanostack-framework/db => ../db
-	github.com/nanostack-dev/nanostack-framework/pkg/functional => ../pkg/functional
 )
