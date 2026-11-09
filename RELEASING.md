@@ -192,6 +192,14 @@ go tool nanostack gen
 
 - A consumer goes back to the last good version with `go get <module>@<version>`, then `go mod tidy`.
 
+## Upgrade from v0.23.0-beta.5
+
+Root `v0.23.0-beta.6` and `gen/v0.23.0-beta.9` add short scope names and context scopes to derived methods ([CHANGELOG.md](CHANGELOG.md#genv0230-beta9-and-v0230-beta6)). `db` and `pkg/functional` keep `v0.23.0-beta.4` and `v0.23.0-beta.1`.
+
+1. Bump both: `go get github.com/nanostack-dev/nanostack-framework@v0.23.0-beta.6 && go get -tool github.com/nanostack-dev/nanostack-framework/gen/cmd/nanostack@gen/v0.23.0-beta.9 && go mod tidy`.
+2. Optional: name the tenant columns in `nanogen/project.go`, such as `ScopeNames: map[string]string{"organization_id": "Org", "workspace_id": "Workspace"}`.
+3. A service with `Postgres.ContextScopes`: run `go tool nanostack gen`. Each derived read or delete on a table with a context scope column that does not name it is refused. Rename a read that must filter the context to the short form (`FindByOrgAndWorkspaceAndID`); rename a read that must stay across the context to end in `Internal` (`CountByOrgInternal`), which keeps its behaviour; hand-write such a delete.
+
 ## Upgrade from v0.23.0-beta.4
 
 Root `v0.23.0-beta.5` removes `pkg/search` and `transactor.Keys` ([CHANGELOG.md](CHANGELOG.md#v0230-beta5)). `db`, `pkg/functional` and `gen` keep `v0.23.0-beta.4`, `v0.23.0-beta.1` and `v0.23.0-beta.8`.
