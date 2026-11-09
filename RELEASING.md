@@ -192,6 +192,14 @@ go tool nanostack gen
 
 - A consumer goes back to the last good version with `go get <module>@<version>`, then `go mod tidy`.
 
+## Upgrade from v0.23.0-beta.4
+
+Root `v0.23.0-beta.5` removes `pkg/search` and `transactor.Keys` ([CHANGELOG.md](CHANGELOG.md#v0230-beta5)). `db`, `pkg/functional` and `gen` keep `v0.23.0-beta.4`, `v0.23.0-beta.1` and `v0.23.0-beta.8`.
+
+1. Bump the root: `go get github.com/nanostack-dev/nanostack-framework@v0.23.0-beta.5 && go mod tidy`.
+2. Replace each import of `github.com/nanostack-dev/nanostack-framework/pkg/search` with `github.com/nanostack-dev/nanostack-framework/db/search`. `grep -rln 'nanostack-framework/pkg/search' --include='*.go' .` finds them. Nothing else changes: the names, errors and cursors are the same.
+3. Replace each `transactor.Keys(sorts, columns, tiebreak)` with `transactor.StrictKeys` and handle its error. A sort field with no key is now `search.ErrUnknownSort` instead of being dropped, so validate `sort_by` against the keys first, or map the error to the 400 your API answers for an unknown sort.
+
 ## Upgrade to the nanostack CLI
 
 `gen/v0.23.0-beta.7` renames the CLI from `nano` to `nanostack` ([CHANGELOG.md](CHANGELOG.md#genv0230-beta7)). It is retracted: its repo step reads the files a service already has as hand-written, so upgrade to `gen/v0.23.0-beta.8`. The root, `db` and `pkg/functional` stay at `v0.23.0-beta.4`, `v0.23.0-beta.4` and `v0.23.0-beta.1`.

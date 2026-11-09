@@ -42,60 +42,12 @@ func idKey() transactor.Key[keyRow] {
 
 const sortByNote sortField = "NOTE"
 
-func TestKeysSignature(t *testing.T) {
-	for _, tc := range []struct {
-		name  string
-		sorts []search.Sort[sortField]
-		want  string
-	}{
-		{name: "no sort orders by the tiebreak ascending", want: "widgets.id:ASC"},
-		{
-			name:  "the tiebreak follows the last direction",
-			sorts: []search.Sort[sortField]{{Field: sortByCreated, Direction: search.SortDescending}},
-			want:  "widgets.created_at:DESC,widgets.id:DESC",
-		},
-		{
-			name: "unmapped and repeated fields are dropped",
-			sorts: []search.Sort[sortField]{
-				{Field: sortUnmapped, Direction: search.SortAscending},
-				{Field: sortByName, Direction: search.SortAscending},
-				{Field: sortByName, Direction: search.SortDescending},
-			},
-			want: "widgets.name:ASC,widgets.id:ASC",
-		},
-		{
-			name:  "an unknown direction sorts ascending",
-			sorts: []search.Sort[sortField]{{Field: sortByName, Direction: "sideways"}},
-			want:  "widgets.name:ASC,widgets.id:ASC",
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := transactor.Keys(tc.sorts, keyColumns(), idKey()).Signature(); got != tc.want {
-				t.Fatalf("Signature() = %q, want %q", got, tc.want)
-			}
-		})
-	}
-}
-
-func TestKeysTiebreakNotRepeated(t *testing.T) {
-	columns := keyColumns()
-	columns["ID"] = idKey()
-	order := transactor.Keys(
-		[]search.Sort[sortField]{{Field: "ID", Direction: search.SortDescending}},
-		columns,
-		idKey(),
-	)
-	if got := order.Signature(); got != "widgets.id:DESC" {
-		t.Fatalf("Signature() = %q", got)
-	}
-}
-
 func keysetBuilder() *transactor.PageBuilder[keyRow, keyRow] {
 	return transactor.Page(nil, func(r keyRow) keyRow { return r }, colID, colName).From(testTable)
 }
 
 func TestRunRejectsBadPaginationBeforeQuerying(t *testing.T) {
-	order := transactor.Keys[sortField](nil, keyColumns(), idKey())
+	order := strictOrder(t)
 	for name, tc := range map[string]struct {
 		builder *transactor.PageBuilder[keyRow, keyRow]
 		page    search.Pagination
@@ -131,28 +83,11 @@ func TestStrictKeysRefuseAnUnknownSortField(t *testing.T) {
 	}
 }
 
-func TestStrictKeysMatchKeysForMappedFields(t *testing.T) {
-	sorts := []search.Sort[sortField]{
-		{Field: sortByCreated, Direction: search.SortDescending},
-		{Field: sortByName, Direction: search.SortAscending},
-	}
-	strict, err := transactor.StrictKeys(sorts, keyColumns(), idKey())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if lenient := transactor.Keys(sorts, keyColumns(), idKey()); strict.Signature() != lenient.Signature() {
-		t.Fatalf("StrictKeys %q differs from Keys %q", strict.Signature(), lenient.Signature())
-	}
-	if _, err = transactor.StrictKeys[sortField](nil, keyColumns(), idKey()); err != nil {
-		t.Fatalf("no sort: %v", err)
-	}
-}
-
 // A page never locks rows. Before the move the count ran FOR SHARE and
 // PostgreSQL refused it; now Run refuses the lock itself, inside or outside a
 // transaction, and runs nothing.
 func TestPageRunRefusesARowLock(t *testing.T) {
-	order := transactor.Keys[sortField](nil, keyColumns(), idKey())
+	order := strictOrder(t)
 	for name, lock := range map[string]func(context.Context) context.Context{
 		"ForShare":       transactor.ForShare,
 		"ForUpdate":      transactor.ForUpdate,
@@ -240,11 +175,14 @@ func TestForwardersBuildTheKeysOfDBKeyset(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			var got [2]string
 			for i, key := range pair {
-				order := transactor.Keys(
+				order, err := transactor.StrictKeys(
 					[]search.Sort[string]{{Field: "K", Direction: search.SortDescending}},
 					map[string]transactor.Key[fRow]{"K": key.NullsLast()},
 					tiebreak,
 				)
+				if err != nil {
+					t.Fatal(err)
+				}
 				token, err := order.Cursor(row)
 				if err != nil {
 					t.Fatal(err)
@@ -260,4 +198,13 @@ func TestForwardersBuildTheKeysOfDBKeyset(t *testing.T) {
 			}
 		})
 	}
+}
+
+func strictOrder(t *testing.T) transactor.Order[keyRow] {
+	t.Helper()
+	order, err := transactor.StrictKeys[sortField](nil, keyColumns(), idKey())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return order
 }

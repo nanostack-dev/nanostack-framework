@@ -26,10 +26,16 @@ func TestIntegrationPageRunsInTheContextTransaction(t *testing.T) {
 		VALUES ('tx_only', 't_tx', 'n', now(), 'active', 1, gen_random_uuid())`); err != nil {
 		t.Fatalf("insert: %v", err)
 	}
+	order, err := transactor.StrictKeys[ksField](
+		nil, nil, transactor.StringKey(ksID, func(r ksRow) string { return r.ID }),
+	)
+	if err != nil {
+		t.Fatalf("StrictKeys: %v", err)
+	}
 	result, err := transactor.Page(db, func(r ksRow) ksRow { return r }, ksAll...).
 		From(ksTable).
 		Where(ksTenantC.EQ(jet.String("t_tx"))).
-		Keyset(transactor.Keys[ksField](nil, ksKeys(), ksTiebreak())).
+		Keyset(order).
 		Run(transactor.WithTx(ctx, tx), search.Pagination{Limit: 10}).
 		Value()
 	if err != nil {
