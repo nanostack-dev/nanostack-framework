@@ -46,27 +46,27 @@ sqlite   SELECT id AS "id" FROM widgets WHERE ((widgets.note < 'beta') OR (widge
 ## enum ascending after a middle label
 postgres SELECT id AS "id" FROM public.widgets WHERE ROW(widgets.status, widgets.id) > ROW('active'::text::widget_status, 'w_7'::text) ORDER BY widgets.status ASC, widgets.id ASC LIMIT 11;
 mysql    SELECT id AS "id" FROM db.widgets WHERE (widgets.status IN ('archived')) OR ((widgets.status = 'active') AND (widgets.id > 'w_7')) ORDER BY widgets.status ASC, widgets.id ASC LIMIT 11;
-sqlite   SELECT id AS "id" FROM widgets WHERE (widgets.status IN ('archived')) OR ((widgets.status = 'active') AND (widgets.id > 'w_7')) ORDER BY (CASE WHEN widgets.status = 'pending' THEN 0 WHEN widgets.status = 'active' THEN 1 WHEN widgets.status = 'archived' THEN 2 WHEN widgets.status IS NOT NULL THEN -1 END) ASC, widgets.id ASC LIMIT 11;
+sqlite   SELECT id AS "id" FROM widgets WHERE (CAST(widgets.status AS BLOB) IN (CAST('archived' AS BLOB))) OR ((CAST(widgets.status AS BLOB) = CAST('active' AS BLOB)) AND (widgets.id > 'w_7')) ORDER BY (CASE WHEN CAST(widgets.status AS BLOB) = CAST('pending' AS BLOB) THEN 0 WHEN CAST(widgets.status AS BLOB) = CAST('active' AS BLOB) THEN 1 WHEN CAST(widgets.status AS BLOB) = CAST('archived' AS BLOB) THEN 2 WHEN widgets.status IS NOT NULL THEN -1 END) ASC, widgets.id ASC LIMIT 11;
 
 ## enum ascending after the last label
 postgres SELECT id AS "id" FROM public.widgets WHERE ROW(widgets.status, widgets.id) > ROW('archived'::text::widget_status, 'w_7'::text) ORDER BY widgets.status ASC, widgets.id ASC LIMIT 11;
 mysql    SELECT id AS "id" FROM db.widgets WHERE (widgets.status = 'archived') AND (widgets.id > 'w_7') ORDER BY widgets.status ASC, widgets.id ASC LIMIT 11;
-sqlite   SELECT id AS "id" FROM widgets WHERE (widgets.status = 'archived') AND (widgets.id > 'w_7') ORDER BY (CASE WHEN widgets.status = 'pending' THEN 0 WHEN widgets.status = 'active' THEN 1 WHEN widgets.status = 'archived' THEN 2 WHEN widgets.status IS NOT NULL THEN -1 END) ASC, widgets.id ASC LIMIT 11;
+sqlite   SELECT id AS "id" FROM widgets WHERE (CAST(widgets.status AS BLOB) = CAST('archived' AS BLOB)) AND (widgets.id > 'w_7') ORDER BY (CASE WHEN CAST(widgets.status AS BLOB) = CAST('pending' AS BLOB) THEN 0 WHEN CAST(widgets.status AS BLOB) = CAST('active' AS BLOB) THEN 1 WHEN CAST(widgets.status AS BLOB) = CAST('archived' AS BLOB) THEN 2 WHEN widgets.status IS NOT NULL THEN -1 END) ASC, widgets.id ASC LIMIT 11;
 
 ## enum descending after the first label
 postgres SELECT id AS "id" FROM public.widgets WHERE ROW(widgets.status, widgets.id) < ROW('pending'::text::widget_status, 'w_7'::text) ORDER BY widgets.status DESC, widgets.id DESC LIMIT 11;
 mysql    SELECT id AS "id" FROM db.widgets WHERE (widgets.status NOT IN ('pending', 'active', 'archived')) OR ((widgets.status = 'pending') AND (widgets.id < 'w_7')) ORDER BY widgets.status DESC, widgets.id DESC LIMIT 11;
-sqlite   SELECT id AS "id" FROM widgets WHERE (widgets.status NOT IN ('pending', 'active', 'archived')) OR ((widgets.status = 'pending') AND (widgets.id < 'w_7')) ORDER BY (CASE WHEN widgets.status = 'pending' THEN 0 WHEN widgets.status = 'active' THEN 1 WHEN widgets.status = 'archived' THEN 2 WHEN widgets.status IS NOT NULL THEN -1 END) DESC, widgets.id DESC LIMIT 11;
+sqlite   SELECT id AS "id" FROM widgets WHERE (CAST(widgets.status AS BLOB) NOT IN (CAST('pending' AS BLOB), CAST('active' AS BLOB), CAST('archived' AS BLOB))) OR ((CAST(widgets.status AS BLOB) = CAST('pending' AS BLOB)) AND (widgets.id < 'w_7')) ORDER BY (CASE WHEN CAST(widgets.status AS BLOB) = CAST('pending' AS BLOB) THEN 0 WHEN CAST(widgets.status AS BLOB) = CAST('active' AS BLOB) THEN 1 WHEN CAST(widgets.status AS BLOB) = CAST('archived' AS BLOB) THEN 2 WHEN widgets.status IS NOT NULL THEN -1 END) DESC, widgets.id DESC LIMIT 11;
 
 ## nullable enum ascending
 postgres SELECT id AS "id" FROM public.widgets WHERE ((widgets.status_p > 'active'::text::widget_status) OR (widgets.status_p IS NULL)) OR ((widgets.status_p = 'active'::text::widget_status) AND (widgets.id > 'w_7'::text)) ORDER BY widgets.status_p ASC, widgets.id ASC LIMIT 11;
 mysql    SELECT id AS "id" FROM db.widgets WHERE ((widgets.status_p IN ('archived')) OR (widgets.status_p IS NULL)) OR ((widgets.status_p = 'active') AND (widgets.id > 'w_7')) ORDER BY widgets.status_p IS NULL, widgets.status_p ASC, widgets.id ASC LIMIT 11;
-sqlite   SELECT id AS "id" FROM widgets WHERE ((widgets.status_p IN ('archived')) OR (widgets.status_p IS NULL)) OR ((widgets.status_p = 'active') AND (widgets.id > 'w_7')) ORDER BY (CASE WHEN widgets.status_p = 'pending' THEN 0 WHEN widgets.status_p = 'active' THEN 1 WHEN widgets.status_p = 'archived' THEN 2 WHEN widgets.status_p IS NOT NULL THEN -1 END) ASC NULLS LAST, widgets.id ASC LIMIT 11;
+sqlite   SELECT id AS "id" FROM widgets WHERE ((CAST(widgets.status_p AS BLOB) IN (CAST('archived' AS BLOB))) OR (widgets.status_p IS NULL)) OR ((CAST(widgets.status_p AS BLOB) = CAST('active' AS BLOB)) AND (widgets.id > 'w_7')) ORDER BY (CASE WHEN CAST(widgets.status_p AS BLOB) = CAST('pending' AS BLOB) THEN 0 WHEN CAST(widgets.status_p AS BLOB) = CAST('active' AS BLOB) THEN 1 WHEN CAST(widgets.status_p AS BLOB) = CAST('archived' AS BLOB) THEN 2 WHEN widgets.status_p IS NOT NULL THEN -1 END) ASC NULLS LAST, widgets.id ASC LIMIT 11;
 
 ## nullable enum ascending after a NULL
 postgres SELECT id AS "id" FROM public.widgets WHERE (widgets.status_p IS NULL) AND (widgets.id > 'w_7'::text) ORDER BY widgets.status_p ASC, widgets.id ASC LIMIT 11;
 mysql    SELECT id AS "id" FROM db.widgets WHERE (widgets.status_p IS NULL) AND (widgets.id > 'w_7') ORDER BY widgets.status_p IS NULL, widgets.status_p ASC, widgets.id ASC LIMIT 11;
-sqlite   SELECT id AS "id" FROM widgets WHERE (widgets.status_p IS NULL) AND (widgets.id > 'w_7') ORDER BY (CASE WHEN widgets.status_p = 'pending' THEN 0 WHEN widgets.status_p = 'active' THEN 1 WHEN widgets.status_p = 'archived' THEN 2 WHEN widgets.status_p IS NOT NULL THEN -1 END) ASC NULLS LAST, widgets.id ASC LIMIT 11;
+sqlite   SELECT id AS "id" FROM widgets WHERE (widgets.status_p IS NULL) AND (widgets.id > 'w_7') ORDER BY (CASE WHEN CAST(widgets.status_p AS BLOB) = CAST('pending' AS BLOB) THEN 0 WHEN CAST(widgets.status_p AS BLOB) = CAST('active' AS BLOB) THEN 1 WHEN CAST(widgets.status_p AS BLOB) = CAST('archived' AS BLOB) THEN 2 WHEN widgets.status_p IS NOT NULL THEN -1 END) ASC NULLS LAST, widgets.id ASC LIMIT 11;
 
 ## uuid ascending
 postgres SELECT id AS "id" FROM public.widgets WHERE ROW(widgets.ref, widgets.id) > ROW('018f6b8e-0000-7000-8000-000000000001'::uuid, 'w_7'::text) ORDER BY widgets.ref ASC, widgets.id ASC LIMIT 11;
@@ -81,7 +81,7 @@ sqlite   SELECT id AS "id" FROM widgets WHERE ((widgets.score > 2.25) OR (widget
 ## real ascending
 postgres SELECT id AS "id" FROM public.widgets WHERE ROW(widgets.ratio, widgets.id) > ROW(0.10000000149011612::real, 'w_7'::text) ORDER BY widgets.ratio ASC, widgets.id ASC LIMIT 11;
 mysql    SELECT id AS "id" FROM db.widgets WHERE (widgets.ratio > 0.10000000149011612) OR ((widgets.ratio = 0.10000000149011612) AND (widgets.id > 'w_7')) ORDER BY widgets.ratio ASC, widgets.id ASC LIMIT 11;
-sqlite   SELECT id AS "id" FROM widgets WHERE (widgets.ratio, widgets.id) > (0.10000000149011612, 'w_7') ORDER BY widgets.ratio ASC, widgets.id ASC LIMIT 11;
+sqlite   ErrDialect
 
 ## MySQL timestamp ascending
 postgres ErrDialect
@@ -101,5 +101,5 @@ sqlite   ErrDialect
 ## enum ascending after MySQL's empty value
 postgres ErrInvalidCursor
 mysql    SELECT id AS "id" FROM db.widgets WHERE (widgets.status IN ('pending', 'active', 'archived')) OR ((widgets.status NOT IN ('pending', 'active', 'archived')) AND (widgets.id > 'w_7')) ORDER BY widgets.status ASC, widgets.id ASC LIMIT 11;
-sqlite   SELECT id AS "id" FROM widgets WHERE (widgets.status IN ('pending', 'active', 'archived')) OR ((widgets.status NOT IN ('pending', 'active', 'archived')) AND (widgets.id > 'w_7')) ORDER BY (CASE WHEN widgets.status = 'pending' THEN 0 WHEN widgets.status = 'active' THEN 1 WHEN widgets.status = 'archived' THEN 2 WHEN widgets.status IS NOT NULL THEN -1 END) ASC, widgets.id ASC LIMIT 11;
+sqlite   SELECT id AS "id" FROM widgets WHERE (CAST(widgets.status AS BLOB) IN (CAST('pending' AS BLOB), CAST('active' AS BLOB), CAST('archived' AS BLOB))) OR ((CAST(widgets.status AS BLOB) NOT IN (CAST('pending' AS BLOB), CAST('active' AS BLOB), CAST('archived' AS BLOB))) AND (widgets.id > 'w_7')) ORDER BY (CASE WHEN CAST(widgets.status AS BLOB) = CAST('pending' AS BLOB) THEN 0 WHEN CAST(widgets.status AS BLOB) = CAST('active' AS BLOB) THEN 1 WHEN CAST(widgets.status AS BLOB) = CAST('archived' AS BLOB) THEN 2 WHEN widgets.status IS NOT NULL THEN -1 END) ASC, widgets.id ASC LIMIT 11;
 

@@ -44,10 +44,10 @@ past double                  postgres=ErrInvalidCursor mysql=ErrInvalidCursor sq
 bool                         postgres=ErrInvalidCursor mysql=ErrInvalidCursor sqlite=ErrInvalidCursor
 
 ## RATIO
-finite                       postgres=ok mysql=ok sqlite=ok
-past real                    postgres=ErrInvalidCursor mysql=ErrInvalidCursor sqlite=ErrInvalidCursor
-NaN                          postgres=ok mysql=ErrInvalidCursor sqlite=ErrInvalidCursor
-Infinity                     postgres=ok mysql=ErrInvalidCursor sqlite=ok
+finite                       postgres=ok mysql=ok sqlite=ErrDialect
+past real                    postgres=ErrInvalidCursor mysql=ErrInvalidCursor sqlite=ErrDialect
+NaN                          postgres=ok mysql=ErrInvalidCursor sqlite=ErrDialect
+Infinity                     postgres=ok mysql=ErrInvalidCursor sqlite=ErrDialect
 
 ## CREATED
 2026-03-04T10:00:00          postgres=ok mysql=ok sqlite=ok
@@ -61,6 +61,39 @@ Infinity                     postgres=ok mysql=ErrInvalidCursor sqlite=ok
 2038-01-19T03:14:08          postgres=ok mysql=ok sqlite=ok
 9999-12-31T23:59:59.999999   postgres=ok mysql=ok sqlite=ok
 10000-01-01T00:00:00         postgres=ok mysql=ErrInvalidCursor sqlite=ErrInvalidCursor
+2106-02-07T06:28:15.999999   postgres=ok mysql=ok sqlite=ok
+2106-02-07T06:28:16          postgres=ok mysql=ok sqlite=ok
+zero date (MySQL 0000-00-00) postgres=ok mysql=ok sqlite=ok
+nanoseconds                  postgres=ErrInvalidCursor mysql=ErrInvalidCursor sqlite=ok
+a second plus 789 ns         postgres=ErrInvalidCursor mysql=ErrInvalidCursor sqlite=ok
+pair with 0 nanoseconds      postgres=ErrInvalidCursor mysql=ErrInvalidCursor sqlite=ErrInvalidCursor
+pair with 1000 nanoseconds   postgres=ErrInvalidCursor mysql=ErrInvalidCursor sqlite=ErrInvalidCursor
+three values                 postgres=ErrInvalidCursor mysql=ErrInvalidCursor sqlite=ErrInvalidCursor
+past the PostgreSQL range    postgres=ErrInvalidCursor mysql=ErrInvalidCursor sqlite=ErrInvalidCursor
+text                         postgres=ErrInvalidCursor mysql=ErrInvalidCursor sqlite=ErrInvalidCursor
+fraction                     postgres=ErrInvalidCursor mysql=ErrInvalidCursor sqlite=ErrInvalidCursor
+null                         postgres=ErrInvalidCursor mysql=ErrInvalidCursor sqlite=ErrInvalidCursor
+
+## CREATED_SQL_TEXT
+2026-03-04T10:00:00          postgres=ok mysql=ok sqlite=ok
+-0001-12-31T23:59:59.999999  postgres=ok mysql=ErrInvalidCursor sqlite=ErrInvalidCursor
+0000-01-01T00:00:00          postgres=ok mysql=ErrInvalidCursor sqlite=ok
+0999-12-31T23:59:59.999999   postgres=ok mysql=ErrInvalidCursor sqlite=ErrInvalidCursor
+1000-01-01T00:00:00          postgres=ok mysql=ok sqlite=ok
+1970-01-01T00:00:00.999999   postgres=ok mysql=ok sqlite=ErrInvalidCursor
+1970-01-01T00:00:01          postgres=ok mysql=ok sqlite=ok
+2038-01-19T03:14:07.999999   postgres=ok mysql=ok sqlite=ErrInvalidCursor
+2038-01-19T03:14:08          postgres=ok mysql=ok sqlite=ok
+9999-12-31T23:59:59.999999   postgres=ok mysql=ok sqlite=ErrInvalidCursor
+10000-01-01T00:00:00         postgres=ok mysql=ErrInvalidCursor sqlite=ErrInvalidCursor
+2106-02-07T06:28:15.999999   postgres=ok mysql=ok sqlite=ErrInvalidCursor
+2106-02-07T06:28:16          postgres=ok mysql=ok sqlite=ok
+zero date (MySQL 0000-00-00) postgres=ok mysql=ok sqlite=ok
+nanoseconds                  postgres=ErrInvalidCursor mysql=ErrInvalidCursor sqlite=ErrInvalidCursor
+a second plus 789 ns         postgres=ErrInvalidCursor mysql=ErrInvalidCursor sqlite=ErrInvalidCursor
+pair with 0 nanoseconds      postgres=ErrInvalidCursor mysql=ErrInvalidCursor sqlite=ErrInvalidCursor
+pair with 1000 nanoseconds   postgres=ErrInvalidCursor mysql=ErrInvalidCursor sqlite=ErrInvalidCursor
+three values                 postgres=ErrInvalidCursor mysql=ErrInvalidCursor sqlite=ErrInvalidCursor
 past the PostgreSQL range    postgres=ErrInvalidCursor mysql=ErrInvalidCursor sqlite=ErrInvalidCursor
 text                         postgres=ErrInvalidCursor mysql=ErrInvalidCursor sqlite=ErrInvalidCursor
 fraction                     postgres=ErrInvalidCursor mysql=ErrInvalidCursor sqlite=ErrInvalidCursor
@@ -78,6 +111,39 @@ null                         postgres=ErrInvalidCursor mysql=ErrInvalidCursor sq
 2038-01-19T03:14:08          postgres=ErrDialect mysql=ErrInvalidCursor sqlite=ErrDialect
 9999-12-31T23:59:59.999999   postgres=ErrDialect mysql=ErrInvalidCursor sqlite=ErrDialect
 10000-01-01T00:00:00         postgres=ErrDialect mysql=ErrInvalidCursor sqlite=ErrDialect
+2106-02-07T06:28:15.999999   postgres=ErrDialect mysql=ErrInvalidCursor sqlite=ErrDialect
+2106-02-07T06:28:16          postgres=ErrDialect mysql=ErrInvalidCursor sqlite=ErrDialect
+zero date (MySQL 0000-00-00) postgres=ErrDialect mysql=ok sqlite=ErrDialect
+nanoseconds                  postgres=ErrDialect mysql=ErrInvalidCursor sqlite=ErrDialect
+a second plus 789 ns         postgres=ErrDialect mysql=ErrInvalidCursor sqlite=ErrDialect
+pair with 0 nanoseconds      postgres=ErrDialect mysql=ErrInvalidCursor sqlite=ErrDialect
+pair with 1000 nanoseconds   postgres=ErrDialect mysql=ErrInvalidCursor sqlite=ErrDialect
+three values                 postgres=ErrDialect mysql=ErrInvalidCursor sqlite=ErrDialect
+past the PostgreSQL range    postgres=ErrDialect mysql=ErrInvalidCursor sqlite=ErrDialect
+text                         postgres=ErrDialect mysql=ErrInvalidCursor sqlite=ErrDialect
+fraction                     postgres=ErrDialect mysql=ErrInvalidCursor sqlite=ErrDialect
+null                         postgres=ErrDialect mysql=ErrInvalidCursor sqlite=ErrDialect
+
+## STAMP_MARIADB
+2026-03-04T10:00:00          postgres=ErrDialect mysql=ok sqlite=ErrDialect
+-0001-12-31T23:59:59.999999  postgres=ErrDialect mysql=ErrInvalidCursor sqlite=ErrDialect
+0000-01-01T00:00:00          postgres=ErrDialect mysql=ErrInvalidCursor sqlite=ErrDialect
+0999-12-31T23:59:59.999999   postgres=ErrDialect mysql=ErrInvalidCursor sqlite=ErrDialect
+1000-01-01T00:00:00          postgres=ErrDialect mysql=ErrInvalidCursor sqlite=ErrDialect
+1970-01-01T00:00:00.999999   postgres=ErrDialect mysql=ErrInvalidCursor sqlite=ErrDialect
+1970-01-01T00:00:01          postgres=ErrDialect mysql=ok sqlite=ErrDialect
+2038-01-19T03:14:07.999999   postgres=ErrDialect mysql=ok sqlite=ErrDialect
+2038-01-19T03:14:08          postgres=ErrDialect mysql=ok sqlite=ErrDialect
+9999-12-31T23:59:59.999999   postgres=ErrDialect mysql=ErrInvalidCursor sqlite=ErrDialect
+10000-01-01T00:00:00         postgres=ErrDialect mysql=ErrInvalidCursor sqlite=ErrDialect
+2106-02-07T06:28:15.999999   postgres=ErrDialect mysql=ok sqlite=ErrDialect
+2106-02-07T06:28:16          postgres=ErrDialect mysql=ErrInvalidCursor sqlite=ErrDialect
+zero date (MySQL 0000-00-00) postgres=ErrDialect mysql=ok sqlite=ErrDialect
+nanoseconds                  postgres=ErrDialect mysql=ErrInvalidCursor sqlite=ErrDialect
+a second plus 789 ns         postgres=ErrDialect mysql=ErrInvalidCursor sqlite=ErrDialect
+pair with 0 nanoseconds      postgres=ErrDialect mysql=ErrInvalidCursor sqlite=ErrDialect
+pair with 1000 nanoseconds   postgres=ErrDialect mysql=ErrInvalidCursor sqlite=ErrDialect
+three values                 postgres=ErrDialect mysql=ErrInvalidCursor sqlite=ErrDialect
 past the PostgreSQL range    postgres=ErrDialect mysql=ErrInvalidCursor sqlite=ErrDialect
 text                         postgres=ErrDialect mysql=ErrInvalidCursor sqlite=ErrDialect
 fraction                     postgres=ErrDialect mysql=ErrInvalidCursor sqlite=ErrDialect
@@ -95,6 +161,14 @@ null                         postgres=ErrDialect mysql=ErrInvalidCursor sqlite=E
 2038-01-19T03:14:08          postgres=ok mysql=ErrDialect sqlite=ErrDialect
 9999-12-31T23:59:59.999999   postgres=ok mysql=ErrDialect sqlite=ErrDialect
 10000-01-01T00:00:00         postgres=ok mysql=ErrDialect sqlite=ErrDialect
+2106-02-07T06:28:15.999999   postgres=ok mysql=ErrDialect sqlite=ErrDialect
+2106-02-07T06:28:16          postgres=ok mysql=ErrDialect sqlite=ErrDialect
+zero date (MySQL 0000-00-00) postgres=ok mysql=ErrDialect sqlite=ErrDialect
+nanoseconds                  postgres=ErrInvalidCursor mysql=ErrDialect sqlite=ErrDialect
+a second plus 789 ns         postgres=ErrInvalidCursor mysql=ErrDialect sqlite=ErrDialect
+pair with 0 nanoseconds      postgres=ErrInvalidCursor mysql=ErrDialect sqlite=ErrDialect
+pair with 1000 nanoseconds   postgres=ErrInvalidCursor mysql=ErrDialect sqlite=ErrDialect
+three values                 postgres=ErrInvalidCursor mysql=ErrDialect sqlite=ErrDialect
 past the PostgreSQL range    postgres=ErrInvalidCursor mysql=ErrDialect sqlite=ErrDialect
 text                         postgres=ErrInvalidCursor mysql=ErrDialect sqlite=ErrDialect
 fraction                     postgres=ErrInvalidCursor mysql=ErrDialect sqlite=ErrDialect

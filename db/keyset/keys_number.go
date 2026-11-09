@@ -86,14 +86,18 @@ func acceptFloat(d dialect, v float64) error {
 	return nil
 }
 
-// RealKey orders on a NOT NULL real column (MySQL FLOAT). A real compared with
-// a double literal is promoted, and 0.1 stored as real is not 0.1 as double,
-// so the boundary row would match itself and repeat. The key compares as real:
-// with a cast on PostgreSQL, and with the float64 of the float32 value on MySQL
-// and SQLite, which equals the promoted column value. It refuses a finite
-// cursor value outside real's range with ErrInvalidCursor: the conversion to
-// float32 would turn it into an infinity, and the page would jump to the end.
-// NaN and the infinities follow FloatKey's rules per dialect.
+// RealKey orders on a NOT NULL single-precision column: a PostgreSQL real or
+// a MySQL FLOAT. A real compared with a double literal is promoted, and 0.1
+// stored as real is not 0.1 as double, so the boundary row would match itself
+// and repeat. The key compares as real: with a cast on PostgreSQL, and with
+// the float64 of the float32 value on MySQL, which equals the promoted column
+// value. It refuses a finite cursor value outside real's range with
+// ErrInvalidCursor: the conversion to float32 would turn it into an infinity,
+// and the page would jump to the end. NaN and the infinities follow FloatKey's
+// rules per dialect.
+//
+// SQLite REAL is a double, which a float32 cursor cannot hold exactly: Page
+// returns ErrDialect there. Use FloatKey on SQLite.
 func RealKey[T any](column jet.ColumnFloat, value func(T) float32) Key[T] {
 	return realKey(column, false, ptrOf(value))
 }
@@ -119,12 +123,14 @@ func realKey[T any](column jet.ColumnFloat, nullable bool, value func(T) *float3
 		},
 		accept: func(d dialect, v float32) error { return acceptFloat(d, float64(v)) },
 	}
-	return newKey(column, nullable, value, codec, literalBound(column, func(d dialect, v float32) ijet.Expression {
+	key := newKey(column, nullable, value, codec, literalBound(column, func(d dialect, v float32) ijet.Expression {
 		if d == dialectPostgres {
 			return jet.CAST(jet.Float(float64(v))).AS_REAL()
 		}
 		return ijet.Float(float64(v))
 	}))
+	key.only = dialects(dialectPostgres | dialectMySQL)
+	return key
 }
 
 // floatCodec writes NaN and the infinities as words, which JSON numbers

@@ -124,6 +124,9 @@ func (b *PageBuilder[T, R]) Keyset(order Order[T]) *PageBuilder[T, R] {
 // belong to this ordering is search.ErrInvalidCursor. Without a Keyset, a
 // cursor is search.ErrInvalidCursor.
 //
+// A page after a cursor that ends on the cursor row is ErrNoProgress, so a
+// client that follows NextCursor cannot loop on one page.
+//
 // Run checks the cursor with Pagination.Validate. It does not check the limit:
 // a search checks it with search.CheckPage before it builds the page.
 func (b *PageBuilder[T, R]) Run(ctx context.Context, page search.Pagination) (search.Result[R], error) {
@@ -141,6 +144,9 @@ func (b *PageBuilder[T, R]) Run(ctx context.Context, page search.Pagination) (se
 	rows, next, err := b.fetch(ctx, source, page, seek)
 	if err != nil {
 		return search.Result[R]{}, err
+	}
+	if next != "" && next == page.Cursor {
+		return search.Result[R]{}, ErrNoProgress
 	}
 	items, err := b.mapRows(ctx, rows)
 	if err != nil {

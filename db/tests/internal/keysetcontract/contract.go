@@ -125,6 +125,7 @@ func Run(t *testing.T, cfg Config) {
 	t.Run("boundary cursors are never a database error", func(t *testing.T) { c.checkBoundaries(t) })
 	t.Run("an enum value that is not a label, and NULL", func(t *testing.T) { c.checkEnumPins(t) })
 	t.Run("a NOT NULL (created, id) walk reads the index in order", func(t *testing.T) { c.checkExplain(t) })
+	t.Run("values that only one dialect stores", func(t *testing.T) { c.checkPins(t) })
 }
 
 func newContract(cfg Config) *contract {
@@ -157,8 +158,23 @@ func newContract(cfg Config) *contract {
 	c.id = keyDef{key: keyset.StringKey(id, func(r Row) string { return r.ID }), cmp: func(a, b Row) int {
 		return strings.Compare(a.ID, b.ID)
 	}}
-	c.keys = contractKeys(name, nameCI, note, noteCI, status, statusP, ref, points, pointsP, score, ratio, created,
-		seen, stamp)
+	c.keys = contractKeys(
+		cfg.Flavor,
+		name,
+		nameCI,
+		note,
+		noteCI,
+		status,
+		statusP,
+		ref,
+		points,
+		pointsP,
+		score,
+		ratio,
+		created,
+		seen,
+		stamp,
+	)
 	return c
 }
 

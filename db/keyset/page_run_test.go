@@ -170,3 +170,24 @@ func TestRunReturnsTheErrorsOfTheQueriesAndTheMapper(t *testing.T) {
 		})
 	}
 }
+
+// A page whose last row is its own cursor row would hand the same cursor back
+// without end. Run refuses it.
+func TestRunRefusesAPageThatEndsOnItsCursorRow(t *testing.T) {
+	order := pageOrder(t)
+	cursor, err := order.Cursor(pageRow{ID: "b", Name: "name b"})
+	require.NoError(t, err)
+	fake := &fakeDB{answers: []answer{countAnswer(9), pageRows("a", "b", "c")}}
+	_, err = keyset.Page(fake.open(), identity, colID, colName).
+		From(testTable).Keyset(order).
+		Run(t.Context(), search.Pagination{Limit: 2, Cursor: cursor})
+	require.ErrorIs(t, err, keyset.ErrNoProgress)
+	require.False(t, search.IsClientError(err), "a seek that matches its own row is not a client error")
+
+	fake = &fakeDB{answers: []answer{countAnswer(9), pageRows("c", "d", "e")}}
+	result, err := keyset.Page(fake.open(), identity, colID, colName).
+		From(testTable).Keyset(order).
+		Run(t.Context(), search.Pagination{Limit: 2, Cursor: cursor})
+	require.NoError(t, err, "a page that moves past the cursor runs")
+	require.NotEqual(t, cursor, result.NextCursor)
+}

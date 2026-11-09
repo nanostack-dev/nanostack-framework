@@ -19,11 +19,16 @@
 //     placement only for a nullable key whose placement differs from their
 //     default, so a NOT NULL key stays a plain "col ASC" that an index serves.
 //   - The seek is a row value on PostgreSQL and SQLite when every key is NOT
-//     NULL and has one direction, and the expanded form otherwise. MySQL
-//     always gets the expanded form: it does not range-scan a row value.
+//     NULL and has one direction, and no key is an enum on SQLite (SQLite
+//     orders an enum through a CASE). The seek is the expanded form otherwise.
+//     MySQL always gets the expanded form: it does not range-scan a row value.
 //   - Each codec refuses a cursor value that the dialect's column cannot hold
 //     with search.ErrInvalidCursor, before any statement runs. A key whose
 //     column type the dialect lacks is ErrDialect.
+//   - A key must match how the column stores and compares its values: see
+//     LocalTimeKey for SQLite time text, and EnumKey for collations. A page
+//     that ends on its own cursor row is ErrNoProgress, never a page that a
+//     client would follow without end.
 //
 // Order.Seek and Order.OrderBy write PostgreSQL SQL, for a db/postgres
 // statement that does not fit Page.

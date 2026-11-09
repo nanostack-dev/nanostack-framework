@@ -44,6 +44,17 @@ func timeCases() []hostileCase {
 		at(2038, time.January, 19, 3, 14, 8, 0),
 		at(9999, time.December, 31, 23, 59, 59, 999_999),
 		at(10000, time.January, 1, 0, 0, 0, 0),
+		{
+			label: "2106-02-07T06:28:15.999999",
+			raw:   micros(time.Date(2106, time.February, 7, 6, 28, 15, 999_999_000, time.UTC)),
+		},
+		{label: "2106-02-07T06:28:16", raw: micros(time.Date(2106, time.February, 7, 6, 28, 16, 0, time.UTC))},
+		{label: "zero date (MySQL 0000-00-00)", raw: micros(time.Time{})},
+		{label: "nanoseconds", raw: "[825934272123456,789]"},
+		{label: "a second plus 789 ns", raw: "[825934272000000,789]"},
+		{label: "pair with 0 nanoseconds", raw: "[825934272123456,0]"},
+		{label: "pair with 1000 nanoseconds", raw: "[825934272123456,1000]"},
+		{label: "three values", raw: "[825934272123456,1,2]"},
 		{label: "past the PostgreSQL range", raw: "9223372036854775807"},
 		{label: "text", raw: `"2026-03-04T10:00:00Z"`},
 		{label: "fraction", raw: "1.5"},
@@ -103,9 +114,11 @@ func hostileCases() map[dField][]hostileCase {
 			{label: "NaN", raw: `"NaN"`},
 			{label: "Infinity", raw: `"Infinity"`},
 		},
-		dCreated: timeCases(),
-		dStamp:   timeCases(),
-		dAt:      timeCases(),
+		dCreated:    timeCases(),
+		dStamp:      timeCases(),
+		dCreatedSQL: timeCases(),
+		dStampMaria: timeCases(),
+		dAt:         timeCases(),
 		dIP: {
 			{label: "address", raw: `"10.0.0.1"`},
 			{label: "network", raw: `"10.0.0.0/8"`},
@@ -119,7 +132,9 @@ func hostileCases() map[dField][]hostileCase {
 // cursor can carry. A value the column cannot hold must be ErrInvalidCursor
 // (400) before any statement runs, never a database error (500).
 func TestHostileCursors(t *testing.T) {
-	fields := []dField{dName, dNote, dStatus, dRef, dRank, dScore, dRatio, dCreated, dStamp, dAt, dIP}
+	fields := []dField{
+		dName, dNote, dStatus, dRef, dRank, dScore, dRatio, dCreated, dCreatedSQL, dStamp, dStampMaria, dAt, dIP,
+	}
 	cases := hostileCases()
 	var golden strings.Builder
 	for _, field := range fields {

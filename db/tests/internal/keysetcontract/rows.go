@@ -44,6 +44,7 @@ func isNil[V any](get func(Row) *V) func(Row) bool {
 func labelCmp(a, b string) int { return cmp.Compare(slices.Index(Labels, a), slices.Index(Labels, b)) }
 
 func contractKeys(
+	flavor Flavor,
 	name, nameCI, note, noteCI, status, statusP, ref postgres.ColumnString,
 	points, pointsP postgres.ColumnInteger,
 	score, ratio postgres.ColumnFloat,
@@ -56,6 +57,13 @@ func contractKeys(
 	scoreOf := func(r Row) *float64 { return r.Score }
 	seenOf := func(r Row) *time.Time { return r.Seen }
 	stampOf := func(r Row) *time.Time { return r.Stamp }
+	// SQLite REAL is a double, which RealKey refuses (ErrDialect). The rows
+	// write the float64 of each float32 ratio, so FloatKey walks the same
+	// order there.
+	ratioKey := keyset.RealKey(ratio, func(r Row) float32 { return r.Ratio })
+	if flavor == SQLite {
+		ratioKey = keyset.FloatKey(ratio, func(r Row) float64 { return float64(r.Ratio) })
+	}
 	return map[string]keyDef{
 		"name": {key: keyset.StringKey(name, func(r Row) string { return r.Name }), cmp: strCmp(func(r Row) string {
 			return r.Name
@@ -98,7 +106,7 @@ func contractKeys(
 			null: isNil(scoreOf),
 		},
 		"ratio": {
-			key: keyset.RealKey(ratio, func(r Row) float32 { return r.Ratio }),
+			key: ratioKey,
 			cmp: func(a, b Row) int { return cmp.Compare(a.Ratio, b.Ratio) },
 		},
 		"created": {

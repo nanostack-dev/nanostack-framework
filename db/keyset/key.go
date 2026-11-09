@@ -14,8 +14,8 @@ import (
 // to order and compare on, and how to read that column's value from a row.
 //
 // Build keys with the typed constructors (StringKey, UUIDKey, InetKey, EnumKey,
-// TimeKey, LocalTimeKey, MySQLTimestampKey, IntKey, FloatKey, RealKey and their
-// Nullable forms) so the cursor value and the SQL literal share one type. A
+// TimeKey, LocalTimeKey, MySQLTimestampKey, MariaDBTimestampKey, IntKey,
+// FloatKey, RealKey and their Nullable forms) so the cursor value and the SQL literal share one type. A
 // constructor refuses a cursor value its column cannot hold with
 // search.ErrInvalidCursor, before any query runs. What a column can hold
 // depends on the dialect, so the check runs when Page knows the dialect of its
@@ -41,6 +41,9 @@ type Key[T any] struct {
 	// columnOrder reports whether the column's own comparison operators follow
 	// the key order on a dialect. A row-value seek needs it. nil means yes.
 	columnOrder func(dialect) bool
+	// withSQLiteLayout rebuilds bound with another SQLite time layout. Only a
+	// LocalTimeKey sets it.
+	withSQLiteLayout func(layout string) func(dialect, json.RawMessage) (keyBound, error)
 }
 
 // nullPlacement says where NULLs sort. The zero value is the contract on every

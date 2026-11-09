@@ -62,6 +62,10 @@ const (
 	dStamp   dField = "STAMP"
 	dAt      dField = "AT"
 	dIP      dField = "IP"
+	// dCreatedSQL is CREATED as SQL writes it on SQLite (CURRENT_TIMESTAMP).
+	dCreatedSQL dField = "CREATED_SQL_TEXT"
+	// dStampMaria is STAMP on MariaDB 11.5 and later.
+	dStampMaria dField = "STAMP_MARIADB"
 )
 
 var dLabels = []string{"pending", "active", "archived"}
@@ -118,8 +122,11 @@ func newDTable(dialect string) dTable {
 		dRatio:   keyset.RealKey(ratio, func(r dRow) float32 { return r.Ratio }),
 		dCreated: keyset.LocalTimeKey(created, func(r dRow) time.Time { return r.Created }),
 		dStamp:   keyset.MySQLTimestampKey(stamp, func(r dRow) time.Time { return r.Stamp }),
-		dAt:      keyset.TimeKey(at, func(r dRow) time.Time { return r.At }),
-		dIP:      keyset.InetKey(ip, func(r dRow) string { return r.IP }),
+		dCreatedSQL: keyset.LocalTimeKey(created, func(r dRow) time.Time { return r.Created }).
+			SQLiteLayout("2006-01-02 15:04:05"),
+		dStampMaria: keyset.MariaDBTimestampKey(stamp, func(r dRow) time.Time { return r.Stamp }),
+		dAt:         keyset.TimeKey(at, func(r dRow) time.Time { return r.At }),
+		dIP:         keyset.InetKey(ip, func(r dRow) string { return r.IP }),
 	}
 	return table
 }
@@ -277,9 +284,34 @@ func TestDialectSQLProperties(t *testing.T) {
 
 	t.Run("SQLite orders an enum by a CASE and seeks with the expanded form", func(t *testing.T) {
 		sql := sqlOf(t, "sqlite", dSample, asc(dStatus))
-		require.Contains(t, sql, "ORDER BY (CASE WHEN widgets.status = 'pending' THEN 0")
-		require.Contains(t, sql, "widgets.status IN ('archived')")
+		require.Contains(t, sql, "ORDER BY (CASE WHEN CAST(widgets.status AS BLOB) = CAST('pending' AS BLOB) THEN 0")
+		require.Contains(t, sql, "CAST(widgets.status AS BLOB) IN (CAST('archived' AS BLOB))")
+		require.Contains(t, sql, "CAST(widgets.status AS BLOB) = CAST('active' AS BLOB)")
 		require.NotContains(t, sql, "(widgets.status, widgets.id)", "a row value compares the enum as text")
+		require.NotContains(t, sql, "widgets.status IN", "the column's collation must not match a label")
+	})
+
+	t.Run("MySQL seeks after the zero date without a zero-date literal", func(t *testing.T) {
+		zero := dSample
+		zero.Created, zero.Stamp = time.Time{}, time.Time{}
+		sql := sqlOf(t, "mysql", zero, asc(dCreated))
+		require.Contains(t, sql, "(widgets.created >= '1000-01-01 00:00:00') OR "+
+			"((widgets.created < '1000-01-01 00:00:00') AND (widgets.id > 'w_7'))")
+		require.Contains(t, sqlOf(t, "mysql", zero, asc(dStamp)), "widgets.stamp >= '1970-01-01 00:00:01'")
+		require.NotContains(t, sql, "0000-00-00", "the seek does not depend on how sql_mode reads a zero-date literal")
+	})
+
+	t.Run("SQLite writes a time finer than a microsecond in full", func(t *testing.T) {
+		fine := dSample
+		fine.Created = time.Date(2026, time.March, 4, 10, 11, 12, 123_456_789, time.UTC)
+		require.Contains(t, sqlOf(t, "sqlite", fine, asc(dCreated)), "'2026-03-04 10:11:12.123456789+00:00'")
+	})
+
+	t.Run("SQLite writes a time in the key's layout", func(t *testing.T) {
+		whole := dSample
+		whole.Created = time.Date(2026, time.March, 4, 10, 11, 12, 0, time.UTC)
+		require.Contains(t, sqlOf(t, "sqlite", whole, asc(dCreatedSQL)),
+			"(widgets.created, widgets.id) > ('2026-03-04 10:11:12', 'w_7')")
 	})
 
 	t.Run("a uuid is lower-case text on MySQL and SQLite", func(t *testing.T) {
@@ -323,6 +355,8 @@ func TestDialectRefusesAKeyItsColumnTypeLacks(t *testing.T) {
 		{"mysql", dAt}, {"sqlite", dAt},
 		{"mysql", dIP}, {"sqlite", dIP},
 		{"postgres", dStamp}, {"sqlite", dStamp},
+		{"postgres", dStampMaria}, {"sqlite", dStampMaria},
+		{"sqlite", dRatio},
 	} {
 		t.Run(tc.dialect+" "+string(tc.field), func(t *testing.T) {
 			table := newDTable(tc.dialect)
@@ -373,4 +407,44 @@ func compareGolden(t *testing.T, name, got string) {
 	want, err := os.ReadFile(path)
 	require.NoError(t, err, "run with -update to write %s", path)
 	require.Equal(t, string(want), got, "the SQL or a codec changed: review it, then run with -update")
+}
+
+// A SQLite time finer than a microsecond keeps its nanoseconds in the cursor,
+// so the seek starts exactly after the row. A whole microsecond keeps the
+// single-number token.
+func TestDialectTimeCursorKeepsNanosecondsForSQLite(t *testing.T) {
+	table := newDTable("sqlite")
+	order := table.order(t, asc(dCreated))
+	fine := dSample
+	fine.Created = time.Date(2026, time.March, 4, 10, 11, 12, 123_456_789, time.UTC)
+	token, err := order.Cursor(fine)
+	require.NoError(t, err)
+	decoded, err := search.DecodeCursor(token)
+	require.NoError(t, err)
+	require.JSONEq(t, "[825934272123456,789]", string(decoded.Values[0]))
+	token, err = order.Cursor(dSample)
+	require.NoError(t, err)
+	decoded, err = search.DecodeCursor(token)
+	require.NoError(t, err)
+	require.JSONEq(t, "825934272345678", string(decoded.Values[0]))
+}
+
+func TestSQLiteLayoutPanicsOffALocalTimeKeyAndOnALayoutOutOfOrder(t *testing.T) {
+	table := newDTable("sqlite")
+	require.Panics(t, func() { table.keys[dName].SQLiteLayout("2006-01-02 15:04:05") })
+	require.Panics(t, func() { table.keys[dAt].SQLiteLayout("2006-01-02 15:04:05") })
+	require.Panics(t, func() { table.keys[dCreated].SQLiteLayout("02/01/2006 15:04:05") })
+	require.NotPanics(t, func() { table.keys[dCreated].SQLiteLayout("2006-01-02T15:04:05.000Z") })
+}
+
+// SQLiteLayout keeps every other setting of the key.
+func TestSQLiteLayoutKeepsTheNullPlacement(t *testing.T) {
+	seen := jet.TimestampColumn("seen")
+	key := keyset.NullableLocalTimeKey(seen, func(dRow) *time.Time { return nil }).NullsLast().
+		SQLiteLayout("2006-01-02 15:04:05")
+	table := newDTable("sqlite")
+	order := mustOrder[dField](t, nil, nil, key)
+	_, rows, err := table.page().Keyset(order).StatementsForTest(search.Pagination{Limit: 1})
+	require.NoError(t, err)
+	require.Contains(t, normalize(rows.DebugSql()), "ORDER BY seen ASC NULLS LAST LIMIT 2")
 }

@@ -12,6 +12,7 @@ import (
 
 	ijet "github.com/nanostack-dev/nanostack-framework/db/internal/jet"
 	jet "github.com/nanostack-dev/nanostack-framework/db/postgres"
+	"github.com/nanostack-dev/nanostack-framework/db/sqlite"
 )
 
 // StringKey orders on a NOT NULL text column. The order and the matching
@@ -76,8 +77,12 @@ func stringKey[T any](column jet.ColumnString, nullable bool, value func(T) *str
 // and is a valid cursor value.
 //
 // On SQLite the column is text. ORDER BY maps each label to its position with
-// a CASE, and the seek is the same IN list as on MySQL. A value that is not a
-// label sorts before every label, as on MySQL, and all such values tie.
+// a CASE, and the seek is the same IN list as on MySQL. Both compare the bytes
+// (as BLOB), whatever the column's collation, so a value matches a label only
+// when it is exactly that label. On a NOCASE column, 'ACTIVE' is not the label
+// "active". A value that is not a label sorts before every label, as on MySQL,
+// and all such values tie. The seek is never a row value, because the column's
+// own order is text order.
 //
 // A text column that holds enum-like values and sorts as text is a StringKey.
 func EnumKey[T any](column jet.ColumnString, enumType string, labels []string, value func(T) string) Key[T] {
@@ -125,7 +130,7 @@ func enumKey[T any](
 			typed := ijet.StringExp(jet.CAST(jet.String(v)).AS(enumType))
 			return columnBound(column, typed)
 		}
-		return enumListBound(column, allowed, v)
+		return enumListBound(enumOperand(d, column), allowed, v, d)
 	})
 	key.sortExpr = func(d dialect) ijet.Expression {
 		if d != dialectSQLite {
@@ -134,8 +139,9 @@ func enumKey[T any](
 		// A searched CASE keeps NULL as NULL, so the NULL placement of the key
 		// applies. A value that is not a label sorts at -1, before every label.
 		position := ijet.CASE()
+		operand := enumOperand(d, column)
 		for i, label := range allowed {
-			position = position.WHEN(column.EQ(ijet.String(label))).THEN(ijet.Int(int64(i)))
+			position = position.WHEN(ijet.Eq(operand, enumLabel(d, label))).THEN(ijet.Int(int64(i)))
 		}
 		return position.WHEN(column.IS_NOT_NULL()).THEN(ijet.Int(-1))
 	}
@@ -143,18 +149,43 @@ func enumKey[T any](
 	return key
 }
 
-// enumListBound compares an enum column with the label v by position, through
-// IN lists of labels, on MySQL and SQLite. A value that is not a label has the
-// position before every label, and all such values tie.
-func enumListBound(column jet.ColumnString, labels []string, v string) keyBound {
+// enumOperand is the enum column as the IN lists and the CASE compare it. On
+// SQLite it is the column's bytes, so the column's collation cannot match a
+// value to a label that Go's exact match does not.
+func enumOperand(d dialect, column jet.ColumnString) ijet.Expression {
+	if d == dialectSQLite {
+		return sqlite.CAST(column).AS_BLOB()
+	}
+	return column
+}
+
+// enumLabel is a label as enumOperand compares it.
+func enumLabel(d dialect, label string) ijet.Expression {
+	if d == dialectSQLite {
+		return sqlite.CAST(sqlite.String(label)).AS_BLOB()
+	}
+	return ijet.String(label)
+}
+
+// enumListBound compares an enum operand with the label v by position,
+// through IN lists of labels, on MySQL and SQLite. A value that is not a label
+// has the position before every label, and all such values tie.
+func enumListBound(operand ijet.Expression, labels []string, v string, d dialect) keyBound {
+	literals := func(subset []string) []ijet.Expression {
+		values := make([]ijet.Expression, len(subset))
+		for i, label := range subset {
+			values[i] = enumLabel(d, label)
+		}
+		return values
+	}
 	in := func(subset []string) ijet.BoolExpression {
 		if len(subset) == 0 {
 			return nil
 		}
-		return column.IN(literals(subset)...)
+		return operand.IN(literals(subset)...)
 	}
 	all := in(labels)
-	unknown := column.NOT_IN(literals(labels)...)
+	unknown := operand.NOT_IN(literals(labels)...)
 	position := slices.Index(labels, v)
 	if position < 0 {
 		return keyBound{gt: all, eq: unknown}
@@ -166,16 +197,8 @@ func enumListBound(column jet.ColumnString, labels []string, v string) keyBound 
 	return keyBound{
 		gt: in(labels[position+1:]),
 		lt: lt,
-		eq: column.EQ(ijet.String(v)),
+		eq: ijet.Eq(operand, enumLabel(d, v)),
 	}
-}
-
-func literals(labels []string) []ijet.Expression {
-	values := make([]ijet.Expression, len(labels))
-	for i, label := range labels {
-		values[i] = ijet.String(label)
-	}
-	return values
 }
 
 // InetKey orders on a NOT NULL PostgreSQL inet column, read as its text form.
