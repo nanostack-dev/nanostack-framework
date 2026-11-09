@@ -1,0 +1,51 @@
+search ItemBySku on items (rows model.Items)
+  read       items; root; nullable weight, released_on, local_at, opens_at, deleted_at, external_id, tags; tenant tenant_id
+  map        Map(summarize)
+  scope      Scope items.tenant_id
+  filter     Status: Eq, In on items.status (item_status, model.ItemStatus)
+  filter     Sku: In (skus) on items.sku (text, sku)
+  filter     CreatedAt: Range.HalfOpen (created_since, created_until) on items.created_at (timestamptz, time.Time)
+  filter     DeletedAt: Present on items.deleted_at (timestamptz, time.Time), Go only
+  sort       name: items.name
+  sort       created_at: items.created_at
+  default    items.created_at DESC
+  tiebreak   sku, id: covers items_pkey (id)
+  limit      50
+search ItemByTenantSku on items (rows model.Items)
+  read       items; root; nullable weight, released_on, local_at, opens_at, deleted_at, external_id, tags; tenant tenant_id
+  tiebreak   tenant_id, sku, id: covers items_pkey (id)
+search ItemWithTenant on items (rows model.Items)
+  from       itemsWithTheirTenant
+  read       items; root; nullable weight, released_on, local_at, opens_at, deleted_at, external_id, tags; tenant tenant_id
+  read       tenants; INNER JOIN; ON table.Tenants.ID.EQ(table.Items.TenantID)
+  map        MapPage(summarizePage)
+  scope      Scope items.tenant_id, tenants.id
+  scope      ScopeFunc tenantFilter on tenants.name
+  scope      Unscoped items.tenant_id: fixture
+  condition  expensive()
+  filter     Name: Contains on items.name (text, string)
+  filter     Expensive: Is on expensive()
+  filter     TenantName: Eq on tenantName()
+  fulltext   items.name (text)
+  fulltext   tenants.name (text)
+  fulltext   tenantName(), Go only
+  sort       tenant_name, tenant: tenants.name, NullsLast
+  sort       total: field Total = total()
+  sort       popularity: hand-written
+  default    Total ASC
+  tiebreak   id: the primary key items_pkey (id), by default
+search ItemOptionalTenant on items (rows model.Items)
+  from       itemsAndTheirTenant
+  read       items; root; nullable weight, released_on, local_at, opens_at, deleted_at, external_id, tags; tenant tenant_id
+  read       tenants; LEFT JOIN; ON table.Tenants.ID.EQ(table.Items.TenantID); every column nullable
+  filter     Name: Present on tenants.name (text, string)
+  sort       name: tenants.name, nullable
+  sort       created_at: items.created_at
+  default    items.created_at ASC
+  tiebreak   id: the primary key items_pkey (id), by default
+search ItemAliasedTenant on items (rows model.Items)
+  from       itemsWithAnAliasedTenant
+  read       items; root; nullable weight, released_on, local_at, opens_at, deleted_at, external_id, tags; tenant tenant_id
+  read       tenants AS owner; INNER JOIN; ON table.Tenants.AS("owner").ID.EQ(table.Items.TenantID)
+  sort       name: items.name
+  tiebreak   id: the primary key items_pkey (id), by default

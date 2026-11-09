@@ -16,37 +16,11 @@ func (c *collector) columns(call *ast.CallExpr, t *tableBase) bool {
 			"the row type %s is not a struct", c.qualified(t.row))
 		return false
 	}
-	type modelField struct {
-		typ     types.Type
-		primary bool
-	}
-	fields := map[string]modelField{}
-	for i := range st.NumFields() {
-		f := st.Field(i)
-		fields[f.Name()] = modelField{typ: f.Type(), primary: reflect.StructTag(st.Tag(i)).Get("sql") == "primary_key"}
-	}
-	var rowPkg *types.Package
-	if n, isNamed := types.Unalias(t.row).(*types.Named); isNamed {
-		rowPkg = n.Obj().Pkg()
-	}
-	for i := range t.columns {
-		col := &t.columns[i]
-		f, found := fields[col.field]
-		if !found {
-			c.errorf(call, "map from the generated model of table "+t.sqlName,
-				"the row type %s has no field %s for column %s of table %s",
-				c.qualified(t.row), col.field, col.sqlName, t.sqlName)
-			return false
-		}
-		col.value, col.nullable = optional(f.typ)
-		col.primary = f.primary
-		col.lit = literalOf(col.kind, col.value, rowPkg)
-		if col.lit == litEnum {
-			col.enum, found = c.l.enumType(col.value, t.schema)
-			if !found {
-				col.lit = litNone
-			}
-		}
+	if col := c.applyModel(t, t.row, st); col != nil {
+		c.errorf(call, "map from the generated model of table "+t.sqlName,
+			"the row type %s has no field %s for column %s of table %s",
+			c.qualified(t.row), col.field, col.sqlName, t.sqlName)
+		return false
 	}
 	if !c.catalogTypes(call, t) {
 		return false
@@ -101,6 +75,42 @@ func (c *collector) catalogTypes(call *ast.CallExpr, t *tableBase) bool {
 			t.sqlName, strings.Join(missing, ", "))
 	}
 	return false
+}
+
+// applyModel sets the model type, the nullability, the primary key flag and
+// the literal of each column of t from st, the struct of the model type
+// model. It returns the first column that has no field in st, or nil.
+func (c *collector) applyModel(t *tableBase, model types.Type, st *types.Struct) *column {
+	type modelField struct {
+		typ     types.Type
+		primary bool
+	}
+	fields := map[string]modelField{}
+	for i := range st.NumFields() {
+		f := st.Field(i)
+		fields[f.Name()] = modelField{typ: f.Type(), primary: reflect.StructTag(st.Tag(i)).Get("sql") == "primary_key"}
+	}
+	var rowPkg *types.Package
+	if n, isNamed := types.Unalias(model).(*types.Named); isNamed {
+		rowPkg = n.Obj().Pkg()
+	}
+	for i := range t.columns {
+		col := &t.columns[i]
+		f, found := fields[col.field]
+		if !found {
+			return col
+		}
+		col.value, col.nullable = optional(f.typ)
+		col.primary = f.primary
+		col.lit = literalOf(col.kind, col.value, rowPkg)
+		if col.lit == litEnum {
+			col.enum, found = c.l.enumType(col.value, t.schema)
+			if !found {
+				col.lit = litNone
+			}
+		}
+	}
+	return nil
 }
 
 // optional strips a pointer or a functional.Option from a model field type.

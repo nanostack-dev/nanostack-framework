@@ -38,6 +38,7 @@ type declarations struct {
 	tables   []*tableBase   // in source order of their first declaration
 	bindings []*binding     // nanorepo.Implement calls
 	byImpl   map[string]int // implementation type name -> index in bindings
+	searches []*searchDecl  // nanorepo.Search calls, in source order
 }
 
 // binding is one nanorepo.Implement[I, Impl](table, toDomain).
@@ -86,7 +87,7 @@ func (l *loaded) declarations() (*declarations, error) {
 		return nil, errors.Join(problems...)
 	}
 	d := &declarations{byImpl: map[string]int{}}
-	c := &collector{l: l, d: d}
+	c := &collector{l: l, d: d, searchNames: map[string]at{}, searchTables: map[*types.Var]*tableBase{}}
 	for _, f := range l.pkg.Syntax {
 		if own(f) {
 			continue
@@ -97,6 +98,9 @@ func (l *loaded) declarations() (*declarations, error) {
 			}
 			return true
 		})
+	}
+	if len(c.problems) == 0 && len(d.tables) == 0 && len(d.searches) > 0 {
+		c.problems = append(c.problems, l.searchWithoutRepository(d.searches[0]))
 	}
 	if len(c.problems) == 0 && len(d.tables) == 0 {
 		c.problems = append(c.problems, gen.Errorf("", 0,
@@ -118,6 +122,9 @@ type collector struct {
 	l        *loaded
 	d        *declarations
 	problems []error
+
+	searchNames  map[string]at             // search name -> its declaration (E11)
+	searchTables map[*types.Var]*tableBase // the tables searches read; nil after a problem
 }
 
 func (c *collector) errorf(n ast.Node, fix, format string, args ...any) {
@@ -132,14 +139,18 @@ func (c *collector) call(call *ast.CallExpr) {
 	if fn == nil || fn.Pkg() == nil || fn.Pkg().Path() != nanorepoPath {
 		return
 	}
-	if fn.Name() != "Implement" && fn.Name() != "Base" {
+	if fn.Name() != "Implement" && fn.Name() != "Base" && fn.Name() != "Search" {
 		return
 	}
-	if errs := errorsWithin(c.l.pkg, call, c.l.relPath, "fix the declaration so that it compiles"); len(errs) > 0 {
+	if errs := c.compileErrors(call); len(errs) > 0 {
 		c.problems = append(c.problems, errs...)
 		return
 	}
 	inst, ok := c.l.pkg.TypesInfo.Instances[sel.Sel]
+	if fn.Name() == "Search" {
+		c.searchCall(call, inst, ok)
+		return
+	}
 	if fn.Name() == "Implement" {
 		if !ok || inst.TypeArgs.Len() != 4 || len(call.Args) != 2 {
 			c.errorf(call, "write nanorepo.Implement[YourRepository, yourRepositoryImpl](table.YourTable, rowToDomain)",

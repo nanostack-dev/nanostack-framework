@@ -316,7 +316,7 @@ A warning keeps exit 0. The check is a guard against a forgotten filter, not a p
 
 **All or nothing.** The generator loads the package with every file it wrote replaced by an empty file, so a stale output never blocks a run and a method a previous run derived never counts as hand-written. It resolves every method, then type-checks the package with the new files. A compile error that remains is reported at its line, beside every method that does not resolve, and nothing is written. An import of a generated file that the module cannot load, such as `pkg/db/transactor` in a module that has never imported it, is reported at the declaration with the `go get` that adds it. Every declaration problem is reported in one run, each at its line with a fix: a declaration that is not an interface and a struct of this package, a mapper with state, a table of another dialect, a hand-written name that clashes with a generated one, an implementation that does not embed the base its derived methods run on, a table package without `UniqueKeys` (run `nano gen db`), a hand-written file in the place of an output. A column that the base on disk had and the table lost is reported as a migration's rename, with the rename first.
 
-**The command.** `nano gen repo [-dir d] [-scopes tenant_id,org_id] [-check] [-explain [Iface…]]` is the single run on one package. `-check` writes nothing and exits 1 on a stale output, or on an orphan: a `<file>_repo.gen.go` whose declaring file binds nothing any more, which a run deletes. `-explain` prints how each method of each bound interface, or of those named, resolves, and writes nothing:
+**The command.** `nano gen repo [-dir d] [-scopes tenant_id,org_id] [-check] [-explain [Iface|Search…]]` is the single run on one package. `-check` writes nothing and exits 1 on a stale output, or on an orphan: a `<file>_repo.gen.go` whose declaring file binds nothing any more, which a run deletes. `-explain` prints how each method of each bound interface, or of those named, resolves, and writes nothing:
 
 ```text
 ItemRepository on *itemRepositoryImpl (table items, scope tenant_id)
@@ -324,6 +324,17 @@ ItemRepository on *itemRepositoryImpl (table items, scope tenant_id)
   FindAllInternal                derived, UNSCOPED (Internal): SELECT * FROM items
   ExistsByTenantIDAndName        hand-written repository.go:98
                                  note: the name also derives (SELECT COUNT(*) FROM (SELECT 1 FROM items WHERE tenant_id = $1 AND name = $2 LIMIT 1) found); the hand-written method wins
+```
+
+**Searches (ADR 0027, in progress).** `nano gen repo` reads each `nanorepo.Search` of the package and checks it, and generates nothing for it yet. It reads the tables the search reads: the table, or each table of the `From` function (one `return` of `table.X` joined with `INNER_JOIN` or `LEFT_JOIN`), with the `ColumnTypes`, `ForeignKeys` and `UniqueKeys` that `nano gen db` writes, and the models. Every column of a `LEFT JOIN` table is nullable in a result row, so the table of the search must not be on that side. The tiebreak is the primary key in index order, unless `Tiebreak` names columns that contain every column of one unique key; a partial key, or a key with a column that can be NULL, does not count. A package with searches must also bind a repository with `nanorepo.Implement` or `nanorepo.Base`. `-explain` also prints each search, or those named:
+
+```text
+search TenantItem on tenants (rows model.Tenants)
+  from       tenantsAndTheirItems
+  read       tenants; root
+  read       items; LEFT JOIN; ON table.Items.TenantID.EQ(table.Tenants.ID); every column nullable; tenant tenant_id
+  sort       created_at: items.created_at, nullable
+  tiebreak   id: the primary key tenants_pkey (id), by default
 ```
 
 The single run takes the scope columns from `-scopes`; the pipeline passes the `Postgres.Scopes` of the declaration, so `go tool nano gen -only repo` is the run to use in a service. The pipeline runs the step on each package that declares a repository, and reads the table code from Go source, never a database. The steps before repo load the package with a forward stub of each `<file>_repo.gen.go`: a method that panics for each interface method without a hand-written one, built by parsing alone. So the errors step still compiles a package whose interface just gained a method, or whose implementation just got a hand-written method that the last run derived. The methods of an interface of another package, or embedded from one, come from the last output on disk, minus those the implementation now has.

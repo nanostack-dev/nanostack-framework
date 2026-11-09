@@ -67,6 +67,14 @@
 // call of the base with its SQL in the comment, and var _ Iface = (*impl)(nil)
 // per binding, so a deleted hand-written method fails the build.
 //
+// A nanorepo.Search declares a search (ADR 0027). nano gen repo reads it and
+// checks it, and generates nothing for it yet: the tables it reads (the
+// table, or each table of its From function with its join kind, every column
+// of a LEFT JOIN table nullable), their ColumnTypes, ForeignKeys, UniqueKeys
+// and models, its options, and its tiebreak (the primary key, or a Tiebreak
+// that covers a unique key that orders every row). -explain prints what it
+// read.
+//
 // Generation loads the package with every file nano gen repo wrote replaced
 // by an empty file, so a stale output never blocks a run and a method a
 // previous run derived never counts as hand-written, resolves every method,
@@ -125,6 +133,9 @@ type Result struct {
 	// Explain holds one entry per nanorepo.Implement, in source order. It is
 	// set also when resolution fails, so -explain shows the failing methods.
 	Explain []Explanation
+	// Searches holds one entry per nanorepo.Search, in source order, once
+	// every declaration reads without a problem.
+	Searches []SearchExplanation
 }
 
 // Generate returns the generated files without touching the disk. Errors
@@ -139,12 +150,13 @@ func Generate(opts Options) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	l.scopes = opts.Scopes
 	decls, err := l.declarations()
 	if err != nil {
 		return nil, err
 	}
 	res := l.resolve(decls, opts.Scopes)
-	result := &Result{}
+	result := &Result{Searches: l.explainSearches(decls)}
 	var problems []error
 	var missing []string
 	failing := false
@@ -290,7 +302,7 @@ func orphans(opts Options, files []gen.File) ([]string, error) {
 }
 
 // Main runs `nano gen repo [-dir d] [-scopes a,b] [-check] [-explain
-// [Iface...]]` and returns the process exit code: 0 on success, also with
+// [Iface|Search...]]` and returns the process exit code: 0 on success, also with
 // warnings, 1 on stale output or a declaration error, 2 on bad flags, 3 when
 // the environment fails; -h prints the flags and returns 0. Warnings print to
 // stderr, each as "warning: file:line: msg" and a fix line. -explain prints
@@ -307,12 +319,14 @@ func Main(args []string, stdout, stderr io.Writer) int {
 		"comma-separated tenant columns, as Postgres.Scopes in nanogen/project.go (nano gen passes them)")
 	fs.BoolVar(&opts.Check, "check", false, "write nothing; exit 1 when an output is stale or orphaned")
 	fs.BoolVar(&explain, "explain", false,
-		"print how each method of each bound interface resolves; name interfaces after the flags to filter")
+		"print how each method of each bound interface resolves and what each search reads; "+
+			"name interfaces or searches after the flags to filter")
 	if exit, ok := gen.ParseFlags(fs, args); !ok {
 		return exit
 	}
 	if fs.NArg() > 0 && !explain {
-		_, _ = fmt.Fprintf(stderr, "nano gen repo: unexpected arguments %v; only -explain takes interface names\n",
+		_, _ = fmt.Fprintf(stderr, "nano gen repo: unexpected arguments %v; only -explain takes interface or "+
+			"search names\n",
 			fs.Args())
 		return 2
 	}
@@ -340,8 +354,8 @@ func Main(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-// mainExplain prints the resolution of each bound interface, or of those
-// named, and writes nothing.
+// mainExplain prints the resolution of each bound interface and what each
+// search reads, or only those named, and writes nothing.
 func mainExplain(opts Options, names []string, stdout, stderr io.Writer) int {
 	res, err := Generate(opts)
 	if res != nil {
@@ -351,11 +365,19 @@ func mainExplain(opts Options, names []string, stdout, stderr io.Writer) int {
 				shown = append(shown, e)
 			}
 		}
-		if len(shown) == 0 && err == nil {
-			_, _ = fmt.Fprintf(stderr, "nano gen repo: no nanorepo.Implement binds %s\n", strings.Join(names, ", "))
+		var searches []SearchExplanation
+		for _, e := range res.Searches {
+			if len(names) == 0 || slices.Contains(names, e.Name) {
+				searches = append(searches, e)
+			}
+		}
+		if len(shown) == 0 && len(searches) == 0 && err == nil {
+			_, _ = fmt.Fprintf(stderr, "nano gen repo: no nanorepo.Implement binds %s, and no nanorepo.Search "+
+				"has that name\n", strings.Join(names, ", "))
 			return 1
 		}
 		WriteExplain(stdout, shown)
+		WriteSearchExplain(stdout, searches)
 	}
 	if err != nil {
 		return gen.Report(stderr, "repo", err)
@@ -387,7 +409,7 @@ func WriteExplain(w io.Writer, explain []Explanation) {
 }
 
 // Declares reports whether f, parsed alone, declares a repository: it
-// imports db/nanorepo and calls its Implement or Base. The pipeline
+// imports db/nanorepo and calls its Implement, Base or Search. The pipeline
 // discovers the packages of nano gen repo with it, on a tree that may not
 // compile.
 func Declares(f *ast.File) bool {
@@ -408,7 +430,8 @@ func Declares(f *ast.File) bool {
 		case *ast.IndexListExpr:
 			fun = x.X
 		}
-		if sel, isSel := fun.(*ast.SelectorExpr); isSel && (sel.Sel.Name == "Implement" || sel.Sel.Name == "Base") {
+		if sel, isSel := fun.(*ast.SelectorExpr); isSel && (sel.Sel.Name == "Implement" ||
+			sel.Sel.Name == "Base" || sel.Sel.Name == "Search") {
 			x, isIdent := sel.X.(*ast.Ident)
 			found = isIdent && x.Name == name
 		}

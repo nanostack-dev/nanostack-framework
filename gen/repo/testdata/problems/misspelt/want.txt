@@ -1,0 +1,4 @@
+misspelt.go:15: table.Items.Nmae does not compile: items has no column Nmae
+  fix: did you mean table.Items.Name?
+misspelt.go:16: table.Items.CreatdAt does not compile: items has no column CreatdAt
+  fix: did you mean table.Items.CreatedAt?

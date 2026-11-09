@@ -24,9 +24,10 @@ type tableNames struct {
 
 // tableFiles is what the files of one table package declare.
 type tableFiles struct {
-	tables map[string]tableNames        // table variable -> names
-	keys   map[string][]uniqueKey       // table type, such as ItemsTable -> its UniqueKeys
-	types  map[string]map[string]string // table type -> its ColumnTypes: column name -> catalogue type
+	tables      map[string]tableNames        // table variable -> names
+	keys        map[string][]uniqueKey       // table type, such as ItemsTable -> its UniqueKeys
+	types       map[string]map[string]string // table type -> its ColumnTypes: column name -> catalogue type
+	foreignKeys map[string][]foreignKey      // table type -> its ForeignKeys
 }
 
 // tableSource reads what the table package at path declares.
@@ -36,11 +37,12 @@ func (l *loaded) tableSource(path string) (*tableFiles, error) {
 		return nil, err
 	}
 	src := &tableFiles{tables: map[string]tableNames{}, keys: map[string][]uniqueKey{},
-		types: map[string]map[string]string{}}
+		types: map[string]map[string]string{}, foreignKeys: map[string][]foreignKey{}}
 	for _, f := range files {
 		readTableFile(f, src)
 		readUniqueKeys(l.fset, f, src)
 		readColumnTypes(f, src)
+		readForeignKeys(f, src)
 	}
 	return src, nil
 }
