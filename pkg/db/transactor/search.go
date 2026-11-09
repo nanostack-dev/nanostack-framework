@@ -16,8 +16,8 @@ import (
 // executor they get, do not read the context transaction and do not refuse a
 // row lock.
 //
-// They take and return the types of db/search, not of pkg/search, because a
-// generated search is built on db/search.
+// They take and return the types of db/search, because a generated search is
+// built on db/search.
 
 // Search runs the generated search q with Executor(ctx, db): it counts the
 // matches and reads one page in order, mapping each row with toDomain. spec is

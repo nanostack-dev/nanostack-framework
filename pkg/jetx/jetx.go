@@ -15,7 +15,7 @@ import (
 	"time"
 
 	jet "github.com/nanostack-dev/nanostack-framework/db/postgres"
-	"github.com/nanostack-dev/nanostack-framework/pkg/search"
+	"github.com/nanostack-dev/nanostack-framework/db/search"
 )
 
 // ToStringExpressionsFunc projects each value with toString and wraps the result

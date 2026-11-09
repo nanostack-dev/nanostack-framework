@@ -68,7 +68,7 @@ func TestPaginationValidate(t *testing.T) {
 }
 
 func TestWithCursorClearsOffset(t *testing.T) {
-	req := NewRequest[struct{}, sortField]()
+	req := NewRequest[struct{}, string]()
 	req.Pagination.Offset = 40
 	req = req.WithCursor("abc")
 	if req.Pagination.Offset != 0 || req.Pagination.Cursor != "abc" {

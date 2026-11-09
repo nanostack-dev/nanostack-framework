@@ -33,7 +33,7 @@ PR 2 of the pipeline (#69) merged at `4b6c468`. PR 3 (pipeline core) is **in pro
 | wire | **shipped**. Two-line `fix:` errors: **on main**. | `manifest.go`, each package's `module.go` | `wire.gen.go` | anchor: 56 → 2,218. echopoint: 98 → 2,758. | A `Run(Check)` test in each service. `file:line` errors with a fix. |
 | pipeline | Nested `gen` module (#68) and error contract (#69) **on main**. `go tool nano gen` core (PR 3): **in progress**. Later steps **designed**. | `nanogen/project.go` | Runs all of the above in order | n/a | Designed: `-check` covers every output, orphans included. |
 | repo | **on main**, unused | One repository interface and one `nanorepo.Implement` per repository, `Postgres.Scopes` | `repo_base.gen.go`: per table, typed predicates and helpers on the transactor; `<file>_repo.gen.go`: the derived methods and a `var _` line per binding | Fixture: 3 declarations → 1,124 lines of bases; 11 derived methods → 117 lines. Prototype on anchor: 9 methods (156 hand lines) → 8 derived and 1 hand-written. | `-check`; an interface method that is neither hand-written nor derivable fails the run at its line; `var _` fails the build; `findOne` fails on two rows; a scope warning on a hand-written finder without the tenant column. |
-| search builder | **prototype**, still changing, no report yet | A `nanosearch.Search(...)` declaration | A typed search builder in `repo.gen.go`, the request mapper `search_mapper.gen.go` and a test case table | n/a | Prototype checks against the OpenAPI search schema. |
+| search | **on main**, unused | One `nanorepo.Search` declaration per search and one interface method that takes its builder | In `<file>_repo.gen.go`: the typed builder, the sort type, the spec, the repository method and the API mapper; `nanogen/search-exemptions.txt` | n/a | The tenant coverage proof, the API both-ways check and `-check`. [Searches](#searches). |
 
 ## How to review generated code
 
@@ -1506,6 +1506,90 @@ Before `nano gen` runs again, the compiler shows two messages:
 - **Check each `first`** for an order that ends on a unique column.
 - **Do not review `repo_base.gen.go`** beyond its predicate list; `-check` proves both files match the declarations.
 
+### Searches
+
+**Status: on main**, unused by the services ([ADR 0027](adr/0027-search-in-the-db-module.md), [design](design/search.md)). A search is a declaration next to `nanorepo.Implement`. `nano gen repo` proves its tenant scope, and writes a typed builder, the repository method and, with `API[Body]`, the mapper from the OpenAPI body. PostgreSQL, MySQL, MariaDB and SQLite run it.
+
+**What you write.** One `nanorepo.Search[Row]` call per search in `func _()`, and one interface method that takes the builder. From the fixture `gen/repo/testdata/search/search.go`:
+
+```go
+func _() {
+	nanorepo.Implement[ItemRepository, itemRepositoryImpl](table.Items, itemToDomain)
+	nanorepo.Search[model.Items]("ItemBySku", table.Items,
+		nanorepo.Map(summarize),
+		nanorepo.Scope(table.Items.TenantID),
+		nanorepo.Filter(table.Items.Status, nanorepo.Eq, nanorepo.In),
+		nanorepo.FilterAs[sku](table.Items.Sku, nanorepo.In.API("skus")),
+		nanorepo.Filter(table.Items.CreatedAt, nanorepo.Range("created_since", "created_until").HalfOpen()),
+		nanorepo.Sort(table.Items.Name, table.Items.CreatedAt),
+		nanorepo.Tiebreak(table.Items.Sku, table.Items.ID),
+		nanorepo.DefaultSort(table.Items.CreatedAt, nanorepo.Desc),
+		nanorepo.DefaultLimit(50),
+	)
+}
+
+type ItemRepository interface {
+	SearchBySku(ctx context.Context, q ItemBySkuSearch) (search.Result[itemSummary], error)
+	// …
+}
+```
+
+`search` is `db/search`. The options: the tenant scopes (`Scope`, `ScopeOrNull`, `ScopeNull`, `ScopeFunc`, `Unscoped`), the joins (`From`), the filters (`Filter`, `FilterAs`, `FilterExpr`, `FilterExists`, `Flag`, `FullText`, `GoOnly`), the sorts (`Sort`, `SortKey`, `SortExpr`, `SortHandWritten`, `Tiebreak`, `DefaultSort`), the mapper (`Map`, `MapPage`) and the API binding (`API[Body]`, `IgnoresFullText`, `APIHandWritten`). The `db/nanorepo` package doc gives each one.
+
+**What is generated**, in `<file>_repo.gen.go`:
+
+- `ItemBySkuSearch`, an immutable builder: `NewItemBySkuSearch(scope)`, one typed method per filter (`q.Status().In(...)`, `q.CreatedAt().Since(t)`), `SortBy`, `Limit`, `Offset`, `After` and `FullText`. With more than one scope field, the constructor takes a scope struct (`ItemOfTenantScope`) with keyed fields only; a zero field refuses the search with `search.ErrUnscoped`. `q.Scope()` returns the scope value.
+- `ItemBySkuSort`, the sort field type, with one constant per sort.
+- The spec variable (`itemBySkuSearch = searchexec.DefineSpec(...)`): the read set, the scope, the keys and the tiebreak.
+- The repository method, one line on the base: `return r.search(ctx, itemBySkuSearch, q.Query, r.summarize)`.
+- With `API[Body]`: `ItemBySkuSearchFromAPI(scope, body *Body) ItemBySkuSearch`. When the handler of the body is in another package, it goes there, in `<search>_search_api.gen.go`.
+
+`nano gen` also writes `nanogen/search-exemptions.txt`: one line per `Unscoped`, `ScopeOrNull`, `ScopeNull`, coverage through a referenced row, `IgnoresFullText` and `APIHandWritten`. `-check` reports it stale.
+
+**A hand-written search method** that needs more than the declaration (a computed status, a mapper with a run-time option) starts from the plan, and runs it with the transactor:
+
+```go
+func (r *webhookRepositoryImpl) Search(ctx context.Context, q WebhookSearch) (search.Result[webhook.Webhook], error) {
+	plan, err := searchexec.Resolve(ctx, webhookSearch, q.Query)
+	if err != nil {
+		return search.Result[webhook.Webhook]{}, err
+	}
+	order, err := plan.Order(map[WebhookSort]keyset.Key[webhookRow]{WebhookSortRequestCount: requestCountKey})
+	if err != nil {
+		return search.Result[webhook.Webhook]{}, err
+	}
+	return transactor.RunPlan(ctx, r.db, plan, order, r.toDomain).Value()
+}
+```
+
+`plan.And` narrows the condition; nothing widens it. Do not call `plan.Run` with an executor of your own: `transactor.RunPlan` and `RunPlanPage` use the context transaction and refuse a row lock.
+
+**Errors an agent sees.** Each one is at the declaration line, with a fix. The most common:
+
+- An uncovered tenant column (E9) or table instance (E10): add a `Scope`, join it on a declared foreign key, or write `Unscoped(column, "why")`.
+- A table with no primary key and no `Tiebreak` (E3), or a `Tiebreak` that covers no unique key (E4): add the columns of one unique key to `Tiebreak`.
+- An interface method that takes the builder with another signature (E20), or a hand-written method that does not start from `searchexec.Resolve` with its own `q` (E19).
+- A declared search that no method takes (E24).
+- With `API[Body]`: a `sort_by` value with no sort (A1), a body property that no option reads (A10), or a page size or `maxItems` that the runtime does not allow (A9).
+
+`nano gen repo -explain` prints, per search, how each table instance is covered and how each body property binds.
+
+### Adopting searches in a service
+
+Do one search per pull request. Each step is a check for the author and for the reviewer.
+
+1. **Framework.** Require root, `db` and `gen` at the same release. The db step must write `ColumnTypes()` and `ForeignKeys()`: run `go tool nano gen -fresh` once. Set `Postgres.Scopes`, and `Postgres.ContextScopes` for a column that a function scopes from the context.
+2. **Bind the repository** with `nanorepo.Implement` and embed its base, if it is not bound yet. The generated search method calls the base.
+3. **Declare the search** next to `Implement`. Start with the filters, sorts and tiebreak of the hand-written query. Run `go tool nano gen repo -explain` and read the coverage of each instance.
+4. **Scope.** The handler builds the scope value from the authenticated principal, never from the body. With a scope struct, write keyed fields. In hand-written code, read the scope back with `q.Scope()`, not from a second parameter.
+5. **Exemptions.** Commit `nanogen/search-exemptions.txt`. Each line is a decision the reviewer approves: an `Unscoped` reason, a shared row, `IgnoresFullText`, `APIHandWritten`.
+6. **`full_text_search` changes.** A generated full text ignores case, matches `%`, `_` and `\` literally, trims the term, and ignores a blank term. A new `FullText` filters where nothing filtered before. Write it in the product release note.
+7. **Gate grep.** Before the pull request merges, export the product's gate flows from the prod Echopoint CI org (`echopoint --profile prod flows get <id> -o json`) and grep for `full_text_search`, the range properties of the search, its sort cursors, and arrays or terms above `search.MaxInValues` or `search.MaxTermLength` (1000). Update each flow that asserts the old result, and run `flows publish <id>` where a published version exists.
+8. **`x-go-type-import`.** Where the OpenAPI spec maps `search.Pagination` or `search.SortDirection` with `x-go-type`, change `x-go-type-import` from `pkg/search` to `db/search` and regenerate. `pkg/search` holds aliases of `db/search`, so both compile during the move.
+9. **Delete the hand-written query** and its tests that the generated method replaces. Keep a database test that compares one page of the old and the new method on the same rows until the gate passed.
+
+A search that has no SQL builder (a remote call, data in memory) keeps its hand-written code with `db/search.Request`.
+
 ---
 
 ## 11. Prototypes
@@ -1516,26 +1600,9 @@ The search prototype lives in the workspace `reports/prototypes/derived-repo/`, 
 
 Landed: see [section 10](#10-repositories-nano-gen-repo). The prototype report, `reports/prototype-derived-repositories.md`, stays as the record of the design's evidence: 55 database tests on anchor's migrations compare each derived method with anchor's own.
 
-### Search builder: `nano gen search`
+### Search builder
 
-**Status: prototype**, still changing, with no report yet. It sits in the same folder as the derived repositories (`nanorepo/nanosearch`, `cmd/nanogen-repo/search.go`). The first note, `reports/codegen-ideas-2026-11-08.md`, planned a `//nano:search` marker on a `SortField` type. The prototype uses a typed declaration instead, so columns are Go expressions and a gopls rename updates them. From the doc comment of `nanorepo/nanosearch/nanosearch.go`:
-
-```go
-func _() {
-	nanosearch.Search("ProductUser", table.ProductUsers, productUserToDomain,
-		nanosearch.Scope(table.ProductUsers.ProductID),
-		nanosearch.Field(table.ProductUsers.Email, nanosearch.In, nanosearch.Contains),
-		nanosearch.Sort(table.ProductUsers.CreatedAt),
-		nanosearch.Tiebreak(table.ProductUsers.ID),
-		nanosearch.DefaultSort(table.ProductUsers.CreatedAt, nanosearch.Asc),
-		nanosearch.API("ProductUserSearchRequest"),
-	)
-}
-```
-
-- **Output so far:** a typed builder per search in `repo.gen.go` (its constructor takes the scope value), the request-to-builder mapper `search_mapper.gen.go` in the server package, and a test case table.
-- **Guardrails so far:** the generator checks the OpenAPI search request (`API(...)`) against the declaration: a filter property or a `sort_by` value with no matching field is an error at its spec line.
-- **To review, once it is real:** the declaration (which columns are filterable, sortable, full-text), the tiebreak and the default sort. Not the generated builder.
+Landed: see [Searches](#searches). The design is [docs/design/search.md](design/search.md). The prototypes in the workspace `reports/prototypes/search-*` stay as the record of the design's evidence.
 
 ---
 
@@ -1586,4 +1653,4 @@ What changes when the designed pieces land:
 | `Config` struct tags and the `CONFIG.md` diff | `config.gen.go`, `.env.example` |
 | `manifest.go`, `module.go`, and the seven-item `wire.gen.go` checklist | `need*` chains, `Overrides`, `Components` |
 | Literal values in `nanogen/project.go` | Headers, orphans, `nanogen.sum` |
-| Repository interface method names, `nanorepo.Implement` declarations, hand-written repository methods; search declarations (prototype) | `repo_base.gen.go`, `<file>_repo.gen.go` beyond their SQL comments; the prototype search files |
+| Repository interface method names, `nanorepo.Implement` declarations, hand-written repository methods; search declarations and `nanogen/search-exemptions.txt` | `repo_base.gen.go`, `<file>_repo.gen.go` beyond their SQL comments and `-explain` |

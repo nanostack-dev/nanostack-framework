@@ -20,7 +20,7 @@ router := nanohttp.NewRouter(mux, nanohttp.RouterOptions{
 | Error | Status | Envelope |
 | --- | --- | --- |
 | `*pkg/fault.Error`, or what `Options.Adapter` returns | its status | its errors, byte-identical to `fault.WriteJSON` |
-| `db/search.ErrInvalidCursor`, `ErrCursorWithOffset`, `ErrUnknownSort` (`pkg/search` shares the values) | 400 | `INVALID_CURSOR` (field `pagination.cursor`) or `INVALID_SORT` (field `sort_by`) |
+| `db/search.ErrInvalidCursor`, `ErrCursorWithOffset`, `ErrUnknownSort` (`pkg/search` holds aliases of them) | 400 | `INVALID_CURSOR` (field `pagination.cursor`) or `INVALID_SORT` (field `sort_by`) |
 | `db/search.ErrInvalidLimit`, `ErrInvalidOffset` | 400 | `BAD_REQUEST` (field `pagination.limit` or `pagination.offset`) |
 | `db/search.ErrTooManyValues`, `ErrTermTooLong`, `ErrInvalidTime` | 400 | `BAD_REQUEST`, no field |
 | `db/search.ErrUnscoped` (a search with no tenant scope: a programming error), also when it is joined with a client error | 500 | `UNEXPECTED_ERROR`, logged at Error |

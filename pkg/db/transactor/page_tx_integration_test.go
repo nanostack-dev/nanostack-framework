@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	jet "github.com/nanostack-dev/nanostack-framework/db/postgres"
+	"github.com/nanostack-dev/nanostack-framework/db/search"
 	"github.com/nanostack-dev/nanostack-framework/pkg/db/transactor"
-	"github.com/nanostack-dev/nanostack-framework/pkg/search"
 )
 
 // A page runs in the context transaction: it sees a row that the transaction

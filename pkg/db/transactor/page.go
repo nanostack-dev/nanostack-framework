@@ -6,8 +6,8 @@ import (
 	"github.com/nanostack-dev/nanostack-framework/db/keyset"
 	jet "github.com/nanostack-dev/nanostack-framework/db/postgres"
 	"github.com/nanostack-dev/nanostack-framework/db/qrm"
+	"github.com/nanostack-dev/nanostack-framework/db/search"
 	"github.com/nanostack-dev/nanostack-framework/pkg/jetx"
-	"github.com/nanostack-dev/nanostack-framework/pkg/search"
 )
 
 var (
@@ -116,8 +116,8 @@ func (b *PageBuilder[T, R]) Run(
 	if b.keyset != nil {
 		page = page.Keyset(*b.keyset)
 	}
-	result, err := page.Run(ctx, toDBPagination(pagination))
-	return newResult(fromDBResult(result), err)
+	result, err := page.Run(ctx, pagination)
+	return newResult(result, err)
 }
 
 // SortColumns translates a search request's sort fields into order-by clauses

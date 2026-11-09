@@ -110,23 +110,3 @@ func TestCursorIsByteIdenticalAcrossThePackages(t *testing.T) {
 		t.Fatalf("pkg/search.DecodeCursor(\"!\") error = %v, want db/search.ErrInvalidCursor", decodeErr)
 	}
 }
-
-func TestValidateAgreesWithTheContract(t *testing.T) {
-	t.Parallel()
-	for _, p := range []search.Pagination{
-		{Limit: 10},
-		{Limit: 10, Offset: 3},
-		{Limit: 10, Cursor: "abc"},
-		{Limit: 10, Offset: 1, Cursor: "abc"},
-		{Limit: 10, Cursor: string(make([]byte, search.MaxCursorLength+1))},
-	} {
-		got := p.Validate()
-		want := dbsearch.Pagination{Limit: p.Limit, Offset: p.Offset, Cursor: p.Cursor}.Validate()
-		if (got == nil) != (want == nil) || (got != nil && got.Error() != want.Error()) {
-			t.Errorf("Validate(%+v) = %v, db/search gives %v", p, got, want)
-		}
-	}
-	if search.MaxCursorLength != dbsearch.MaxCursorLength {
-		t.Errorf("MaxCursorLength = %d, db/search has %d", search.MaxCursorLength, dbsearch.MaxCursorLength)
-	}
-}

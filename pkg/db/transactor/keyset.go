@@ -7,7 +7,7 @@ import (
 
 	"github.com/nanostack-dev/nanostack-framework/db/keyset"
 	jet "github.com/nanostack-dev/nanostack-framework/db/postgres"
-	"github.com/nanostack-dev/nanostack-framework/pkg/search"
+	"github.com/nanostack-dev/nanostack-framework/db/search"
 )
 
 // The keyset pager lives in db/keyset. The names below forward to it, so
@@ -124,7 +124,7 @@ func Keys[S ~string, T any](sorts []search.Sort[S], columns map[S]Key[T], tiebre
 			known = append(known, sort)
 		}
 	}
-	order, err := keyset.OrderOf(toDBSorts(known), columns, tiebreak, more...)
+	order, err := keyset.OrderOf(known, columns, tiebreak, more...)
 	if err != nil {
 		// keyset.OrderOf fails only on a sort absent from columns, and the
 		// loop above dropped each one.
@@ -133,10 +133,10 @@ func Keys[S ~string, T any](sorts []search.Sort[S], columns map[S]Key[T], tiebre
 	return order
 }
 
-// StrictKeys is keyset.OrderOf for the sorts of pkg/search: a requested sort
+// StrictKeys is keyset.OrderOf for the sorts of db/search: a requested sort
 // field absent from columns is search.ErrUnknownSort, naming it.
 func StrictKeys[S ~string, T any](
 	sorts []search.Sort[S], columns map[S]Key[T], tiebreak Key[T], more ...Key[T],
 ) (Order[T], error) {
-	return keyset.OrderOf(toDBSorts(sorts), columns, tiebreak, more...)
+	return keyset.OrderOf(sorts, columns, tiebreak, more...)
 }

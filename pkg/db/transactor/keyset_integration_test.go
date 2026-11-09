@@ -15,8 +15,8 @@ import (
 	"github.com/google/uuid"
 
 	jet "github.com/nanostack-dev/nanostack-framework/db/postgres"
+	"github.com/nanostack-dev/nanostack-framework/db/search"
 	"github.com/nanostack-dev/nanostack-framework/pkg/db/transactor"
-	"github.com/nanostack-dev/nanostack-framework/pkg/search"
 )
 
 // The keyset tests check the property that makes cursors worth having: for

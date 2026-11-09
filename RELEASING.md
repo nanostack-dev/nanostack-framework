@@ -192,6 +192,24 @@ go tool nano gen
 
 - A consumer goes back to the last good version with `go get <module>@<version>`, then `go mod tidy`.
 
+## Upgrade from v0.23.0-beta.3
+
+[CHANGELOG.md](CHANGELOG.md), `gen/v0.23.0-beta.6`, `db/v0.23.0-beta.4` and `v0.23.0-beta.4 (root)`, lists every change. Steps 1 and 2 are the upgrade. Step 3 adopts searches, one search in each pull request. The upgrade changes no status, error code or response field of a service API: the new search errors come only from generated searches.
+
+1. Upgrade the three modules together. `pkg/functional` did not change and stays at `v0.23.0-beta.1`:
+
+   ```sh
+   go get github.com/nanostack-dev/nanostack-framework@v0.23.0-beta.4 \
+     github.com/nanostack-dev/nanostack-framework/db@v0.23.0-beta.4
+   go get -tool github.com/nanostack-dev/nanostack-framework/gen/cmd/nano@v0.23.0-beta.6
+   go mod tidy
+   go build ./... && go vet ./...
+   ```
+
+   The `gen` module version is `v0.23.0-beta.6`, not `v0.23.0-beta.4`: `gen/v0.23.0-beta.4` and `gen/v0.23.0-beta.5` were fix releases of `gen` only. Code that imports `pkg/search` compiles unchanged: it now holds aliases of `db/search`. Move each import to `db/search` when you touch the file.
+2. Regenerate. Run `go tool nano gen -fresh`, with Docker or `NANO_GEN_DATABASE_URL`. The db step adds `ColumnTypes()` and `ForeignKeys()` to every table type, so every table file and every `output` line of `nanogen.sum` changes. The repo step rewrites each base: `XContains` now trims the term, ignores case with `ILIKE` on PostgreSQL, matches `%`, `_` and `!` literally, and matches every row for a blank term; an `inet`, `jsonb` or `uuid` column no longer gets `XContains`, `XEqualsIgnoreCase`, `X(v)` or `XIn(vs...)`. Read the base diff for each use of `XContains` and each derived method that the run now refuses. Commit the models, the bases and `nanogen.sum`.
+3. Adopt searches with the checklist of [generated code](docs/generated-code.md#adopting-searches-in-a-service). Before each search pull request merges, do the gate grep of that checklist: a generated search changes `full_text_search`, range bounds, sort cursors and page limits.
+
 ## Upgrade from v0.23.0-beta.2
 
 [CHANGELOG.md](CHANGELOG.md), `gen/v0.23.0-beta.3`, `db/v0.23.0-beta.3` and `v0.23.0-beta.3 (root)`, lists every change. Steps 1 and 2 are the upgrade. Steps 3 to 6 adopt codegen part 1 ([generation](docs/generation.md)); each one is its own pull request, in this order. `db` changed only by addition, and the root changed `pkg/search` without a change to its error text or its 400 answers, so the upgrade changes no status, error code or response field of a service API.

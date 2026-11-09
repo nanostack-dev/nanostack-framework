@@ -6,7 +6,7 @@ import (
 	"math"
 	"strings"
 
-	"github.com/nanostack-dev/nanostack-framework/pkg/search"
+	"github.com/nanostack-dev/nanostack-framework/db/search"
 )
 
 // adversarialValues stand in for one ordering value of a real cursor. Each is

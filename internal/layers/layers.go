@@ -61,7 +61,6 @@ var AllowedLegacy = []string{ //nolint:gochecknoglobals // read-only table.
 	"pkg/db/transactor",
 	"pkg/health",
 	"pkg/jetx",
-	"pkg/search",
 	"pkg/tracing",
 }
 

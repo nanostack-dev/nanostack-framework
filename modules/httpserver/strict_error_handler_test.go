@@ -15,9 +15,9 @@ import (
 
 	corefault "github.com/nanostack-dev/nanostack-framework/core/fault"
 	"github.com/nanostack-dev/nanostack-framework/core/validate"
+	"github.com/nanostack-dev/nanostack-framework/db/search"
 	"github.com/nanostack-dev/nanostack-framework/http/problem"
 	"github.com/nanostack-dev/nanostack-framework/pkg/fault"
-	"github.com/nanostack-dev/nanostack-framework/pkg/search"
 )
 
 type errorResponse struct {

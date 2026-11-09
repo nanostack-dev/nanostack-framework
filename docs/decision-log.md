@@ -36,6 +36,8 @@ Move shared search request/result contracts to `pkg/search` and keep Jet-specifi
 
 Rationale: the search request model is reused across API, domain, service, repository, tests, and generated code, but Jet helper functions are persistence-specific. Splitting them keeps the public contract useful without dragging database concerns into every import site.
 
+Superseded in part by [ADR 0027](adr/0027-search-in-the-db-module.md): the contract is `db/search`, and `Request` joined it in G14. `pkg/search` holds aliases of `db/search` and will be removed.
+
 ## 2026-05-22: Low-Risk Helper Slice
 
 Keep language-level pointer and slice helpers in narrow framework packages: `pkg/ptr` and `pkg/slicex`.
