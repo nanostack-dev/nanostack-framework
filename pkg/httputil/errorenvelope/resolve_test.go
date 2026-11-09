@@ -17,7 +17,6 @@ import (
 	"github.com/nanostack-dev/nanostack-framework/http/problem"
 	"github.com/nanostack-dev/nanostack-framework/pkg/fault"
 	"github.com/nanostack-dev/nanostack-framework/pkg/httputil/errorenvelope"
-	"github.com/nanostack-dev/nanostack-framework/pkg/search"
 )
 
 // webhookNotFound stands in for a generated catalogue error.
@@ -99,11 +98,11 @@ func TestResolveWritesTheBytesOfWriteJSON(t *testing.T) {
 		{"fault with metadata", fault.Unprocessable("INVALID", "bad").Meta("limit", 100),
 			fault.Unprocessable("INVALID", "bad").Meta("limit", 100), false},
 		{"adapter", fmt.Errorf("wrapped: %w", legacyError{}), adapted, false},
-		{"invalid cursor", fmt.Errorf("page: %w", search.ErrInvalidCursor), cursor, false},
-		{"cursor with offset", search.ErrCursorWithOffset, &fault.Error{Status: http.StatusBadRequest,
+		{"invalid cursor", fmt.Errorf("page: %w", dbsearch.ErrInvalidCursor), cursor, false},
+		{"cursor with offset", dbsearch.ErrCursorWithOffset, &fault.Error{Status: http.StatusBadRequest,
 			Details: []fault.Detail{{Code: "INVALID_CURSOR", Field: "pagination.cursor",
 				Message: "A cursor cannot be combined with an offset."}}}, false},
-		{"unknown sort", search.ErrUnknownSort, &fault.Error{Status: http.StatusBadRequest,
+		{"unknown sort", dbsearch.ErrUnknownSort, &fault.Error{Status: http.StatusBadRequest,
 			Details: []fault.Detail{{Code: "INVALID_SORT", Field: "sort_by",
 				Message: "The search cannot sort by this field."}}}, false},
 		{"invalid sort direction", fmt.Errorf("%w: %q", dbsearch.ErrInvalidSortDirection, "desc"),

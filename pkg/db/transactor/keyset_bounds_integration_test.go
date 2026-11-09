@@ -10,8 +10,8 @@ import (
 	"time"
 
 	jet "github.com/nanostack-dev/nanostack-framework/db/postgres"
+	"github.com/nanostack-dev/nanostack-framework/db/search"
 	"github.com/nanostack-dev/nanostack-framework/pkg/db/transactor"
-	"github.com/nanostack-dev/nanostack-framework/pkg/search"
 )
 
 // A session zone whose offset has seconds (Paris before 1911 was UTC+00:09:21)

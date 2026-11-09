@@ -483,6 +483,17 @@ The `fix:` line on the compile error is new. Go's message stops at the method na
  a failed step skips only the steps that need it         later outputs are body-stripped stubs
 ```
 
+### How the repo step resolves an interface method
+
+For each method of a bound repository interface, the first rule that applies wins ([search design](search.md), S10):
+
+1. **Hand-written.** A method of the implementation, written by hand or promoted from an embedded field, wins and must match the interface's signature. A hand-written method that takes a declared search starts from `searchexec.Resolve`, `Run` or `RunPage` with its own `ctx`, the search's spec variable and `q.Query`, and never assigns `q` before the call (E19). A promoted method that takes a declared search fails (E19): write it on the implementation.
+2. **Derived.** A name of the grammar (`FindBy`, `GetBy`, `ExistsBy`, `CountBy`, `DeleteBy`, `FindAll`, `Count`) becomes one call to a base helper. A derived method takes column values, never a search builder.
+3. **Search.** A method with the parameters `(context.Context, XSearch)`, for a search declared in the same package, and the results `(search.Result[D], error)` becomes one call to the base hatch `search` or `searchPage`. `D` is the output of the search's mapper, or `Row` with no mapper. The name is free, and two methods may take one search.
+4. **Else** the run fails at the method (E20) and prints the signature to paste.
+
+A declared search that no method takes fails the run (E24), in a package that binds a repository interface. `nano gen repo -explain` prints the rule that each method took.
+
 ## Implementation plan
 
 Each item is one PR in the framework, in this order. Each ships its ADR or doc change with it.

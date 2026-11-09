@@ -90,7 +90,7 @@ template, err := templates.Find(transactor.ForShare(txCtx), templateID)
 
 ## Paginating a search
 
-The keyset pager lives in [`db/keyset`](../../../db/keyset) (`keyset.Page`, `keyset.OrderOf` and the key constructors). New code builds its keys and its order with `db/keyset` (`transactor.Key` and `Order` are the same types), and runs the page with `transactor.Page`. `transactor.Page` uses the context transaction and refuses a requested row lock with `ErrRowLockSearch`. Call `keyset.Page` directly only with an executor that you hold outside a row-locked context: `keyset.Page` does not read the row lock of the context, so it would read without the lock and say nothing. The names below forward to it, so existing callers keep their behaviour and their cursors byte for byte: `Key` and `Order` are aliases, `StringKey`, `TimeKey` and the other key constructors call `db/keyset`, `StrictKeys` is `keyset.OrderOf` for the sorts of `pkg/search`, and `Page(...).Run` runs `keyset.Page` in the context transaction.
+The keyset pager lives in [`db/keyset`](../../../db/keyset) (`keyset.Page`, `keyset.OrderOf` and the key constructors). New code builds its keys and its order with `db/keyset` (`transactor.Key` and `Order` are the same types), and runs the page with `transactor.Page`. `transactor.Page` uses the context transaction and refuses a requested row lock with `ErrRowLockSearch`. Call `keyset.Page` directly only with an executor that you hold outside a row-locked context: `keyset.Page` does not read the row lock of the context, so it would read without the lock and say nothing. The names below forward to it, so existing callers keep their behaviour and their cursors byte for byte: `Key` and `Order` are aliases, `StringKey`, `TimeKey` and the other key constructors call `db/keyset`, `StrictKeys` is `keyset.OrderOf` for the sorts of `db/search`, and `Page(...).Run` runs `keyset.Page` in the context transaction.
 
 `Page` runs the count-then-page pair behind a `search.Result`. Order a search with `Keyset`, not `OrderBy`: a keyset ends the ordering with a unique tiebreak, so every row has exactly one position, and pages are cut with a cursor rather than an offset.
 
@@ -149,7 +149,7 @@ return transactor.RunPlan(ctx, r.db, plan, order, r.toDomain).Value()
 
 Do not call `searchexec.Run`, `RunPage`, `plan.Run` or `plan.RunPage` from repository code. They run on the executor they get: they do not read the context transaction and do not refuse a row lock, so they would read outside the transaction, or without the lock, and say nothing.
 
-The four take and return the types of `db/search` (in the example, `search` is `db/search`), not of `pkg/search`. They return a `Result`, so the `On*` translations compose on them before `Value`.
+The four take and return the types of `db/search` (in the example, `search` is `db/search`), like the rest of the transactor. They return a `Result`, so the `On*` translations compose on them before `Value`.
 
 Check every search end to end with [`searchtest`](../../testkit/searchtest/README.md) from the consumer's component tests.
 

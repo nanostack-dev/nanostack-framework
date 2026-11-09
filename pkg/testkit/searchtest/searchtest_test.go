@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nanostack-dev/nanostack-framework/pkg/search"
+	"github.com/nanostack-dev/nanostack-framework/db/search"
 )
 
 // fakeSearch is an in-memory search over rows with ids and names. Its defect

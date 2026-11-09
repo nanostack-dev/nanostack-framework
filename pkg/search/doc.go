@@ -1,6 +1,7 @@
-// Package search holds the request, page and sort types of hand-written
-// searches. The search contract is db/search: the errors, IsClientError, the
-// cursor functions and Pagination.Validate of this package are those of
-// db/search, so both packages give one answer for a search error and issue one
-// cursor format.
+// Package search holds aliases of db/search and will be removed. Use
+// db/search.
+//
+// Each type, constant, variable and function of this package is the one of
+// db/search, so a value of one package is a value of the other with no
+// conversion, and errors.Is, IsClientError and the cursors give one answer.
 package search

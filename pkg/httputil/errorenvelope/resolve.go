@@ -129,7 +129,7 @@ type Response struct {
 //     the framework sets no deadline, so it is a timeout of the service.
 //   - a *pkg/fault.Error, or what Options.Adapter returns: its status and its
 //     errors, byte-identical to fault.WriteJSON.
-//   - a search client error of db/search (pkg/search shares the values):
+//   - a search client error of db/search (pkg/search holds aliases of them):
 //     ErrInvalidCursor or ErrCursorWithOffset is 400 INVALID_CURSOR (field
 //     pagination.cursor); ErrUnknownSort is 400 INVALID_SORT (field sort_by);
 //     ErrInvalidSortDirection is 400 INVALID_SORT (field sort_direction);

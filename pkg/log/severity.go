@@ -7,9 +7,9 @@ import (
 
 	"github.com/rs/zerolog"
 
+	"github.com/nanostack-dev/nanostack-framework/db/search"
 	"github.com/nanostack-dev/nanostack-framework/pkg/db/pgerr"
 	"github.com/nanostack-dev/nanostack-framework/pkg/fault"
-	"github.com/nanostack-dev/nanostack-framework/pkg/search"
 )
 
 // LevelFor returns the severity that fits err.

@@ -11,8 +11,8 @@ import (
 
 	"github.com/nanostack-dev/nanostack-framework/db/keyset"
 	jet "github.com/nanostack-dev/nanostack-framework/db/postgres"
+	"github.com/nanostack-dev/nanostack-framework/db/search"
 	"github.com/nanostack-dev/nanostack-framework/pkg/db/transactor"
-	"github.com/nanostack-dev/nanostack-framework/pkg/search"
 )
 
 type keyRow struct {

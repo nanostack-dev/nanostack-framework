@@ -5,8 +5,8 @@ import (
 	"time"
 
 	jet "github.com/nanostack-dev/nanostack-framework/db/postgres"
+	"github.com/nanostack-dev/nanostack-framework/db/search"
 	"github.com/nanostack-dev/nanostack-framework/pkg/jetx"
-	"github.com/nanostack-dev/nanostack-framework/pkg/search"
 )
 
 // The helpers here build Nanostack DB expressions, whose only observable form is the

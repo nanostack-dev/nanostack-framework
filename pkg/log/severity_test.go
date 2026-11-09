@@ -15,7 +15,6 @@ import (
 	"github.com/nanostack-dev/nanostack-framework/pkg/db/pgerr"
 	"github.com/nanostack-dev/nanostack-framework/pkg/fault"
 	"github.com/nanostack-dev/nanostack-framework/pkg/log"
-	"github.com/nanostack-dev/nanostack-framework/pkg/search"
 )
 
 func TestLevelFor(t *testing.T) {
@@ -64,27 +63,27 @@ func TestLevelFor(t *testing.T) {
 		{
 			// A forged or stale cursor is the API refusing the request (400).
 			name: "invalid cursor is debug",
-			err:  fmt.Errorf("%w: not a cursor payload", search.ErrInvalidCursor),
+			err:  fmt.Errorf("%w: not a cursor payload", dbsearch.ErrInvalidCursor),
 			want: zerolog.DebugLevel,
 		},
 		{
 			name: "cursor with offset is debug",
-			err:  search.ErrCursorWithOffset,
+			err:  dbsearch.ErrCursorWithOffset,
 			want: zerolog.DebugLevel,
 		},
 		{
 			name: "unknown sort is debug",
-			err:  search.ErrUnknownSort,
+			err:  dbsearch.ErrUnknownSort,
 			want: zerolog.DebugLevel,
 		},
 		{
 			name: "invalid cursor wrapped by a repository is debug",
-			err:  fmt.Errorf("failed to search collections: %w", search.ErrInvalidCursor),
+			err:  fmt.Errorf("failed to search collections: %w", dbsearch.ErrInvalidCursor),
 			want: zerolog.DebugLevel,
 		},
 		{
-			// The new client errors of db/search reach pkg/log through the
-			// pkg/search forward of IsClientError.
+			// The new client errors of db/search reach pkg/log through
+			// db/search.IsClientError.
 			name: "too many filter values is debug",
 			err:  fmt.Errorf("search flows: %w", dbsearch.ErrTooManyValues),
 			want: zerolog.DebugLevel,

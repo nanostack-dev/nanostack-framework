@@ -23,7 +23,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nanostack-dev/nanostack-framework/pkg/search"
+	"github.com/nanostack-dev/nanostack-framework/db/search"
 )
 
 // Call sends one search request body and returns the HTTP status and body.
