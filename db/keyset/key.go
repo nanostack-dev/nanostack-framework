@@ -28,8 +28,10 @@ type Key[T any] struct {
 	// computed is the name of a computed key: its name in the cursor
 	// signature and its select alias. It is empty for a column key.
 	computed string
-	nullable bool
-	nulls    nullPlacement
+	// projection is the expression AS computed, nil for a column key.
+	projection jet.Projection
+	nullable   bool
+	nulls      nullPlacement
 	// value reads the row's value, nil for SQL NULL.
 	value func(T) any
 	// bound decodes a cursor value into the comparisons against it. A JSON
@@ -124,6 +126,7 @@ type keyTarget struct {
 	column     jet.Column
 	expression jet.Expression
 	computed   string
+	projection jet.Projection
 }
 
 func columnTarget(column jet.Column) keyTarget {
@@ -133,9 +136,17 @@ func columnTarget(column jet.Column) keyTarget {
 // computedTarget checks name, which the pager writes into the SQL as the
 // select alias.
 func computedTarget(name string, expression jet.Expression) keyTarget {
-	mustIdentifier("computed key name", name)
-	return keyTarget{expression: expression, computed: name}
+	if !computedName.MatchString(name) {
+		panic(fmt.Sprintf("keyset: computed key name %q is not a row.field alias (%s)", name, computedName))
+	}
+	return keyTarget{expression: expression, computed: name, projection: expression.AS(name)}
 }
+
+// computedName is the form of a computed key name: exactly one dot, so the
+// scan maps the alias to a field (row.field). The scan splits an alias at its
+// first dot, so a name with no dot or with two dots fills no field, and the
+// cursor would carry the zero value.
+var computedName = regexp.MustCompile(`^[a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*$`)
 
 // label names the target in an error message.
 func (t keyTarget) label() string {
@@ -157,6 +168,7 @@ func newTargetKey[T, V any](
 		column:     target.column,
 		expression: target.expression,
 		computed:   target.computed,
+		projection: target.projection,
 		nullable:   nullable,
 		value: func(row T) any {
 			if v := value(row); v != nil {
@@ -196,6 +208,23 @@ func (k Key[T]) name() string {
 	return qualifiedName(k.column)
 }
 
+// Projection returns the expression of a computed key AS its name, and nil
+// for a column key. Put it in the columns of a page to fill the row field on
+// every order, not only when the order uses the key: Page does not select it
+// twice.
+func (k Key[T]) Projection() jet.Projection {
+	return k.projection
+}
+
+// identity tells two keys of one name apart: a column, or the SQL of a
+// computed expression.
+func (k Key[T]) identity() string {
+	if k.computed == "" {
+		return "column " + qualifiedName(k.column)
+	}
+	return "computed " + jet.SELECT(k.projection).DebugSql()
+}
+
 func ptrOf[T, V any](value func(T) V) func(T) *V {
 	return func(row T) *V {
 		v := value(row)
@@ -203,8 +232,8 @@ func ptrOf[T, V any](value func(T) V) func(T) *V {
 	}
 }
 
-// identifier is the form of a name that a key writes into the SQL as raw
-// text: an enum type name, and the name of a computed key.
+// identifier is the form of an enum type name, which a key writes into the
+// SQL as raw text.
 var identifier = regexp.MustCompile(`^[a-z_][a-z0-9_.]*$`)
 
 // mustIdentifier panics when name is not a plain lower-case identifier. The

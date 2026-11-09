@@ -108,7 +108,7 @@ func TestComputedKeySignatureUsesItsName(t *testing.T) {
 
 func TestComputedKeyOrdersAndSeeksOnTheExpression(t *testing.T) {
 	order := computedOrder(t, byField(sortByRequests, search.SortDescending))
-	count := "( SELECT COUNT(*) FROM public.requests WHERE requests.widget_id = widgets.id )::bigint"
+	count := "COALESCE(( SELECT COUNT(*) FROM public.requests WHERE requests.widget_id = widgets.id )::bigint, 0)"
 
 	orderBy := normalize(jet.SELECT(colID).FROM(testTable).ORDER_BY(order.OrderBy()...).DebugSql())
 	require.Contains(t, orderBy, "ORDER BY "+count+" DESC, widgets.id DESC")
@@ -127,7 +127,7 @@ func TestComputedKeyCastsToTheTypeOfItsCursorValue(t *testing.T) {
 	//nolint:exhaustive // the forms that cast, and one that does not
 	for field, want := range map[computedField]string{
 		sortByLast:     ")::timestamp with time zone ASC",
-		sortByTotal:    ")::double precision ASC",
+		sortByTotal:    ")::double precision, 0) ASC",
 		sortByBiggest:  ")::bigint ASC",
 		sortByMinLabel: "ORDER BY (( SELECT MIN(requests.label) FROM public.requests WHERE requests.widget_id = widgets.id )) ASC",
 	} {
@@ -147,7 +147,7 @@ func TestProjectionsAliasTheComputedKeysOnly(t *testing.T) {
 		byField(sortByLast, search.SortDescending),
 	)
 	sql := normalize(jet.SELECT(colID, order.Projections()).FROM(testTable).DebugSql())
-	require.Contains(t, sql, `)::bigint AS "widget_row.request_count"`)
+	require.Contains(t, sql, `)::bigint, 0) AS "widget_row.request_count"`)
 	require.Contains(t, sql, `)::timestamp with time zone AS "widget_row.last_received"`)
 	require.Len(t, order.Projections(), 2)
 }
@@ -158,7 +158,7 @@ func TestPageSelectsTheComputedKeysForThePageOnly(t *testing.T) {
 		From(testTable).Keyset(order)
 
 	page := normalize(builder.KeysetStatementForTest(search.Pagination{Limit: 10}, nil).DebugSql())
-	require.Contains(t, page, `)::bigint AS "widget_row.request_count"`)
+	require.Contains(t, page, `)::bigint, 0) AS "widget_row.request_count"`)
 	require.NotContains(t, normalize(builder.CountStatementForTest().DebugSql()), "widget_row.request_count")
 }
 
@@ -277,7 +277,10 @@ func TestComputedKeysRoundTripTheirCursorValues(t *testing.T) {
 func TestComputedKeyNameMustBeAnIdentifier(t *testing.T) {
 	count := jet.IntExp(ofWidget(jet.COUNT(jet.STAR)))
 	value := func(r computedRow) int64 { return r.Requests }
-	for _, name := range []string{"", "Request_Count", `widget_row."x`, "widget row", "1count"} {
+	for _, name := range []string{
+		"", "Request_Count", `widget_row."x`, "widget row", "1count",
+		"request_count", "widget_row.a.b", ".count", "widget_row.",
+	} {
 		require.Panics(t, func() { keyset.IntExprKey(name, count, value) }, name)
 	}
 	require.NotPanics(t, func() { keyset.IntExprKey("widget_row.request_count", count, value) })
@@ -328,4 +331,112 @@ func TestComputedKeyKeepsTheParenthesesOfASubqueryInAFunction(t *testing.T) {
 			require.Equal(t, 3, strings.Count(sql, "COALESCE(( SELECT"), sql)
 		})
 	}
+}
+
+// A non-nullable form reads NULL as the zero value: the order, the seek and
+// the select all see COALESCE(expression, zero), so a NULL row can never
+// carry a cursor value that its order does not hold. The Nullable forms keep
+// NULL.
+func TestNotNullComputedKeyReadsNullAsTheZeroValue(t *testing.T) {
+	for field, want := range map[computedField]string{
+		sortByRequests: "COALESCE(( SELECT COUNT(*) FROM public.requests WHERE requests.widget_id = widgets.id )" +
+			"::bigint, 0)",
+		sortByTotal: "COALESCE(( SELECT SUM(requests.amount) FROM public.requests WHERE requests.widget_id = widgets.id )" +
+			"::double precision, 0)",
+		sortByFirst: "COALESCE(( SELECT MIN(requests.received_at) FROM public.requests WHERE requests.widget_id = " +
+			"widgets.id )::timestamp with time zone, '0001-01-01 00:00:00Z'::timestamp with time zone)",
+		sortByLabel: "COALESCE((( SELECT MAX(requests.label) FROM public.requests WHERE requests.widget_id = " +
+			"widgets.id )), '')",
+		sortByLast:     "",
+		sortByMean:     "",
+		sortByMinLabel: "",
+		sortByBiggest:  "",
+	} {
+		t.Run(string(field), func(t *testing.T) {
+			order := computedOrder(t, byField(field, search.SortAscending))
+			cursor, err := order.Cursor(computedRow{ID: "w_1"})
+			require.NoError(t, err)
+			seek, err := order.Seek(cursor)
+			require.NoError(t, err)
+			sql := normalize(jet.SELECT(colID, order.Projections()).FROM(testTable).
+				WHERE(seek).ORDER_BY(order.OrderBy()...).DebugSql())
+			if want == "" {
+				require.NotContains(t, sql, "COALESCE", "a Nullable form keeps NULL")
+				return
+			}
+			require.Equal(t, 3, strings.Count(sql, want), "the select, the seek and the order: %s", sql)
+		})
+	}
+}
+
+// Two different keys of one name would share one cursor signature, and one
+// would replace the other in the order. OrderOf refuses them whatever the
+// request sorts on.
+func TestComputedKeyNameCannotNameAnotherKey(t *testing.T) {
+	count := jet.IntExp(ofWidget(jet.COUNT(jet.STAR)))
+	biggest := jet.IntExp(ofWidget(jet.MAXi(reqSize)))
+	value := func(r computedRow) int64 { return r.Requests }
+
+	t.Run("a computed key named after the tiebreak column", func(t *testing.T) {
+		//nolint:exhaustive // one key
+		keys := map[computedField]keyset.Key[computedRow]{sortByRequests: keyset.IntExprKey("widgets.id", count, value)}
+		for _, sorts := range [][]search.Sort[computedField]{nil, {byField(sortByRequests, search.SortAscending)}} {
+			_, err := keyset.OrderOf(sorts, keys, computedTiebreak())
+			require.ErrorContains(t, err, "widgets.id names two different keys")
+		}
+	})
+	t.Run("two computed keys of one name", func(t *testing.T) {
+		//nolint:exhaustive // two keys
+		keys := map[computedField]keyset.Key[computedRow]{
+			sortByRequests: keyset.IntExprKey("widget_row.n", count, value),
+			sortByBiggest:  keyset.IntExprKey("widget_row.n", biggest, value),
+		}
+		_, err := keyset.OrderOf([]search.Sort[computedField]{byField(sortByRequests, search.SortAscending)},
+			keys, computedTiebreak())
+		require.ErrorContains(t, err, "widget_row.n names two different keys")
+	})
+	t.Run("one key listed twice", func(t *testing.T) {
+		key := keyset.IntExprKey("widget_row.n", count, value)
+		//nolint:exhaustive // one key under two sorts
+		keys := map[computedField]keyset.Key[computedRow]{sortByRequests: key, sortByBiggest: key}
+		order, err := keyset.OrderOf([]search.Sort[computedField]{
+			byField(sortByRequests, search.SortAscending), byField(sortByBiggest, search.SortAscending),
+		}, keys, computedTiebreak(), computedTiebreak())
+		require.NoError(t, err)
+		require.Equal(t, "widget_row.n:ASC,widgets.id:ASC", order.Signature())
+	})
+}
+
+// A column with the alias of a computed key would put a second value into the
+// field: the computed one, or a value that the seek does not compare.
+func TestPageRefusesAColumnWithTheAliasOfAComputedKey(t *testing.T) {
+	//nolint:exhaustive // one key
+	keys := map[computedField]keyset.Key[computedRow]{
+		sortByLabel: keyset.StringExprKey("widgets.name", jet.LOWER(colName),
+			func(r computedRow) string { return r.Name }),
+	}
+	order := mustOrder(t, []search.Sort[computedField]{byField(sortByLabel, search.SortAscending)},
+		keys, computedTiebreak())
+	fake := &fakeDB{}
+	_, err := keyset.Page(fake.open(), func(r computedRow) computedRow { return r }, colID, colName).
+		From(testTable).Keyset(order).
+		Run(t.Context(), search.Pagination{Limit: 2})
+	require.ErrorContains(t, err, `a column has the alias of the computed key "widgets.name"`)
+	require.Empty(t, fake.recorded(), "no statement runs")
+}
+
+// The design selects a computed value on every order, through
+// Key.Projection. When the order also uses the key, the page selects it once.
+func TestPageSelectsAComputedKeyInTheColumnsOnce(t *testing.T) {
+	requests := computedKeys()[sortByRequests]
+	for _, field := range []computedField{sortByRequests, sortByLast} {
+		t.Run(string(field), func(t *testing.T) {
+			order := computedOrder(t, byField(field, search.SortDescending))
+			builder := keyset.Page(nil, func(r computedRow) computedRow { return r },
+				colID, colName, requests.Projection()).From(testTable).Keyset(order)
+			page := normalize(builder.KeysetStatementForTest(search.Pagination{Limit: 10}, nil).DebugSql())
+			require.Equal(t, 1, strings.Count(page, `AS "widget_row.request_count"`), page)
+		})
+	}
+	require.Nil(t, computedTiebreak().Projection(), "a column key has no projection")
 }

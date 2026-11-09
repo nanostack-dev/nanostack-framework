@@ -18,7 +18,11 @@ func (b *PageBuilder[T, R]) PageStatementForTest(page search.Pagination) jet.Sta
 }
 
 func (b *PageBuilder[T, R]) KeysetStatementForTest(page search.Pagination, seek jet.BoolExpression) jet.Statement {
-	return b.keysetStatement(b.mustTable(), page, seek)
+	computed, err := b.computedColumns()
+	if err != nil {
+		panic(err)
+	}
+	return b.keysetStatement(b.mustTable(), page, seek, computed)
 }
 
 func (b *PageBuilder[T, R]) mustTable() jet.ReadableTable {

@@ -35,6 +35,7 @@ const (
 	ksMinLabel    kcField = "MIN_LABEL"
 	ksLabelOrNone kcField = "LABEL_OR_NONE"
 	ksBiggest     kcField = "BIGGEST"
+	ksBiggestOr0  kcField = "BIGGEST_OR_ZERO"
 	kcName        kcField = "NAME"
 )
 
@@ -49,6 +50,7 @@ type ksComputedRow struct {
 	MinLabel    *string    `alias:"it_keyset_row.min_label"`
 	LabelOrNone string     `alias:"it_keyset_row.label_or_none"`
 	Biggest     *int64     `alias:"it_keyset_row.biggest"`
+	BiggestOr0  int64      `alias:"it_keyset_row.biggest_or_zero"`
 }
 
 var (
@@ -97,6 +99,11 @@ func ksComputedKeys() map[kcField]keyset.Key[ksComputedRow] {
 		ksBiggest: keyset.NullableIntExprKey("it_keyset_row.biggest",
 			jet.IntExp(ofWidget(jet.MAXi(ksReqSize))),
 			func(r ksComputedRow) *int64 { return r.Biggest }),
+		// A NOT NULL form over an expression that can be NULL: the key reads
+		// NULL as 0.
+		ksBiggestOr0: keyset.IntExprKey("it_keyset_row.biggest_or_zero",
+			jet.IntExp(ofWidget(jet.MAXi(ksReqSize))),
+			func(r ksComputedRow) int64 { return r.BiggestOr0 }),
 		kcName: keyset.StringKey(ksNameC, func(r ksComputedRow) string { return r.Name }),
 	}
 }
@@ -234,7 +241,7 @@ func TestIntegrationKeysetComputedWalkMatchesOrderedQuery(t *testing.T) {
 
 	fields := []kcField{
 		ksRequests, ksLast, ksLastNF, ksLastNL, ksLastOrMade,
-		ksTotal, ksTotalOrZero, ksMinLabel, ksLabelOrNone, ksBiggest,
+		ksTotal, ksTotalOrZero, ksMinLabel, ksLabelOrNone, ksBiggest, ksBiggestOr0,
 	}
 	directions := []search.SortDirection{search.SortAscending, search.SortDescending}
 	var orderings [][]search.Sort[kcField]
