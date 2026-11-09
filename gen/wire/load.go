@@ -120,7 +120,7 @@ func load(opts Options, extra []string) ([]*packages.Package, error) {
 		BuildFlags: []string{"-tags=" + strings.Join(tags, ",")},
 		Overlay:    overlay,
 	}
-	pkgs, err := packages.Load(cfg, append([]string{"."}, extra...)...)
+	pkgs, err := gopkg.Load(cfg, append([]string{"."}, extra...)...)
 	if err != nil {
 		return nil, gopkg.LoadFailed(opts.Dir, err)
 	}

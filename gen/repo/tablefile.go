@@ -60,7 +60,7 @@ func (l *loaded) parsed(path string) (map[string]*ast.File, error) {
 	if err != nil {
 		return nil, err
 	}
-	pkgs, err := packages.Load(&packages.Config{Mode: packages.NeedName | packages.NeedFiles, Dir: l.dir,
+	pkgs, err := gopkg.Load(&packages.Config{Mode: packages.NeedName | packages.NeedFiles, Dir: l.dir,
 		Overlay: overlay}, path)
 	if err != nil {
 		return nil, gopkg.LoadFailed(l.dir, err)

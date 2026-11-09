@@ -97,7 +97,7 @@ func (l *loaded) load(generated []byte) (*packages.Package, error) {
 		Fset:    token.NewFileSet(),
 		Overlay: overlay,
 	}
-	pkgs, err := packages.Load(cfg, ".")
+	pkgs, err := gopkg.Load(cfg, ".")
 	if err != nil {
 		return nil, gopkg.LoadFailed(l.dir, err)
 	}

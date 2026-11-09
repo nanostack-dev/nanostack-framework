@@ -176,7 +176,7 @@ func (l *loaded) load(generated []gen.File) (*packages.Package, error) {
 		return nil, err
 	}
 	cfg := &packages.Config{Mode: loadMode, Dir: l.dir, Fset: token.NewFileSet(), Overlay: overlay}
-	pkgs, err := packages.Load(cfg, ".")
+	pkgs, err := gopkg.Load(cfg, ".")
 	if err != nil {
 		return nil, gopkg.LoadFailed(l.dir, err)
 	}
@@ -423,7 +423,7 @@ func (l *loaded) typesOf(path string) (*types.Package, error) {
 	if err != nil {
 		return nil, err
 	}
-	pkgs, err := packages.Load(&packages.Config{Mode: packages.NeedName | packages.NeedTypes, Dir: l.dir,
+	pkgs, err := gopkg.Load(&packages.Config{Mode: packages.NeedName | packages.NeedTypes, Dir: l.dir,
 		Overlay: overlay}, path)
 	if err != nil {
 		return nil, gopkg.LoadFailed(l.dir, err)

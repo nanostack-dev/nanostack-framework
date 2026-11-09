@@ -87,7 +87,7 @@ func load(opts Options) (*model, error) {
 		BuildFlags: []string{"-tags=" + buildTag},
 		Overlay:    overlay,
 	}
-	pkgs, err := packages.Load(cfg, ".")
+	pkgs, err := gopkg.Load(cfg, ".")
 	if err != nil {
 		return nil, gopkg.LoadFailed(opts.Dir, err)
 	}

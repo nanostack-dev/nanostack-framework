@@ -62,7 +62,7 @@ func loadPackage(opts Options) (*goPackage, error) {
 		Overlay: overlay,
 		Tests:   false,
 	}
-	pkgs, err := packages.Load(cfg, ".")
+	pkgs, err := gopkg.Load(cfg, ".")
 	if err != nil {
 		return nil, gopkg.LoadFailed(dir, err)
 	}
