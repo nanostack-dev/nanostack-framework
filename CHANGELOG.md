@@ -40,6 +40,11 @@ One section per module and version, newest first. Each section uses Added, Chang
 - RELEASING.md, steps 3 and 4: at the release commits, `internal/layers` and the fixture tests of `gen/pipeline` and `gen/repo` fail because they need the development form. The runbook says so, and gives a consumer check outside the repository for the `gen` release form.
 
 
+## gen/v0.23.0-beta.4
+
+### Fixed
+- `nano gen repo` no longer imports the model package into a base where every table has a mapper and no column has a type of the model package. Go refused that base with `imported and not used`, and the run stopped with "the base of table ... does not compile". Run `go tool nano gen repo`: a base that generated before does not change.
+
 ## gen/v0.23.0-beta.3
 
 Codegen part 1: the db step and the repo step of `nano gen`. It requires root `v0.23.0-beta.3` and `db/v0.23.0-beta.3`. Pin the CLI with `go get -tool github.com/nanostack-dev/nanostack-framework/gen/cmd/nano@v0.23.0-beta.3`. [RELEASING.md](RELEASING.md#upgrade-from-v0230-beta2) gives the upgrade steps.
