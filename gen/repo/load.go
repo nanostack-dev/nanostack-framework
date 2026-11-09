@@ -6,6 +6,7 @@ import (
 	"errors"
 	"go/ast"
 	"go/token"
+	"go/types"
 	"os"
 	"path/filepath"
 	"slices"
@@ -36,6 +37,8 @@ type loaded struct {
 	pkg     *packages.Package
 	files   map[string]map[string]*ast.File // package path -> file name -> parsed file, for tables and enums
 	fset    *token.FileSet                  // of files
+	typed   map[string]*types.Package       // package path -> types, for the models of searched tables
+	scopes  []string                        // the tenant columns, Postgres.Scopes
 }
 
 // loadPackage type-checks the package with repo_base.gen.go and every
@@ -331,4 +334,52 @@ func (l *loaded) gap(decls *declarations, out *rendered, file string, src []byte
 	return gen.Errorf(o.file, o.line,
 		"report this gap in the nano gen repo checks; meanwhile write the method by hand",
 		"the generated %s does not compile: %s (%s:%d)", filepath.Base(file), msg, filepath.Base(file), line)
+}
+
+// typesOf returns the type-checked package at path: from the imports of the
+// declaring package when it imports it, directly or not, else loaded on its
+// own. It returns nil, nil when no package is at path.
+func (l *loaded) typesOf(path string) (*types.Package, error) {
+	if pkg, ok := l.typed[path]; ok {
+		return pkg, nil
+	}
+	if l.typed == nil {
+		l.typed = map[string]*types.Package{}
+	}
+	seen := map[*types.Package]bool{}
+	var find func(p *types.Package) *types.Package
+	find = func(p *types.Package) *types.Package {
+		if seen[p] {
+			return nil
+		}
+		seen[p] = true
+		if p.Path() == path {
+			return p
+		}
+		for _, imp := range p.Imports() {
+			if found := find(imp); found != nil {
+				return found
+			}
+		}
+		return nil
+	}
+	if found := find(l.pkg.Types); found != nil {
+		l.typed[path] = found
+		return found, nil
+	}
+	overlay, err := gopkg.Overlay(l.overlay, nil)
+	if err != nil {
+		return nil, err
+	}
+	pkgs, err := packages.Load(&packages.Config{Mode: packages.NeedName | packages.NeedTypes, Dir: l.dir,
+		Overlay: overlay}, path)
+	if err != nil {
+		return nil, gopkg.LoadFailed(l.dir, err)
+	}
+	var pkg *types.Package
+	if len(pkgs) == 1 && len(pkgs[0].Errors) == 0 {
+		pkg = pkgs[0].Types
+	}
+	l.typed[path] = pkg
+	return pkg, nil
 }

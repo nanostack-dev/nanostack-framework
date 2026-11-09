@@ -24,6 +24,9 @@ type tableBase struct {
 	catalogOK bool              // the table type has a ColumnTypes method
 	view      bool              // the table variable is in a view package of nano gen db
 
+	foreignKeys []foreignKey // from ForeignKeys, in its order
+	fksFound    bool         // the table type has a ForeignKeys method
+
 	row    types.Type // the generated model, E
 	domain types.Type // what the row helpers return, D
 	mapper *mapperRef // nil: rows are returned as the model
@@ -157,6 +160,24 @@ func (t *tableBase) scopeFields(scopes []string) []string {
 // table resolves the table argument of a declaration: a table variable of a
 // PostgreSQL table package that nano gen db generated.
 func (c *collector) table(arg ast.Expr) (*tableBase, bool) {
+	v, named, dialect, ok := c.tableVar(arg)
+	if !ok {
+		return nil, false
+	}
+	if dialect != postgresPath {
+		c.errorf(arg, "remove the declaration; the repository stays hand-written, with pkg/db/transactor calls "+
+			"on the table",
+			"%s is a %s table; nano gen repo generates bases for PostgreSQL tables only", c.source(arg),
+			dialects[dialect])
+		return nil, false
+	}
+	return c.tableOf(arg, v, named)
+}
+
+// tableVar resolves a table argument to its variable, its named struct type
+// and the package of the dialect whose Table it embeds. It reports an
+// argument that is not a table variable of a Nanostack DB table package.
+func (c *collector) tableVar(arg ast.Expr) (*types.Var, *types.Named, string, bool) {
 	info := c.l.pkg.TypesInfo
 	var id *ast.Ident
 	switch x := arg.(type) {
@@ -171,26 +192,24 @@ func (c *collector) table(arg ast.Expr) (*tableBase, bool) {
 	if id == nil || v == nil || v.Pkg() == nil || v.Parent() != v.Pkg().Scope() {
 		c.errorf(arg, "pass the table variable of the generated table package, such as table.Users",
 			"the table argument %s is not a table variable", c.source(arg))
-		return nil, false
+		return nil, nil, "", false
 	}
 	named := tableNamed(v.Type())
 	dialect := ""
 	if named != nil {
 		dialect = embeddedDialect(named, 0)
 	}
-	switch dialect {
-	case "":
+	if dialect == "" {
 		c.errorf(arg, "pass a table variable that nano gen db generated, such as table.Users",
 			"%s is not a Nanostack DB table", c.source(arg))
-		return nil, false
-	case postgresPath:
-	default:
-		c.errorf(arg, "remove the declaration; the repository stays hand-written, with pkg/db/transactor calls "+
-			"on the table",
-			"%s is a %s table; nano gen repo generates bases for PostgreSQL tables only", c.source(arg),
-			dialects[dialect])
-		return nil, false
+		return nil, nil, "", false
 	}
+	return v, named, dialect, true
+}
+
+// tableOf reads what the table package of v declares for it: its names,
+// columns, unique keys and catalogue facts.
+func (c *collector) tableOf(arg ast.Expr, v *types.Var, named *types.Named) (*tableBase, bool) {
 	t := &tableBase{varObj: v, pkgPath: v.Pkg().Path(), pkgName: v.Pkg().Name(), tableType: v.Type(),
 		goName: v.Name(), view: v.Pkg().Name() == "view"}
 	src, err := c.l.tableSource(v.Pkg().Path())
@@ -210,6 +229,7 @@ func (c *collector) table(arg ast.Expr) (*tableBase, bool) {
 	keys, found := src.keys[named.Obj().Name()]
 	t.resolveKeys(keys, found)
 	t.catalog, t.catalogOK = src.types[named.Obj().Name()]
+	t.foreignKeys, t.fksFound = src.foreignKeys[named.Obj().Name()]
 	return t, true
 }
 

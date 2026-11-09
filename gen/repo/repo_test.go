@@ -193,7 +193,7 @@ func TestProblems(t *testing.T) {
 // when the declarations resolved.
 func explainGolden(t *testing.T, path string, res *Result) {
 	t.Helper()
-	if res == nil || len(res.Explain) == 0 {
+	if res == nil || len(res.Explain)+len(res.Searches) == 0 {
 		if _, err := os.Stat(path); err == nil && !*update {
 			t.Errorf("%s exists, but the run explains nothing", path)
 		}
@@ -201,6 +201,7 @@ func explainGolden(t *testing.T, path string, res *Result) {
 	}
 	var b bytes.Buffer
 	WriteExplain(&b, res.Explain)
+	WriteSearchExplain(&b, res.Searches)
 	golden(t, path, b.Bytes())
 }
 

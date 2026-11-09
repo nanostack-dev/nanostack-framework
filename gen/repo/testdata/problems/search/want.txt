@@ -1,0 +1,42 @@
+search.go:35: Filter(shop.Items.CreatedAt, nanorepo.Contains): column created_at (timestamptz) is not a text column
+  fix: use nanorepo.Range(...), Eq or In, or nanorepo.FullTextExpr on a typed expression (CAST(...).AS_TEXT(), host(...))
+search.go:36: Filter(shop.Items.TenantID, nanorepo.Contains): column tenant_id (uuid) is not a text column
+  fix: use nanorepo.Range(...), Eq or In, or nanorepo.FullTextExpr on a typed expression (CAST(...).AS_TEXT(), host(...))
+search.go:37: Filter(shop.Items.Status, nanorepo.Contains): column status (item_status) is not a text column
+  fix: use nanorepo.Range(...), Eq or In, or nanorepo.FullTextExpr on a typed expression (CAST(...).AS_TEXT(), host(...))
+search.go:38: FullText(shop.Items.Tags): column tags (_text) is not a text column
+  fix: remove the column from FullText, or match a typed expression with nanorepo.FullTextExpr (CAST(...).AS_TEXT(), host(...))
+search.go:41: search Count: counts has no primary key, so no order is total: pages could skip or repeat rows
+  fix: add a primary key to counts in a migration, then run nano gen db
+search.go:43: search ShortTiebreak: Tiebreak (sku) covers no unique key of items; its keys are items_pkey (id), items_tenant_sku_key (tenant_id, sku)
+  fix: remove Tiebreak to use the primary key, or add the missing columns: nanorepo.Tiebreak(shop.Items.Sku, shop.Items.ID)
+search.go:44: search Label: Tiebreak (external_id, code) covers no unique key of labels; its keys are labels_pkey (id); labels_code_key (code) does not count: code can be NULL, and NULL rows repeat; labels_external_id_key (external_id) WHERE (external_id IS NOT NULL) does not count: it is partial
+  fix: remove Tiebreak to use the primary key, or add the missing columns: nanorepo.Tiebreak(table.Labels.ExternalID, table.Labels.Code, table.Labels.ID)
+search.go:47: search JoinedTiebreak: Tiebreak(shop.Tenants.ID) names tenants; a tiebreak orders the rows of items, the table of the search
+  fix: name columns of items that cover one of its unique keys, or remove Tiebreak to use the primary key
+search.go:51: search Twice is declared twice: search.go:50 and search.go:51
+  fix: rename one of the two searches
+search.go:53: FilterAs[sku] on sku: the model field is string, and sku is int
+  fix: declare sku over string, or use nanorepo.Filter(shop.Items.Sku, nanorepo.In), with values of the model type
+search.go:57: search NoSuchSort: DefaultSort(created_at) is not one of its sorts (name)
+  fix: add nanorepo.Sort(shop.Items.CreatedAt), or sort by default on one of the sorts
+search.go:59: search NoSuchExpr: DefaultSortExpr("Total") names no SortExpr field of the search (sorts: it has none)
+  fix: add nanorepo.SortExpr("Total", fn), where fn returns the expression, or sort by default on one of the sorts
+search.go:61: search OnMySQL: mysqlItems is a MySQL table; nano gen repo writes PostgreSQL searches in this release
+  fix: remove the declaration and write the search by hand on db/searchexec
+search.go:63: search Legacy reads legacy_events, and the table package has no ColumnTypes and no ForeignKeys for it
+  fix: run nano gen db, which writes them
+search.go:69: search OptionVariable: the argument nameFilter is not a call of a nanorepo option; nano gen repo reads each option from source
+  fix: write each option as a call of a nanorepo function in the nanorepo.Search call, such as nanorepo.Filter(table.Items.Name, nanorepo.Eq)
+search.go:70: search "lowercase": the name is not an exported Go identifier, and it names the generated types (lowercaseSearch)
+  fix: name the search with an exported Go identifier, such as "WebhookRequest"
+search.go:72: search FromLiteral: From takes a function literal; nano gen repo reads a function of package search by its name
+  fix: declare the function in this package with one statement, return table.X.INNER_JOIN(table.Y, <condition>) (or LEFT_JOIN), and pass its name to nanorepo.From
+search.go:73: search FromTwoStatements: From itemsInTwoSteps is not one return statement: nano gen repo reads the tables of the join from it
+  fix: declare the function in this package with one statement, return table.X.INNER_JOIN(table.Y, <condition>) (or LEFT_JOIN), and pass its name to nanorepo.From
+search.go:74: search FromMissesTheTable: From tenantsAlone does not read items, the table of the search, without an alias
+  fix: join items in tenantsAlone, or search the table it starts from
+search.go:77: search TwoFroms: From is given twice: search.go:76 and search.go:77
+  fix: keep one of the two
+search.go:79: search NotAnOp: nanorepo.Filter(shop.Items.Name, ops()...) spreads a slice; nano gen repo reads each argument from source
+  fix: write each option as a call of a nanorepo function in the nanorepo.Search call, such as nanorepo.Filter(table.Items.Name, nanorepo.Eq)
