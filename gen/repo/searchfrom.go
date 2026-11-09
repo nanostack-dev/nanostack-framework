@@ -44,9 +44,22 @@ func (c *collector) from(s *searchDecl, arg ast.Expr) {
 			"of the join from it", s.name, fn.Name())
 		return
 	}
-	s.from = &fromFunc{name: fn.Name(), takesScope: sig.Params().Len() == 1, arg: arg, decl: decl}
+	s.from = &fromFunc{name: fn.Name(), takesScope: sig.Params().Len() == 1, arg: arg, decl: decl,
+		scopeVars: map[*types.Var]bool{}}
 	if s.from.takesScope {
 		s.from.param = sig.Params().At(0).Type()
+		if c.carriesSQL(s.from.param) {
+			c.errorf(arg, "take the scope value, a struct of plain values such as strings and UUIDs",
+				"search %s: From %s takes %s, which can hold a Nanostack DB value: the caller could put any "+
+					"condition in the join", s.name, fn.Name(), c.qualified(s.from.param))
+			s.from = nil
+			return
+		}
+		if names := decl.Type.Params.List[0].Names; len(names) == 1 {
+			if v, isVar := info.Defs[names[0]].(*types.Var); isVar {
+				s.from.scopeVars[v] = true
+			}
+		}
 	}
 }
 
@@ -123,6 +136,22 @@ func (c *collector) followJoin(s *searchDecl, call *ast.CallExpr, fn *types.Func
 		return false
 	}
 	followed[fn] = true
+	// A parameter of the helper is the scope value only when the caller
+	// passes the scope value itself, not a value it builds.
+	params := decl.Type.Params.List
+	i := 0
+	for _, field := range params {
+		for _, name := range field.Names {
+			v, _ := c.l.pkg.TypesInfo.Defs[name].(*types.Var)
+			if i < len(call.Args) && v != nil && c.isScopeVar(s, call.Args[i]) {
+				s.from.scopeVars[v] = true
+			}
+			i++
+		}
+		if len(field.Names) == 0 {
+			i++
+		}
+	}
 	return c.joinExpr(s, ret.Results[0], followed)
 }
 
@@ -193,7 +222,7 @@ func (c *collector) instanceRef(s *searchDecl, e ast.Expr) *instance {
 			return nil
 		}
 		var isString bool
-		if alias, isString = c.constString(s, call.Args[0]); !isString {
+		if alias, isString = c.aliasName(s, call.Args[0], sel.X); !isString {
 			return nil
 		}
 		e = ast.Unparen(sel.X)

@@ -55,7 +55,7 @@ func (c *collector) quietTable(s *searchDecl, e ast.Expr) *tableBase {
 // that nano gen db generated.
 func (c *collector) tableVariable(obj types.Object) bool {
 	v, isVar := obj.(*types.Var)
-	if !isVar || v.Pkg() == nil || v.Pkg() == c.l.pkg.Types || v.Parent() != v.Pkg().Scope() ||
+	if !isVar || v == nil || v.Pkg() == nil || v.Pkg() == c.l.pkg.Types || v.Parent() != v.Pkg().Scope() ||
 		!c.isTableType(v.Type()) {
 		return false
 	}
@@ -65,6 +65,36 @@ func (c *collector) tableVariable(obj types.Object) bool {
 	}
 	_, found := src.tables[v.Name()]
 	return found
+}
+
+// columnFix is the fix of a column read through base, an expression of a
+// table type that is not a table variable or its AS: the same column of the
+// table variable that base is built from, or of the table variable of its
+// type.
+func (c *collector) columnFix(base ast.Expr, col string) string {
+	const fix = "read the column of the table variable of the generated table package, such as "
+	if call, isCall := ast.Unparen(base).(*ast.CallExpr); isCall {
+		if f, isSel := ast.Unparen(call.Fun).(*ast.SelectorExpr); isSel &&
+			c.tableVariable(c.l.pkg.TypesInfo.Uses[tableIdent(f.X)]) {
+			return fix + c.source(f.X) + "." + col
+		}
+	}
+	named := tableNamed(c.l.pkg.TypesInfo.TypeOf(base))
+	scope := named.Obj().Pkg().Scope()
+	for _, name := range scope.Names() {
+		if v, isVar := scope.Lookup(name).(*types.Var); isVar && tableNamed(v.Type()) == named {
+			return fix + v.Pkg().Name() + "." + name + "." + col
+		}
+	}
+	return "read the column of a table variable of the generated table package, or of its AS"
+}
+
+// argText is argument i of call as written, for a message.
+func argText(c *collector, call *ast.CallExpr, i int) string {
+	if i < len(call.Args) {
+		return c.source(call.Args[i])
+	}
+	return "no name"
 }
 
 // isTableType reports whether t is a generated table type, or a pointer to
@@ -92,10 +122,47 @@ func (c *collector) dbTyped(t types.Type) bool {
 	return false
 }
 
+// carriesSQL reports whether a value of type t can hold a Nanostack DB
+// value, such as postgres.RawBool(...): a DB or table type, an interface, a
+// function or a channel, or a type built from one of them. A struct is read
+// field by field, so uuid.UUID (an array of bytes) carries no SQL.
+func (c *collector) carriesSQL(t types.Type) bool {
+	return c.carries(t, map[types.Type]bool{})
+}
+
+func (c *collector) carries(t types.Type, seen map[types.Type]bool) bool {
+	t = types.Unalias(t)
+	if seen[t] {
+		return false
+	}
+	seen[t] = true
+	switch x := t.(type) {
+	case *types.Named:
+		return inDB(x.Obj().Pkg()) || c.isTableType(x) || c.carries(x.Underlying(), seen)
+	case *types.Interface, *types.Signature, *types.Chan, *types.TypeParam:
+		return true
+	case *types.Pointer:
+		return c.carries(x.Elem(), seen)
+	case *types.Slice:
+		return c.carries(x.Elem(), seen)
+	case *types.Array:
+		return c.carries(x.Elem(), seen)
+	case *types.Map:
+		return c.carries(x.Key(), seen) || c.carries(x.Elem(), seen)
+	case *types.Struct:
+		for f := range x.Fields() {
+			if c.carries(f.Type(), seen) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // expressions reports whether every result of a signature is a Nanostack
 // DB expression.
 func (c *collector) expressions(results *types.Tuple) bool {
-	expr := c.expressionInterface()
+	expr := c.postgresInterface("Expression")
 	if expr == nil || results.Len() == 0 {
 		return false
 	}
@@ -108,9 +175,21 @@ func (c *collector) expressions(results *types.Tuple) bool {
 	return true
 }
 
-// expressionInterface returns the Expression interface of the PostgreSQL
-// dialect, from the packages the declaring package imports.
-func (c *collector) expressionInterface() *types.Interface {
+// statement reports whether a result of a signature is a statement, such
+// as the SetStatement of UNION.
+func (c *collector) statement(results *types.Tuple) bool {
+	stmt := c.postgresInterface("Statement")
+	for r := range results.Variables() {
+		if stmt != nil && (types.Implements(r.Type(), stmt) || types.Implements(types.NewPointer(r.Type()), stmt)) {
+			return true
+		}
+	}
+	return false
+}
+
+// postgresInterface returns the interface name of the PostgreSQL dialect,
+// from the packages the declaring package imports.
+func (c *collector) postgresInterface(name string) *types.Interface {
 	var found *types.Interface
 	seen := map[*types.Package]bool{}
 	var visit func(p *types.Package)
@@ -120,7 +199,7 @@ func (c *collector) expressionInterface() *types.Interface {
 		}
 		seen[p] = true
 		if p.Path() == postgresPath {
-			if obj := p.Scope().Lookup("Expression"); obj != nil {
+			if obj := p.Scope().Lookup(name); obj != nil {
 				found, _ = obj.Type().Underlying().(*types.Interface)
 			}
 			return

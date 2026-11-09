@@ -17,10 +17,16 @@ const (
 		"inside a function"
 	followFix = "call a function of this package, or a Nanostack DB constructor, directly"
 	sqlName   = `^[a-z_][a-z0-9_]*$`
+	aliasSQL  = `^[a-z_][a-z0-9_]{0,62}$`
 )
 
 // sqlIdentifier matches the function name of Func and the type of CAST(x).AS.
 var sqlIdentifier = regexp.MustCompile(sqlName) //nolint:gochecknoglobals // compiled once.
+
+// sqlAlias matches an alias of AS: an SQL name that PostgreSQL keeps whole.
+// PostgreSQL cuts a name to 63 bytes, so two longer aliases could be one
+// name to it and another to the check.
+var sqlAlias = regexp.MustCompile(aliasSQL) //nolint:gochecknoglobals // compiled once.
 
 // refusedJoins are the joins that can bring rows that no tenant link
 // reaches (E28).
@@ -223,6 +229,10 @@ func (w *readWalk) dbFunction(call *ast.CallExpr, name string, sig *types.Signat
 		}
 	case takesText(sig) && !slices.Contains(literalConstructors, name):
 		w.refuse(call, rawFix, "calls %s: it takes a string that becomes SQL text", callee)
+	case w.c.statement(sig.Results()):
+		w.refuse(call, "write the subquery as postgres.SELECT(...).FROM(table).WHERE(...), or the search by hand on "+
+			"db/searchexec", "calls %s, which builds a statement: a subquery of a search reads with SELECT, FROM "+
+			"and WHERE only", callee)
 	case !w.c.expressions(sig.Results()):
 		w.refuse(call, rawFix+"; write the search by hand on db/searchexec for other SQL",
 			"calls %s, which does not build an expression", callee)
@@ -241,13 +251,6 @@ func (w *readWalk) constantName(call *ast.CallExpr, i int, fix string) {
 	}
 	w.refuse(call, fix, "calls %s with %s, which is not a constant that matches %s: it writes SQL text",
 		w.c.source(call.Fun), argText(w.c, call, i), sqlName)
-}
-
-func argText(c *collector, call *ast.CallExpr, i int) string {
-	if i < len(call.Args) {
-		return c.source(call.Args[i])
-	}
-	return "no name"
 }
 
 // method checks a method call.
@@ -279,7 +282,7 @@ func (w *readWalk) tableMethod(call *ast.CallExpr, f *ast.SelectorExpr, name str
 		w.walk(f.X)
 		return
 	}
-	if alias, ok := w.c.constString(w.s, call.Args[0]); ok {
+	if alias, ok := w.c.aliasName(w.s, call.Args[0], f.X); ok {
 		w.use(f.X, alias, call)
 	}
 }
@@ -380,9 +383,14 @@ func (w *readWalk) selector(x *ast.SelectorExpr) bool {
 		return false
 	}
 	if w.c.isTableType(info.TypeOf(base)) {
-		w.refuse(x, "write the table variable in place, such as "+w.c.source(x),
+		w.refuse(x, w.c.columnFix(base, x.Sel.Name),
 			"reads %s through %s: nano gen repo reads the columns of table variables and of AS", x.Sel.Name,
 			w.c.source(base))
+		return false
+	}
+	if w.c.carriesSQL(sel.Type()) {
+		w.refuse(x, "build the expression in the function from table columns and plain values",
+			"reads %s, a field that can hold a prebuilt Nanostack DB value", w.c.source(x))
 		return false
 	}
 	return true
@@ -423,7 +431,7 @@ func (w *readWalk) packageVar(n ast.Expr, v *types.Var) {
 	case inDB(v.Pkg()) && isFunc:
 		w.refuse(n, followFix, "passes %s as a value, which nano gen repo cannot follow", w.c.source(n))
 	case inDB(v.Pkg()):
-	case w.c.dbTyped(v.Type()) || isFunc:
+	case w.c.carriesSQL(v.Type()):
 		fix := "write the value in the function, so that nano gen repo follows it"
 		if value := w.c.varValue(v); value != nil {
 			fix = "write " + w.c.source(value) + " in the function in place of " + v.Name()
@@ -467,11 +475,17 @@ func (w *readWalk) subqueryFrom(call *ast.CallExpr) {
 			}
 			alias = constant.StringVal(tv.Value)
 		}
-		if t := w.c.quietTable(w.s, operand); t != nil {
-			text := w.c.source(tableOperand(operand))
-			sub.reads = append(sub.reads, &instance{table: t, alias: alias, text: text, node: operand, join: op.kind,
-				on: op.on, nullable: op.kind == "LEFT JOIN"})
+		t := w.c.quietTable(w.s, operand)
+		if t == nil {
+			w.refuse(operand, "pass a table variable of the generated table package, or its AS, to FROM, "+
+				"such as table.Items or table.Items.AS(\"i\")",
+				"reads %s in the FROM of a subquery, which is not a table variable: the check cannot know the "+
+					"table it reads", w.c.source(operand))
+			continue
 		}
+		text := w.c.source(tableOperand(operand))
+		sub.reads = append(sub.reads, &instance{table: t, alias: alias, text: text, node: operand, join: op.kind,
+			on: op.on, nullable: op.kind == "LEFT JOIN"})
 	}
 	w.subs = append(w.subs, sub)
 }

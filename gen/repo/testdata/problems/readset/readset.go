@@ -76,6 +76,61 @@ func _() {
 	nanorepo.Search[model.Tenants]("HalfKey", table.Tenants, nanorepo.From(tenantsAndOneSku))
 	// A From helper that nano gen repo cannot read.
 	nanorepo.Search[model.Items]("HelperTwoSteps", table.Items, nanorepo.From(viaHelperInTwoSteps))
+
+	// E7: a prebuilt DB value in a package variable whose type is not a DB
+	// type: a struct field, an interface, a map and a named interface type.
+	nanorepo.Search[model.Items]("StructVar", table.Items, nanorepo.Condition(structVar))
+	nanorepo.Search[model.Items]("AnyVar", table.Items, nanorepo.Condition(anyVar))
+	nanorepo.Search[model.Items]("MapVar", table.Items, nanorepo.Condition(mapVar))
+	nanorepo.Search[model.Items]("NamedVar", table.Items, nanorepo.Condition(namedVar))
+	// E7: a scope value that can carry a condition into the join.
+	nanorepo.Search[model.Items]("ScopeWithCondition", table.Items, nanorepo.From(itemsWithExtra))
+	nanorepo.Search[model.Items]("ScopeIsCondition", table.Items, nanorepo.From(itemsWithCondition))
+	// E7: a subquery FROM that is not a table variable: a local variable, a
+	// helper call, and a conversion. A refused join of a helper call.
+	nanorepo.Search[model.Items]("SubqueryLocal", table.Items, nanorepo.Flag("Acme", subqueryLocal))
+	nanorepo.Search[model.Items]("SubqueryHelper", table.Items, nanorepo.Flag("Any", subqueryHelper))
+	nanorepo.Search[model.Items]("SubqueryConversion", table.Items, nanorepo.Flag("Some", subqueryConversion))
+	nanorepo.Search[model.Items]("CrossJoinHelper", table.Items, nanorepo.From(itemsCrossHelper))
+	// E7: a method value.
+	nanorepo.Search[model.Items]("MethodValue", table.Items, nanorepo.Condition(methodValue))
+	// E7: a DB function that builds a statement, not an expression.
+	nanorepo.Search[model.Items]("Statement", table.Items, nanorepo.Condition(statement))
+	nanorepo.Search[model.Items]("NoExpression", table.Items, nanorepo.Condition(noExpression))
+	// E7: an alias that SQL could read as another name.
+	nanorepo.Search[model.Items]("LongAlias", table.Items,
+		nanorepo.Sort(table.Items.AS("an_alias_that_is_longer_than_the_sixty_three_bytes_that_postgresql_keeps").Name),
+	)
+	nanorepo.Search[model.Items]("UpperAlias", table.Items, nanorepo.From(itemsWithUpperAlias))
+	// E6: a column of a subquery instance read outside that subquery.
+	nanorepo.Search[model.Items]("OutsideSubquery", table.Items, nanorepo.Flag("Shared", outsideSubquery))
+	// E6: an ON condition that reads an instance joined after it.
+	nanorepo.Search[model.Items]("OnLaterJoin", table.Items, nanorepo.From(onLaterJoin))
+	// E5: FilterExists names a column of an alias of its child table.
+	nanorepo.Search[model.Tenants]("ExistsAlias", table.Tenants,
+		nanorepo.FilterExists(table.Items, table.Items.AS("x").TenantID, table.Items.AS("x").Sku, nanorepo.In),
+	)
+	// E4: a Tiebreak on another instance of the table of the search.
+	nanorepo.Search[model.Items]("TiebreakOther", table.Items,
+		nanorepo.From(itemsAndOther),
+		nanorepo.Tiebreak(table.Items.AS("other").ID),
+	)
+	nanorepo.Search[model.Items]("TiebreakBoth", table.Items,
+		nanorepo.From(itemsAndOther),
+		nanorepo.Tiebreak(table.Items.ID, table.Items.AS("other").ID),
+	)
+	// E14: a DefaultSort on another instance than the sort.
+	nanorepo.Search[model.Tenants]("DefaultOtherInstance", table.Tenants,
+		nanorepo.From(tenantsAndOwner),
+		nanorepo.Sort(table.Tenants.Name),
+		nanorepo.DefaultSort(table.Tenants.AS("owner").Name, nanorepo.Asc),
+	)
+	// E31: the root after another table, a key equated with itself, and a
+	// key equated with a value that is not the scope of the caller.
+	nanorepo.Search[model.Tenants]("RootSecond", table.Tenants, nanorepo.From(itemsThenTenants))
+	nanorepo.Search[model.Items]("SelfEquated", table.Items, nanorepo.From(tenantKeyWithItself))
+	nanorepo.Search[model.Items]("ConstantScope", table.Items, nanorepo.From(constantScope))
+	nanorepo.Search[model.Items]("BuiltScope", table.Items, nanorepo.From(builtScope))
 }
 
 func itemsWithTheirTenant() postgres.ReadableTable {
@@ -196,4 +251,119 @@ func viaHelperInTwoSteps() postgres.ReadableTable { return twoSteps() }
 func twoSteps() postgres.ReadableTable {
 	from := table.Items.INNER_JOIN(table.Tenants, table.Tenants.ID.EQ(table.Items.TenantID))
 	return from
+}
+
+var cfg = struct{ C postgres.BoolExpression }{postgres.Bool(true)}
+
+var anyCond any = postgres.Bool(true)
+
+var byName = map[string]any{"c": postgres.Bool(true)}
+
+type myCond postgres.BoolExpression
+
+var named myCond = postgres.Bool(true)
+
+func structVar() postgres.BoolExpression { return cfg.C }
+
+func anyVar() postgres.BoolExpression { return anyCond.(postgres.BoolExpression) }
+
+func mapVar() postgres.BoolExpression { return byName["c"].(postgres.BoolExpression) }
+
+func namedVar() postgres.BoolExpression { return postgres.BoolExpression(named) }
+
+// extraScope is a scope value with a condition in it.
+type extraScope struct {
+	TenantID string
+	Extra    postgres.BoolExpression
+}
+
+func itemsWithExtra(s extraScope) postgres.ReadableTable {
+	return table.Items.INNER_JOIN(table.Tenants, table.Tenants.ID.EQ(table.Items.TenantID).AND(s.Extra))
+}
+
+func itemsWithCondition(cond postgres.BoolExpression) postgres.ReadableTable {
+	return table.Items.INNER_JOIN(table.Tenants, table.Tenants.ID.EQ(table.Items.TenantID).AND(cond))
+}
+
+func subqueryLocal() postgres.BoolExpression {
+	t := table.Tenants
+	return postgres.EXISTS(postgres.SELECT(postgres.Int(1)).FROM(t).
+		WHERE(table.Tenants.Name.EQ(postgres.String("acme"))))
+}
+
+func someTenants() postgres.ReadableTable { return table.Tenants }
+
+func subqueryHelper() postgres.BoolExpression {
+	return postgres.EXISTS(postgres.SELECT(postgres.Int(1)).FROM(someTenants()))
+}
+
+func subqueryConversion() postgres.BoolExpression {
+	return postgres.EXISTS(postgres.SELECT(postgres.Int(1)).FROM(postgres.ReadableTable(table.Tenants)))
+}
+
+func itemsCrossHelper() postgres.ReadableTable { return table.Items.CROSS_JOIN(someTenants()) }
+
+func methodValue() postgres.BoolExpression {
+	f := table.Items.Active.IS_TRUE
+	return f()
+}
+
+func statement() postgres.BoolExpression {
+	return postgres.EXISTS(postgres.UNION(
+		postgres.SELECT(table.Items.ID).FROM(table.Items.AS("a")),
+		postgres.SELECT(table.Items.ID).FROM(table.Items.AS("b")),
+	))
+}
+
+func itemsWithUpperAlias() postgres.ReadableTable {
+	return table.Items.INNER_JOIN(table.Tenants.AS("Owner"), table.Tenants.AS("Owner").ID.EQ(table.Items.TenantID))
+}
+
+func outsideSubquery() postgres.BoolExpression {
+	return postgres.EXISTS(postgres.SELECT(postgres.Int(1)).FROM(table.Items.AS("s")).
+		WHERE(table.Items.AS("s").TenantID.EQ(table.Items.TenantID))).
+		AND(table.Items.AS("s").Active.IS_TRUE())
+}
+
+func onLaterJoin() postgres.ReadableTable {
+	return table.Items.
+		INNER_JOIN(table.Tenants, table.Tenants.ID.EQ(table.Items.TenantID).
+			AND(table.Tenants.Name.EQ(table.Tenants.AS("owner").Name))).
+		INNER_JOIN(table.Tenants.AS("owner"), table.Tenants.AS("owner").ID.EQ(table.Items.TenantID))
+}
+
+func itemsAndOther() postgres.ReadableTable {
+	return table.Items.INNER_JOIN(table.Items.AS("other"), table.Items.AS("other").ID.EQ(table.Items.ID))
+}
+
+func tenantsAndOwner() postgres.ReadableTable {
+	return table.Tenants.INNER_JOIN(table.Tenants.AS("owner"), table.Tenants.AS("owner").ID.EQ(table.Tenants.ID))
+}
+
+func itemsThenTenants() postgres.ReadableTable {
+	return table.Items.INNER_JOIN(table.Tenants, table.Tenants.ID.EQ(table.Items.TenantID))
+}
+
+func tenantKeyWithItself() postgres.ReadableTable {
+	return table.Items.INNER_JOIN(table.Tenants, table.Tenants.ID.EQ(table.Tenants.ID))
+}
+
+// nameScope stands for the scope value that nano gen repo generates.
+type nameScope struct{ TenantName string }
+
+var fixedScope = nameScope{TenantName: "acme"}
+
+func constantScope(s nameScope) postgres.ReadableTable {
+	return table.Items.INNER_JOIN(table.Tenants, table.Tenants.Name.EQ(postgres.String(fixedScope.TenantName)))
+}
+
+func builtScope(s nameScope) postgres.ReadableTable { return joinByName(nameScope{TenantName: "acme"}) }
+
+func joinByName(s nameScope) postgres.ReadableTable {
+	return table.Items.INNER_JOIN(table.Tenants, table.Tenants.Name.EQ(postgres.String(s.TenantName)))
+}
+
+func noExpression() postgres.BoolExpression {
+	var _ = postgres.PRECEDING(1)
+	return table.Items.Active.IS_TRUE()
 }

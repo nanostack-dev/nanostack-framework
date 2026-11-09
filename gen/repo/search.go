@@ -114,6 +114,9 @@ type fromFunc struct {
 	arg        ast.Expr // the argument of From, where its problems are reported
 	decl       *ast.FuncDecl
 	param      types.Type // P, the type of the scope value; nil for func() T
+	// scopeVars are the parameter of the function and the parameters of the
+	// helpers it passes that parameter to: the scope value of the caller.
+	scopeVars map[*types.Var]bool
 }
 
 // colRef is a column that an option names, such as table.Items.Name or

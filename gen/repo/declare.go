@@ -87,7 +87,8 @@ func (l *loaded) declarations() (*declarations, error) {
 		return nil, errors.Join(problems...)
 	}
 	d := &declarations{byImpl: map[string]int{}}
-	c := &collector{l: l, d: d, searchNames: map[string]at{}, searchTables: map[*types.Var]*tableBase{}}
+	c := &collector{l: l, d: d, searchNames: map[string]at{}, searchTables: map[*types.Var]*tableBase{},
+		badAliases: map[string]bool{}}
 	for _, f := range l.pkg.Syntax {
 		if own(f) {
 			continue
@@ -125,6 +126,7 @@ type collector struct {
 
 	searchNames  map[string]at             // search name -> its declaration (E11)
 	searchTables map[*types.Var]*tableBase // the tables searches read; nil after a problem
+	badAliases   map[string]bool           // file:line:alias of each alias reported, once per line
 }
 
 func (c *collector) errorf(n ast.Node, fix, format string, args ...any) {

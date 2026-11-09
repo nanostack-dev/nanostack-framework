@@ -76,7 +76,11 @@ func (c *collector) checkUses(s *searchDecl, w *readWalk) {
 	}
 	reported := map[string]bool{}
 	for _, u := range w.uses {
-		if w.inner(u) != nil || slices.ContainsFunc(s.reads, func(i *instance) bool { return i.is(u.table, u.alias) }) {
+		if w.inner(u) != nil {
+			continue
+		}
+		if at := slices.IndexFunc(s.reads, func(i *instance) bool { return i.is(u.table, u.alias) }); at >= 0 {
+			c.laterInstance(s, w, u, at)
 			continue
 		}
 		inst := &instance{table: u.table, alias: u.alias, text: u.text}
@@ -85,6 +89,23 @@ func (c *collector) checkUses(s *searchDecl, w *readWalk) {
 		}
 		reported[inst.String()] = true
 		c.errorf(u.node, c.joinFix(s, inst), "%s reads %s, which search %s does not read", w.role, inst, s.name)
+	}
+}
+
+// laterInstance reports a use in the ON condition of a join that reads an
+// instance that is joined after it: SQL refuses the query at run time.
+// at is the position of the instance that u reads in s.reads.
+func (c *collector) laterInstance(s *searchDecl, w *readWalk, u instanceUse, at int) {
+	if s.from == nil || !strings.HasPrefix(w.role, "From ") {
+		return
+	}
+	for i, inst := range s.reads {
+		if inst.on == nil || u.node.Pos() < inst.on.Pos() || u.node.Pos() >= inst.on.End() || at <= i {
+			continue
+		}
+		c.errorf(u.node, "join "+s.reads[at].String()+" before "+inst.String()+", or read it in the ON of a later join",
+			"%s reads %s in the ON of %s, which is joined after it", w.role, s.reads[at], inst)
+		return
 	}
 }
 
@@ -116,6 +137,14 @@ func (c *collector) joinFix(s *searchDecl, inst *instance) string {
 // (E31): else the join can return several rows per row before it, so the
 // tiebreak orders no row and COUNT counts joined rows.
 func (c *collector) oneRowJoins(s *searchDecl) {
+	// An INNER JOIN can always start from the root. A root after another
+	// table repeats once per row of that table, whatever its ON says.
+	if s.reads[0] != s.root && !s.root.nullable {
+		c.errorf(s.from.arg, "start the join from "+s.tableText,
+			"search %s: From %s starts from %s: a row of %s repeats once per row before it",
+			s.name, s.from.name, s.reads[0], s.root)
+		return
+	}
 	for i, inst := range s.reads {
 		if i == 0 {
 			continue
@@ -236,11 +265,16 @@ func (c *collector) scopeField(s *searchDecl, e ast.Expr) bool {
 		return false
 	}
 	field, isSel := ast.Unparen(call.Args[0]).(*ast.SelectorExpr)
-	if !isSel {
-		return false
-	}
-	v, isVar := c.l.pkg.TypesInfo.Uses[identOf(ast.Unparen(field.X))].(*types.Var)
-	return isVar && types.Identical(v.Type(), s.from.param)
+	return isSel && c.isScopeVar(s, field.X)
+}
+
+// isScopeVar reports whether e names the parameter of the From function,
+// or a parameter of a helper that the caller passes it to. A package
+// variable or a value of the scope type that a function builds is not the
+// scope of the caller.
+func (c *collector) isScopeVar(s *searchDecl, e ast.Expr) bool {
+	v, isVar := c.l.pkg.TypesInfo.Uses[identOf(ast.Unparen(e))].(*types.Var)
+	return isVar && s.from.scopeVars[v]
 }
 
 // fkCondition renders the ON condition of a declared foreign key between
