@@ -6,12 +6,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 
 	"example.com/dbapp/internal/db/gen/app/public/model"
 	"example.com/dbapp/internal/db/gen/app/public/table"
 	"github.com/nanostack-dev/nanostack-framework/db/postgres"
 	"github.com/nanostack-dev/nanostack-framework/db/qrm"
+	"github.com/nanostack-dev/nanostack-framework/db/searchexec"
 	"github.com/nanostack-dev/nanostack-framework/pkg/db/transactor"
 	"github.com/nanostack-dev/nanostack-framework/pkg/functional"
 )
@@ -186,8 +186,9 @@ func (b usersBase) queryRows(ctx context.Context, stmt postgres.Statement) trans
 }
 
 // usersWhere builds predicates on the columns of users. A string predicate
-// compares as text. Contains matches a substring case-insensitively and
-// escapes % _ \ in the term, so input never becomes a wildcard.
+// compares as text. Contains is searchexec.Contains: it trims the term,
+// matches a substring without case, and % _ ! in the term match
+// themselves. A blank term matches every row.
 type usersWhere struct{}
 
 // ID is id = v.
@@ -241,7 +242,7 @@ func (usersWhere) EmailIn(vs ...string) postgres.BoolExpression {
 
 // EmailContains matches email that contain term, ignoring case.
 func (usersWhere) EmailContains(term string) postgres.BoolExpression {
-	return postgres.LOWER(table.Users.Email).LIKE(postgres.String(nanoContainsPattern(term)))
+	return searchexec.Contains(term, table.Users.Email)
 }
 
 // EmailEqualsIgnoreCase is lower(email) = lower(v).
@@ -268,9 +269,3 @@ func (usersWhere) ExternalIDIn(vs ...string) postgres.BoolExpression {
 
 // ExternalIDIsNull is external_id IS NULL.
 func (usersWhere) ExternalIDIsNull() postgres.BoolExpression { return table.Users.ExternalID.IS_NULL() }
-
-// nanoContainsPattern builds a case-insensitive substring LIKE pattern: % _ and \
-// match themselves under PostgreSQL's default LIKE escape character.
-func nanoContainsPattern(term string) string {
-	return "%" + strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(strings.ToLower(term)) + "%"
-}

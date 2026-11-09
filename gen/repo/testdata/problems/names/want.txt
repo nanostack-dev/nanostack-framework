@@ -2,5 +2,3 @@ names.go:10: itemsBase is declared here, and nano gen repo declares it in repo_b
   fix: rename it
 names.go:12: newItemsBase is declared here, and nano gen repo declares it in repo_base.gen.go for table items
   fix: rename it
-names.go:14: nanoContainsPattern is declared here, and nano gen repo declares it in repo_base.gen.go
-  fix: rename it

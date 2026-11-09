@@ -7,10 +7,6 @@ import (
 	"strings"
 )
 
-// containsHelper is the package-level function the base declares for the
-// Contains predicates.
-const containsHelper = "nanoContainsPattern"
-
 // tableBase is one table that a declaration names, and the base generated
 // for it.
 type tableBase struct {
@@ -23,7 +19,10 @@ type tableBase struct {
 	sqlName   string     // product_users, as the table file names it
 	columns   []column   // in the table type's order
 	keys      []uniqueKey
-	keysFound bool // the table type has a UniqueKeys method
+	keysFound bool              // the table type has a UniqueKeys method
+	catalog   map[string]string // column name -> catalogue type, from the ColumnTypes method
+	catalogOK bool              // the table type has a ColumnTypes method
+	view      bool              // the table variable is in a view package of nano gen db
 
 	row    types.Type // the generated model, E
 	domain types.Type // what the row helpers return, D
@@ -42,6 +41,8 @@ type column struct {
 	primary  bool       // part of the primary key
 	lit      literal    // how a value of this column is passed; litNone: no equality predicate
 	enum     string     // the quoted, schema-qualified enum type of a litEnum column
+	dbType   string     // the catalogue type that ColumnTypes gives, such as text or inet; "" when not known
+	notText  bool       // the model reads a string, but dbType is not text: no equality predicate
 }
 
 // literal is the Nanostack DB constructor a predicate passes its value
@@ -81,9 +82,45 @@ func (t *tableBase) declaredNames() []string {
 }
 
 // textual reports whether c gets the Contains and EqualsIgnoreCase
-// predicates: a plain string column that is not a key or an identifier.
+// predicates: a string column that is not a key or an identifier, and whose
+// catalogue type is text. A column of another type that the model reads as a
+// string, such as inet or jsonb, fails under ILIKE and LOWER, so it gets
+// neither.
 func (c column) textual() bool {
+	return c.candidate() && textType(c.dbType)
+}
+
+// untypedText returns the string columns of a view without ColumnTypes
+// that would get Contains and EqualsIgnoreCase if their type were known.
+func (t *tableBase) untypedText() []string {
+	if !t.view || t.catalogOK {
+		return nil
+	}
+	var out []string
+	for _, c := range t.columns {
+		if c.candidate() {
+			out = append(out, c.sqlName)
+		}
+	}
+	return out
+}
+
+// candidate reports whether the catalogue type of c decides if it is
+// textual: a string column that is not a key or an identifier.
+func (c column) candidate() bool {
 	return c.lit == litString && !c.primary && !strings.HasSuffix(c.field, "ID")
+}
+
+// textType reports whether the catalogue type t, as ColumnTypes writes it,
+// is a text type: text, varchar, bpchar (char(n)) or citext. citext is an
+// extension type, so it can be in another schema than the table.
+func textType(t string) bool {
+	switch t {
+	case "text", "varchar", "bpchar", "citext":
+		return true
+	}
+	_, name, qualified := strings.Cut(t, ".")
+	return qualified && name == "citext"
 }
 
 // column returns the column of the Go field name.
@@ -115,15 +152,6 @@ func (t *tableBase) scopeFields(scopes []string) []string {
 		}
 	}
 	return out
-}
-
-func (t *tableBase) hasContains() bool {
-	for _, c := range t.columns {
-		if c.textual() {
-			return true
-		}
-	}
-	return false
 }
 
 // table resolves the table argument of a declaration: a table variable of a
@@ -164,7 +192,7 @@ func (c *collector) table(arg ast.Expr) (*tableBase, bool) {
 		return nil, false
 	}
 	t := &tableBase{varObj: v, pkgPath: v.Pkg().Path(), pkgName: v.Pkg().Name(), tableType: v.Type(),
-		goName: v.Name()}
+		goName: v.Name(), view: v.Pkg().Name() == "view"}
 	src, err := c.l.tableSource(v.Pkg().Path())
 	if err != nil {
 		c.problems = append(c.problems, err)
@@ -181,6 +209,7 @@ func (c *collector) table(arg ast.Expr) (*tableBase, bool) {
 	t.columns = tableColumns(named, names.columns)
 	keys, found := src.keys[named.Obj().Name()]
 	t.resolveKeys(keys, found)
+	t.catalog, t.catalogOK = src.types[named.Obj().Name()]
 	return t, true
 }
 

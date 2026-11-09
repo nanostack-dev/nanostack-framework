@@ -36,14 +36,9 @@ func (l *loaded) render(d *declarations) ([]byte, error) {
 	e.imp.Block(l.pkg.Types.Scope().Names()...)
 	tables := slices.Clone(d.tables)
 	slices.SortFunc(tables, func(a, b *tableBase) int { return strings.Compare(a.baseName(), b.baseName()) })
-	contains := false
 	for _, t := range tables {
 		e.base(t)
 		e.where(t)
-		contains = contains || t.hasContains()
-	}
-	if contains {
-		e.containsHelper()
 	}
 	var out strings.Builder
 	out.WriteString(header)
@@ -291,10 +286,16 @@ func (e *emitter) where(t *tableBase) {
 		}
 	}
 	e.p("// %s builds predicates on the columns of %s. A string predicate\n", where, t.sqlName)
-	e.p("// compares as text. Contains matches a substring case-insensitively and\n")
-	e.p("// escapes %% _ \\ in the term, so input never becomes a wildcard.\n")
+	e.p("// compares as text. Contains is searchexec.Contains: it trims the term,\n")
+	e.p("// matches a substring without case, and %% _ ! in the term match\n")
+	e.p("// themselves. A blank term matches every row.\n")
 	if len(skipped) > 0 {
 		e.p("//\n// No equality predicate on %s: compare on b.t.\n", strings.Join(skipped, ", "))
+	}
+	if untyped := t.untypedText(); len(untyped) > 0 {
+		e.p("//\n// %s is a view, and nano gen db writes no ColumnTypes on a view yet:\n", t.sqlName)
+		e.p("// no Contains or EqualsIgnoreCase on %s. Call searchexec.Contains on b.t.\n",
+			strings.Join(untyped, ", "))
 	}
 	e.p("type %s struct{}\n\n", where)
 	for _, c := range t.columns {
@@ -313,7 +314,7 @@ func (e *emitter) where(t *tableBase) {
 		if c.textual() {
 			e.p("// %sContains matches %s that contain term, ignoring case.\n", c.field, c.sqlName)
 			e.p("func (%s) %sContains(term string) %s {\n", where, c.field, bexpr)
-			e.p("\treturn %s(%s).LIKE(%s(%s(term)))\n}\n\n", e.pg("LOWER"), col, e.pg("String"), containsHelper)
+			e.p("\treturn %s(term, %s)\n}\n\n", e.ref(searchexecPath, "searchexec", "Contains"), col)
 			e.p("// %sEqualsIgnoreCase is lower(%s) = lower(v).\n", c.field, c.sqlName)
 			e.p("func (%s) %sEqualsIgnoreCase(v string) %s {\n", where, c.field, bexpr)
 			e.p("\treturn %s(%s).EQ(%s(%s(v)))\n}\n\n", e.pg("LOWER"), col, e.pg("LOWER"), e.pg("String"))
@@ -330,13 +331,4 @@ func (e *emitter) where(t *tableBase) {
 			e.p("func (%s) %sIsNull() %s { return %s.IS_NULL() }\n\n", where, c.field, bexpr, col)
 		}
 	}
-}
-
-// containsHelper writes the LIKE pattern builder of the Contains predicates.
-func (e *emitter) containsHelper() {
-	e.p("// %s builds a case-insensitive substring LIKE pattern: %% _ and \\\n", containsHelper)
-	e.p("// match themselves under PostgreSQL's default LIKE escape character.\n")
-	e.p("func %s(term string) string {\n", containsHelper)
-	e.p("\treturn \"%%\" + %s(`\\`, `\\\\`, `%%`, `\\%%`, `_`, `\\_`).Replace(%s(term)) + \"%%\"\n}\n",
-		e.ref("strings", "strings", "NewReplacer"), e.ref("strings", "strings", "ToLower"))
 }

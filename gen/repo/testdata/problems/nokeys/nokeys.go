@@ -1,5 +1,6 @@
-// Package nokeys binds a table whose package nano gen db wrote before it
-// listed unique keys: a single-row find cannot be proven.
+// Package nokeys binds a table whose package has no UniqueKeys (its
+// ColumnTypes are hand-written for the test): a single-row find cannot be
+// proven.
 package nokeys
 
 import (

@@ -7,8 +7,11 @@ import (
 )
 
 type AuditEvents struct {
-	ID     int64 `sql:"primary_key"`
-	ItemID *string
-	Action string
-	At     time.Time
+	ID      int64 `sql:"primary_key"`
+	ItemID  *string
+	Action  string
+	At      time.Time
+	Note    *string
+	Client  *string
+	Payload *string
 }
