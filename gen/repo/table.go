@@ -95,7 +95,7 @@ func (c column) candidate() bool {
 }
 
 // textType reports whether the catalogue type t, as ColumnTypes writes it,
-// is a text type: text, varchar, char (bpchar) or citext. citext is an
+// is a text type: text, varchar, bpchar (char(n)) or citext. citext is an
 // extension type, so it can be in another schema than the table.
 func textType(t string) bool {
 	switch t {

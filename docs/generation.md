@@ -271,7 +271,7 @@ func (r *itemRepositoryImpl) ListActive(ctx context.Context, tenantID uuid.UUID)
 | Member | What it is |
 | --- | --- |
 | `t` | the go-jet table, for any statement the helpers do not cover |
-| `where` | a typed predicate per column: `X(v)` and `XIn(vs...)` on every column that has an equality; `XAfter`/`XBefore` on numbers and times; `XIsNull` on nullable columns; `XContains` and `XEqualsIgnoreCase` on text columns that are not keys or IDs: a column whose type in `ColumnTypes()` is `text`, `varchar`, `char` or `citext` |
+| `where` | a typed predicate per column: `X(v)` and `XIn(vs...)` on every column that has an equality; `XAfter`/`XBefore` on numbers and times; `XIsNull` on nullable columns; `XContains` and `XEqualsIgnoreCase` on text columns that are not keys or IDs: a column whose type in `ColumnTypes()` is `text`, `varchar`, `bpchar` (`char(n)`) or `citext` |
 | `findOne(ctx, cond)` | the one row matching `cond`, absent when none does; reads `LIMIT 2` and returns `transactor.ErrMoreThanOneRow`, wrapped with the table name, when two rows match |
 | `first(ctx, cond, order, more...)` | the first row in an order; end it with a unique column so the row is stable |
 | `findAll`, `exists`, `count` | every matching row, whether one matches, how many match |
