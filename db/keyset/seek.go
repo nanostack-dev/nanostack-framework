@@ -43,7 +43,7 @@ func (o Order[T]) seek(d dialect, cursor string) (jet.BoolExpression, error) {
 	if row := o.rowSeek(d, bounds); row != nil {
 		return row, nil
 	}
-	return o.expandedSeek(bounds), nil
+	return o.expandedSeek(d, bounds), nil
 }
 
 // rowSeek uses a row-value comparison, which PostgreSQL and SQLite answer
@@ -85,7 +85,7 @@ func (o Order[T]) rowSeek(d dialect, bounds []keyBound) jet.BoolExpression {
 // (ascending by default, or NullsLast), every non-null value has NULLs after
 // it, and only NULLs follow a NULL. Where they sort first (descending by
 // default, or NullsFirst), a NULL is followed by every non-null value.
-func (o Order[T]) expandedSeek(bounds []keyBound) jet.BoolExpression {
+func (o Order[T]) expandedSeek(d dialect, bounds []keyBound) jet.BoolExpression {
 	var disjuncts []jet.BoolExpression
 	var prefix []jet.BoolExpression
 	for i, k := range o.keys {
@@ -97,7 +97,11 @@ func (o Order[T]) expandedSeek(bounds []keyBound) jet.BoolExpression {
 	if len(disjuncts) == 0 {
 		// Only reachable when every value is a trailing ascending NULL, which a
 		// unique NOT NULL tiebreak rules out. Select nothing, never everything.
-		return jet.Bool(false)
+		// db/postgres writes a cast to boolean, which MySQL cannot parse.
+		if d == dialectPostgres {
+			return jet.Bool(false)
+		}
+		return ijet.Bool(false)
 	}
 	return or(disjuncts...)
 }

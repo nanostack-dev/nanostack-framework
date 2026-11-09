@@ -43,7 +43,7 @@ This record covers the decisions that shape the modules: S1 (packages), S3 (dial
 6. **The pager has one contract on every dialect (S3.2).** The same rows, every walk complete (no row skipped, no row repeated), and the same cursor tokens. Order and matching follow the column's collation.
    - NULLs are last when ascending and first when descending, unless a key asks for `NullsFirst` or `NullsLast`. A dialect gets an explicit NULL placement only for a nullable key whose contract differs from the dialect default, so a NOT NULL `(created_at, id)` walk keeps its index.
    - MySQL gets the expanded seek (`a > ? OR (a = ? AND b > ?)`), because its optimizer does not range-scan a row-constructor inequality. PostgreSQL and SQLite keep the row value when every key is NOT NULL and has one direction.
-   - Every codec refuses a cursor value that the column cannot hold with `ErrInvalidCursor` (400), never a database error. `TimeKey` and `InetKey` are PostgreSQL only; another dialect gets `keyset.ErrDialect`.
+   - Every codec refuses a cursor value that the column cannot hold with `ErrInvalidCursor` (400), never a database error. `TimeKey` and `InetKey` are PostgreSQL only, and `MySQLTimestampKey` (a MySQL `TIMESTAMP` column, R5) is MySQL only; another dialect gets `keyset.ErrDialect`.
    - The cursor signature names columns, not SQL, and has one rendering. A cursor that PostgreSQL issues today on NOT NULL keys keeps its token. A nullable key, read as `""` today, changes its tokens once (see Consequences).
    - One cross-dialect contract test (S3.5) walks the same 200 rows with the same 40 searches: on binary collations it asserts one order and identical tokens; on each dialect's default collation it asserts complete walks.
 

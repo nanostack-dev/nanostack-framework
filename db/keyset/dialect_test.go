@@ -295,6 +295,26 @@ func TestDialectSQLProperties(t *testing.T) {
 	})
 }
 
+// A cursor whose every value is a trailing ascending NULL selects nothing.
+// Only a nullable tiebreak reaches it, and each dialect must parse the FALSE.
+func TestDialectSeekAfterAnAllNullCursorSelectsNothing(t *testing.T) {
+	for dialect, want := range map[string]string{
+		"postgres": "WHERE FALSE::boolean",
+		"mysql":    "WHERE FALSE ORDER BY",
+		"sqlite":   "WHERE FALSE ORDER BY",
+	} {
+		t.Run(dialect, func(t *testing.T) {
+			table := newDTable(dialect)
+			order := mustOrder[dField](t, nil, nil, table.keys[dNote])
+			cursor, err := order.Cursor(dRow{})
+			require.NoError(t, err)
+			_, rows, err := table.page().Keyset(order).StatementsForTest(search.Pagination{Limit: 1, Cursor: cursor})
+			require.NoError(t, err)
+			require.Contains(t, normalize(rows.DebugSql()), want)
+		})
+	}
+}
+
 func TestDialectRefusesAKeyItsColumnTypeLacks(t *testing.T) {
 	for _, tc := range []struct {
 		dialect string
