@@ -361,7 +361,13 @@ func TestFieldsKeepTheQueryImmutable(t *testing.T) {
 
 func TestExistsRefusesAChildThatIsNotATable(t *testing.T) {
 	q := newItemSearch(fullScope())
-	f := searchexec.NewExists(q.Query, keyset.Source("perms"), postgres.Bool(true), permName, searchexec.StringLit[string])
+	f := searchexec.NewExists(
+		q.Query,
+		keyset.Source("perms"),
+		postgres.Bool(true),
+		permName,
+		searchexec.StringLit[string],
+	)
 	_, err := searchexec.Resolve(t.Context(), itemSpec, f.In("read").Query)
 	require.ErrorIs(t, err, keyset.ErrDialect)
 }

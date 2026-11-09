@@ -189,7 +189,13 @@ func (s suite) runPrecedence(t *testing.T) {
 				var got []int64
 				for pages := 0; ; pages++ {
 					require.LessOrEqual(t, pages, len(want), "the walk does not end")
-					result, err := searchexec.Run(t.Context(), s.cfg.DB, f.spec, q.Query, func(r ptRow) ptRow { return r })
+					result, err := searchexec.Run(
+						t.Context(),
+						s.cfg.DB,
+						f.spec,
+						q.Query,
+						func(r ptRow) ptRow { return r },
+					)
 					require.NoError(t, err)
 					require.Equal(t, int64(len(want)), result.Total)
 					for _, r := range result.Items {

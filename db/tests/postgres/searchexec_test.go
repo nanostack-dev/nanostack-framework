@@ -6,6 +6,8 @@ package postgres
 import (
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/nanostack-dev/nanostack-framework/db/keyset"
 	"github.com/nanostack-dev/nanostack-framework/db/postgres"
 	"github.com/nanostack-dev/nanostack-framework/db/tests/internal/searchexeccontract"
@@ -24,7 +26,10 @@ func TestSearchexecContract(t *testing.T) {
 			return postgres.NewTable(schema, name, "", columns...)
 		},
 		InnerJoin: func(left, right keyset.Source, on postgres.BoolExpression) keyset.Source {
-			return left.(postgres.Table).INNER_JOIN(right.(postgres.Table), on)
+			l, lok := left.(postgres.Table)
+			r, rok := right.(postgres.Table)
+			require.True(t, lok && rok)
+			return l.INNER_JOIN(r, on)
 		},
 	})
 }

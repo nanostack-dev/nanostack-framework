@@ -6,6 +6,8 @@ package mysql
 import (
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/nanostack-dev/nanostack-framework/db/keyset"
 	"github.com/nanostack-dev/nanostack-framework/db/mysql"
 	"github.com/nanostack-dev/nanostack-framework/db/postgres"
@@ -29,7 +31,10 @@ func TestSearchexecContract(t *testing.T) {
 			return mysql.NewTable(schema, name, "", columns...)
 		},
 		InnerJoin: func(left, right keyset.Source, on postgres.BoolExpression) keyset.Source {
-			return left.(mysql.Table).INNER_JOIN(right.(mysql.Table), on)
+			l, lok := left.(mysql.Table)
+			r, rok := right.(mysql.Table)
+			require.True(t, lok && rok)
+			return l.INNER_JOIN(r, on)
 		},
 	})
 }

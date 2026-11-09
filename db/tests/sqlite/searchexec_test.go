@@ -28,7 +28,10 @@ func TestSearchexecContract(t *testing.T) {
 			return sqlite.NewTable(schema, name, "", columns...)
 		},
 		InnerJoin: func(left, right keyset.Source, on postgres.BoolExpression) keyset.Source {
-			return left.(sqlite.Table).INNER_JOIN(right.(sqlite.Table), on)
+			l, lok := left.(sqlite.Table)
+			r, rok := right.(sqlite.Table)
+			require.True(t, lok && rok)
+			return l.INNER_JOIN(r, on)
 		},
 	})
 }
