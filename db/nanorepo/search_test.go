@@ -119,7 +119,7 @@ func requestHasQueryParams() postgres.BoolExpression {
 func requestCount() postgres.IntegerExpression {
 	return postgres.IntExp(postgres.SELECT(postgres.COUNT(requestID)).
 		FROM(requests).
-		WHERE(requestWebhookID.EQ(webhookID)))
+		WHERE(requestWebhookID.EQ(webhookID).AND(requestOrgID.EQ(webhookOrgID))))
 }
 
 // Every option of a search declaration compiles in func _(), the place
@@ -170,10 +170,13 @@ func _() {
 		nanorepo.IgnoresFullText("the product has not chosen the columns yet"),
 	)
 
+	// The shared-row scopes only show that the options compile: webhooks has
+	// no shared rows, and template_organization_id is not a tenant column.
 	nanorepo.Search[webhookRow]("Webhook", webhooks,
 		nanorepo.MapPage((*searchRepositoryImpl).webhooksToDomain),
 		nanorepo.ScopeOrNull(webhookOrgID),
 		nanorepo.ScopeNull(webhookTemplateOf),
+		nanorepo.ScopeFunc(workspaceFilter, webhookWorkspaceID),
 		nanorepo.Sort(webhookName),
 		nanorepo.SortExpr("RequestCount", requestCount),
 		nanorepo.SortHandWritten("flow_count"),
@@ -182,7 +185,8 @@ func _() {
 }
 
 // The declarations are dialect-neutral: tables, columns and conditions of
-// MySQL and SQLite compile as PostgreSQL's do.
+// MySQL and SQLite compile as PostgreSQL's do. In this release, nano gen repo
+// refuses these two searches (E16).
 func _() {
 	mysqlID := mysql.StringColumn("id")
 	mysqlOrgID := mysql.StringColumn("organization_id")
@@ -230,24 +234,31 @@ func TestSearchDeclarationsDoNothing(t *testing.T) {
 	}
 }
 
-// A search option is not a repository option: passed to Implement, it does
-// not compile. Two packages under testdata make that mistake once each; the
-// control package is the same code without the mistake, and compiles.
-func TestSearchOptionPassedToImplementDoesNotCompile(t *testing.T) {
+// A search option is not a repository option, and Search takes only search
+// options. Each package under testdata except implementok makes one of these
+// mistakes and must not compile. implementok is the same code as the
+// Implement cases without the mistake, and compiles.
+func TestSearchOptionTypeGuard(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
 		dir  string
-		want string // empty: the package compiles
+		want []string // nil: the package compiles
 	}{
 		{dir: "./testdata/implementok"},
-		{dir: "./testdata/implementextraoption", want: "too many arguments in call to nanorepo.Implement"},
-		{dir: "./testdata/implementoptionasmapper", want: "does not match func(E) D"},
+		{dir: "./testdata/implementextraoption", want: []string{
+			"too many arguments in call to nanorepo.Implement", "nanorepo.SearchOption",
+		}},
+		{dir: "./testdata/implementoptionasmapper", want: []string{"nanorepo.SearchOption"}},
+		{dir: "./testdata/searchforeignoption", want: []string{
+			"forged does not implement nanorepo.SearchOption",
+			"nanorepo.Op does not implement nanorepo.SearchOption",
+		}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.dir, func(t *testing.T) {
 			t.Parallel()
 			out, err := exec.CommandContext(t.Context(), "go", "build", tc.dir).CombinedOutput()
-			if tc.want == "" {
+			if tc.want == nil {
 				if err != nil {
 					t.Fatalf("go build %s: %v\n%s", tc.dir, err, out)
 				}
@@ -257,8 +268,10 @@ func TestSearchOptionPassedToImplementDoesNotCompile(t *testing.T) {
 				t.Fatalf("go build %s succeeded, want a compile error", tc.dir)
 			}
 			got := string(out)
-			if !strings.Contains(got, tc.want) || !strings.Contains(got, "nanorepo.SearchOption") {
-				t.Fatalf("go build %s:\n%s\nwant an error with %q about nanorepo.SearchOption", tc.dir, got, tc.want)
+			for _, want := range tc.want {
+				if !strings.Contains(got, want) {
+					t.Fatalf("go build %s:\n%s\nwant an error with %q", tc.dir, got, want)
+				}
 			}
 		})
 	}
