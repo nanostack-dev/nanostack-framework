@@ -1,35 +1,5 @@
 package nanorepo
 
-// Search declarations. Like Implement, a search is a call inside func _()
-// { ... }: Go type-checks it and never runs it, and nano gen repo reads it from
-// source. Columns and tables are Go values of the generated table types, so a
-// missing column is a compile error and a rename updates the declaration.
-//
-//	func _() {
-//		nanorepo.Search[model.WebhookRequests]("WebhookRequest", table.WebhookRequests,
-//			nanorepo.Map((*WebhookMapper).RequestToDomain),
-//			nanorepo.From(requestsOfWebhooks),
-//			nanorepo.Scope(table.Webhooks.OrganizationID),
-//			nanorepo.ScopeFunc(workspacescope.Filter, table.Webhooks.WorkspaceID),
-//			nanorepo.Filter(table.WebhookRequests.Method, nanorepo.Eq, nanorepo.In),
-//			nanorepo.Filter(table.WebhookRequests.ReceivedAt, nanorepo.Range("received_since", "received_until")),
-//			nanorepo.FullText(table.WebhookRequests.Path),
-//			nanorepo.Sort(table.WebhookRequests.ReceivedAt, table.WebhookRequests.Method),
-//			nanorepo.DefaultSort(table.WebhookRequests.ReceivedAt, nanorepo.Desc),
-//			nanorepo.API[apigen.WebhookRequestSearchRequest](),
-//		)
-//	}
-//
-// The functions that a declaration names (From, Condition, FilterExpr, Flag,
-// FullTextExpr, SortExpr) are typed SQL of Nanostack DB. nano gen repo reads
-// their bodies to find every table instance that the search reads, and it
-// refuses raw SQL and calls that it cannot follow. Declarations do not name a
-// dialect: the conditions and expressions are type parameters, so the tables
-// of each dialect fit.
-//
-// The functions of this file do nothing at run time. Their parameters document
-// the call, and nano gen repo reads the arguments from source.
-
 import "context"
 
 // Column is satisfied by every column of a table type that nano gen db
@@ -38,9 +8,12 @@ type Column interface {
 	Name() string
 }
 
-// SearchOption configures one search declaration. Only the functions of this
-// package make search options, and only Search accepts them: Implement and
-// Base take none.
+// SearchOption configures one search declaration. Implement and Base take
+// none. Make search options only with the functions of this package: Go cannot
+// stop a type that embeds an option, a zero value or nil, so nano gen repo
+// reads each argument of Search from source and refuses an argument that is
+// not a direct call of an option function of this package (a variable, a
+// spread slice, a call of another function or a composite literal).
 type SearchOption interface {
 	searchOption()
 }
@@ -58,6 +31,40 @@ func (option) searchOption() {}
 // mapper. A method of the repository interface that takes the query and
 // returns a search result is generated on the implementation, unless the
 // implementation has a hand-written method of that name.
+//
+// Like Implement, a search is a call inside func _() { ... }: Go type-checks
+// it and never runs it, and nano gen repo reads it from source. Columns and
+// tables are Go values of the generated table types, so a missing column is a
+// compile error and a rename updates the declaration.
+//
+//	func _() {
+//		nanorepo.Search[model.WebhookRequests]("WebhookRequest", table.WebhookRequests,
+//			nanorepo.Map((*WebhookMapper).RequestToDomain),
+//			nanorepo.From(requestsWithTheirWebhook),
+//			nanorepo.Scope(table.Webhooks.OrganizationID),
+//			nanorepo.Scope(table.WebhookRequests.WebhookID),
+//			nanorepo.ScopeFunc(workspacescope.Filter, table.Webhooks.WorkspaceID),
+//			nanorepo.Filter(table.WebhookRequests.Method, nanorepo.Eq, nanorepo.In),
+//			nanorepo.Filter(table.WebhookRequests.ReceivedAt, nanorepo.Range("received_since", "received_until")),
+//			nanorepo.FullText(table.WebhookRequests.Path),
+//			nanorepo.Sort(table.WebhookRequests.ReceivedAt, table.WebhookRequests.Method),
+//			nanorepo.DefaultSort(table.WebhookRequests.ReceivedAt, nanorepo.Desc),
+//			nanorepo.API[apigen.WebhookRequestSearchRequest](),
+//		)
+//	}
+//
+// The functions that a declaration names (From, Condition, FilterExpr, Flag,
+// FullTextExpr, SortExpr) are typed SQL of Nanostack DB. nano gen repo reads
+// their bodies to find every table instance that the search reads, and it
+// refuses raw SQL and calls that it cannot follow.
+//
+// The declarations compile with the tables of every dialect, because the
+// conditions and expressions are type parameters. In this release, nano gen
+// repo generates PostgreSQL searches only: a search on a MySQL or SQLite table
+// is a gen error (E16, ADR 0027 decision 7).
+//
+// The search functions do nothing at run time. Their parameters document the
+// call, and nano gen repo reads the arguments from source.
 //
 //nolint:revive // the parameters document the call; nano gen repo reads the arguments from source
 func Search[Row any](name string, table Table, options ...SearchOption) {}
@@ -89,24 +96,31 @@ func MapPage[F any](fn F) SearchOption { return option{} }
 //				AND(table.OrganizationLicenses.PlatformTenantID.EQ(postgres.String(s.PlatformTenantID))))
 //	}
 //
-// Each table of the join is an instance, and every tenant column of every
-// instance must be covered: by a scope, by an ON clause that equates it with
-// a covered column or a scope field, or by a declared foreign key to a covered
-// instance. An alias of a table is its own instance. nano gen repo refuses
-// CROSS, FULL and RIGHT joins.
+// Each table of the join is an instance, and an alias of a table is its own
+// instance. Every instance and every tenant column of every instance must be
+// covered, for example by a scope, or by an ON clause that equates the column
+// with a covered tenant column or a scope field. S6.2 of ADR 0027 gives the
+// full rule, and Unscoped gives the only exemption of a hard tenant column.
+// nano gen repo refuses CROSS, FULL and RIGHT joins.
 //
 //nolint:revive // the parameter documents the call; nano gen repo reads the argument from source
 func From[F any](fn F) SearchOption { return option{} }
 
-// Scope makes the search require a value for columns: the value is a field of
-// the generated scope type, named from the first column, and no search exists
-// without it. Give several columns when one value scopes them all (a child
-// and its parent row in the same organization). Each column must be a hard
-// tenant column of Postgres.Scopes, on an instance that is not on the nullable
-// side of a LEFT JOIN. A zero value is an error at run time.
+// Scope makes the search require a value for column and more: the value is a
+// field of the generated scope type, named from column, and no search exists
+// without it. Give more columns when one value scopes them all (a child and
+// its parent row in the same organization).
+//
+// A hard tenant column (a column of Postgres.Scopes that is not in
+// Postgres.ContextScopes) is covered by its scope (tenant rule 1). A context
+// tenant column takes ScopeFunc, not Scope. Any other column, such as a path
+// parameter (webhook_requests.webhook_id), only adds a required value: it
+// covers no tenant column and no instance. Every column must be on an
+// instance that is not on the nullable side of a LEFT JOIN. A zero value is
+// an error at run time.
 //
 //nolint:revive // the parameters document the call; nano gen repo reads the arguments from source
-func Scope(columns ...Column) SearchOption { return option{} }
+func Scope(column Column, more ...Column) SearchOption { return option{} }
 
 // ScopeOrNull is Scope for rows that every tenant shares: the condition is
 // (column = value OR column IS NULL). The exemption file lists it.
@@ -235,21 +249,23 @@ var (
 	Eq Op
 	// In is In(v...): column IN (v...). From Go, no values match no row; the
 	// API mapper reads an empty list as no filter. More than
-	// search.MaxInValues values is an error. API property: the plural of the
-	// field name ("ids").
+	// db/search.MaxInValues (1000) values is an error. API property: the
+	// plural of the field name ("ids").
 	In Op
 	// InFold is In with case folded on both sides: LOWER(column) IN
-	// (LOWER(v)...). Text columns only. API property: the plural, as In.
+	// (LOWER(v)...). Text columns only. More than db/search.MaxInValues
+	// (1000) values is an error. API property: the plural, as In.
 	InFold Op
 	// Contains is Contains(term): a case-insensitive substring, with the
 	// wildcards of term escaped. Text columns only. A blank term matches
-	// every row; a term longer than search.MaxTermLength is an error. API
-	// property: "<field>_contains".
+	// every row; a term longer than db/search.MaxTermLength (1000) is an
+	// error. API property: "<field>_contains".
 	Contains Op
 	// ContainsAny is ContainsAny(terms...): Contains on each term, joined
 	// with OR. From Go, no terms match no row; the API mapper reads an empty
-	// list as no filter. Text columns only. API property: the plural of the
-	// field name ("names").
+	// list as no filter. Text columns only. More than db/search.MaxInValues
+	// (1000) terms, or a term longer than db/search.MaxTermLength (1000), is
+	// an error. API property: the plural of the field name ("names").
 	ContainsAny Op
 	// Present is Present(bool): column IS NOT NULL, or IS NULL. Nullable
 	// columns only. API property: "has_<field>".
