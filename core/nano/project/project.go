@@ -115,7 +115,9 @@ type Postgres struct {
 	// columns it implies, transitively. An entry applies on a table only
 	// when the table proves it: a foreign key of the table lists both
 	// columns among its referencing columns, and the referenced table has a
-	// unique key on the column that the first one references, alone. A table
+	// unique key on the column that the first one references, alone, every
+	// referencing column is NOT NULL (or the key is MATCH FULL), and the key
+	// is validated: gen db exports NotValid and MatchFull. A table
 	// without the proof names every column, and the refusal says which
 	// foreign key is missing. A derived write never uses an implication.
 	// Both sides are columns of Scopes, neither is a context column, and the
@@ -148,11 +150,19 @@ type ContextScope struct {
 	// when the context carries none (an organisation-wide read), and a
 	// derived delete, update, upsert or create with a bare context would
 	// reach every value of Column. When Present is set, each of them first
-	// checks it and returns nanorepo.ErrNoContextScope before any SQL; reads
-	// keep Func. Empty: they keep Func, and nanostack gen repo warns on each
-	// derived delete and update of such a table. Set it for every column
-	// whose Func fails open.
+	// checks it and returns nanorepo.ErrNoContextScope before any SQL. A
+	// derived read does the same on a table whose only scope is context
+	// scopes (no hard scope): without Present such a read is refused, unless
+	// its name ends in Internal. On a table that has a hard scope a read
+	// keeps Func: an organisation-wide read is intended.
 	Present string
+	// AllowFailOpenWrites records a reviewed choice: a derived delete or
+	// update on a table with Column keeps the fail-open Func when the
+	// context carries no value, and changes every value of Column. Without
+	// Present and without this, nanostack gen repo refuses such a delete or
+	// update. The generated comment says FAIL-OPEN (reviewed), and
+	// nanostack gen repo -inventory lists the method.
+	AllowFailOpenWrites bool
 }
 
 // OpenAPI is the API contract and the Go packages generated from it. nanostack

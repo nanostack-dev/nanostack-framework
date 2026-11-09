@@ -44,6 +44,10 @@ var ContextPresents = map[string]string{ //nolint:gochecknoglobals // fixture
 	"workspace_id": "github.com/nanostack-dev/nanostack-framework/gen/repo/internal/repotest/workspacescope.Present",
 }
 
+// ContextFailOpen records that region_id, which has no Present function,
+// keeps its fail-open filter on derived deletes (a reviewed choice).
+var ContextFailOpen = map[string]bool{"region_id": true} //nolint:gochecknoglobals // fixture
+
 // DatabaseColumns are the columns the database writes.
 var DatabaseColumns = []string{"created_at", "updated_at"} //nolint:gochecknoglobals // fixture
 

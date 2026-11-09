@@ -219,10 +219,26 @@ func torturePairs() []string {
 	for col, to := range torture.ScopeImplies {
 		implies = append(implies, col+"="+to)
 	}
-	return []string{"-dir", tortureFixture, "-scopes", strings.Join(torture.Scopes, ","),
-		"-context-scopes", strings.Join(ctxScopes, ","), "-scope-names", strings.Join(names, ","),
-		"-context-stamps", strings.Join(stamps, ","), "-context-present", strings.Join(presents, ","),
-		"-scope-implies", strings.Join(implies, ","), "-database-columns", strings.Join(torture.DatabaseColumns, ",")}
+	return []string{
+		"-dir",
+		tortureFixture,
+		"-scopes",
+		strings.Join(torture.Scopes, ","),
+		"-context-scopes",
+		strings.Join(ctxScopes, ","),
+		"-scope-names",
+		strings.Join(names, ","),
+		"-context-stamps",
+		strings.Join(stamps, ","),
+		"-context-present",
+		strings.Join(presents, ","),
+		"-context-fail-open",
+		"region_id",
+		"-scope-implies",
+		strings.Join(implies, ","),
+		"-database-columns",
+		strings.Join(torture.DatabaseColumns, ","),
+	}
 }
 
 // -verify-scopes runs the coverage check from the command line, and -inventory
@@ -268,5 +284,86 @@ func TestMainScopeImpliesFlagIsChecked(t *testing.T) {
 				tc.want,
 			)
 		}
+	}
+}
+
+// The check is structural: a predicate counts only as a conjunct of the
+// condition, a Present guard only when it calls the registered function, and
+// a read of a table that has only a context scope needs the guard too.
+func TestTortureVerifyIsStructural(t *testing.T) {
+	t.Parallel()
+	opts := tortureOptions(tortureFixture)
+	res, err := Generate(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const repos = "repositories_repo.gen.go"
+	const regionImport = "\n\t\"github.com/nanostack-dev/nanostack-framework/gen/repo/internal/torture/regionscope\""
+	for _, m := range []struct{ file, impl, method, from, to, imp, what string }{
+		{repos, "ordersImpl", "FindByOrgAndProductAndWorkspaceAndName",
+			").AND(workspacescope.Filter(", ").OR(workspacescope.Filter(", "", "AND swapped for OR in a read"},
+		{repos, "ordersImpl", "DeleteByOrgAndProductAndWorkspaceAndName",
+			"r.where.OrgID(orgID).AND(", "r.where.OrgID(orgID).OR(", "", "AND swapped for OR in a delete"},
+		{repos, "ordersImpl", "FindByOrgAndProductAndWorkspaceAndName",
+			"r.where.OrgID(orgID).AND(", "r.where.OrgID(orgID).NOT().AND(", "", "a predicate negated in a read"},
+		{"writes_repo.gen.go", "widesImpl", "UpdateByOrgAndProductAndWorkspaceAndID",
+			".AND(r.where.ID(row.ID))", ".OR(r.where.ID(row.ID))", "", "AND swapped for OR in an update"},
+		{repos, "notesImpl", "FindByWorkspaceAndTitle", "workspacescope.Present(ctx)", "regionscope.Present(ctx)",
+			regionImport, "a read of a context-only table calls another Present"},
+		{repos, "notesImpl", "FindByWorkspaceAndTitle",
+			"\tif !workspacescope.Present(ctx) {\n\t\treturn nil, nanorepo.ErrNoContextScope\n\t}\n", "", "",
+			"a read of a context-only table has no Present guard"},
+		{"writes_repo.gen.go", "widesImpl", "UpdateByOrgAndProductAndWorkspaceAndID", "workspacescope.Present(ctx)",
+			"regionscope.Present(ctx)", regionImport, "an update calls another Present"},
+	} {
+		found := false
+		read := func(name string) ([]byte, error) {
+			data, rerr := diskRead(name)
+			if rerr != nil || name != m.file {
+				return data, rerr
+			}
+			out, ok := mutateIn(string(data), m.impl, m.method, m.from, m.to)
+			found = ok
+			if m.imp != "" {
+				out = strings.Replace(out, "import (", "import ("+m.imp, 1)
+			}
+			return []byte(out), nil
+		}
+		got, verr := verifyFiles(res.resolutions, opts, read)
+		if verr != nil {
+			t.Fatal(verr)
+		}
+		if !found {
+			t.Errorf("mutation %q: no %q in %s", m.what, m.from, m.method)
+		} else if len(got.Violations) == 0 {
+			t.Errorf("mutation %q is not caught", m.what)
+		}
+	}
+}
+
+// -inventory also lists the hand-written methods whose names derive, which
+// VerifyScopes cannot read, and the fail-open choices a project reviewed.
+func TestInventoryListsOverridesAndFailOpen(t *testing.T) {
+	t.Parallel()
+	var out, errOut strings.Builder
+	opts := fixtureOptions(fixture)
+	res, err := Generate(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code := mainInventory(opts, &out, &errOut); code != 0 {
+		t.Fatalf("exit %d: %s", code, errOut.String())
+	}
+	for _, want := range []string{"HAND-WRITTEN (derivable)", "FAIL-OPEN (reviewed)"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("-inventory lacks %q:\n%s", want, out.String())
+		}
+	}
+	overrides := 0
+	for _, r := range res.resolutions {
+		overrides += len(r.overrides)
+	}
+	if got := strings.Count(out.String(), "HAND-WRITTEN (derivable)"); got != overrides || overrides == 0 {
+		t.Errorf("%d hand-written lines for %d overrides", got, overrides)
 	}
 }

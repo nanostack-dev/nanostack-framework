@@ -44,7 +44,6 @@ func (r *resolver) resolveMethod(d *declarations, fn *types.Func, hand map[strin
 			return
 		}
 		r.res.derived = append(r.res.derived, m)
-		r.warnFailOpen(fn, m)
 		how := "derived: "
 		if m.unscoped {
 			how = "derived, UNSCOPED (Internal): "

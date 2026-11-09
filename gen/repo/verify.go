@@ -1,6 +1,7 @@
 package genrepo
 
 import (
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -8,7 +9,10 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
+
+	"github.com/nanostack-dev/nanostack-framework/gen"
 )
 
 // VerifyResult is the outcome of VerifyScopes.
@@ -46,6 +50,34 @@ func VerifyScopes(opts Options) (*VerifyResult, error) {
 	return verifyFiles(res.resolutions, opts, read)
 }
 
+// verifyOutput runs the scope-coverage check on the files that Generate is
+// about to return, so that nanostack gen and its -check mode enforce it: a
+// derived method whose code leaves a scope column to the value, or a Present
+// guard out, is an error of the run.
+func (l *loaded) verifyOutput(res []*resolution, opts Options, files []gen.File) error {
+	read := func(name string) ([]byte, error) {
+		for _, f := range files {
+			if filepath.Base(f.Path) == name {
+				return f.Data, nil
+			}
+		}
+		return nil, fmt.Errorf("no generated file %s", name)
+	}
+	got, err := verifyFiles(res, opts, read)
+	if err != nil {
+		return err
+	}
+	var problems []error
+	for _, bad := range got.Violations {
+		problems = append(
+			problems,
+			gen.Errorf("", 0, "report this nanostack gen repo bug with the declaration that caused it",
+				"scope coverage of the generated code: %s", bad),
+		)
+	}
+	return errors.Join(problems...)
+}
+
 // verifyFiles checks the derived files that read returns, by file name.
 func verifyFiles(res []*resolution, opts Options, read func(name string) ([]byte, error)) (*VerifyResult, error) {
 	out := &VerifyResult{}
@@ -59,7 +91,7 @@ func verifyFiles(res []*resolution, opts Options, read func(name string) ([]byte
 		if err != nil {
 			return nil, fmt.Errorf("parse %s: %w", name, err)
 		}
-		v := &verifier{r: r, opts: opts}
+		v := &verifier{r: r, opts: opts, imports: importPaths(f)}
 		for _, m := range r.derived {
 			fd := v.find(f, m.fn.Name())
 			if fd == nil {
@@ -76,8 +108,26 @@ func verifyFiles(res []*resolution, opts Options, read func(name string) ([]byte
 }
 
 type verifier struct {
-	r    *resolution
-	opts Options
+	r       *resolution
+	opts    Options
+	imports map[string]string // import name -> path, in the file under check
+}
+
+// importPaths maps the name each import of f gives to its path.
+func importPaths(f *ast.File) map[string]string {
+	out := map[string]string{}
+	for _, imp := range f.Imports {
+		path, err := strconv.Unquote(imp.Path.Value)
+		if err != nil {
+			continue
+		}
+		name := path[strings.LastIndex(path, "/")+1:]
+		if imp.Name != nil {
+			name = imp.Name.Name
+		}
+		out[name] = path
+	}
+	return out
 }
 
 func (v *verifier) name(m *derivedMethod) string {
@@ -140,12 +190,20 @@ func (v *verifier) closure(covered map[string]bool) {
 // codeFacts are what the code of one derived method does with the scope.
 type codeFacts struct {
 	stamped    map[string]bool // fields set on the row: row.OrgID = orgID
-	covered    map[string]bool // fields in a predicate, a function call or a conflict target
-	hasPresent map[string]bool // functions called as if !f(ctx)
+	covered    map[string]bool // fields that a conjunct of a condition, or a conflict target, covers
+	hasPresent map[string]bool // functions called as if !f(ctx), as import path and name
 }
 
-// scan reads the facts of fd.
-func scan(fd *ast.FuncDecl) codeFacts {
+// derivedHelpers are the base helpers that take the condition of a derived
+// read or delete as their second argument, after ctx.
+var derivedHelpers = map[string]bool{ //nolint:gochecknoglobals // read-only table
+	"findOne": true, "findAll": true, "exists": true, "count": true, "deleteWhere": true,
+}
+
+// scan reads the facts of fd. A scope column is covered only by a conjunct of
+// a condition that the statement applies: the arguments of AND at the top of
+// the condition, so that OR or NOT around a predicate covers nothing.
+func (v *verifier) scan(fd *ast.FuncDecl) codeFacts {
 	f := codeFacts{map[string]bool{}, map[string]bool{}, map[string]bool{}}
 	ast.Inspect(fd.Body, func(n ast.Node) bool {
 		switch n := n.(type) {
@@ -155,20 +213,107 @@ func scan(fd *ast.FuncDecl) codeFacts {
 					f.stamped[field] = true
 				}
 			}
-		case *ast.SelectorExpr:
-			// r.where.OrgID, r.t.WorkspaceID, r.itemsBase.t.OrgID: the field after where or t.
-			if inner, isInner := n.X.(*ast.SelectorExpr); isInner &&
-				(inner.Sel.Name == "where" || inner.Sel.Name == "t") {
-				f.covered[n.Sel.Name] = true
-			}
+		case *ast.CallExpr:
+			scanCall(n, f)
 		case *ast.IfStmt: // if !pkg.Present(ctx) { ... }
-			if name := negatedCall(n.Cond); name != "" {
-				f.hasPresent[name] = true
+			if call := negatedCall(n.Cond); call != nil {
+				f.hasPresent[v.resolve(call.Fun)] = true
 			}
 		}
 		return true
 	})
 	return f
+}
+
+// scanCall records what a call contributes: the conjuncts of the condition
+// of a helper or of WHERE, and the columns of ON_CONFLICT.
+func scanCall(call *ast.CallExpr, f codeFacts) {
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok {
+		return
+	}
+	switch {
+	case derivedHelpers[sel.Sel.Name] && len(call.Args) >= 2:
+		coverConjuncts(call.Args[1], f.covered)
+	case sel.Sel.Name == "WHERE" && len(call.Args) == 1:
+		coverConjuncts(call.Args[0], f.covered)
+	case sel.Sel.Name == "ON_CONFLICT":
+		for _, arg := range call.Args {
+			if field := tableField(arg); field != "" {
+				f.covered[field] = true
+			}
+		}
+	}
+}
+
+// coverConjuncts marks the scope fields that the conjuncts of cond cover.
+func coverConjuncts(cond ast.Expr, covered map[string]bool) {
+	for _, c := range conjuncts(cond) {
+		if field := coveredBy(c); field != "" {
+			covered[field] = true
+		}
+	}
+}
+
+// conjuncts flattens a.AND(b).AND(c) into a, b, c.
+func conjuncts(e ast.Expr) []ast.Expr {
+	if call, ok := e.(*ast.CallExpr); ok {
+		if sel, isSel := call.Fun.(*ast.SelectorExpr); isSel && sel.Sel.Name == "AND" && len(call.Args) == 1 {
+			return append(conjuncts(sel.X), call.Args[0])
+		}
+	}
+	return []ast.Expr{e}
+}
+
+// coveredBy returns the field that the conjunct c constrains: r.where.F(x), a
+// function of the context on the column (pkg.Filter(ctx, r.t.F)), or a guard
+// r.t.F.EQ(r.t.EXCLUDED.F).
+func coveredBy(c ast.Expr) string {
+	call, ok := c.(*ast.CallExpr)
+	if !ok {
+		return ""
+	}
+	if sel, isSel := call.Fun.(*ast.SelectorExpr); isSel {
+		if inner, isInner := sel.X.(*ast.SelectorExpr); isInner && inner.Sel.Name == "where" {
+			return sel.Sel.Name
+		}
+		if (sel.Sel.Name == "EQ" || sel.Sel.Name == "IS_NOT_DISTINCT_FROM") && tableField(sel.X) != "" {
+			return tableField(sel.X)
+		}
+	}
+	for _, arg := range call.Args {
+		if field := tableField(arg); field != "" {
+			return field
+		}
+	}
+	return ""
+}
+
+// tableField returns F for the expression x.t.F, else "".
+func tableField(e ast.Expr) string {
+	if sel, ok := e.(*ast.SelectorExpr); ok {
+		if inner, isInner := sel.X.(*ast.SelectorExpr); isInner && inner.Sel.Name == "t" {
+			return sel.Sel.Name
+		}
+	}
+	return ""
+}
+
+// resolve returns the import path and name of the function that fun calls:
+// workspacescope.Present in a file that imports it from p is "p.Present". A
+// name without a package is the package of the binding.
+func (v *verifier) resolve(fun ast.Expr) string {
+	switch fun := fun.(type) {
+	case *ast.SelectorExpr:
+		if id, ok := fun.X.(*ast.Ident); ok {
+			if path, known := v.imports[id.Name]; known {
+				return path + "." + fun.Sel.Name
+			}
+		}
+	case *ast.Ident:
+		return v.r.b.impl.Obj().Pkg().Path() + "." + fun.Name
+	}
+	return ""
 }
 
 // assignedField returns F for the expression row.F, else "".
@@ -181,29 +326,26 @@ func assignedField(e ast.Expr) string {
 	return ""
 }
 
-// negatedCall returns the function name of !f(...), else "".
-func negatedCall(cond ast.Expr) string {
+// negatedCall returns the call in !f(...), else nil.
+func negatedCall(cond ast.Expr) *ast.CallExpr {
 	if un, isUn := cond.(*ast.UnaryExpr); isUn && un.Op == token.NOT {
 		if call, isCall := un.X.(*ast.CallExpr); isCall {
-			return funcName(call.Fun)
+			return call
 		}
 	}
-	return ""
+	return nil
 }
 
 // method checks one derived method.
 func (v *verifier) method(m *derivedMethod, fd *ast.FuncDecl) []string {
-	f := scan(fd)
+	f := v.scan(fd)
 	var out []string
 	if m.op.isWrite() {
 		out = v.checkWrite(m, f)
 	} else {
 		out = v.checkRead(m, fd, f)
 	}
-	if m.op.changesRows() {
-		out = append(out, v.checkPresent(f)...)
-	}
-	return out
+	return append(out, v.checkPresent(m, f)...)
 }
 
 // checkWrite checks a create, an update or an upsert: no scope column is left
@@ -247,17 +389,45 @@ func (v *verifier) checkRead(m *derivedMethod, fd *ast.FuncDecl, f codeFacts) []
 	return out
 }
 
-// checkPresent checks that a delete or a write calls the Present function of
-// each context scope of its table that has one.
-func (v *verifier) checkPresent(f codeFacts) []string {
+// checkPresent checks that a method whose context scopes must be found in ctx
+// calls the registered Present function of each: a delete or write changing
+// rows, and a read of a table whose only scopes are context scopes (a bare
+// context would read every tenant), unless the name is Internal or binds the
+// column from a parameter. The call is matched by import path and name.
+func (v *verifier) checkPresent(m *derivedMethod, f codeFacts) []string {
+	read := !m.op.changesRows()
+	if read && (!v.ctxOnly() || m.internal) {
+		return nil
+	}
 	var out []string
 	for _, c := range v.r.b.table.columns {
 		fn := v.opts.ContextPresents[c.sqlName]
-		if fn != "" && v.opts.ContextScopes[c.sqlName] != "" && !f.hasPresent[identOfFunc(fn)] {
+		if fn == "" || v.opts.ContextScopes[c.sqlName] == "" || !slices.Contains(v.opts.Scopes, c.sqlName) {
+			continue
+		}
+		if read && slices.Contains(m.cross, c.sqlName) {
+			continue
+		}
+		if !f.hasPresent[fn] {
 			out = append(out, "does not check "+fn+" first: a context without "+c.sqlName+" reaches every value")
 		}
 	}
 	return out
+}
+
+// ctxOnly reports whether every scope column of the table is a context scope.
+func (v *verifier) ctxOnly() bool {
+	found := false
+	for _, c := range v.r.b.table.columns {
+		if !slices.Contains(v.opts.Scopes, c.sqlName) {
+			continue
+		}
+		if v.opts.ContextScopes[c.sqlName] == "" {
+			return false
+		}
+		found = true
+	}
+	return found
 }
 
 func writeWhere(o op) string {
@@ -286,22 +456,4 @@ func docHas(fd *ast.FuncDecl, prefix string) bool {
 		}
 	}
 	return false
-}
-
-// funcName is the name of the function a call expression calls: Present for
-// workspacescope.Present.
-func funcName(e ast.Expr) string {
-	switch e := e.(type) {
-	case *ast.SelectorExpr:
-		return e.Sel.Name
-	case *ast.Ident:
-		return e.Name
-	}
-	return ""
-}
-
-// identOfFunc is the name after the last dot of a registered function.
-func identOfFunc(fn string) string {
-	_, ident, _ := strings.Cut(fn[strings.LastIndex(fn, "/")+1:], ".")
-	return ident
 }

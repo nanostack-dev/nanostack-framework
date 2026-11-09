@@ -102,9 +102,10 @@ func mainVerify(opts Options, stdout, stderr io.Writer) int {
 	return 0
 }
 
-// mainInventory lists the derived methods that a review looks at: the ones
-// that skip a scope (Internal) and the ones that read a context scope from a
-// parameter.
+// mainInventory lists what a review looks at: the derived methods that skip a
+// scope (Internal), that read a context scope from a parameter, or that keep a
+// fail-open filter on a reviewed choice, and the hand-written methods whose
+// names also derive (their code is not verified).
 func mainInventory(opts Options, stdout, stderr io.Writer) int {
 	res, err := Generate(opts)
 	if err != nil {
@@ -113,31 +114,18 @@ func mainInventory(opts Options, stdout, stderr io.Writer) int {
 	n := 0
 	for _, r := range res.resolutions {
 		for _, m := range r.derived {
-			var notes []string
-			if m.unscoped {
-				cols := make([]string, len(m.skipped))
-				for i, f := range m.skipped {
-					cols[i] = columnOf(r.b.table, f)
-				}
-				notes = append(notes, "UNSCOPED, no filter on "+strings.Join(cols, " or "))
-			}
-			for _, col := range m.cross {
-				notes = append(
-					notes,
-					"CROSS-"+strings.ToUpper(strings.TrimSuffix(col, "_id"))+", "+col+" from a parameter",
-				)
-			}
-			if len(notes) > 0 {
+			if notes := reviewNotes(r, m); len(notes) > 0 {
 				n++
-				_, _ = fmt.Fprintf(
-					stdout,
-					"%s.%s (table %s): %s\n",
-					r.b.iface.Obj().Name(),
-					m.fn.Name(),
-					r.b.table.sqlName,
-					strings.Join(notes, "; "),
-				)
+				_, _ = fmt.Fprintf(stdout, "%s.%s (table %s): %s\n", r.b.iface.Obj().Name(), m.fn.Name(),
+					r.b.table.sqlName, strings.Join(notes, "; "))
 			}
+		}
+	}
+	for _, r := range res.resolutions {
+		for _, name := range r.overrides {
+			n++
+			_, _ = fmt.Fprintf(stdout, "%s.%s (table %s): HAND-WRITTEN (derivable), the name also derives and the "+
+				"hand-written method wins: its code is not verified\n", r.b.iface.Obj().Name(), name, r.b.table.sqlName)
 		}
 	}
 	_, _ = fmt.Fprintf(stdout, "nanostack gen repo: %d derived methods to review\n", n)
@@ -210,4 +198,43 @@ func checkImpliesFlag(opts Options, stderr io.Writer) bool {
 		_, _ = fmt.Fprintf(stderr, "nanostack gen repo: %s\n  fix: %s\n", pr.Msg, pr.Fix)
 	}
 	return len(problems) == 0
+}
+
+// reviewNotes are what a review sees of a derived method: a skipped scope, a
+// context scope read from a parameter, a reviewed fail-open choice.
+func reviewNotes(r *resolution, m *derivedMethod) []string {
+	var notes []string
+	if m.unscoped {
+		cols := make([]string, len(m.skipped))
+		for i, f := range m.skipped {
+			cols[i] = columnOf(r.b.table, f)
+		}
+		notes = append(notes, "UNSCOPED, no filter on "+strings.Join(cols, " or "))
+	}
+	for _, col := range m.cross {
+		notes = append(notes, "CROSS-"+strings.ToUpper(strings.TrimSuffix(col, "_id"))+", "+col+" from a parameter")
+	}
+	if len(m.failOpen) > 0 {
+		cols := make([]string, len(m.failOpen))
+		for i, c := range m.failOpen {
+			cols[i] = c.col
+		}
+		notes = append(
+			notes,
+			"FAIL-OPEN (reviewed), a context without "+strings.Join(cols, " or ")+" reaches every value",
+		)
+	}
+	return notes
+}
+
+// addFailOpen reads the -context-fail-open list into opts.
+func addFailOpen(opts *Options, list string) {
+	for col := range strings.SplitSeq(list, ",") {
+		if col = strings.TrimSpace(col); col != "" {
+			if opts.ContextFailOpen == nil {
+				opts.ContextFailOpen = map[string]bool{}
+			}
+			opts.ContextFailOpen[col] = true
+		}
+	}
 }

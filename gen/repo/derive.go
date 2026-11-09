@@ -127,14 +127,8 @@ func (r *resolver) derive(fn *types.Func) (*derivedMethod, *refusal) {
 	if fail = r.checkUnique(fn, m); fail != nil {
 		return nil, fail
 	}
-	if m.op.changesRows() {
-		for _, c := range r.ctx {
-			if c.present != "" {
-				m.present = append(m.present, c)
-			} else {
-				m.failOpen = append(m.failOpen, c)
-			}
-		}
+	if fail = r.failClosed(fn, m); fail != nil {
+		return nil, fail
 	}
 	return m, nil
 }

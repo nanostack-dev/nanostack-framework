@@ -284,6 +284,262 @@ func (binWhere) NameEqualsIgnoreCase(v string) postgres.BoolExpression {
 	return postgres.LOWER(table.Bin.Name).EQ(postgres.LOWER(postgres.String(v)))
 }
 
+// binFullBase is the generated base of table bin_full. It holds the table (t),
+// typed predicates (where), helpers that run in the context transaction and
+// return the model rows, and the pkg/db/transactor functions as methods.
+// Embed it in the implementation and set it with newBinFullBase(db).
+type binFullBase struct {
+	db    qrm.DB
+	t     *table.BinFullTable
+	where binFullWhere
+}
+
+// newBinFullBase returns the base of table bin_full. It runs its statements on the
+// transaction of the context, and on db outside one.
+func newBinFullBase(db qrm.DB) binFullBase {
+	return binFullBase{db: db, t: table.BinFull}
+}
+
+// findOne returns the row matching cond: absent when none does, and
+// transactor.ErrMoreThanOneRow when two do. It reads LIMIT 2, so a key that
+// stopped being unique is an error, never a silent first row. To pick one of
+// several rows, use first with an order.
+func (b binFullBase) findOne(ctx context.Context, cond postgres.BoolExpression) (functional.Option[model.BinFull], error) {
+	stmt := b.t.SELECT(b.t.AllColumns)
+	if cond != nil {
+		stmt = stmt.WHERE(cond)
+	}
+	rows, err := b.queryRows(ctx, stmt.LIMIT(2)).Value()
+	switch {
+	case err != nil:
+		return functional.None[model.BinFull](), err
+	case len(rows) > 1:
+		return functional.None[model.BinFull](), fmt.Errorf("%w: bin_full", transactor.ErrMoreThanOneRow)
+	case len(rows) == 0:
+		return functional.None[model.BinFull](), nil
+	}
+	return functional.Some(rows[0]), nil
+}
+
+// first returns the first row matching cond in the given order, absent when
+// none does. End the order with a unique column, such as the primary key, so
+// the row it picks is stable.
+func (b binFullBase) first(ctx context.Context, cond postgres.BoolExpression, order postgres.OrderByClause, more ...postgres.OrderByClause) (functional.Option[model.BinFull], error) {
+	stmt := b.t.SELECT(b.t.AllColumns)
+	if cond != nil {
+		stmt = stmt.WHERE(cond)
+	}
+	return b.queryRowOptional(ctx, stmt.ORDER_BY(append([]postgres.OrderByClause{order}, more...)...).LIMIT(1))
+}
+
+// findAll returns every row matching cond, every row when cond is nil, in the
+// given order.
+func (b binFullBase) findAll(ctx context.Context, cond postgres.BoolExpression, order ...postgres.OrderByClause) ([]model.BinFull, error) {
+	stmt := b.t.SELECT(b.t.AllColumns)
+	if cond != nil {
+		stmt = stmt.WHERE(cond)
+	}
+	if len(order) > 0 {
+		stmt = stmt.ORDER_BY(order...)
+	}
+	return b.queryRows(ctx, stmt).Value()
+}
+
+// exists reports whether a row matches cond, or whether the table has a row
+// when cond is nil. PostgreSQL refuses a row lock on it, which aggregates.
+func (b binFullBase) exists(ctx context.Context, cond postgres.BoolExpression) (bool, error) {
+	found := b.t.SELECT(postgres.Int32(1))
+	if cond != nil {
+		found = found.WHERE(cond)
+	}
+	n, err := b.queryCount(ctx, postgres.SELECT(postgres.COUNT(postgres.STAR)).FROM(found.LIMIT(1).AsTable("found"))).Value()
+	return n > 0, err
+}
+
+// count counts the rows matching cond, every row when cond is nil.
+// PostgreSQL refuses a row lock on it, which aggregates.
+func (b binFullBase) count(ctx context.Context, cond postgres.BoolExpression) (int64, error) {
+	stmt := b.t.SELECT(postgres.COUNT(postgres.STAR))
+	if cond != nil {
+		stmt = stmt.WHERE(cond)
+	}
+	return b.queryCount(ctx, stmt).Value()
+}
+
+// deleteWhere deletes the rows matching cond and returns how many it deleted.
+// It refuses a nil cond. A locked context returns transactor.ErrRowLockNotSelect
+// or ErrRowLockOutsideTx without running the DELETE.
+func (b binFullBase) deleteWhere(ctx context.Context, cond postgres.BoolExpression) (int64, error) {
+	if cond == nil {
+		return 0, errors.New("bin_full: deleteWhere needs a condition")
+	}
+	return b.execAffected(ctx, b.t.DELETE().WHERE(cond)).Value()
+}
+
+// updateWhere applies the assignments, such as b.t.Name.SET(postgres.String(v)),
+// to the rows matching cond and returns how many it updated. It refuses a nil
+// cond, and a locked context, as deleteWhere does.
+func (b binFullBase) updateWhere(ctx context.Context, cond postgres.BoolExpression, set postgres.ColumnAssigment, more ...postgres.ColumnAssigment) (int64, error) {
+	if cond == nil {
+		return 0, errors.New("bin_full: updateWhere needs a condition")
+	}
+	values := make([]any, len(more))
+	for i, m := range more {
+		values[i] = m
+	}
+	return b.execAffected(ctx, b.t.UPDATE().SET(set, values...).WHERE(cond)).Value()
+}
+
+// query runs stmt and scans its rows into T: a model row, a slice, or a struct
+// of aliased columns. Chain OnUnique, OnForeignKey or OnNoRows before Value.
+func (b binFullBase) query[T any](ctx context.Context, stmt postgres.Statement) transactor.Result[T] {
+	return transactor.Query[T](ctx, b.db, stmt)
+}
+
+// queryOptional runs stmt, which may match no row: then the Option is absent
+// and the error nil.
+func (b binFullBase) queryOptional[T any](ctx context.Context, stmt postgres.Statement) (functional.Option[T], error) {
+	return transactor.QueryOptional[T](ctx, b.db, stmt)
+}
+
+// queryMap runs stmt, scans one T and maps it with mapFunc.
+func (b binFullBase) queryMap[T, R any](ctx context.Context, stmt postgres.Statement, mapFunc func(T) R) transactor.Result[R] {
+	return transactor.QueryMap(ctx, b.db, stmt, mapFunc)
+}
+
+// queryOptionalMap is queryOptional, then mapFunc on the row when there is one.
+func (b binFullBase) queryOptionalMap[T, R any](ctx context.Context, stmt postgres.Statement, mapFunc func(T) R) (functional.Option[R], error) {
+	return transactor.QueryOptionalMap(ctx, b.db, stmt, mapFunc)
+}
+
+// queryMapSlice runs stmt and maps every row with mapFunc.
+func (b binFullBase) queryMapSlice[T, R any](ctx context.Context, stmt postgres.Statement, mapFunc func(T) R) transactor.Result[[]R] {
+	return transactor.QueryMapSlice(ctx, b.db, stmt, mapFunc)
+}
+
+// queryCount runs a SELECT COUNT statement.
+func (b binFullBase) queryCount(ctx context.Context, stmt postgres.Statement) transactor.Result[int64] {
+	return transactor.QueryCount(ctx, b.db, stmt)
+}
+
+// exec runs a statement that returns no rows. Unwrap it with Err.
+func (b binFullBase) exec(ctx context.Context, stmt postgres.Statement) transactor.Result[struct{}] {
+	return transactor.Exec(ctx, b.db, stmt)
+}
+
+// execAffected runs a statement and returns the number of rows it changed.
+func (b binFullBase) execAffected(ctx context.Context, stmt postgres.Statement) transactor.Result[int64] {
+	return transactor.ExecAffected(ctx, b.db, stmt)
+}
+
+// page starts a paginated query of rows T mapped to R; both come from mapFunc.
+func (b binFullBase) page[T, R any](mapFunc func(T) R, columns ...postgres.Projection) *transactor.PageBuilder[T, R] {
+	return transactor.Page(b.db, mapFunc, columns...)
+}
+
+// queryRow runs stmt, which returns one bin_full row, such as an INSERT or
+// UPDATE ... RETURNING(b.t.AllColumns), and returns the row.
+func (b binFullBase) queryRow(ctx context.Context, stmt postgres.Statement) transactor.Result[model.BinFull] {
+	return b.query[model.BinFull](ctx, stmt)
+}
+
+// queryRowOptional is queryRow for a statement that may return no row.
+func (b binFullBase) queryRowOptional(ctx context.Context, stmt postgres.Statement) (functional.Option[model.BinFull], error) {
+	return b.queryOptional[model.BinFull](ctx, stmt)
+}
+
+// queryRows is queryRow for every row stmt returns; no row is an empty slice.
+func (b binFullBase) queryRows(ctx context.Context, stmt postgres.Statement) transactor.Result[[]model.BinFull] {
+	return b.queryMapSlice(ctx, stmt, func(row model.BinFull) model.BinFull { return row })
+}
+
+// binFullWhere builds predicates on the columns of bin_full. A string predicate
+// compares as text. Contains is searchexec.Contains: it trims the term,
+// matches a substring without case, and % _ ! in the term match
+// themselves. A blank term matches every row.
+type binFullWhere struct{}
+
+// ID is id = v.
+func (binFullWhere) ID(v string) postgres.BoolExpression {
+	return table.BinFull.ID.EQ(postgres.String(v))
+}
+
+// IDIn is id IN (vs...); no value matches no row.
+func (binFullWhere) IDIn(vs ...string) postgres.BoolExpression {
+	if len(vs) == 0 {
+		return postgres.Bool(false)
+	}
+	exprs := make([]postgres.Expression, len(vs))
+	for i, v := range vs {
+		exprs[i] = postgres.String(v)
+	}
+	return table.BinFull.ID.IN(exprs...)
+}
+
+// OrgID is org_id = v.
+func (binFullWhere) OrgID(v uuid.UUID) postgres.BoolExpression {
+	return table.BinFull.OrgID.EQ(postgres.UUID(v))
+}
+
+// OrgIDIn is org_id IN (vs...); no value matches no row.
+func (binFullWhere) OrgIDIn(vs ...uuid.UUID) postgres.BoolExpression {
+	if len(vs) == 0 {
+		return postgres.Bool(false)
+	}
+	exprs := make([]postgres.Expression, len(vs))
+	for i, v := range vs {
+		exprs[i] = postgres.UUID(v)
+	}
+	return table.BinFull.OrgID.IN(exprs...)
+}
+
+// OrgIDIsNull is org_id IS NULL.
+func (binFullWhere) OrgIDIsNull() postgres.BoolExpression { return table.BinFull.OrgID.IS_NULL() }
+
+// ProductID is product_id = v.
+func (binFullWhere) ProductID(v uuid.UUID) postgres.BoolExpression {
+	return table.BinFull.ProductID.EQ(postgres.UUID(v))
+}
+
+// ProductIDIn is product_id IN (vs...); no value matches no row.
+func (binFullWhere) ProductIDIn(vs ...uuid.UUID) postgres.BoolExpression {
+	if len(vs) == 0 {
+		return postgres.Bool(false)
+	}
+	exprs := make([]postgres.Expression, len(vs))
+	for i, v := range vs {
+		exprs[i] = postgres.UUID(v)
+	}
+	return table.BinFull.ProductID.IN(exprs...)
+}
+
+// Name is name = v.
+func (binFullWhere) Name(v string) postgres.BoolExpression {
+	return table.BinFull.Name.EQ(postgres.String(v))
+}
+
+// NameIn is name IN (vs...); no value matches no row.
+func (binFullWhere) NameIn(vs ...string) postgres.BoolExpression {
+	if len(vs) == 0 {
+		return postgres.Bool(false)
+	}
+	exprs := make([]postgres.Expression, len(vs))
+	for i, v := range vs {
+		exprs[i] = postgres.String(v)
+	}
+	return table.BinFull.Name.IN(exprs...)
+}
+
+// NameContains matches name that contain term, ignoring case.
+func (binFullWhere) NameContains(term string) postgres.BoolExpression {
+	return searchexec.Contains(term, table.BinFull.Name)
+}
+
+// NameEqualsIgnoreCase is lower(name) = lower(v).
+func (binFullWhere) NameEqualsIgnoreCase(v string) postgres.BoolExpression {
+	return postgres.LOWER(table.BinFull.Name).EQ(postgres.LOWER(postgres.String(v)))
+}
+
 // collideBase is the generated base of table collide. It holds the table (t),
 // typed predicates (where), helpers that run in the context transaction and
 // return the model rows, and the pkg/db/transactor functions as methods.

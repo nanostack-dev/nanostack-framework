@@ -20,6 +20,8 @@ type ctxScope struct {
 	// present is the function that reports whether ctx carries the column
 	// (ContextScope.Present), "" when none is registered.
 	present string
+	// failOpenOK is ContextScope.AllowFailOpenWrites: a reviewed choice.
+	failOpenOK bool
 }
 
 // term is one property of a derived name. A term of a context scope named by
@@ -69,7 +71,7 @@ func (r *resolver) setupScopes(scopes []string) {
 	for _, c := range cols {
 		if fn, ok := r.l.contextScopes[c.sqlName]; ok {
 			r.ctx = append(r.ctx, ctxScope{field: c.field, col: c.sqlName, fn: fn, short: r.shortOf[c.field],
-				present: r.l.contextPresents[c.sqlName]})
+				present: r.l.contextPresents[c.sqlName], failOpenOK: r.l.contextFailOpen[c.sqlName]})
 		}
 	}
 }
@@ -221,7 +223,7 @@ func (t *tableBase) proves(a, b string) bool {
 	}
 	for _, k := range t.foreignKeys {
 		ia, ib := slices.Index(k.columns, a), slices.Index(k.columns, b)
-		if ia < 0 || ib < 0 || len(k.refColumns) != len(k.columns) {
+		if ia < 0 || ib < 0 || len(k.refColumns) != len(k.columns) || !t.enforces(k) {
 			continue
 		}
 		for name, names := range t.src.tables {
@@ -236,6 +238,36 @@ func (t *tableBase) proves(a, b string) bool {
 		}
 	}
 	return false
+}
+
+// enforces reports whether the foreign key k checks every row of the table:
+// it is validated, and either MATCH FULL or every referencing column is NOT
+// NULL. PostgreSQL's default MATCH SIMPLE skips the check when any referencing
+// column is NULL, and a NOT VALID key leaves the rows that predate it unchecked.
+func (t *tableBase) enforces(k foreignKey) bool {
+	if k.notValid {
+		return false
+	}
+	if k.matchFull {
+		return true
+	}
+	for _, name := range k.columns {
+		col, ok := t.columnBySQL(name)
+		if !ok || col.nullable {
+			return false
+		}
+	}
+	return true
+}
+
+// columnBySQL returns the column of the table with the SQL name.
+func (t *tableBase) columnBySQL(name string) (column, bool) {
+	for _, c := range t.columns {
+		if c.sqlName == name {
+			return c, true
+		}
+	}
+	return column{}, false
 }
 
 // unprovenImplication explains an entry of Postgres.ScopeImplies that would
@@ -257,7 +289,7 @@ func (r *resolver) unprovenImplication(terms []term, missing []string) string {
 			if !r.t.proves(col, next) {
 				if slices.ContainsFunc(missing, func(f string) bool { return r.sqlName(f) == next }) {
 					return fmt.Sprintf("Postgres.ScopeImplies says %s determines %s, but table %s has no foreign key "+
-						"that lists both and references a table with a unique key on the target of %s alone, "+
+						"that lists both, is validated, has no nullable referencing column (or is MATCH FULL) and references a table with a unique key on the target of %s alone, "+
 						"so the implication does not apply here", col, next, r.t.sqlName, col)
 				}
 				break

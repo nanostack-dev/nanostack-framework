@@ -260,5 +260,11 @@ func contextOptions(opts *genrepo.Options, scopes []project.ContextScope) {
 		set(&opts.ContextScopes, cs.Column, cs.Func)
 		set(&opts.ContextStamps, cs.Column, cs.Stamp)
 		set(&opts.ContextPresents, cs.Column, cs.Present)
+		if cs.AllowFailOpenWrites {
+			if opts.ContextFailOpen == nil {
+				opts.ContextFailOpen = map[string]bool{}
+			}
+			opts.ContextFailOpen[cs.Column] = true
+		}
 	}
 }

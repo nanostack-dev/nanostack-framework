@@ -357,6 +357,13 @@ type Shelves interface {
 	DeleteByOrgAndProductAndName(ctx context.Context, orgID, productID uuid.UUID, name string) (int64, error)
 }
 
+// BinFulls has a nullable org_id and the MATCH FULL key that proves
+// product_id -> org_id for every row: Product alone names both.
+type BinFulls interface {
+	FindByProductAndName(ctx context.Context, productID uuid.UUID, name string) ([]model.BinFull, error)
+	DeleteByProductAndName(ctx context.Context, productID uuid.UUID, name string) (int64, error)
+}
+
 // Members is a join table: the tenant column is part of its composite key.
 type Members interface {
 	FindByOrgAndGroupIDAndUserID(
@@ -384,6 +391,7 @@ func _() {
 	nanorepo.Implement[Mixeds, mixedsImpl](table.Mixed, nanorepo.NoMapper[model.Mixed])
 	nanorepo.Implement[Bins, binsImpl](table.Bin, nanorepo.NoMapper[model.Bin])
 	nanorepo.Implement[Shelves, shelvesImpl](table.Shelf, nanorepo.NoMapper[model.Shelf])
+	nanorepo.Implement[BinFulls, binFullsImpl](table.BinFull, nanorepo.NoMapper[model.BinFull])
 	nanorepo.Implement[Members, membersImpl](table.Member, nanorepo.NoMapper[model.Member])
 	// Tables whose columns collide with a short scope name: bound here for
 	// their base only, and refused where a repository binds them
@@ -441,6 +449,11 @@ func NewMixeds(db qrm.DB) Mixeds { return &mixedsImpl{mixedBase: newMixedBase(db
 
 // NewBins returns the bins on db.
 func NewBins(db qrm.DB) Bins { return &binsImpl{binBase: newBinBase(db)} }
+
+type binFullsImpl struct{ binFullBase }
+
+// NewBinFulls returns the bin_full rows on db.
+func NewBinFulls(db qrm.DB) BinFulls { return &binFullsImpl{binFullBase: newBinFullBase(db)} }
 
 // NewMembers returns the members on db.
 func NewMembers(db qrm.DB) Members { return &membersImpl{memberBase: newMemberBase(db)} }

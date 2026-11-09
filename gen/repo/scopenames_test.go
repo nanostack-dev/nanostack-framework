@@ -13,15 +13,24 @@ import (
 // fixtureOptions are the options of a package that declares tables of the
 // fixture: its tenant columns, their context functions and their short names.
 func fixtureOptions(dir string) Options {
-	return scopeNameOptions(dir, repotest.ScopeNames)
+	o := scopeNameOptions(dir, repotest.ScopeNames)
+	o.ContextPresents, o.ContextFailOpen = nil, repotest.ContextFailOpen // the fail-open mode
+	return o
 }
 
 // scopeNameOptions are the options of the packages under testdata/scopenames:
 // the fixture's tenant columns, with the short names an application would
 // declare in Postgres.ScopeNames.
 func scopeNameOptions(dir string, names map[string]string) Options {
-	return Options{Dir: dir, Scopes: repotest.Scopes, ContextScopes: repotest.ContextScopes, ScopeNames: names,
-		ContextStamps: repotest.ContextStamps, DatabaseColumns: repotest.DatabaseColumns}
+	return Options{
+		Dir:             dir,
+		Scopes:          repotest.Scopes,
+		ContextScopes:   repotest.ContextScopes,
+		ScopeNames:      names,
+		ContextStamps:   repotest.ContextStamps,
+		ContextPresents: repotest.ContextPresents,
+		DatabaseColumns: repotest.DatabaseColumns,
+	}
 }
 
 //nolint:gochecknoglobals // fixture

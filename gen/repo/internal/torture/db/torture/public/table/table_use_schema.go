@@ -6,6 +6,9 @@ package table
 // this method only once at the beginning of the program.
 func UseSchema(schema string) {
 	Bin = Bin.FromSchema(schema)
+	BinFull = BinFull.FromSchema(schema)
+	BinNull = BinNull.FromSchema(schema)
+	BinNv = BinNv.FromSchema(schema)
 	Collide = Collide.FromSchema(schema)
 	CollideProduct = CollideProduct.FromSchema(schema)
 	CollideWs = CollideWs.FromSchema(schema)

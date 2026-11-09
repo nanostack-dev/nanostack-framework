@@ -105,6 +105,12 @@ func foreignKeysMethod(
 		if fk.ReferencedSchema != "" && fk.ReferencedSchema != schema {
 			fmt.Fprintf(&b, "\t\t\tReferencedSchema: %s,\n", strconv.Quote(fk.ReferencedSchema))
 		}
+		if fk.NotValid {
+			b.WriteString("\t\t\tNotValid: true,\n")
+		}
+		if fk.MatchFull {
+			b.WriteString("\t\t\tMatchFull: true,\n")
+		}
 		b.WriteString("\t\t},")
 	}
 	if len(table.ForeignKeys) > 0 {

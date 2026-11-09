@@ -266,6 +266,23 @@ ViewWrites on *viewWritesImpl (table order_live, scope org_id (Org), product_id 
                               note: table order_live is a view: nanostack gen db types every view column as nullable, so no tenant column of a view can be trusted as a scope, and a derived delete on an updatable view would reach the rows of every tenant
   UpsertByOrgAndProductAndID  ERROR: not implemented
                               note: table order_live is a view: nanostack gen db types every view column as nullable, so no tenant column of a view can be trusted as a scope, and a derived delete on an updatable view would reach the rows of every tenant
+BinNulls on *binNullsImpl (table bin_null, scope org_id (Org), product_id (Product))
+  FindByProductAndName    ERROR: not implemented
+                          note: table bin_null is scoped by org_id, product_id (Postgres.Scopes), and the name does not name org_id
+  DeleteByProductAndName  ERROR: not implemented
+                          note: table bin_null is scoped by org_id, product_id (Postgres.Scopes), and the name does not name org_id
+BinNvs on *binNvsImpl (table bin_nv, scope org_id (Org), product_id (Product))
+  FindByProductAndName    ERROR: not implemented
+                          note: table bin_nv is scoped by org_id, product_id (Postgres.Scopes), and the name does not name org_id
+  DeleteByProductAndName  ERROR: not implemented
+                          note: table bin_nv is scoped by org_id, product_id (Postgres.Scopes), and the name does not name org_id
+InternalWrites on *internalWritesImpl (table wide, scope org_id (Org), product_id (Product), workspace_id (Workspace))
+  CreateInOrgAndProductAndWorkspaceInternal         ERROR: not implemented
+                                                    note: a derived write never ends in Internal: it skips no scope
+  UpdateByOrgAndProductAndWorkspaceAndIDInternal    ERROR: not implemented
+                                                    note: a derived write never ends in Internal: it skips no scope
+  UpsertByOrgAndProductAndWorkspaceAndSlugInternal  ERROR: not implemented
+                                                    note: a derived write never ends in Internal: it skips no scope
 Collides on *collidesImpl (table collide, scope org_id)
   FindByOrgAndID  ERROR: not resolved
                   note: a short scope name of the table is also the Go field of a column

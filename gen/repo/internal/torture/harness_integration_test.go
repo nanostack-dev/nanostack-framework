@@ -256,6 +256,11 @@ func runSpecs(t *testing.T, db *sql.DB, w world, specs []spec) {
 					ctxWS,
 					a,
 				)
+				if s.kind() != "delete" && s.ws == wsCtx && ctxOfIsBare(ctx) &&
+					(w.table == "note" || w.table == "draft") {
+					checkClosedRead(ctx, t, s, a, where)
+					return
+				}
 				switch s.kind() {
 				case "find":
 					checkFind(ctx, t, s, a, want, where)
@@ -282,6 +287,25 @@ func runSpecs(t *testing.T, db *sql.DB, w world, specs []spec) {
 
 // ctxOfIsBare reports whether ctx carries no workspace.
 func ctxOfIsBare(ctx context.Context) bool { return !workspacescope.Present(ctx) }
+
+// checkClosedRead checks a derived read of a table whose only scope is the
+// workspace context scope: with Present set it fails closed on a bare context,
+// where the filter alone would read every tenant.
+func checkClosedRead(ctx context.Context, t *testing.T, s *spec, a args, where string) {
+	t.Helper()
+	var err error
+	switch s.kind() {
+	case "find":
+		_, err = s.find(ctx, a)
+	case "count":
+		_, err = s.count(ctx, a)
+	case "exists":
+		_, err = s.exists(ctx, a)
+	}
+	if !errors.Is(err, nanorepo.ErrNoContextScope) {
+		t.Fatalf("%s: read on a context without a workspace: %v, want nanorepo.ErrNoContextScope", where, err)
+	}
+}
 
 func checkFind(ctx context.Context, t *testing.T, s *spec, a args, want []string, where string) {
 	t.Helper()

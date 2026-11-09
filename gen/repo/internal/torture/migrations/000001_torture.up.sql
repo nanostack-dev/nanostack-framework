@@ -191,6 +191,36 @@ CREATE TABLE bin (
     FOREIGN KEY (site_id, product_id) REFERENCES tsite (id, product_id)
 );
 
+-- The same foreign key that proves product_id -> org_id on bin, but not
+-- enforced on every row. bin_null: org_id is nullable, and PostgreSQL's
+-- default MATCH SIMPLE skips the check when a referencing column is NULL, so
+-- (product, NULL) is a legal row. bin_nv: the key is NOT VALID, so a row that
+-- predates it may break it. bin_full: MATCH FULL, which rejects (product, NULL)
+-- and checks every row, proves the implication again.
+CREATE TABLE bin_null (
+    id         text PRIMARY KEY,
+    org_id     uuid,
+    product_id uuid NOT NULL,
+    name       text NOT NULL,
+    FOREIGN KEY (product_id, org_id) REFERENCES tproduct (id, org_id)
+);
+CREATE TABLE bin_nv (
+    id         text PRIMARY KEY,
+    org_id     uuid NOT NULL,
+    product_id uuid NOT NULL,
+    name       text NOT NULL
+);
+INSERT INTO bin_nv VALUES ('legacy', 'a0000000-0000-4000-8000-000000000009', 'a1000000-0000-4000-8000-000000000009', 'legacy');
+ALTER TABLE bin_nv ADD CONSTRAINT bin_nv_product_fk
+    FOREIGN KEY (product_id, org_id) REFERENCES tproduct (id, org_id) NOT VALID;
+CREATE TABLE bin_full (
+    id         text PRIMARY KEY,
+    org_id     uuid,
+    product_id uuid NOT NULL,
+    name       text NOT NULL,
+    FOREIGN KEY (product_id, org_id) REFERENCES tproduct (id, org_id) MATCH FULL
+);
+
 -- Two hard scopes with no foreign key between them: Postgres.ScopeImplies
 -- says product_id -> org_id, and this table does not prove it, so a name
 -- must give both.

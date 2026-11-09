@@ -168,6 +168,33 @@ type Shelves interface {
 	DeleteByProductAndName(ctx context.Context, productID uuid.UUID, name string) (int64, error)
 }
 
+// BinNulls has the foreign key that proves product_id -> org_id, but org_id is
+// nullable: with MATCH SIMPLE a row (product, NULL) is legal, so the key proves
+// nothing. BinNvs has the key NOT VALID: rows that predate it may break it.
+type (
+	BinNulls interface {
+		FindByProductAndName(ctx context.Context, productID uuid.UUID, name string) ([]model.BinNull, error)
+		DeleteByProductAndName(ctx context.Context, productID uuid.UUID, name string) (int64, error)
+	}
+	BinNvs interface {
+		FindByProductAndName(ctx context.Context, productID uuid.UUID, name string) ([]model.BinNv, error)
+		DeleteByProductAndName(ctx context.Context, productID uuid.UUID, name string) (int64, error)
+	}
+)
+
+// InternalWrites end in Internal: a derived write never skips a scope.
+type InternalWrites interface {
+	CreateInOrgAndProductAndWorkspaceInternal(
+		ctx context.Context, orgID, productID uuid.UUID, wide model.Wide,
+	) (model.Wide, error)
+	UpdateByOrgAndProductAndWorkspaceAndIDInternal(
+		ctx context.Context, orgID, productID uuid.UUID, wide model.Wide,
+	) (model.Wide, error)
+	UpsertByOrgAndProductAndWorkspaceAndSlugInternal(
+		ctx context.Context, orgID, productID uuid.UUID, wide model.Wide,
+	) (model.Wide, error)
+}
+
 // WorkspaceForms name a context scope by its Go field: allowed on a read, refused
 // on a delete and on every write.
 type (
@@ -293,6 +320,9 @@ func _() {
 	nanorepo.Implement[BinWrites, binWritesImpl](table.Bin, nanorepo.NoMapper[model.Bin])
 	nanorepo.Implement[GlobalWrites, globalWritesImpl](table.Wglobal, nanorepo.NoMapper[model.Wglobal])
 	nanorepo.Implement[ViewWrites, viewWritesImpl](view.OrderLive, nanorepo.NoMapper[model.OrderLive])
+	nanorepo.Implement[BinNulls, binNullsImpl](table.BinNull, nanorepo.NoMapper[model.BinNull])
+	nanorepo.Implement[BinNvs, binNvsImpl](table.BinNv, nanorepo.NoMapper[model.BinNv])
+	nanorepo.Implement[InternalWrites, internalWritesImpl](table.Wide, nanorepo.NoMapper[model.Wide])
 	nanorepo.Implement[Collides, collidesImpl](table.Collide, nanorepo.NoMapper[model.Collide])
 	nanorepo.Implement[CollideWorkspaces, collideWorkspacesImpl](table.CollideWs, nanorepo.NoMapper[model.CollideWs])
 	nanorepo.Implement[CollideProducts, collideProductsImpl](table.CollideProduct, nanorepo.NoMapper[model.CollideProduct])
@@ -319,6 +349,9 @@ type (
 	binWritesImpl         struct{ binBase }
 	globalWritesImpl      struct{ wglobalBase }
 	viewWritesImpl        struct{ orderLiveBase }
+	binNullsImpl          struct{ binNullBase }
+	binNvsImpl            struct{ binNvBase }
+	internalWritesImpl    struct{ wideBase }
 	collidesImpl          struct{ collideBase }
 	collideWorkspacesImpl struct{ collideWsBase }
 	collideProductsImpl   struct{ collideProductBase }

@@ -47,6 +47,7 @@ type loaded struct {
 	// the columns that derived writes never set (Postgres.DatabaseColumns).
 	contextStamps   map[string]string
 	contextPresents map[string]string
+	contextFailOpen map[string]bool
 	databaseColumns []string
 	scopeImplies    map[string]string // column -> the column it determines, Postgres.ScopeImplies
 

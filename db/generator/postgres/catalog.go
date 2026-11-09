@@ -97,7 +97,8 @@ SELECT c.relname, con.conname, rn.nspname, rc.relname,
        to_json(ARRAY(SELECT a.attname
                      FROM unnest(con.confkey) WITH ORDINALITY AS k(attnum, ord)
                      JOIN pg_catalog.pg_attribute a ON a.attrelid = con.confrelid AND a.attnum = k.attnum
-                     ORDER BY k.ord))::text
+                     ORDER BY k.ord))::text,
+       NOT con.convalidated, con.confmatchtype = 'f'
 FROM pg_catalog.pg_constraint con
 JOIN pg_catalog.pg_class c ON c.oid = con.conrelid
 JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
@@ -119,7 +120,7 @@ func addForeignKeys(ctx context.Context, db *sql.DB, schemaName string, tables [
 		var table, columns, referenced string
 		var fk metadata.ForeignKey
 		if err = rows.Scan(&table, &fk.Name, &fk.ReferencedSchema, &fk.ReferencedTable, &columns,
-			&referenced); err != nil {
+			&referenced, &fk.NotValid, &fk.MatchFull); err != nil {
 			return fmt.Errorf("failed to scan a foreign key of schema '%s': %w", schemaName, err)
 		}
 		if err = json.Unmarshal([]byte(columns), &fk.Columns); err != nil {

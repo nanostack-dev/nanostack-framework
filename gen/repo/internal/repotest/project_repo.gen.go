@@ -55,6 +55,8 @@ func (r *projectRepositoryImpl) ExistsByTenantAndWorkspaceAndName(ctx context.Co
 // DeleteByTenantAndWorkspaceAndID is derived from its name:
 //
 //	DELETE FROM projects WHERE tenant_id = $1 AND workspacescope.Filter(ctx, workspace_id) AND id = $2
+//
+// FAIL-OPEN (reviewed): a context without workspace_id reaches every value of it (ContextScope.AllowFailOpenWrites).
 func (r *projectRepositoryImpl) DeleteByTenantAndWorkspaceAndID(ctx context.Context, tenantID uuid.UUID, id string) (bool, error) {
 	n, err := r.deleteWhere(ctx, r.where.TenantID(tenantID).AND(workspacescope.Filter(ctx, r.t.WorkspaceID)).AND(r.where.ID(id)))
 	return n > 0, err

@@ -37,6 +37,17 @@ var ContextStamps = map[string]string{ //nolint:gochecknoglobals // fixture
 	"workspace_id": "github.com/nanostack-dev/nanostack-framework/gen/repo/internal/repotest/workspacescope.Stamp",
 }
 
+// ContextPresents registers the function that reports whether a context
+// carries a workspace. The fixture itself sets none (the fail-open mode); the
+// tests of the context-only tables, which need it, pass it.
+var ContextPresents = map[string]string{ //nolint:gochecknoglobals // fixture
+	"workspace_id": "github.com/nanostack-dev/nanostack-framework/gen/repo/internal/repotest/workspacescope.Present",
+}
+
+// ContextFailOpen records that the fixture's derived deletes and updates keep
+// the fail-open workspace function (no Present): ContextScope.AllowFailOpenWrites.
+var ContextFailOpen = map[string]bool{"workspace_id": true} //nolint:gochecknoglobals // fixture
+
 // DatabaseColumns are the columns the database writes, as
 // Postgres.DatabaseColumns declares them.
 var DatabaseColumns = []string{"created_at", "updated_at"} //nolint:gochecknoglobals // fixture

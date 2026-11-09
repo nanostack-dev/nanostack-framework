@@ -155,6 +155,10 @@ type Options struct {
 	// reports whether a context carries a value for it: ContextScope.Present.
 	// A derived delete, update, upsert or create checks it first.
 	ContextPresents map[string]string
+	// ContextFailOpen holds the context tenant columns whose derived deletes
+	// and updates may keep a fail-open function without Present:
+	// ContextScope.AllowFailOpenWrites, a reviewed choice.
+	ContextFailOpen map[string]bool
 	// DatabaseColumns are the columns the database writes, which derived
 	// writes never set: Postgres.DatabaseColumns of nanogen/project.go.
 	DatabaseColumns []string
@@ -217,7 +221,7 @@ func Generate(opts Options) (*Result, error) {
 	l.scopes, l.contextScopes, l.sortByDirection = opts.Scopes, opts.ContextScopes, opts.SortByDirection
 	l.scopeNames, l.scopeImplies = opts.ScopeNames, opts.ScopeImplies
 	l.contextStamps, l.databaseColumns = opts.ContextStamps, opts.DatabaseColumns
-	l.contextPresents = opts.ContextPresents
+	l.contextPresents, l.contextFailOpen = opts.ContextPresents, opts.ContextFailOpen
 	if opts.Spec != "" {
 		if l.specPath, err = filepath.Abs(opts.Spec); err != nil {
 			return nil, gen.EnvErrorf("pass -spec with a path that exists", "resolve %s: %v", opts.Spec, err)
@@ -262,11 +266,11 @@ func Generate(opts Options) (*Result, error) {
 		return result, errors.Join(sortProblems(problems)...)
 	}
 	result.Files = out.files
+	if err = l.verifyOutput(res, opts, out.files); err != nil {
+		return result, err
+	}
 	result.Exemptions = exemptions(decls)
 	result.Warnings = l.scopeWarnings(pkg, decls, opts.Scopes)
-	for _, r := range res {
-		result.Warnings = append(result.Warnings, r.warnings...)
-	}
 	return result, nil
 }
 
@@ -413,7 +417,7 @@ func Main(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("nanostack gen repo", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	var opts Options
-	var scopes, contextScopes, scopeNames, scopeImplies, contextStamps, contextPresents, databaseColumns string
+	var scopes, contextScopes, scopeNames, scopeImplies, contextStamps, contextPresents, contextFailOpen, databaseColumns string
 	var explain, verify, inventory bool
 	fs.StringVar(&opts.Dir, "dir", ".", "package directory holding the nanorepo declarations")
 	fs.StringVar(&scopes, "scopes", "",
@@ -426,6 +430,9 @@ func Main(args []string, stdout, stderr io.Writer) int {
 		"comma-separated column=importpath.Func pairs, as ContextScope.Stamp in nanogen/project.go")
 	fs.StringVar(&contextPresents, "context-present", "",
 		"comma-separated column=importpath.Func pairs, as ContextScope.Present in nanogen/project.go")
+	fs.StringVar(&contextFailOpen, "context-fail-open", "",
+		"comma-separated context columns that allow fail-open derived deletes and updates, as "+
+			"ContextScope.AllowFailOpenWrites in nanogen/project.go")
 	fs.StringVar(&databaseColumns, "database-columns", "",
 		"comma-separated columns the database writes, as Postgres.DatabaseColumns in nanogen/project.go")
 	fs.StringVar(&scopeImplies, "scope-implies", "",
@@ -473,6 +480,7 @@ func Main(args []string, stdout, stderr io.Writer) int {
 		_, _ = fmt.Fprintf(stderr, "nanostack gen repo: %v\n", err)
 		return 2
 	}
+	addFailOpen(&opts, contextFailOpen)
 	if !checkImpliesFlag(opts, stderr) {
 		return 2
 	}

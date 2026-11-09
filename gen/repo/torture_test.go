@@ -24,7 +24,7 @@ func tortureOptions(dir string) Options {
 		ScopeNames:      torture.ScopeNames,
 		ScopeImplies:    torture.ScopeImplies,
 		ContextStamps:   torture.ContextStamps,
-		ContextPresents: torture.ContextPresents,
+		ContextPresents: torture.ContextPresents, ContextFailOpen: torture.ContextFailOpen,
 		DatabaseColumns: torture.DatabaseColumns,
 	}
 }
@@ -39,12 +39,8 @@ func TestTortureBaseIsCurrent(t *testing.T) {
 		gentest.Problems(t, err)
 		t.Fatal(err)
 	}
-	// The one tolerated warning: a derived delete of a table with a context scope
-	// that has no Present function (region_id) fails open.
-	for _, w := range res.Warnings {
-		if !strings.Contains(w.Error(), "Zones.DeleteBy") || !strings.Contains(w.Error(), "region_id") {
-			t.Errorf("warning on the torture fixture: %v", w)
-		}
+	if len(res.Warnings) > 0 {
+		t.Errorf("warnings on the torture fixture: %v", res.Warnings)
 	}
 	for _, f := range res.Files {
 		golden(t, f.Path, f.Data)

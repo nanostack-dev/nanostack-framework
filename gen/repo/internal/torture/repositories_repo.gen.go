@@ -863,14 +863,24 @@ var _ Notes = (*notesImpl)(nil)
 // FindByWorkspaceAndID is derived from its name:
 //
 //	SELECT * FROM note WHERE workspacescope.Filter(ctx, workspace_id) AND id = $1 LIMIT 2 -- at most one row: note_pkey (id); a second row is ErrMoreThanOneRow
+//
+// FAIL-CLOSED: a context without the scope fails with nanorepo.ErrNoContextScope, before any SQL.
 func (r *notesImpl) FindByWorkspaceAndID(ctx context.Context, id string) (functional.Option[model.Note], error) {
+	if !workspacescope.Present(ctx) {
+		return functional.None[model.Note](), nanorepo.ErrNoContextScope
+	}
 	return r.findOne(ctx, workspacescope.Filter(ctx, r.t.WorkspaceID).AND(r.where.ID(id)))
 }
 
 // GetByWorkspaceAndID is derived from its name:
 //
 //	SELECT * FROM note WHERE workspacescope.Filter(ctx, workspace_id) AND id = $1 LIMIT 2 -- at most one row: note_pkey (id); a second row is ErrMoreThanOneRow
+//
+// FAIL-CLOSED: a context without the scope fails with nanorepo.ErrNoContextScope, before any SQL.
 func (r *notesImpl) GetByWorkspaceAndID(ctx context.Context, id string) (model.Note, error) {
+	if !workspacescope.Present(ctx) {
+		return *new(model.Note), nanorepo.ErrNoContextScope
+	}
 	found, err := r.findOne(ctx, workspacescope.Filter(ctx, r.t.WorkspaceID).AND(r.where.ID(id)))
 	row, ok := found.Get()
 	if err == nil && !ok {
@@ -891,28 +901,48 @@ func (r *notesImpl) FindByWorkspaceIDAndID(ctx context.Context, workspaceID stri
 // FindByWorkspaceAndTitle is derived from its name:
 //
 //	SELECT * FROM note WHERE workspacescope.Filter(ctx, workspace_id) AND title = $1
+//
+// FAIL-CLOSED: a context without the scope fails with nanorepo.ErrNoContextScope, before any SQL.
 func (r *notesImpl) FindByWorkspaceAndTitle(ctx context.Context, title string) ([]model.Note, error) {
+	if !workspacescope.Present(ctx) {
+		return nil, nanorepo.ErrNoContextScope
+	}
 	return r.findAll(ctx, workspacescope.Filter(ctx, r.t.WorkspaceID).AND(r.where.Title(title)))
 }
 
 // FindByWorkspace is derived from its name:
 //
 //	SELECT * FROM note WHERE workspacescope.Filter(ctx, workspace_id)
+//
+// FAIL-CLOSED: a context without the scope fails with nanorepo.ErrNoContextScope, before any SQL.
 func (r *notesImpl) FindByWorkspace(ctx context.Context) ([]model.Note, error) {
+	if !workspacescope.Present(ctx) {
+		return nil, nanorepo.ErrNoContextScope
+	}
 	return r.findAll(ctx, workspacescope.Filter(ctx, r.t.WorkspaceID))
 }
 
 // CountByWorkspace is derived from its name:
 //
 //	SELECT COUNT(*) FROM note WHERE workspacescope.Filter(ctx, workspace_id)
+//
+// FAIL-CLOSED: a context without the scope fails with nanorepo.ErrNoContextScope, before any SQL.
 func (r *notesImpl) CountByWorkspace(ctx context.Context) (int64, error) {
+	if !workspacescope.Present(ctx) {
+		return 0, nanorepo.ErrNoContextScope
+	}
 	return r.count(ctx, workspacescope.Filter(ctx, r.t.WorkspaceID))
 }
 
 // ExistsByWorkspaceAndTitle is derived from its name:
 //
 //	SELECT COUNT(*) FROM (SELECT 1 FROM note WHERE workspacescope.Filter(ctx, workspace_id) AND title = $1 LIMIT 1) found
+//
+// FAIL-CLOSED: a context without the scope fails with nanorepo.ErrNoContextScope, before any SQL.
 func (r *notesImpl) ExistsByWorkspaceAndTitle(ctx context.Context, title string) (bool, error) {
+	if !workspacescope.Present(ctx) {
+		return false, nanorepo.ErrNoContextScope
+	}
 	return r.exists(ctx, workspacescope.Filter(ctx, r.t.WorkspaceID).AND(r.where.Title(title)))
 }
 
@@ -978,21 +1008,36 @@ var _ Drafts = (*draftsImpl)(nil)
 // FindByWorkspaceAndID is derived from its name:
 //
 //	SELECT * FROM draft WHERE workspacescope.Filter(ctx, workspace_id) AND id = $1 LIMIT 2 -- at most one row: draft_pkey (id); a second row is ErrMoreThanOneRow
+//
+// FAIL-CLOSED: a context without the scope fails with nanorepo.ErrNoContextScope, before any SQL.
 func (r *draftsImpl) FindByWorkspaceAndID(ctx context.Context, id string) (functional.Option[model.Draft], error) {
+	if !workspacescope.Present(ctx) {
+		return functional.None[model.Draft](), nanorepo.ErrNoContextScope
+	}
 	return r.findOne(ctx, workspacescope.Filter(ctx, r.t.WorkspaceID).AND(r.where.ID(id)))
 }
 
 // FindByWorkspaceAndTitle is derived from its name:
 //
 //	SELECT * FROM draft WHERE workspacescope.Filter(ctx, workspace_id) AND title = $1
+//
+// FAIL-CLOSED: a context without the scope fails with nanorepo.ErrNoContextScope, before any SQL.
 func (r *draftsImpl) FindByWorkspaceAndTitle(ctx context.Context, title string) ([]model.Draft, error) {
+	if !workspacescope.Present(ctx) {
+		return nil, nanorepo.ErrNoContextScope
+	}
 	return r.findAll(ctx, workspacescope.Filter(ctx, r.t.WorkspaceID).AND(r.where.Title(title)))
 }
 
 // CountByWorkspace is derived from its name:
 //
 //	SELECT COUNT(*) FROM draft WHERE workspacescope.Filter(ctx, workspace_id)
+//
+// FAIL-CLOSED: a context without the scope fails with nanorepo.ErrNoContextScope, before any SQL.
 func (r *draftsImpl) CountByWorkspace(ctx context.Context) (int64, error) {
+	if !workspacescope.Present(ctx) {
+		return 0, nanorepo.ErrNoContextScope
+	}
 	return r.count(ctx, workspacescope.Filter(ctx, r.t.WorkspaceID))
 }
 
@@ -1166,6 +1211,8 @@ func (r *zonesImpl) ExistsByOrgAndWorkspaceAndRegionAndName(ctx context.Context,
 //
 //	DELETE FROM zone WHERE org_id = $1 AND workspacescope.Filter(ctx, workspace_id) AND regionscope.Filter(ctx, region_id) AND name = $2
 //
+// FAIL-OPEN (reviewed): a context without region_id reaches every value of it (ContextScope.AllowFailOpenWrites).
+//
 // FAIL-CLOSED: a context without the scope fails with nanorepo.ErrNoContextScope, before any SQL.
 func (r *zonesImpl) DeleteByOrgAndWorkspaceAndRegionAndName(ctx context.Context, orgID uuid.UUID, name string) (int64, error) {
 	if !workspacescope.Present(ctx) {
@@ -1177,6 +1224,8 @@ func (r *zonesImpl) DeleteByOrgAndWorkspaceAndRegionAndName(ctx context.Context,
 // DeleteByOrgAndWorkspaceAndRegionAndID is derived from its name:
 //
 //	DELETE FROM zone WHERE org_id = $1 AND workspacescope.Filter(ctx, workspace_id) AND regionscope.Filter(ctx, region_id) AND id = $2
+//
+// FAIL-OPEN (reviewed): a context without region_id reaches every value of it (ContextScope.AllowFailOpenWrites).
 //
 // FAIL-CLOSED: a context without the scope fails with nanorepo.ErrNoContextScope, before any SQL.
 func (r *zonesImpl) DeleteByOrgAndWorkspaceAndRegionAndID(ctx context.Context, orgID uuid.UUID, id string) (bool, error) {
@@ -1310,6 +1359,27 @@ func (r *shelvesImpl) FindByOrgAndProductAndName(ctx context.Context, orgID uuid
 //	DELETE FROM shelf WHERE org_id = $1 AND product_id = $2 AND name = $3
 func (r *shelvesImpl) DeleteByOrgAndProductAndName(ctx context.Context, orgID uuid.UUID, productID uuid.UUID, name string) (int64, error) {
 	return r.deleteWhere(ctx, r.where.OrgID(orgID).AND(r.where.ProductID(productID)).AND(r.where.Name(name)))
+}
+
+// BinFulls on *binFullsImpl: 2 derived methods on table bin_full; the other methods are
+// hand-written (nanostack gen repo -explain lists each one).
+//
+// A compile error on the next line means BinFulls gained or lost a method since
+// the last run: run nanostack gen repo.
+var _ BinFulls = (*binFullsImpl)(nil)
+
+// FindByProductAndName is derived from its name:
+//
+//	SELECT * FROM bin_full WHERE product_id = $1 AND name = $2
+func (r *binFullsImpl) FindByProductAndName(ctx context.Context, productID uuid.UUID, name string) ([]model.BinFull, error) {
+	return r.findAll(ctx, r.where.ProductID(productID).AND(r.where.Name(name)))
+}
+
+// DeleteByProductAndName is derived from its name:
+//
+//	DELETE FROM bin_full WHERE product_id = $1 AND name = $2
+func (r *binFullsImpl) DeleteByProductAndName(ctx context.Context, productID uuid.UUID, name string) (int64, error) {
+	return r.deleteWhere(ctx, r.where.ProductID(productID).AND(r.where.Name(name)))
 }
 
 // Members on *membersImpl: 5 derived methods on table member; the other methods are

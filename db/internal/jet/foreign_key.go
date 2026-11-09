@@ -18,4 +18,11 @@ type ForeignKey struct {
 	// on MySQL) when it is not the schema of the table. It is empty when both
 	// tables are in the same schema.
 	ReferencedSchema string
+	// NotValid is set when PostgreSQL has not validated the constraint
+	// (NOT VALID): rows that predate it may break it, so it proves nothing.
+	NotValid bool
+	// MatchFull is set for MATCH FULL. With the default MATCH SIMPLE a row
+	// is not checked when any referencing column is NULL; MATCH FULL checks
+	// it unless all are NULL.
+	MatchFull bool
 }

@@ -13,6 +13,8 @@ type foreignKey struct {
 	references string   // referenced table
 	refColumns []string // referenced columns, in the order of columns
 	refSchema  string   // schema of the referenced table when it differs, else ""
+	notValid   bool     // NOT VALID: rows that predate the constraint may break it
+	matchFull  bool     // MATCH FULL: checked unless every referencing column is NULL
 }
 
 func (k foreignKey) String() string {
@@ -64,6 +66,10 @@ func foreignKeysOf(body *ast.BlockStmt) []foreignKey {
 				k.refColumns = stringList(kv.Value)
 			case "ReferencedSchema":
 				k.refSchema, _ = stringLit(kv.Value)
+			case "NotValid":
+				k.notValid = isTrue(kv.Value)
+			case "MatchFull":
+				k.matchFull = isTrue(kv.Value)
 			}
 		}
 		keys = append(keys, k)
@@ -99,4 +105,10 @@ func stringList(e ast.Expr) []string {
 		}
 	}
 	return out
+}
+
+// isTrue reports whether e is the identifier true.
+func isTrue(e ast.Expr) bool {
+	id := identOf(e)
+	return id != nil && id.Name == "true"
 }

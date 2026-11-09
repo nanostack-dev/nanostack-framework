@@ -33,7 +33,6 @@ type resolution struct {
 	recvPtr   bool   // generated methods take a pointer receiver
 	via       string // "r." or "r.itemsBase." when the implementation embeds several bases
 	problems  []error
-	warnings  []*gen.Error    // a derived delete or update that a bare context lets reach every workspace
 	missing   []string        // methods with no implementation: compile errors they cause are not reported twice
 	searches  []*searchMethod // generated methods that run a declared search
 	takes     []string        // the builder types that a method of the interface takes, XSearch
@@ -140,25 +139,6 @@ func (r *resolver) run(d *declarations) {
 			"%s has derived methods, which run on the generated %s, but %s does not embed it",
 			name, r.t.baseName(), r.b.impl.Obj().Name()))
 	}
-}
-
-// warnFailOpen warns of a derived delete or update on a table with a context
-// scope whose function reads TRUE without a value and that has no Present
-// function: a context without it reaches every value of the column.
-func (r *resolver) warnFailOpen(fn *types.Func, m *derivedMethod) {
-	if len(m.failOpen) == 0 || (m.op != opDelete && m.op != opUpdate) {
-		return
-	}
-	cols := make([]string, len(m.failOpen))
-	for i, c := range m.failOpen {
-		cols[i] = c.col
-	}
-	file, line := r.l.position(r.l.pkg.Fset, fn.Pos())
-	r.res.warnings = append(r.res.warnings, gen.Errorf(file, line,
-		"set Present in the ContextScope of "+strings.Join(cols, " and ")+" in nanogen/project.go, so that the "+
-			"method fails with nanorepo.ErrNoContextScope on a context without it",
-		"%s.%s: a context without %s makes this derived %s reach every value of it: the registered filter reads "+
-			"TRUE then", r.b.iface.Obj().Name(), fn.Name(), strings.Join(cols, " and "), m.op))
 }
 
 // line records the explanation of fn.

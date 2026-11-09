@@ -117,19 +117,7 @@ func (e *emitter) binding(r *resolution) {
 	rs := &resolver{t: t}
 	for _, m := range r.derived {
 		e.p("// %s is derived from its name:\n//\n//\t%s\n", m.fn.Name(), rs.methodSQL(m))
-		for _, col := range m.cross {
-			word := strings.TrimSuffix(col, "_id")
-			e.p("//\n// CROSS-%s: %s from a parameter, not from ctx: the registered function is not applied.\n",
-				strings.ToUpper(word), word)
-		}
-		if m.unscoped {
-			cols := make([]string, len(m.skipped))
-			for i, f := range m.skipped {
-				cols[i] = columnOf(t, f)
-			}
-			e.p("//\n// UNSCOPED: the name ends in Internal, so it does not filter on %s.\n",
-				strings.Join(cols, " or "))
-		}
+		e.methodNotes(m, t)
 		body := ""
 		if m.op.isWrite() {
 			body = e.writeBody(m, b, r.via)
@@ -238,6 +226,32 @@ func (e *emitter) body(m *derivedMethod, via string) string {
 	case shapeAffected:
 	}
 	return "\treturn " + call("deleteWhere") + "\n"
+}
+
+// methodNotes writes the review comments of a derived method: a context scope
+// read from a parameter, a skipped scope, a reviewed fail-open choice.
+func (e *emitter) methodNotes(m *derivedMethod, t *tableBase) {
+	for _, col := range m.cross {
+		word := strings.TrimSuffix(col, "_id")
+		e.p("//\n// CROSS-%s: %s from a parameter, not from ctx: the registered function is not applied.\n",
+			strings.ToUpper(word), word)
+	}
+	if m.unscoped {
+		cols := make([]string, len(m.skipped))
+		for i, f := range m.skipped {
+			cols[i] = columnOf(t, f)
+		}
+		e.p("//\n// UNSCOPED: the name ends in Internal, so it does not filter on %s.\n",
+			strings.Join(cols, " or "))
+	}
+	if len(m.failOpen) > 0 {
+		cols := make([]string, len(m.failOpen))
+		for i, c := range m.failOpen {
+			cols[i] = c.col
+		}
+		e.p("//\n// FAIL-OPEN (reviewed): a context without %s reaches every value of it "+
+			"(ContextScope.AllowFailOpenWrites).\n", strings.Join(cols, " or "))
+	}
 }
 
 // presentGuard renders the check that a delete or a write makes first: each
