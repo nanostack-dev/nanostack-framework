@@ -1,5 +1,5 @@
 // A module that does not require the root framework module: the base that
-// nano gen repo writes imports pkg/db/transactor, which it cannot load.
+// nanostack gen repo writes imports pkg/db/transactor, which it cannot load.
 module example.com/module
 
 go 1.27

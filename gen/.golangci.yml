@@ -108,20 +108,20 @@ linters:
             - pkg: github.com/nanostack-dev/nanostack-framework/pkg/
               desc: pkg is legacy; move what the generators need into core
             - pkg: github.com/nanostack-dev/nanostack-framework/modules/
-              desc: modules is legacy Fx wiring; the layers use core/nano and nano gen wire
+              desc: modules is legacy Fx wiring; the layers use core/nano and nanostack gen wire
             - pkg: github.com/nanostack-dev/nanostack-framework/app$
-              desc: app is legacy Fx assembly; the layers use core/nano and nano gen wire
+              desc: app is legacy Fx assembly; the layers use core/nano and nanostack gen wire
             - pkg: github.com/nanostack-dev/nanostack-framework/app/
-              desc: app is legacy Fx assembly; the layers use core/nano and nano gen wire
+              desc: app is legacy Fx assembly; the layers use core/nano and nanostack gen wire
         # zerolog is denied everywhere by the base rules.
         tooling uses no fx:
           files:
             - $all
           deny:
             - pkg: go.uber.org/fx
-              desc: the layers replace Fx; use core/nano and nano gen wire (ADR 0013)
+              desc: the layers replace Fx; use core/nano and nanostack gen wire (ADR 0013)
             - pkg: go.uber.org/dig
-              desc: the layers replace Fx; use core/nano and nano gen wire (ADR 0013)
+              desc: the layers replace Fx; use core/nano and nanostack gen wire (ADR 0013)
     errcheck:
       check-type-assertions: true
     exhaustive:

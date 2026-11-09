@@ -1,7 +1,7 @@
 // Package config is the small runtime behind generated configuration binders.
 //
 // A service declares its configuration as plain Go structs with struct tags.
-// `nano gen config` reads those structs and writes a Bind function that has no
+// `nanostack gen config` reads those structs and writes a Bind function that has no
 // reflection: one block per setting that looks the value up, parses it,
 // validates it and records every issue. This package supplies what that
 // generated code calls:

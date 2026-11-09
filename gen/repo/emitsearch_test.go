@@ -131,7 +131,7 @@ func searchLines(src []byte) map[string]int {
 	return counts
 }
 
-// The forward stub of testdata/builder declares the builders before nano
+// The forward stub of testdata/builder declares the builders before nanostack
 // gen repo runs: the package, whose hand-written code names them and whose
 // From function takes the generated scope struct, type-checks with it.
 func TestBuilderForwardStub(t *testing.T) {
@@ -144,7 +144,7 @@ func TestBuilderForwardStub(t *testing.T) {
 			t.Fatalf("no stub of %s: %v", name, stubs)
 		}
 		if !bytes.HasPrefix(stub, []byte(header)) {
-			t.Errorf("the stub of %s has no nano gen repo header", name)
+			t.Errorf("the stub of %s has no nanostack gen repo header", name)
 		}
 	}
 	if !bytes.Contains(stubs[filepath.Join(dir, "joined_repo.gen.go")], []byte("type ItemOfTenantScope struct")) {
@@ -160,7 +160,7 @@ func TestBuilderForwardStub(t *testing.T) {
 	}
 }
 
-// The forward stub of a search that nano gen repo cannot write yet has its
+// The forward stub of a search that nanostack gen repo cannot write yet has its
 // scope struct and no builder: the From function that takes the struct
 // type-checks, and nothing names a builder that the run will not write.
 func TestBuilderForwardStubOfAnUnbuiltSearch(t *testing.T) {
@@ -196,7 +196,7 @@ func TestBuilderForwardStubCache(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(root) })
-	// nano gen db writes the model and enum packages next to the table
+	// nanostack gen db writes the model and enum packages next to the table
 	// package; only the table package comes late here.
 	public := "internal/repotest/db/shop/public"
 	for _, pkg := range []string{"model", "enum"} {
@@ -415,13 +415,13 @@ func TestAPIBuildsAndVets(t *testing.T) {
 }
 
 // The forward stub of testdata/apibind holds the mapper of Window in the
-// handler package, so that package type-checks before nano gen repo runs.
+// handler package, so that package type-checks before nanostack gen repo runs.
 func TestAPIForwardStub(t *testing.T) {
 	t.Parallel()
 	stubs := ForwardStubs(mustAbs(t, "testdata/apibind"))
 	got := string(stubs[mustAbs(t, "testdata/apibind/handler/window_search_api.gen.go")])
 	if !strings.Contains(got, "func WindowSearchFromAPI(tenantID uuid.UUID, body *apigen.WindowSearchRequest) "+
-		"apibind.WindowSearch {") || !strings.Contains(got, `panic("nano gen stub")`) {
+		"apibind.WindowSearch {") || !strings.Contains(got, `panic("nanostack gen stub")`) {
 		t.Errorf("the stub of the handler package has no WindowSearchFromAPI that panics:\n%s", got)
 	}
 }

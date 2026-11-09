@@ -2,7 +2,7 @@
 // connect the generated std-http strict server to nanohttp and problem, and
 // make union types decode as strictly as the request body.
 //
-// nano gen api (package gen/api in the gen module) runs oapi-codegen v2.8.2
+// nanostack gen api (package gen/api in the gen module) runs oapi-codegen v2.8.2
 // in-process with these overrides. Its configuration, written for
 // oapi-codegen's command, is:
 //
@@ -20,7 +20,7 @@
 //	    strict/strict-http.tmpl: <path to strict/strict-http.tmpl>
 //	    union.tmpl: <path to union.tmpl>
 //
-// The pipeline then runs nano gen validate on the same package: the
+// The pipeline then runs nanostack gen validate on the same package: the
 // overridden template calls the Validate and validateParams methods it
 // generates, so the package does not compile until they exist and match the
 // spec.

@@ -21,7 +21,7 @@ const (
 )
 
 // apiMapper is <Name>SearchFromAPI, the mapper from the request body of
-// the API to the builder (design S13). nano gen repo writes it only when
+// the API to the builder (design S13). nanostack gen repo writes it only when
 // the body and the declaration agree both ways.
 type apiMapper struct {
 	body     *types.Named
@@ -66,7 +66,7 @@ type apiCheck struct {
 	problems int
 }
 
-// planAPI checks the API binding of a search whose builder nano gen repo
+// planAPI checks the API binding of a search whose builder nanostack gen repo
 // writes, and plans its mapper. It reports an exemption without API too.
 func (c *collector) planAPI(s *searchDecl) {
 	if s.api == nil {
@@ -83,8 +83,13 @@ func (c *collector) planAPI(s *searchDecl) {
 	}
 	body, ok := types.Unalias(s.api).(*types.Named)
 	if _, isStruct := s.api.Underlying().(*types.Struct); !ok || !isStruct {
-		c.errorf(s.apiNode, "pass the request body struct that nano gen api writes, such as API[apigen.XSearchRequest]",
-			"search %s: API[%s] is not a named struct", s.name, c.qualified(s.api))
+		c.errorf(
+			s.apiNode,
+			"pass the request body struct that nanostack gen api writes, such as API[apigen.XSearchRequest]",
+			"search %s: API[%s] is not a named struct",
+			s.name,
+			c.qualified(s.api),
+		)
 		return
 	}
 	if s.builder == nil || len(s.unbuilt) > 0 {
@@ -96,7 +101,7 @@ func (c *collector) planAPI(s *searchDecl) {
 		return
 	}
 	if c.l.specPath == "" { // A7
-		c.errorf(s.apiNode, "set API.Spec in nanogen/project.go, or run nano gen repo with -spec <openapi file>",
+		c.errorf(s.apiNode, "set API.Spec in nanogen/project.go, or run nanostack gen repo with -spec <openapi file>",
 			"search %s declares API[%s], and nanogen/project.go has no API: the sort_by values and the page "+
 				"size cannot be checked", s.name, body.Obj().Name())
 		return
@@ -164,7 +169,7 @@ func (a *apiCheck) props(n *yaml.Node) []apiProp {
 	props, unresolved := a.spec.props(n)
 	for _, ref := range unresolved {
 		a.specErrorf(ref.Line, "reference a schema of components.schemas in the same document",
-			"%s: nano gen repo cannot follow $ref %s, so it cannot check the properties behind it", a.name,
+			"%s: nanostack gen repo cannot follow $ref %s, so it cannot check the properties behind it", a.name,
 			ref.Value)
 	}
 	return props
@@ -176,7 +181,7 @@ func (a *apiCheck) field(st *types.Struct, owner string, p *apiProp) (*types.Var
 	if v := fieldByJSON(st, p.name); v != nil {
 		return v, true
 	}
-	a.specErrorf(p.line, "run nano gen api, so that the Go types match the spec",
+	a.specErrorf(p.line, "run nanostack gen api, so that the Go types match the spec",
 		"%s.%s has no Go field with the json name %q", owner, p.name, p.name)
 	return nil, false
 }

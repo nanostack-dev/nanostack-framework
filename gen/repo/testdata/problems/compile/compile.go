@@ -1,4 +1,4 @@
-// Package compile has a compile error of its own; nano gen repo reports it
+// Package compile has a compile error of its own; nanostack gen repo reports it
 // at its line and writes nothing.
 package compile
 

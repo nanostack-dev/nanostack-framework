@@ -1,5 +1,5 @@
 // Package httpconf stands in for a framework module that ships its own
-// configuration struct, to prove nano gen config binds types of other packages.
+// configuration struct, to prove nanostack gen config binds types of other packages.
 package httpconf
 
 import "time"

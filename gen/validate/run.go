@@ -35,7 +35,7 @@ func run(opts Options) (*Result, []string, error) {
 	return res, written, errors.Join(syncErr, res.Gaps())
 }
 
-// Main runs `nano gen validate -spec file [-dir dir] [-out file] [-check]`
+// Main runs `nanostack gen validate -spec file [-dir dir] [-out file] [-check]`
 // and returns the exit code: 0 on success, 1 on a source error, stale output
 // or an unaccepted validation gap, 2 on bad flags, 3 when the environment
 // fails; -h prints the flags and returns 0. It is a gen.Command.
@@ -50,7 +50,7 @@ func run(opts Options) (*Result, []string, error) {
 //	  x-nano-unenforced: "the handler checks the variant"
 //	  oneOf: [...]
 func Main(args []string, stdout, stderr io.Writer) int {
-	fs := flag.NewFlagSet("nano gen validate", flag.ContinueOnError)
+	fs := flag.NewFlagSet("nanostack gen validate", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	var opts Options
 	fs.StringVar(&opts.Spec, "spec", "", "OpenAPI 3.0 or 3.1 document")
@@ -61,7 +61,7 @@ func Main(args []string, stdout, stderr io.Writer) int {
 		return exit
 	}
 	if opts.Spec == "" {
-		_, _ = fmt.Fprintln(stderr, "nano gen validate: -spec is required")
+		_, _ = fmt.Fprintln(stderr, "nanostack gen validate: -spec is required")
 		return 2
 	}
 	res, written, err := run(opts)
@@ -73,7 +73,7 @@ func Main(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 	for _, path := range written {
-		_, _ = fmt.Fprintf(stdout, "nano gen validate: wrote %s\n", path)
+		_, _ = fmt.Fprintf(stdout, "nanostack gen validate: wrote %s\n", path)
 	}
 	return gen.Report(stderr, "validate", err)
 }

@@ -6,7 +6,7 @@ The package imports only the standard library, `core/secret` and `core/fault`, n
 
 | API | Purpose |
 |---|---|
-| `ConfigFromEnv(getenv)`, `Settings`, `Config`, `New`, `NewHandler` | The process handler: JSON in production, text on a development terminal, level from `LOG_LEVEL`, source locations, service identity, `Config.ContextAttrs` (`trace_id`/`span_id` from `tracing.LogAttrs`), and an optional `Export` handler fanned out with `slog.NewMultiHandler`. `Settings` is the same configuration as a struct that `nano gen config` binds |
+| `ConfigFromEnv(getenv)`, `Settings`, `Config`, `New`, `NewHandler` | The process handler: JSON in production, text on a development terminal, level from `LOG_LEVEL`, source locations, service identity, `Config.ContextAttrs` (`trace_id`/`span_id` from `tracing.LogAttrs`), and an optional `Export` handler fanned out with `slog.NewMultiHandler`. `Settings` is the same configuration as a struct that `nanostack gen config` binds |
 | `Wire`, `WireSlog`, `WireLegacy`, `ParseWire` | The key names and units of the JSON output: slog's shape, or the zerolog shape that the shared collector and alerts read (see [Legacy wire](#legacy-wire)) |
 | `WithScope`, `SetAttrs`, `WithAttrs`, `Attrs`, `RequestID` | Attributes carried on the context and written by the handler on every line |
 | `Key*` constants | The shared keys: `request_id`, `component`, `org_id`, `workspace_id`, `user_id`, `error`, `trace_id`, `span_id`, and the keys of the request summary (`method`, `path`, `route`, `status`, `bytes_out`, `duration`, `client_ip`, `query`, `user_agent`, `client_canceled`, `hijacked`, `panic`) |

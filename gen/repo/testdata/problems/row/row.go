@@ -1,4 +1,4 @@
-// Package row declares searches whose Row nano gen repo refuses (design
+// Package row declares searches whose Row nanostack gen repo refuses (design
 // S9.1): a key column with no Row field and a Row field that selects
 // nothing (E25), and a field that cannot hold the NULL its column can be
 // (E26). Each search shows one shape.

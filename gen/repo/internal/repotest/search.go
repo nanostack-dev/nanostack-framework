@@ -7,7 +7,7 @@ import (
 	"github.com/nanostack-dev/nanostack-framework/gen/repo/internal/repotest/db/shop/public/table"
 )
 
-// This file declares only a search. nano gen repo writes its builder into
+// This file declares only a search. nanostack gen repo writes its builder into
 // search_repo.gen.go, and the integration tests run it on PostgreSQL: every
 // field type, and a keyset walk on a key of each kind of column.
 func _() {

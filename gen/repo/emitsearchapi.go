@@ -22,7 +22,7 @@ func (e *emitter) searchAPI(b *builder, own func(string) string, stub bool) {
 		m.body.Obj().Name(), article(q), q)
 	sig := "func " + mapperName(s) + "(" + strings.Join(append(params, "body *"+e.typ(m.body)), ", ") + ") " + own(q)
 	if stub {
-		e.p("%s { panic(\"nano gen stub\") }\n\n", sig)
+		e.p("%s { panic(\"nanostack gen stub\") }\n\n", sig)
 		return
 	}
 	newQ := own("New"+q) + "(" + strings.Join(args, ", ") + ")"

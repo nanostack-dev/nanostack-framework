@@ -1,5 +1,5 @@
 // Package apigen holds the request bodies and strict-server request objects
-// of openapi.yaml, as nano gen api writes them.
+// of openapi.yaml, as nanostack gen api writes them.
 package apigen
 
 import (

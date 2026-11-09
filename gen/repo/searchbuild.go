@@ -16,7 +16,7 @@ import (
 // section 4.2).
 const defaultLimit = 20
 
-// builder is what nano gen repo writes for one search (design 4.2): the
+// builder is what nanostack gen repo writes for one search (design 4.2): the
 // builder type, its scope type, its sort enum, its spec and one accessor per
 // filter. The search method is not part of it.
 type builder struct {
@@ -99,7 +99,7 @@ var reservedFields = []string{ //nolint:gochecknoglobals // read-only table.
 }
 
 // planBuilder works out the builder of a search that reads without a
-// problem. A shape that nano gen repo cannot write yet, or cannot write at
+// problem. A shape that nanostack gen repo cannot write yet, or cannot write at
 // all, is a problem of the search, kept apart from the problems of the
 // declarations so that -explain still shows the search.
 func (c *collector) planBuilder(s *searchDecl) {
@@ -274,7 +274,7 @@ func (l *loaded) checkBuilderNames(d *declarations) []error {
 			if obj := scope.Lookup(name); obj != nil && obj.Pos().IsValid() {
 				file, line := l.position(l.pkg.Fset, obj.Pos())
 				problems = append(problems, gen.Errorf(file, line, "rename it, or rename the search",
-					"%s is declared here, and nano gen repo declares it for search %s", name, s.name))
+					"%s is declared here, and nanostack gen repo declares it for search %s", name, s.name))
 			}
 		}
 		problems = append(problems, l.checkBuilderMethods(s)...)
@@ -283,7 +283,7 @@ func (l *loaded) checkBuilderNames(d *declarations) []error {
 }
 
 // checkBuilderMethods reports a hand-written method of the builder of s
-// that has the name of a generated accessor or of FullText. The files nano
+// that has the name of a generated accessor or of FullText. The files nanostack
 // gen repo wrote are empty in l.pkg, so every method found is hand-written.
 func (l *loaded) checkBuilderMethods(s *searchDecl) []error {
 	generated := map[string]bool{}
@@ -309,7 +309,7 @@ func (l *loaded) checkBuilderMethods(s *searchDecl) []error {
 			}
 			file, line := l.position(l.pkg.Fset, fd.Pos())
 			problems = append(problems, gen.Errorf(file, line, fix,
-				"%sSearch.%s is declared here, and nano gen repo declares it for search %s", s.name,
+				"%sSearch.%s is declared here, and nanostack gen repo declares it for search %s", s.name,
 				fd.Name.Name, s.name))
 		}
 	}

@@ -40,7 +40,7 @@ const (
 	seScoreNL seSort = "score_nulls_last"
 )
 
-// seScope is the scope struct of the item search, as nano gen repo writes it.
+// seScope is the scope struct of the item search, as nanostack gen repo writes it.
 type seScope struct {
 	_     struct{} // keyed fields only
 	Org   string   // items.org and teams.org

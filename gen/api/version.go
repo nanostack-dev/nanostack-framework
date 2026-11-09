@@ -11,7 +11,7 @@ import (
 const modulePath = "github.com/oapi-codegen/oapi-codegen/v2"
 
 // getFix is the fix of every version problem: the service module pins the
-// version that nano resolves.
+// version that nanostack resolves.
 const getFix = "go get " + modulePath + "@" + oapitemplates.OapiCodegenVersion
 
 // readBuildInfo is debug.ReadBuildInfo; a test replaces it.
@@ -30,7 +30,7 @@ func pinnedVersion() (string, error) {
 func checkVersion(info *debug.BuildInfo, ok bool) (string, error) {
 	want := oapitemplates.OapiCodegenVersion
 	if !ok || info == nil {
-		return "", gen.EnvErrorf("build nano from its module: go tool nano, or go run .../gen/cmd/nano",
+		return "", gen.EnvErrorf("build nano from its module: go tool nanostack, or go run .../gen/cmd/nanostack",
 			"the nano binary has no build information, so the oapi-codegen version is unknown; "+
 				"nano templates are pinned to %s", want)
 	}

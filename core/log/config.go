@@ -131,7 +131,7 @@ func ConfigFromEnv(getenv func(string) string) (Config, error) {
 }
 
 // Settings is the process logging configuration in the form a config binder
-// fills: plain strings with config tags. nano gen config binds it, and its env
+// fills: plain strings with config tags. nanostack gen config binds it, and its env
 // tags are the variables ConfigFromEnv reads, so a service that moves to typed
 // configuration keeps its deployment's names. Call Config to validate it.
 //

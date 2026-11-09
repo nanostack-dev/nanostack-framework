@@ -16,7 +16,7 @@ import (
 const schemaRef = "#/components/schemas/"
 
 // apiSpec is the OpenAPI document, kept as YAML nodes so that a problem
-// names the line of the spec. nano gen repo reads what the both-ways check
+// names the line of the spec. nanostack gen repo reads what the both-ways check
 // needs (design S13): the request body schemas, their properties after
 // allOf, the sort_by enum, and the limits.
 type apiSpec struct {

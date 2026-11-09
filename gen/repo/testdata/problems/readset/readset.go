@@ -1,7 +1,7 @@
 // Package readset holds one wrong read set per rule of design S5: a column
 // or a function that reads an instance the search does not read (E5, E6),
 // a call outside the allowlist (E7), a RIGHT, FULL or CROSS join (E28), a
-// join that can repeat rows (E31), and an instance read twice. nano gen repo
+// join that can repeat rows (E31), and an instance read twice. nanostack gen repo
 // reports every one of them in one run.
 package readset
 
@@ -14,7 +14,7 @@ import (
 	"github.com/nanostack-dev/nanostack-framework/gen/repo/internal/repotest/db/shop/public/table"
 )
 
-// parent is a prebuilt instance: nano gen repo reads functions, not values.
+// parent is a prebuilt instance: nanostack gen repo reads functions, not values.
 var parent = table.Tenants.AS("parent")
 
 // expensiveCondition is a prebuilt expression.
@@ -74,7 +74,7 @@ func _() {
 	nanorepo.Search[model.Tenants]("TenantItem", table.Tenants, nanorepo.From(tenantsAndTheirItems))
 	nanorepo.Search[model.Items]("OrJoin", table.Items, nanorepo.From(itemsOrTenants))
 	nanorepo.Search[model.Tenants]("HalfKey", table.Tenants, nanorepo.From(tenantsAndOneSku))
-	// A From helper that nano gen repo cannot read.
+	// A From helper that nanostack gen repo cannot read.
 	nanorepo.Search[model.Items]("HelperTwoSteps", table.Items, nanorepo.From(viaHelperInTwoSteps))
 
 	// E7: a prebuilt DB value in a package variable whose type is not a DB
@@ -348,7 +348,7 @@ func tenantKeyWithItself() postgres.ReadableTable {
 	return table.Items.INNER_JOIN(table.Tenants, table.Tenants.ID.EQ(table.Tenants.ID))
 }
 
-// nameScope stands for the scope value that nano gen repo generates.
+// nameScope stands for the scope value that nanostack gen repo generates.
 type nameScope struct{ TenantName string }
 
 var fixedScope = nameScope{TenantName: "acme"}

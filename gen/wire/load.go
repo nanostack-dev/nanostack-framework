@@ -100,7 +100,7 @@ func loadManifest(opts Options) (*manifest, error) {
 			}
 		}
 		if len(extra) == before {
-			return nil, gen.Errorf("", 0, "report this nano gen wire bug with the manifest",
+			return nil, gen.Errorf("", 0, "report this nanostack gen wire bug with the manifest",
 				"cannot load the syntax of %v", extra)
 		}
 		slices.Sort(extra)
@@ -120,7 +120,7 @@ func load(opts Options, extra []string) ([]*packages.Package, error) {
 		BuildFlags: []string{"-tags=" + strings.Join(tags, ",")},
 		Overlay:    overlay,
 	}
-	pkgs, err := packages.Load(cfg, append([]string{"."}, extra...)...)
+	pkgs, err := gopkg.Load(cfg, append([]string{"."}, extra...)...)
 	if err != nil {
 		return nil, gopkg.LoadFailed(opts.Dir, err)
 	}
@@ -189,7 +189,7 @@ func (w *walker) walk() (*manifest, error) {
 	m := w.m
 	root := m.root
 	if root.Module == nil {
-		return nil, gen.Errorf("", 0, "run nano gen wire on a package inside a Go module",
+		return nil, gen.Errorf("", 0, "run nanostack gen wire on a package inside a Go module",
 			"%s is not in a Go module", w.opts.Dir)
 	}
 	m.modDir, m.modPath = root.Module.Dir, root.Module.Path

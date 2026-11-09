@@ -178,7 +178,7 @@ func (c *collector) primaryKey(s *searchDecl, t *tableBase) (uniqueKey, bool) {
 		}
 	}
 	if len(pk) == 0 {
-		fix := "add a primary key to " + t.sqlName + " in a migration, then run nano gen db"
+		fix := "add a primary key to " + t.sqlName + " in a migration, then run nanostack gen db"
 		if k, ok := firstOrderingKey(t); ok {
 			fix += ", or nanorepo.Tiebreak(" + columnList(s, k.fields) + ")"
 		}
@@ -193,7 +193,7 @@ func (c *collector) primaryKey(s *searchDecl, t *tableBase) (uniqueKey, bool) {
 			return k, true
 		}
 	}
-	c.errorf(s.tableNode, "run nano gen db, which lists the primary key in UniqueKeys",
+	c.errorf(s.tableNode, "run nanostack gen db, which lists the primary key in UniqueKeys",
 		"search %s: the primary key (%s) of %s, from its model, is not among its UniqueKeys", s.name,
 		strings.Join(pk, ", "), t.sqlName)
 	return uniqueKey{}, false
@@ -207,7 +207,7 @@ func ordersEveryRow(t *tableBase, k uniqueKey) string {
 	for _, f := range k.fields {
 		col, found := t.column(f)
 		if !found {
-			return "nano gen db must regenerate it"
+			return "nanostack gen db must regenerate it"
 		}
 		if col.nullable {
 			return col.sqlName + " can be NULL, and NULL rows repeat"
@@ -232,7 +232,7 @@ func (c *collector) tiebreakFix(s *searchDecl, fields []string) string {
 	t := s.root.table
 	k, ok := firstOrderingKey(t)
 	if !ok {
-		return "add a primary key to " + t.sqlName + " in a migration, then run nano gen db"
+		return "add a primary key to " + t.sqlName + " in a migration, then run nanostack gen db"
 	}
 	all := slices.Clone(fields)
 	for _, f := range k.fields {

@@ -1,4 +1,4 @@
-// Package declarations holds one wrong declaration per rule; nano gen repo
+// Package declarations holds one wrong declaration per rule; nanostack gen repo
 // reports every one of them in one run.
 package declarations
 

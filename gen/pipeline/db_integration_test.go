@@ -13,7 +13,7 @@ import (
 
 // These tests run the db step of the pipeline on PostgreSQL. The runner
 // starts its own server, a container of the fixture's image, or uses
-// NANO_GEN_DATABASE_URL, as `go tool nano gen` does in a service.
+// NANO_GEN_DATABASE_URL, as `go tool nanostack gen` does in a service.
 // Run them with: go test -tags integration ./pipeline/
 
 // runReal runs the pipeline with the run's own server.
@@ -23,12 +23,12 @@ func runReal(t *testing.T, dir string, opts Options) (stdout, stderr string, cod
 	return runDBFixture(t, dir, opts, nil)
 }
 
-// `nano gen -check -fresh`, the CI job of a service: the committed models
+// `nanostack gen -check -fresh`, the CI job of a service: the committed models
 // and nanogen.sum are what the migrations produce.
 func TestDBCheckFresh(t *testing.T) {
 	t.Parallel()
 	stdout, stderr, code := runReal(t, copyFixtureOf(t, dbFixture), Options{Check: true, Fresh: true})
-	wantRun(t, "nano gen -check -fresh", code, 0, stdout, "", stderr, "")
+	wantRun(t, "nanostack gen -check -fresh", code, 0, stdout, "", stderr, "")
 }
 
 // A migration that adds a table: -check -fresh lists the new and the
@@ -40,16 +40,16 @@ func TestDBMigrationsChange(t *testing.T) {
 	dir := copyFixtureOf(t, dbFixture)
 	write(t, dir, "migrations/000002_notes.up.sql", "CREATE TABLE notes (id text PRIMARY KEY, body text NOT NULL);\n")
 	stdout, stderr, code := runReal(t, dir, Options{Check: true, Fresh: true})
-	wantRun(t, "nano gen -check -fresh after a migration", code, 1, stdout, "", stderr,
+	wantRun(t, "nanostack gen -check -fresh after a migration", code, 1, stdout, "", stderr,
 		`missing internal/db/gen/app/public/model/notes.go
 missing internal/db/gen/app/public/table/notes.go
 stale internal/db/gen/app/public/table/table_use_schema.go
 stale internal/db/gen/app/nanogen.sum
-  fix: run nano gen without -check, then commit the result
+  fix: run nanostack gen without -check, then commit the result
 `)
 
 	stdout, stderr, code = runReal(t, dir, Options{})
-	wantRun(t, "nano gen after a migration", code, 0, stdout, `wrote internal/db/gen/app/public/model/notes.go
+	wantRun(t, "nanostack gen after a migration", code, 0, stdout, `wrote internal/db/gen/app/public/model/notes.go
 wrote internal/db/gen/app/public/table/notes.go
 wrote internal/db/gen/app/public/table/table_use_schema.go
 wrote internal/db/gen/app/nanogen.sum
@@ -59,15 +59,24 @@ wrote internal/db/gen/app/nanogen.sum
 		t.Fatalf("notes.go has no UniqueKeys with notes_pkey (err %v):\n%s", err, keys)
 	}
 	stdout, stderr, code = runDBFixture(t, dir, Options{Check: true}, noDatabase(t))
-	wantRun(t, "nano gen -check after the run", code, 0, stdout, "", stderr, "")
+	wantRun(t, "nanostack gen -check after the run", code, 0, stdout, "", stderr, "")
 
 	write(t, dir, "migrations/000003_drop_notes.up.sql", "DROP TABLE notes;\n")
 	stdout, stderr, code = runReal(t, dir, Options{})
-	wantRun(t, "nano gen after DROP TABLE", code, 0, stdout, `wrote internal/db/gen/app/public/table/table_use_schema.go
+	wantRun(
+		t,
+		"nanostack gen after DROP TABLE",
+		code,
+		0,
+		stdout,
+		`wrote internal/db/gen/app/public/table/table_use_schema.go
 wrote internal/db/gen/app/nanogen.sum
 deleted internal/db/gen/app/public/model/notes.go
 deleted internal/db/gen/app/public/table/notes.go
-`, stderr, "")
+`,
+		stderr,
+		"",
+	)
 }
 
 // A migration that drops a key: -check -fresh fails on the table file whose
@@ -78,10 +87,10 @@ func TestDBDroppedKeyIsStale(t *testing.T) {
 	dir := copyFixtureOf(t, dbFixture)
 	write(t, dir, "migrations/000002_drop_key.up.sql", "ALTER TABLE users DROP CONSTRAINT users_tenant_email_key;\n")
 	stdout, stderr, code := runReal(t, dir, Options{Check: true, Fresh: true})
-	wantRun(t, "nano gen -check -fresh after a dropped key", code, 1, stdout, "", stderr,
+	wantRun(t, "nanostack gen -check -fresh after a dropped key", code, 1, stdout, "", stderr,
 		`stale internal/db/gen/app/public/table/users.go
 stale internal/db/gen/app/nanogen.sum
-  fix: run nano gen without -check, then commit the result
+  fix: run nanostack gen without -check, then commit the result
 `)
 }
 
@@ -94,15 +103,15 @@ func TestDBNewColumnMakesTheRepoBaseStale(t *testing.T) {
 	dir := copyFixtureOf(t, dbFixture)
 	write(t, dir, "migrations/000002_name.up.sql", "ALTER TABLE users ADD COLUMN name text;\n")
 	stdout, stderr, code := runReal(t, dir, Options{Check: true, Fresh: true})
-	wantRun(t, "nano gen -check -fresh after a new column", code, 1, stdout, "", stderr,
+	wantRun(t, "nanostack gen -check -fresh after a new column", code, 1, stdout, "", stderr,
 		`stale internal/db/gen/app/public/model/users.go
 stale internal/db/gen/app/public/table/users.go
 stale internal/db/gen/app/nanogen.sum
 stale internal/repository/repo_base.gen.go
-  fix: run nano gen without -check, then commit the result
+  fix: run nanostack gen without -check, then commit the result
 `)
 	stdout, stderr, code = runReal(t, dir, Options{})
-	wantRun(t, "nano gen after a new column", code, 0, stdout, `wrote internal/db/gen/app/public/model/users.go
+	wantRun(t, "nanostack gen after a new column", code, 0, stdout, `wrote internal/db/gen/app/public/model/users.go
 wrote internal/db/gen/app/public/table/users.go
 wrote internal/db/gen/app/nanogen.sum
 wrote internal/repository/repo_base.gen.go

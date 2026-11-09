@@ -25,7 +25,7 @@ func serverDir(t *testing.T) string {
 }
 
 // The tag rules: each spec under testdata/tags breaks one, and
-// errors.golden holds what nano gen api reports, at the spec's lines.
+// errors.golden holds what nanostack gen api reports, at the spec's lines.
 func TestTagRules(t *testing.T) {
 	for _, name := range []string{
 		"untagged", "multitagged", "undeclared", "unused", "collision", "noname", "duplicate", "schemaclash",

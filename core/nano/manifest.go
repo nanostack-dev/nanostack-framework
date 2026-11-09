@@ -1,7 +1,7 @@
 package nano
 
 // The declarations in this file describe a service's object graph for
-// nano gen wire. They are plain data: calling them does nothing at runtime,
+// nanostack gen wire. They are plain data: calling them does nothing at runtime,
 // and the generator reads their arguments from source.
 //
 // A manifest is a package-level variable in a file guarded by the nanogen

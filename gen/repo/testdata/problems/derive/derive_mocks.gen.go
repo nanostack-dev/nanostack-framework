@@ -5,7 +5,7 @@ package derive
 import "context"
 
 // Pinger is declared in a file another generator wrote. Its method resolves
-// like any other: nano gen repo only skips the files it writes itself.
+// like any other: nanostack gen repo only skips the files it writes itself.
 type Pinger interface {
 	Ping(ctx context.Context) error
 }

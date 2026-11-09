@@ -2,7 +2,7 @@
 // framework's new packages. A package may import only packages of its own
 // layer or of the layers below it:
 //
-//	tooling       gen (its own module, with the nano CLI at gen/cmd/nano)
+//	tooling       gen (its own module, with the nanostack CLI at gen/cmd/nanostack)
 //	integrations  http, pg, redis, otel
 //	core          core
 //
@@ -67,7 +67,7 @@ var AllowedLegacy = []string{ //nolint:gochecknoglobals // read-only table.
 // Fixtures are the packages, relative to Module, that stand in for a
 // service package in a generator's tests, with their subpackages. They
 // import what generated code imports in a service, such as
-// pkg/db/transactor from the base nano gen repo writes, so they are not
+// pkg/db/transactor from the base nanostack gen repo writes, so they are not
 // layered. Each is internal to its generator: nothing else imports it.
 var Fixtures = []string{"gen/repo/internal/repotest"} //nolint:gochecknoglobals // read-only table.
 

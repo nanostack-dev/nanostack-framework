@@ -10,7 +10,7 @@ import (
 )
 
 // This file declares searches whose Row is not the model of items (design
-// S9.1). nano gen repo writes their builders into row_repo.gen.go, and the
+// S9.1). nanostack gen repo writes their builders into row_repo.gen.go, and the
 // integration tests walk their joined sorts on PostgreSQL.
 
 // itemSummary is a subset of the columns of items with the name of the

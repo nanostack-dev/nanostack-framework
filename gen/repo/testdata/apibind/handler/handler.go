@@ -1,4 +1,4 @@
-// Package handler serves SearchWindows: nano gen repo writes the API
+// Package handler serves SearchWindows: nanostack gen repo writes the API
 // mapper of search Window here, in window_search_api.gen.go.
 package handler
 

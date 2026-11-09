@@ -37,9 +37,14 @@ func missingType(pkg *packages.Package, dir, typeName string) error {
 		}
 		if spec := typeSpec(f, typeName); spec != nil {
 			at := fset.Position(spec.Pos())
-			return gen.Errorf(rel(at.Filename), at.Line,
+			return gen.Errorf(
+				rel(at.Filename),
+				at.Line,
 				"move "+typeName+" to a file without a build tag",
-				"%s is in a file that -tags=%s excludes, and nano gen config loads with that tag", typeName, buildTag)
+				"%s is in a file that -tags=%s excludes, and nanostack gen config loads with that tag",
+				typeName,
+				buildTag,
+			)
 		}
 	}
 	return gen.Errorf("", 0, "pass -type with the root configuration struct",

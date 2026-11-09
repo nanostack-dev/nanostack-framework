@@ -1,5 +1,5 @@
 // Package gen is the contract every Nanostack generator follows, so that
-// gen/cmd/nano routes `nano gen <name>` to any of them the same way. A generator
+// gen/cmd/nanostack routes `nanostack gen <name>` to any of them the same way. A generator
 // package exposes:
 //
 //   - Options, the configuration of one run, with a Check field (compare
@@ -20,7 +20,7 @@
 // after -h, 1 on a source error or stale output, 2 on bad usage, 3 when the
 // environment fails (an *Error that wraps ErrEnvironment: the go command
 // cannot load packages, or a file cannot be read or written). Report writes
-// each error once: "file:line: msg" when it has a file, "nano gen <name>: msg"
+// each error once: "file:line: msg" when it has a file, "nanostack gen <name>: msg"
 // when it has none, then an indented "fix:" line. Generate, Run and Sync add
 // no prefix.
 //
@@ -46,8 +46,8 @@ type File struct {
 	Data []byte
 }
 
-// Command is a generator's command-line entry point, as gen/cmd/nano calls it
-// with the arguments after `nano gen <name>`.
+// Command is a generator's command-line entry point, as gen/cmd/nanostack calls it
+// with the arguments after `nanostack gen <name>`.
 type Command func(args []string, stdout, stderr io.Writer) int
 
 // ParseFlags parses args into fs, which must use flag.ContinueOnError and
@@ -74,12 +74,12 @@ var ErrStale = errors.New("generated files are stale")
 // StaleError is the error of a Check run that found missing or differing
 // files. errors.Is(err, ErrStale) holds for it.
 type StaleError struct {
-	Name  string   // the generator, as in `nano gen <name>`
+	Name  string   // the generator, as in `nanostack gen <name>`
 	Files []string // every missing or differing file, in the order given to Sync
 }
 
 func (e *StaleError) Error() string {
-	return fmt.Sprintf("%v: %s; run nano gen %s", ErrStale, strings.Join(e.Files, ", "), e.Name)
+	return fmt.Sprintf("%v: %s; run nanostack gen %s", ErrStale, strings.Join(e.Files, ", "), e.Name)
 }
 
 // Is reports whether target is ErrStale.
@@ -88,7 +88,7 @@ func (e *StaleError) Is(target error) bool { return target == ErrStale }
 // Sync writes each file whose content differs from the disk, creating its
 // directory, and returns the paths it wrote. With check it writes nothing and
 // returns a *StaleError that names every missing or differing file and tells
-// the reader to run `nano gen <name>`.
+// the reader to run `nanostack gen <name>`.
 //
 // Other errors come from the file system: an *Error on the path that wraps
 // ErrEnvironment, so Main exits 3.
@@ -207,7 +207,7 @@ func Errors(err error) []*Error {
 	}
 	if s, ok := err.(*StaleError); ok { //nolint:errorlint // same
 		msg := fmt.Sprintf("%v: %s", ErrStale, strings.Join(s.Files, ", "))
-		return []*Error{{Msg: msg, Fix: "run nano gen " + s.Name, Err: ErrStale}}
+		return []*Error{{Msg: msg, Fix: "run nanostack gen " + s.Name, Err: ErrStale}}
 	}
 	if j, ok := err.(interface{ Unwrap() []error }); ok { // errors.Join, walked branch by branch
 		var out []*Error
@@ -235,17 +235,17 @@ func ExitCode(err error) int {
 
 // Report writes each problem in err to w and returns the exit code. A
 // problem with a file prints as "file:line: msg"; one without prints as
-// "nano gen <name>: msg". A "  fix: <fix>" line follows each. A problem
+// "nanostack gen <name>: msg". A "  fix: <fix>" line follows each. A problem
 // without a fix is a generator bug, and the fix line says so.
 func Report(w io.Writer, name string, err error) int {
 	for _, e := range Errors(err) {
 		line := *e
 		if line.Fix == "" {
-			line.Fix = "none known; an error without a fix is a nano gen bug, report it"
+			line.Fix = "none known; an error without a fix is a nanostack gen bug, report it"
 		}
 		prefix := ""
 		if line.File == "" {
-			prefix = "nano gen " + name + ": "
+			prefix = "nanostack gen " + name + ": "
 		}
 		_, _ = fmt.Fprintln(w, prefix+line.Error())
 	}

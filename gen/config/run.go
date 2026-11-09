@@ -1,4 +1,4 @@
-// Package genconfig implements `nano gen config`: it reads an annotated Go
+// Package genconfig implements `nanostack gen config`: it reads an annotated Go
 // configuration struct and writes a reflection-free binder, a redacted
 // LogValue/String, a Markdown reference of every setting and a .env.example.
 //
@@ -47,7 +47,7 @@
 // those), time.Duration, *url.URL, secret.Secret, any type whose pointer
 // implements encoding.TextUnmarshaler, slices of those, and nested structs.
 //
-// The package loads with -tags=nanogen, as nano gen wire does: wire.gen.go
+// The package loads with -tags=nanogen, as nanostack gen wire does: wire.gen.go
 // and the files that call Build carry //go:build !nanogen, so a renamed
 // Config field they still read never blocks regeneration. Keep Config in a
 // file without a build tag.
@@ -140,12 +140,12 @@ func run(opts Options) ([]string, error) {
 	return gen.Sync("config", files, opts.Check)
 }
 
-// Main runs `nano gen config [-dir d] [-type T] [-out f] [-doc f] [-env f] [-check]`
+// Main runs `nanostack gen config [-dir d] [-type T] [-out f] [-doc f] [-env f] [-check]`
 // and returns the process exit code: 0 on success, 1 on stale output or a
 // source error, 2 on bad flags, 3 when the environment fails; -h prints the
 // flags and returns 0. It is a gen.Command.
 func Main(args []string, stdout, stderr io.Writer) int {
-	fs := flag.NewFlagSet("nano gen config", flag.ContinueOnError)
+	fs := flag.NewFlagSet("nanostack gen config", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	var opts Options
 	fs.StringVar(&opts.Dir, "dir", ".", "package directory declaring the configuration struct")
@@ -162,7 +162,7 @@ func Main(args []string, stdout, stderr io.Writer) int {
 		return gen.Report(stderr, "config", err)
 	}
 	for _, path := range written {
-		_, _ = fmt.Fprintf(stdout, "nano gen config: wrote %s\n", path)
+		_, _ = fmt.Fprintf(stdout, "nanostack gen config: wrote %s\n", path)
 	}
 	return 0
 }

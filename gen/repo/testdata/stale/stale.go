@@ -1,6 +1,6 @@
 // Package stale holds the output of a run made before itemsImpl embedded
 // extraFinders: stale_repo.gen.go still derives FindByTenantIDAndStatus on
-// itemsImpl. nano gen repo never reads a method it generated, so the
+// itemsImpl. nanostack gen repo never reads a method it generated, so the
 // promoted method wins and the derived copy goes.
 package stale
 

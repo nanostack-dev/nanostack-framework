@@ -1,6 +1,6 @@
-// Package notypes binds a table whose package nano gen db wrote before it
+// Package notypes binds a table whose package nanostack gen db wrote before it
 // listed column types, and a table whose ColumnTypes misses a text column:
-// nano gen repo cannot tell a text column from inet or jsonb.
+// nanostack gen repo cannot tell a text column from inet or jsonb.
 package notypes
 
 import (

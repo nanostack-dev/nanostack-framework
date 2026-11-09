@@ -16,7 +16,7 @@ import (
 // Each method of a bound repository interface resolves in this order
 // (design D8 to D13):
 //
-//  1. hand-written: a method of the implementation in a file that nano gen
+//  1. hand-written: a method of the implementation in a file that nanostack gen
 //     repo did not write, or promoted from an embedded field. It wins, and
 //     its signature must match the interface;
 //  2. derived: the name follows the grammar on the table, so the method is
@@ -42,7 +42,7 @@ type resolution struct {
 }
 
 // Explanation is how each method of one repository interface resolves, as
-// nano gen repo -explain prints it.
+// nanostack gen repo -explain prints it.
 type Explanation struct {
 	Iface   string // the interface, as the declaring package writes it
 	Impl    string
@@ -151,7 +151,7 @@ func (r *resolver) methods() []*types.Func {
 }
 
 // handWritten returns the methods declared on the implementation, read
-// from the syntax of the package: the files nano gen repo wrote are empty
+// from the syntax of the package: the files nanostack gen repo wrote are empty
 // in this load, so a method a previous run generated never counts (design
 // D9, D10). ptr and val say which receivers the methods use.
 func (r *resolver) handWritten() (methods map[string]*ast.FuncDecl, ptr, val bool) {

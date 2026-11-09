@@ -1,6 +1,6 @@
 // Package fault is the runtime behind generated error catalogues.
 //
-// Each module declares its errors in a Go file and `nano gen errors` writes a
+// Each module declares its errors in a Go file and `nanostack gen errors` writes a
 // typed error per declaration. Every generated error implements Described, the
 // contract the RFC 9457 problem writer renders, plus Coded and Detailed.
 //

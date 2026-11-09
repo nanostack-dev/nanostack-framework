@@ -116,7 +116,7 @@ func (c *collector) builderKey(b *builder, col *colRef, nulls, what string) *sor
 	_, isPtr := types.Unalias(rf.typ).(*types.Pointer)
 	switch {
 	case nullable && !isPtr:
-		c.errorf(where, "make the Row field a pointer, as nano gen db does in a model for a NULL column",
+		c.errorf(where, "make the Row field a pointer, as nanostack gen db does in a model for a NULL column",
 			"search %s: %s is nullable, and its Row field is %s, not a pointer", s.name,
 			col.col.sqlName, c.qualified(rf.typ))
 		return nil
@@ -138,7 +138,7 @@ func (c *collector) builderKey(b *builder, col *colRef, nulls, what string) *sor
 	}
 	if !c.pickKey(col, k, nullable) {
 		c.errorf(where, "sort on another column, or write the method by hand on searchexec.Resolve",
-			"search %s: nano gen repo has no keyset key for %s (%s, Go %s)", s.name, col.col.sqlName,
+			"search %s: nanostack gen repo has no keyset key for %s (%s, Go %s)", s.name, col.col.sqlName,
 			col.table.catalog[col.col.sqlName], c.qualified(col.col.value))
 		return nil
 	}
@@ -256,7 +256,7 @@ func convKind(name string) types.BasicKind {
 }
 
 // enumKey sets the enum's type name and labels: the constants of the model
-// type in the order of its <Type>AllValues, which nano gen db writes in the
+// type in the order of its <Type>AllValues, which nanostack gen db writes in the
 // enum's declaration order.
 func (c *collector) enumKey(col *colRef, k *sortKey) bool {
 	dbType := col.table.catalog[col.col.sqlName]

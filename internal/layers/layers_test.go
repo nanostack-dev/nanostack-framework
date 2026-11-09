@@ -14,7 +14,7 @@ import (
 func TestLayer(t *testing.T) {
 	for rel, want := range map[string]int{
 		"core/nano": 1, "core": 1, "http/problem": 2, "pg/nanopg": 2, "redis/nanocache": 2, "otel/nanotrace": 2,
-		"gen": 3, "gen/wire": 3, "gen/cmd/nano": 3, "gen/repo": 3,
+		"gen": 3, "gen/wire": 3, "gen/cmd/nanostack": 3, "gen/repo": 3,
 		"gen/repo/internal/repotest": 0, "gen/repo/internal/repotest/db/shop/public/table": 0,
 		"cmd/nano": 0, "pkg/log": 0, "modules/cache": 0, "internal/layers": 0, "coreutil": 0, "pgx": 0, "pkg/functional": 0,
 	} {
@@ -58,9 +58,9 @@ func TestMayImport(t *testing.T) {
 		{"core/config", "pkg/functional", true},
 		{"http/problem", "pkg/functional", true},
 		{"gen/config", "pkg/functional", true},
-		{"gen/cmd/nano", "pkg/functional", true},
-		{"gen/cmd/nano", "core/nano", true},
-		{"gen/cmd/nano", "pkg/db/transactor", false},
+		{"gen/cmd/nanostack", "pkg/functional", true},
+		{"gen/cmd/nanostack", "core/nano", true},
+		{"gen/cmd/nanostack", "pkg/db/transactor", false},
 		{"gen/repo", "pkg/db/transactor", false},
 		{"gen/repo/internal/repotest", "pkg/db/transactor", true},
 		{"core/nano", "pkg/functionalx", false},
@@ -188,7 +188,7 @@ func TestNoFxOrZerolog(t *testing.T) {
 	}
 }
 
-// TestToolingIsItsOwnModule fails when the generators or the nano CLI come
+// TestToolingIsItsOwnModule fails when the generators or the nanostack CLI come
 // back into the root module, or when the root module requires the tooling
 // module or golang.org/x/tools. A runtime consumer resolves only the root
 // module's graph, so the generator dependencies must stay out of it.

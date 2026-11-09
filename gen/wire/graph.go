@@ -395,7 +395,7 @@ func (g *graph) reportUnused() {
 // suggestInterface is the fix for an interface that no provider returns. A
 // provider whose type implements it can be bound. A provider whose type has
 // some of its methods lacks the others: the fix names the first, in full.
-// A tag interface of nano gen api (ADR 0024) is returned by its handler's
+// A tag interface of nanostack gen api (ADR 0024) is returned by its handler's
 // constructor, so its fix is that provider, not a Bind.
 func (g *graph) suggestInterface(t types.Type, iface *types.Interface) string {
 	m := g.m

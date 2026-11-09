@@ -23,7 +23,7 @@ func (r *runner) scanOrphans() {
 		rel := r.rel(h.path)
 		if r.opts.Check {
 			r.files = append(r.files, Event{Step: h.step, Level: LevelOrphan, File: rel, Msg: "orphan " + rel,
-				Fix: "run nano gen without -check, which deletes it, then commit the result"})
+				Fix: "run nanostack gen without -check, which deletes it, then commit the result"})
 			continue
 		}
 		if err := os.Remove(h.path); err != nil {

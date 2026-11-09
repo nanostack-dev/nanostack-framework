@@ -112,7 +112,7 @@ return keyset.Page(db, func(m model.Invoice) model.Invoice { return m }, Invoice
 	Run(ctx, page.Pagination)
 ```
 
-**Search runtime** (`db/searchexec`): the runtime of the searches that `nano gen repo` writes.
+**Search runtime** (`db/searchexec`): the runtime of the searches that `nanostack gen repo` writes.
 `Contains(term, exprs...)` is the substring rule of every search: it trims the term, makes
 `%`, `_` and `!` literal, and matches without case (`ILIKE` on PostgreSQL, `LOWER() LIKE
 LOWER()` on MySQL and SQLite). A blank term gives `TRUE`, and a term that is not valid UTF-8
@@ -127,7 +127,7 @@ stmt := SELECT(Invoice.AllColumns).FROM(Invoice).WHERE(
 )
 ```
 
-`nano gen repo` writes each declared search as a `searchexec.Spec` (a package variable that
+`nanostack gen repo` writes each declared search as a `searchexec.Spec` (a package variable that
 `DefineSpec` checks at package init), a builder that embeds `searchexec.Query`, and the
 repository method. The method runs it through the transactor forwarders (`transactor.Search`
 and `SearchPage`, in a later release), which use the context transaction and refuse a row

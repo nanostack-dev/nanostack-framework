@@ -2,7 +2,7 @@
 
 This guide covers every file the framework generates, or will generate, for a service. For each generator it shows what you write, what comes out, how to read a diff of it, which guardrails apply, and what you never read by hand. The aim is that you review the few lines a developer wrote and trust checks for the thousands of lines a generator wrote.
 
-**Sources.** Framework paths are relative to this repository at `main` (`4b6c468`, after #69). Service paths start with the service name: anchor means `apps/anchor` in the anchor repository at `7141b9e9`, and echopoint means the echopoint repository at `a9f8780f`. Both services are on their nano branches and pin `v0.23.0-beta.1`. The pipeline, the mapper generator and the tag split come from [the `nano gen` pipeline design](design/nano-gen-pipeline.md) ("design" below, with its line numbers). Prototypes live in the workspace `reports/` folder, outside this repository.
+**Sources.** Framework paths are relative to this repository at `main` (`4b6c468`, after #69). Service paths start with the service name: anchor means `apps/anchor` in the anchor repository at `7141b9e9`, and echopoint means the echopoint repository at `a9f8780f`. Both services are on their nano branches and pin `v0.23.0-beta.1`. The pipeline, the mapper generator and the tag split come from [the `nanostack gen` pipeline design](design/nano-gen-pipeline.md) ("design" below, with its line numbers). Prototypes live in the workspace `reports/` folder, outside this repository.
 
 **Excerpts.** Each excerpt matches its file apart from trimming, which a `// …` (or `# …`, `<!-- … -->`) line marks. A comment at the end of a code line that explains it (for example `// nano: replaces …` or `// ToDomain: NULL -> ""`) is this guide's, not the file's.
 
@@ -23,7 +23,7 @@ PR 2 of the pipeline (#69) merged at `4b6c468`. PR 3 (pipeline core) is **in pro
 
 | Generator | Status | You write | It generates | Lines you write → lines generated | Guardrail |
 | --- | --- | --- | --- | --- | --- |
-| db (go-jet fork) | **shipped** (pointer mode). `Option[T]` mode shipped, unused. `nano gen` db step with `UniqueKeys` and `nanogen.sum`: **on main**, unused. | SQL migrations, `dbgen.go` (the `Postgres` declaration with the db step) | `internal/db/gen/<svc>/public/{table,model,view}/*.go` | anchor: 1,652 SQL lines in 73 up migrations + 186 → 5,311 in 88 files. echopoint: 2,834 in 97 + 198 → 6,257 in 96 files. | Today none: no `-check`, and CI does not regenerate. With the db step: `nano gen -check -fresh` in CI. |
+| db (go-jet fork) | **shipped** (pointer mode). `Option[T]` mode shipped, unused. `nanostack gen` db step with `UniqueKeys` and `nanogen.sum`: **on main**, unused. | SQL migrations, `dbgen.go` (the `Postgres` declaration with the db step) | `internal/db/gen/<svc>/public/{table,model,view}/*.go` | anchor: 1,652 SQL lines in 73 up migrations + 186 → 5,311 in 88 files. echopoint: 2,834 in 97 + 198 → 6,257 in 96 files. | Today none: no `-check`, and CI does not regenerate. With the db step: `nanostack gen -check -fresh` in CI. |
 | api (oapi-codegen) | Upstream v2.8.0 **shipped** in the services. nano templates **shipped, unused**. In-process step **designed**. | `openapi.yaml`, `codegen.yaml` | `gen.go`: models, router, strict server | anchor: 10,424 + 7 → 26,184. echopoint: 16,442 + 7 → 44,625. | None in CI today. |
 | validate | **shipped, unused**. One error per gap with its `-allow` fix: **on main**. Waivers as `x-nano-unenforced` in the spec: **in progress**. | `openapi.yaml` | `validate.gen.go` | 0 in the services. Framework example: 135 → 279. | `-check`. The nano template calls the validators, so a missing file does not compile. An unacknowledged gap exits 1. |
 | errors | **shipped, unused** | One `//nano:errors` Go interface | `errors.gen.go`, `ERRORS.md` | 0 in the services. Golden fixture: 34 → 268 + 55. | `-check`. The generator type-checks its output. |
@@ -31,16 +31,16 @@ PR 2 of the pipeline (#69) merged at `4b6c468`. PR 3 (pipeline core) is **in pro
 | tag split | **designed** | One tag per operation in `openapi.yaml`, one handler per tag | `handlers.gen.go` | anchor: 133 operations in one interface today, 21 tags. | Designed: a compile-time assertion and `-check`. |
 | config | **shipped**. Load under `-tags=nanogen`: **on main**. | `Config` struct and field tags | `config.gen.go`, `CONFIG.md`, `.env.example` | echopoint: 80 + module sections → 526 + 79 + 250. anchor: 46 + 65 + module sections → 421 + 66 + 198. | A `Run(Check)` test in each service. Bind reports every issue at start. |
 | wire | **shipped**. Two-line `fix:` errors: **on main**. | `manifest.go`, each package's `module.go` | `wire.gen.go` | anchor: 56 → 2,218. echopoint: 98 → 2,758. | A `Run(Check)` test in each service. `file:line` errors with a fix. |
-| pipeline | Nested `gen` module (#68) and error contract (#69) **on main**. `go tool nano gen` core (PR 3): **in progress**. Later steps **designed**. | `nanogen/project.go` | Runs all of the above in order | n/a | Designed: `-check` covers every output, orphans included. |
+| pipeline | Nested `gen` module (#68) and error contract (#69) **on main**. `go tool nanostack gen` core (PR 3): **in progress**. Later steps **designed**. | `nanogen/project.go` | Runs all of the above in order | n/a | Designed: `-check` covers every output, orphans included. |
 | repo | **on main**, unused | One repository interface and one `nanorepo.Implement` per repository, `Postgres.Scopes` | `repo_base.gen.go`: per table, typed predicates and helpers on the transactor; `<file>_repo.gen.go`: the derived methods and a `var _` line per binding | Fixture: 3 declarations → 1,124 lines of bases; 11 derived methods → 117 lines. Prototype on anchor: 9 methods (156 hand lines) → 8 derived and 1 hand-written. | `-check`; an interface method that is neither hand-written nor derivable fails the run at its line; `var _` fails the build; `findOne` fails on two rows; a scope warning on a hand-written finder without the tenant column. |
 | search | **on main**, unused | One `nanorepo.Search` declaration per search and one interface method that takes its builder | In `<file>_repo.gen.go`: the typed builder, the sort type, the spec, the repository method and the API mapper; `nanogen/search-exemptions.txt` | n/a | The tenant coverage proof, the API both-ways check and `-check`. [Searches](#searches). |
 
 ## How to review generated code
 
 1. **Review the source of truth, not the output.** Each section below names the file a developer writes. A diff in generated code is explained by a diff in that file. If the generated diff has no source diff, the generator or its version changed. Ask why.
-2. **Trust `-check` for freshness.** Each nano generator takes `-check`. It writes nothing and exits 1 when a committed output is missing or differs from what the source produces. Today the services run it for config and wire only, as a Go test (`Run(Options{Check: true})`). Once a service adopts the pipeline, CI runs `go tool nano gen -check -fresh` instead. `-check` proves that the output matches the source. It does not prove that the generator is right: the generator's golden tests do that. So read only the parts the checklists below name, and read more when the generator version changed.
+2. **Trust `-check` for freshness.** Each nano generator takes `-check`. It writes nothing and exits 1 when a committed output is missing or differs from what the source produces. Today the services run it for config and wire only, as a Go test (`Run(Options{Check: true})`). Once a service adopts the pipeline, CI runs `go tool nanostack gen -check -fresh` instead. `-check` proves that the output matches the source. It does not prove that the generator is right: the generator's golden tests do that. So read only the parts the checklists below name, and read more when the generator version changed.
 3. **Know what is not checked.** The DB models and the oapi server have no freshness check today. For those, confirm that the generated diff matches the source diff (see their sections).
-4. **Read the human-facing outputs.** Some outputs are written for people: `ERRORS.md` (the error contract), `CONFIG.md` (every setting) and the SQL comments of derived repository methods (`nano gen repo -explain` prints them all). A one-row diff there is the fastest way to see a contract change.
+4. **Read the human-facing outputs.** Some outputs are written for people: `ERRORS.md` (the error contract), `CONFIG.md` (every setting) and the SQL comments of derived repository methods (`nanostack gen repo -explain` prints them all). A one-row diff there is the fastest way to see a contract change.
 5. **Never hand-edit a file with a generated header.** The next run overwrites the edit, and, where a `-check` runs, it fails until the source matches. Change the source and regenerate.
 6. **Read the waivers.** Every place the generator lets a developer opt out carries a reason or a flag: `-allow` in validate, `Skip`, `Unused` and `Cast` in a mapper, `config:"-"` in config. These are the decisions in the change. Check that each reason is true.
 
@@ -48,15 +48,15 @@ PR 2 of the pipeline (#69) merged at `4b6c468`. PR 3 (pipeline core) is **in pro
 
 | Generator | Header |
 | --- | --- |
-| db | `// Code generated by go-jet DO NOT EDIT.` from `dbgen.go`; `// Code generated by nano gen db. DO NOT EDIT.` from the db step (`# ` in `nanogen.sum`) |
+| db | `// Code generated by go-jet DO NOT EDIT.` from `dbgen.go`; `// Code generated by nanostack gen db. DO NOT EDIT.` from the db step (`# ` in `nanogen.sum`) |
 | api | `// Code generated by github.com/oapi-codegen/oapi-codegen/v2 version v2.8.0 DO NOT EDIT.` |
-| validate | `// Code generated by nano gen validate from openapi.yaml. DO NOT EDIT.` |
-| errors | `// Code generated by nano gen errors from errors.go. DO NOT EDIT.` (`ERRORS.md` has it as an HTML comment) |
-| config | `// Code generated by nano gen config from <root file>. DO NOT EDIT.` (`app.go` in anchor, `config.go` in echopoint; `#` in `.env.example`, an HTML comment in `CONFIG.md`) |
-| wire | `// Code generated by nano gen wire from cmd/app/manifest.go. DO NOT EDIT.` |
-| designed steps | `Code generated by nano gen <step>. DO NOT EDIT.` (design line 60) |
+| validate | `// Code generated by nanostack gen validate from openapi.yaml. DO NOT EDIT.` |
+| errors | `// Code generated by nanostack gen errors from errors.go. DO NOT EDIT.` (`ERRORS.md` has it as an HTML comment) |
+| config | `// Code generated by nanostack gen config from <root file>. DO NOT EDIT.` (`app.go` in anchor, `config.go` in echopoint; `#` in `.env.example`, an HTML comment in `CONFIG.md`) |
+| wire | `// Code generated by nanostack gen wire from cmd/app/manifest.go. DO NOT EDIT.` |
+| designed steps | `Code generated by nanostack gen <step>. DO NOT EDIT.` (design line 60) |
 
-**How the generators run.** The services pin `v0.23.0-beta.1` and run `go run github.com/nanostack-dev/nanostack-framework/cmd/nano gen …` from `//go:generate` lines. On `main` the CLI moved to the nested `gen` module (#68): a service pins it with `go get -tool github.com/nanostack-dev/nanostack-framework/gen/cmd/nano@<gen tag>` and runs `go tool nano gen <name>`. See [Checking generated files](generation.md#checking-generated-files).
+**How the generators run.** The services pin `v0.23.0-beta.1` and run `go run github.com/nanostack-dev/nanostack-framework/cmd/nano gen …` from `//go:generate` lines. On `main` the CLI moved to the nested `gen` module (#68): a service pins it with `go get -tool github.com/nanostack-dev/nanostack-framework/gen/cmd/nanostack@<gen tag>` and runs `go tool nanostack gen <name>`. See [Checking generated files](generation.md#checking-generated-files).
 
 **Error format.** On `main` (#69), every generator error is a `*gen.Error{File, Line, Msg, Fix}`. It prints as the position and message, then an indented `fix:` line. Exit codes: 0 success, 1 a source error or stale output, 2 bad usage, 3 the environment failed. `v0.23.0-beta.1` printed the fix on the same line, after a `;`. This guide shows the `main` format.
 
@@ -69,7 +69,7 @@ nano.go:10: no provider for missing.Store (needed by missing.NewService at provi
 
 ## 1. Database models: the go-jet fork (db)
 
-**Status: shipped** in pointer mode (`*T` for a NULL column). The `functional.Option[T]` mode is **shipped, unused**: neither service's `db/gen` tree contains `functional.Option`. The pipeline's db step (`-check -fresh`, `nanogen.sum`, `UniqueKeys`, exit 3 without Docker) is **on main**; no service runs it yet. Guide: [nano gen db](generation.md#database-nano-gen-db). Decision: [ADR 0015](adr/0015-fork-go-jet-as-the-db-module.md).
+**Status: shipped** in pointer mode (`*T` for a NULL column). The `functional.Option[T]` mode is **shipped, unused**: neither service's `db/gen` tree contains `functional.Option`. The pipeline's db step (`-check -fresh`, `nanogen.sum`, `UniqueKeys`, exit 3 without Docker) is **on main**; no service runs it yet. Guide: [nanostack gen db](generation.md#database-nanostack-gen-db). Decision: [ADR 0015](adr/0015-fork-go-jet-as-the-db-module.md).
 
 ### What you write
 
@@ -164,7 +164,7 @@ type productUsersTable struct {
 - `MutableColumns` is `AllColumns` without the primary key. `DefaultColumns` lists the columns with a SQL `DEFAULT`.
 - Column types do not carry nullability: `Name` is a `ColumnString`, like `Email`.
 
-With the db step, each table file also ends with `UniqueKeys`: the primary key and every unique index that proves "at most one row", and a `Not a key` line for each other unique index ([the rule](generation.md#database-nano-gen-db)). For anchor's `product_users`, as the derived-repository prototype emitted it from the live catalogue:
+With the db step, each table file also ends with `UniqueKeys`: the primary key and every unique index that proves "at most one row", and a `Not a key` line for each other unique index ([the rule](generation.md#database-nanostack-gen-db)). For anchor's `product_users`, as the derived-repository prototype emitted it from the live catalogue:
 
 ```go
 func (ProductUsersTable) UniqueKeys() map[string][]string {
@@ -176,7 +176,7 @@ func (ProductUsersTable) UniqueKeys() map[string][]string {
 }
 ```
 
-After `UniqueKeys` come `ColumnTypes`, the catalogue type of each column by name (`text`, `inet`, `jsonb`, an enum's name), and `ForeignKeys`, the foreign keys of the table with their columns in key order ([the methods](generation.md#database-nano-gen-db)). A migration that changes a column type or a foreign key changes them; review them against the migration.
+After `UniqueKeys` come `ColumnTypes`, the catalogue type of each column by name (`text`, `inet`, `jsonb`, an enum's name), and `ForeignKeys`, the foreign keys of the table with their columns in key order ([the methods](generation.md#database-nanostack-gen-db)). A migration that changes a column type or a foreign key changes them; review them against the migration.
 
 `nanogen.sum` sits next to the schema directory. It changes with every migration and every output; read its `input migration` lines against the migrations of the diff, and do not review its hashes.
 
@@ -242,7 +242,7 @@ Review the migration. Then confirm that the generated diff matches it.
 
 **Do not review by hand:** the alias helpers, `EXCLUDED`, the struct literal in `new<T>TableImpl`, `*_use_schema.go`, and `view/` files whose view did not change.
 
-**With the db step (on main, unused):** `go tool nano gen -check -fresh` reports every stale, missing or orphaned file under `internal/db/gen`. Without Docker it exits 3 with `fix: start Docker, or set NANO_GEN_DATABASE_URL`. Checks 1 and 5 become automatic. The step renders in memory (`template.Render`), so a failed run writes nothing; the fork's `ProcessSchema`, which the `jet` command and `dbgen.go` call, still deletes its output directory first.
+**With the db step (on main, unused):** `go tool nanostack gen -check -fresh` reports every stale, missing or orphaned file under `internal/db/gen`. Without Docker it exits 3 with `fix: start Docker, or set NANO_GEN_DATABASE_URL`. Checks 1 and 5 become automatic. The step renders in memory (`template.Render`), so a failed run writes nothing; the fork's `ProcessSchema`, which the `jet` command and `dbgen.go` call, still deletes its output directory first.
 
 ---
 
@@ -335,14 +335,14 @@ An operation with path parameters runs the parameter check first (`GetWebhook`, 
 ### Guardrails
 
 - `http/nanohttp/oapitemplates/oapitemplates_test.go` checks that the embedded templates match the files on disk.
-- The template calls methods that only `nano gen validate` writes, so a missing validator (no `validate.gen.go`, or no method for a new body type or operation) is a compile error. A stale validator still compiles; `nano gen validate -check` catches it.
-- **Designed:** the api step fails on any other oapi-codegen version with `nano gen api: oapi-codegen v2.9.0 resolved; nano templates are pinned to v2.8.2 (exit 3)` and `fix: go get github.com/oapi-codegen/oapi-codegen/v2@v2.8.2`. CI then checks the oapi server for the first time.
+- The template calls methods that only `nanostack gen validate` writes, so a missing validator (no `validate.gen.go`, or no method for a new body type or operation) is a compile error. A stale validator still compiles; `nanostack gen validate -check` catches it.
+- **Designed:** the api step fails on any other oapi-codegen version with `nanostack gen api: oapi-codegen v2.9.0 resolved; nano templates are pinned to v2.8.2 (exit 3)` and `fix: go get github.com/oapi-codegen/oapi-codegen/v2@v2.8.2`. CI then checks the oapi server for the first time.
 
 **Do not review by hand:** wrapper bodies, `ServerInterfaceWrapper` binding, the `*Param*Error` types, response visitors and union helpers. The e2e table in `http/nanohttp/internal/example/e2e_test.go` covers each problem type end to end.
 
 ---
 
-## 3. Request validators: `nano gen validate`
+## 3. Request validators: `nanostack gen validate`
 
 **Status: shipped, unused.** On `main` (#69), each unenforced feature is its own error with the exact `-allow` fix. Moving `-allow` into the spec as `x-nano-unenforced: "<reason>"` (design P11) is **in progress** in pipeline PR 3. Runtime: `core/validate`. Nothing reads the spec at runtime. Decision: [ADR 0016](adr/0016-generated-request-validation.md).
 
@@ -367,14 +367,14 @@ The OpenAPI schema. `http/nanohttp/internal/example/openapi.yaml` (135 lines), l
         retries: {type: integer, format: int32, minimum: 0, maximum: 10}
 ```
 
-Run oapi-codegen first, then validate on the same package (`http/nanohttp/internal/example/generate.go`). A service writes `//go:generate go tool nano gen validate -spec openapi.yaml -dir .`.
+Run oapi-codegen first, then validate on the same package (`http/nanohttp/internal/example/generate.go`). A service writes `//go:generate go tool nanostack gen validate -spec openapi.yaml -dir .`.
 
 ### What is generated
 
 `http/nanohttp/internal/example/validate.gen.go` (279 lines):
 
 ```go
-// Code generated by nano gen validate from openapi.yaml. DO NOT EDIT.
+// Code generated by nanostack gen validate from openapi.yaml. DO NOT EDIT.
 // … imports, the compiled patterns, and the Auth, BasicAuth and BearerAuth validators
 
 // Validate checks r against #/components/schemas/CreateWebhookRequest.
@@ -450,9 +450,9 @@ openapi.yaml: not enforced: #/components/schemas/Body/properties/note: not is no
 
 ---
 
-## 4. Error catalogues: `nano gen errors`
+## 4. Error catalogues: `nanostack gen errors`
 
-**Status: shipped, unused.** Runtime: `core/fault`. Decision: [ADR 0022](adr/0022-error-catalogue-from-go-interface.md). Guide: [Errors](generation.md#errors-nano-gen-errors).
+**Status: shipped, unused.** Runtime: `core/fault`. Decision: [ADR 0022](adr/0022-error-catalogue-from-go-interface.md). Guide: [Errors](generation.md#errors-nanostack-gen-errors).
 
 ### What you write
 
@@ -542,9 +542,9 @@ B: code "a" is already used by A
 
 ---
 
-## 5. Mappers: `nano gen mapper`
+## 5. Mappers: `nanostack gen mapper`
 
-**Status: designed** (framework PRs 7-8, ADR 0025 to come). Nothing is generated yet. Design: [Feature 2](design/nano-gen-pipeline.md#feature-2-generated-mappers-nano-gen-mapper), lines 224-355.
+**Status: designed** (framework PRs 7-8, ADR 0025 to come). Nothing is generated yet. Design: [Feature 2](design/nano-gen-pipeline.md#feature-2-generated-mappers-nanostack-gen-mapper), lines 224-355.
 
 ### What it replaces
 
@@ -595,7 +595,7 @@ func _() {
 }
 ```
 
-`nano gen` rejects it (see the errors below). After the fixes (design 293-299):
+`nanostack gen` rejects it (see the errors below). After the fixes (design 293-299):
 
 ```go
 nanomap.Func[model.Users, auth.User]("UserToDomain",
@@ -621,7 +621,7 @@ The rules change the signature (design 265). A rule that can fail (a fallible `V
 Illustrative only: the design fixes signatures, not bodies, and nothing is generated yet. A body follows from the rules table below:
 
 ```go
-// Code generated by nano gen mapper. DO NOT EDIT.
+// Code generated by nanostack gen mapper. DO NOT EDIT.
 
 func UserToDomain(src model.Users) auth.User {
 	return auth.User{
@@ -759,7 +759,7 @@ The manifest lists `api.NewEmailHandler` and `api.NewHandlers` in `nano.Provider
 ### What is generated (design 363-391; a sketch, nothing generated yet)
 
 ```go
-// Code generated by nano gen api. DO NOT EDIT.
+// Code generated by nanostack gen api. DO NOT EDIT.
 
 // EmailServer serves the operations tagged Email.
 type EmailServer interface {
@@ -805,7 +805,7 @@ cmd/http/openapi.yaml:<line>: tag Email is used by 15 operations but not declare
   fix: add "- name: Email" under the top-level tags
 internal/api/email_api.go:14: *emailHandler does not implement EmailServer (missing method SendEmail)
   fix: func (h *emailHandler) SendEmail(ctx context.Context, request SendEmailRequestObject) (SendEmailResponseObject, error)
-nano gen wire: NewHandlers: no provider for api.EmailServer
+nanostack gen wire: NewHandlers: no provider for api.EmailServer
   fix: add a provider that returns api.EmailServer to nano.Providers in cmd/app/manifest.go
 // … 3 more errors of the same shape
 ```
@@ -819,9 +819,9 @@ nano gen wire: NewHandlers: no provider for api.EmailServer
 
 ---
 
-## 7. Configuration: `nano gen config`
+## 7. Configuration: `nanostack gen config`
 
-**Status: shipped.** On `main` (#69), the generator loads the package with `-tags=nanogen`. That removes the config/wire deadlock (a renamed `Config` field with a stale `wire.gen.go` now generates), and `Config` must sit in a file without a build tag. Guide: [Configuration](generation.md#configuration-nano-gen-config).
+**Status: shipped.** On `main` (#69), the generator loads the package with `-tags=nanogen`. That removes the config/wire deadlock (a renamed `Config` field with a stale `wire.gen.go` now generates), and `Config` must sit in a file without a build tag. Guide: [Configuration](generation.md#configuration-nanostack-gen-config).
 
 ### What you write
 
@@ -865,7 +865,7 @@ type Config struct {
 `config.gen.go` holds `Bind(ctx, *nanoconf.Sources) (Config, error)`, one block per setting with no reflection, plus `LogValue()`, `String()` and `GoString()`. echopoint `cmd/app/config.gen.go`:
 
 ```go
-// Code generated by nano gen config from config.go. DO NOT EDIT.
+// Code generated by nanostack gen config from config.go. DO NOT EDIT.
 // … the package clause and the imports
 
 // Bind reads every Config setting from src, applies defaults, parses and
@@ -1043,9 +1043,9 @@ server.prot: unknown setting; fix the spelling or remove it; from file applicati
 
 ---
 
-## 8. Wiring: `nano gen wire`
+## 8. Wiring: `nanostack gen wire`
 
-**Status: shipped.** On `main` (#69), errors print their fix on an indented line. Becoming step 7 of `go tool nano gen` is **designed**. Guide: [Wiring](generation.md#wiring-nano-gen-wire). Decision: [ADR 0013](adr/0013-generated-wiring-replaces-fx.md).
+**Status: shipped.** On `main` (#69), errors print their fix on an indented line. Becoming step 7 of `go tool nanostack gen` is **designed**. Guide: [Wiring](generation.md#wiring-nanostack-gen-wire). Decision: [ADR 0013](adr/0013-generated-wiring-replaces-fx.md).
 
 | Service | You write: `cmd/app/manifest.go` | Generated: `cmd/app/wire.gen.go` | `need*` lines | `app.Manage` lines |
 | --- | --- | --- | --- | --- |
@@ -1062,7 +1062,7 @@ server.prot: unknown setting; fix the spelling or remove it; from file applicati
 package app
 // … 26 lines of imports
 
-// App is anchor's manifest: nano gen wire reads it and writes wire.gen.go.
+// App is anchor's manifest: nanostack gen wire reads it and writes wire.gen.go.
 var App = nano.Manifest("anchor",
 	applog.Module,
 	nanotrace.Module,
@@ -1130,7 +1130,7 @@ The DSL is `core/nano/manifest.go` (96 lines): `Manifest`, `Module`, `Providers`
 **Header and entry points.** echopoint `cmd/app/wire.gen.go:1-3` and `:482-488`:
 
 ```go
-// Code generated by nano gen wire from cmd/app/manifest.go. DO NOT EDIT.
+// Code generated by nanostack gen wire from cmd/app/manifest.go. DO NOT EDIT.
 
 //go:build !nanogen
 // …
@@ -1305,16 +1305,16 @@ Other errors in the same style: a duplicate provider for a type, a provider that
 
 ---
 
-## 9. The pipeline that runs them: `go tool nano gen`
+## 9. The pipeline that runs them: `go tool nanostack gen`
 
-**Status.** The nested `gen` module (#68) and the error contract (#69) are **on main**. The pipeline core (`nanogen/project.go`, fixed order, `-check` overlays, orphans, `-json`, `-list`) is **in progress** (PR 3, ADR 0023 to come): it covers config, errors, validate and wire. The db, api, tag split, mapper and lint steps are **designed** (PRs 4-9). The excerpts below are from the design; the code may still change them. Design: [Feature 1](design/nano-gen-pipeline.md#feature-1-the-nano-gen-pipeline).
+**Status.** The nested `gen` module (#68) and the error contract (#69) are **on main**. The pipeline core (`nanogen/project.go`, fixed order, `-check` overlays, orphans, `-json`, `-list`) is **in progress** (PR 3, ADR 0023 to come): it covers config, errors, validate and wire. The db, api, tag split, mapper and lint steps are **designed** (PRs 4-9). The excerpts below are from the design; the code may still change them. Design: [Feature 1](design/nano-gen-pipeline.md#feature-1-the-nanostack-gen-pipeline).
 
 ```text
-go tool nano gen                     # run every step in order, write what changed
-go tool nano gen -check              # write nothing; exit 1 listing every stale, missing or orphaned file
-go tool nano gen -check -fresh       # CI: also ignore the DB cache
-go tool nano gen -only api,mapper    # these steps, still in pipeline order (-skip db is the inverse)
-go tool nano gen -list               # print the plan: step, package, inputs, outputs
+go tool nanostack gen                     # run every step in order, write what changed
+go tool nanostack gen -check              # write nothing; exit 1 listing every stale, missing or orphaned file
+go tool nanostack gen -check -fresh       # CI: also ignore the DB cache
+go tool nanostack gen -only api,mapper    # these steps, still in pipeline order (-skip db is the inverse)
+go tool nanostack gen -list               # print the plan: step, package, inputs, outputs
 # … -json, -diff and single-generator runs (design 85-94)
 ```
 
@@ -1351,15 +1351,15 @@ Everything else is discovered with `go/parser`: a `//nano:errors` interface, any
 
 The mapper step (part 2) joins before repo; the lint step comes last.
 
-**Orphans.** An orphan is a file with a `Code generated by nano gen` header, under an output directory of a step that ran, that the run did not produce. Generate deletes it; `-check` fails on it. A deleted mapper declaration cannot leave generated code behind.
+**Orphans.** An orphan is a file with a `Code generated by nanostack gen` header, under an output directory of a step that ran, that the run did not produce. Generate deletes it; `-check` fails on it. A deleted mapper declaration cannot leave generated code behind.
 
 **How to review it:** read the literal values in `nanogen/project.go`. Rely on CI for every output. When a service adopts the pipeline, these are deleted: `generate_*.sh`, both `dbgen.go` files, the `*codegen.yaml` files, the `//go:generate` lines in `cmd/app` and the `Run(Check)` tests.
 
 ---
 
-## 10. Repositories: `nano gen repo`
+## 10. Repositories: `nanostack gen repo`
 
-**Status: on main**, unused by the services. One repository interface per repository: each method is hand-written, or derived from its name, or the run fails at the method (design PRs 7 and 8, [ADR 0026](adr/0026-nano-gen-repo.md)). Reference: [Repositories](generation.md#repositories-nano-gen-repo). Fixture: [`gen/repo/internal/repotest`](../gen/repo/internal/repotest), whose integration tests run every helper of the base and every derived method on PostgreSQL, against the hand-written body a developer would write.
+**Status: on main**, unused by the services. One repository interface per repository: each method is hand-written, or derived from its name, or the run fails at the method (design PRs 7 and 8, [ADR 0026](adr/0026-nano-gen-repo.md)). Reference: [Repositories](generation.md#repositories-nanostack-gen-repo). Fixture: [`gen/repo/internal/repotest`](../gen/repo/internal/repotest), whose integration tests run every helper of the base and every derived method on PostgreSQL, against the hand-written body a developer would write.
 
 ### What you write
 
@@ -1424,13 +1424,13 @@ func (b itemsBase) findOne(ctx context.Context, cond postgres.BoolExpression) (f
 
 ```go
 // ItemRepository on *itemRepositoryImpl: 11 derived methods on table items; the other methods are
-// hand-written (nano gen repo -explain lists each one).
+// hand-written (nanostack gen repo -explain lists each one).
 //
 // Hand-written although the name derives (deleting the method switches it
 // to the derived query): ExistsByTenantIDAndName.
 //
 // A compile error on the next line means ItemRepository gained or lost a method since
-// the last run: run nano gen repo.
+// the last run: run nanostack gen repo.
 var _ ItemRepository = (*itemRepositoryImpl)(nil)
 
 // FindByTenantIDAndSku is derived from its name:
@@ -1450,7 +1450,7 @@ func (r *itemRepositoryImpl) CountInternal(ctx context.Context) (int64, error) {
 }
 ```
 
-`go tool nano gen repo -dir internal/repository -scopes tenant_id -explain` prints how each method resolves, and writes nothing:
+`go tool nanostack gen repo -dir internal/repository -scopes tenant_id -explain` prints how each method resolves, and writes nothing:
 
 ```text
 ItemRepository on *itemRepositoryImpl (table items, scope tenant_id)
@@ -1467,7 +1467,7 @@ Each at its line, all in one run, one golden per rule in [`gen/repo/testdata/pro
 
 ```text
 derive.go:43: Items.FindByTenantIDAndName: not implemented: no hand-written method on *itemsImpl, and the name does not derive: it returns one row, but (tenant_id, name) covers no unique key; the keys of items are items_pkey (id), items_tenant_sku_key (tenant_id, sku)
-  fix: return []Item; or add a unique index on (tenant_id, name) in a migration and rerun nano gen db;
+  fix: return []Item; or add a unique index on (tenant_id, name) in a migration and rerun nanostack gen db;
        or write it by hand on *itemsImpl, in a non-generated file of package derive:
          func (r *itemsImpl) FindByTenantIDAndName(ctx context.Context, tenantID uuid.UUID, name string) (functional.Option[Item], error) {
              return r.first(ctx, r.where.TenantID(tenantID).AND(r.where.Name(name)), r.t.CreatedAt.ASC(), r.t.ID.ASC())
@@ -1478,22 +1478,22 @@ derive.go:38: Items.FindByTenantIdAndSku: not implemented: no hand-written metho
        or rename it FindByTenantIDAndSku (did you mean TenantID?)
 ```
 
-The other rules: the grammar, an operator (`IgnoreCase`, `In`, `OrderBy`, `Or`, with the hand-written body), the parameters (count, pointer, a name that says another column, the type), the results, the mapper's domain type, the tenant scope (`Internal` skips it on reads only), a hand-written or promoted method whose signature differs, an ambiguous promotion, an implementation that does not embed its base, a table package without `UniqueKeys` (run `nano gen db`), a column a migration renamed (the rename first), and the package's own compile errors. The scope warning on hand-written code keeps exit 0:
+The other rules: the grammar, an operator (`IgnoreCase`, `In`, `OrderBy`, `Or`, with the hand-written body), the parameters (count, pointer, a name that says another column, the type), the results, the mapper's domain type, the tenant scope (`Internal` skips it on reads only), a hand-written or promoted method whose signature differs, an ambiguous promotion, an implementation that does not embed its base, a table package without `UniqueKeys` (run `nanostack gen db`), a column a migration renamed (the rename first), and the package's own compile errors. The scope warning on hand-written code keeps exit 0:
 
 ```text
 warning: internal/repository/users.go:31: ByEmail: condition on users has no tenant_id; this query can read or change another tenant's rows
   fix: add u.where.TenantID(…) to the condition, or name it ByEmailInternal for a trusted system path
 ```
 
-Before `nano gen` runs again, the compiler shows two messages:
+Before `nanostack gen` runs again, the compiler shows two messages:
 
-- `cannot use (*impl)(nil) … (missing method X)` at the `var _` line of `<file>_repo.gen.go`: the interface gained `X`, or its hand-written body was deleted. Run `go tool nano gen`; it derives `X` or names the fix.
-- `method impl.X already declared at <file>_repo.gen.go:N`: you hand-wrote a method that the last run derived. Run `go tool nano gen`; the hand-written method wins and the derived copy goes.
+- `cannot use (*impl)(nil) … (missing method X)` at the `var _` line of `<file>_repo.gen.go`: the interface gained `X`, or its hand-written body was deleted. Run `go tool nanostack gen`; it derives `X` or names the fix.
+- `method impl.X already declared at <file>_repo.gen.go:N`: you hand-wrote a method that the last run derived. Run `go tool nanostack gen`; the hand-written method wins and the derived copy goes.
 
 ### Adopting it in a service
 
-1. Add `Scopes` to the `Postgres` declaration and run `go tool nano gen`. Read every scope warning: each is a finder that may cross tenants, or a trusted path to rename `…Internal`.
-2. Declare one repository, embed its base, set it in the constructor, and run `go tool nano gen repo -explain`: it says which methods would derive. Delete the hand-written body of each one that does, one file at a time.
+1. Add `Scopes` to the `Postgres` declaration and run `go tool nanostack gen`. Read every scope warning: each is a finder that may cross tenants, or a trusted path to rename `…Internal`.
+2. Declare one repository, embed its base, set it in the constructor, and run `go tool nanostack gen repo -explain`: it says which methods would derive. Delete the hand-written body of each one that does, one file at a time.
 3. Rename the finders whose names hide a filter: a derived name says every column it filters on (`FindByExternalID` becomes `FindByProductIDAndExternalID`, `TenantID` becomes the column's field, `PlatformTenantID`). A team that wants the short name keeps a one-line hand-written body.
 4. Every hand-written `LIMIT 1` on columns that are not unique becomes `first` with an order that ends on a unique column. `findOne` and the derived single-row finds return `transactor.ErrMoreThanOneRow` instead of an arbitrary row; handle it with `errors.Is` where the caller can see duplicates. A derived `GetBy…` returning `(D, error)` returns `sql.ErrNoRows` on no row.
 5. Keep inserts, upserts and statements the helpers do not cover hand-written on `r.t` with `r.queryRow` or `r.exec`, which keep `OnUnique` and the transaction.
@@ -1508,7 +1508,7 @@ Before `nano gen` runs again, the compiler shows two messages:
 
 ### Searches
 
-**Status: on main**, unused by the services ([ADR 0027](adr/0027-search-in-the-db-module.md), [design](design/search.md)). A search is a declaration next to `nanorepo.Implement`. `nano gen repo` proves its tenant scope, and writes a typed builder, the repository method and, with `API[Body]`, the mapper from the OpenAPI body. PostgreSQL, MySQL, MariaDB and SQLite run it.
+**Status: on main**, unused by the services ([ADR 0027](adr/0027-search-in-the-db-module.md), [design](design/search.md)). A search is a declaration next to `nanorepo.Implement`. `nanostack gen repo` proves its tenant scope, and writes a typed builder, the repository method and, with `API[Body]`, the mapper from the OpenAPI body. PostgreSQL, MySQL, MariaDB and SQLite run it.
 
 **What you write.** One `nanorepo.Search[Row]` call per search in `func _()`, and one interface method that takes the builder. From the fixture `gen/repo/testdata/search/search.go`:
 
@@ -1544,7 +1544,7 @@ type ItemRepository interface {
 - The repository method, one line on the base: `return r.search(ctx, itemBySkuSearch, q.Query, r.summarize)`.
 - With `API[Body]`: `ItemBySkuSearchFromAPI(scope, body *Body) ItemBySkuSearch`. When the handler of the body is in another package, it goes there, in `<search>_search_api.gen.go`.
 
-`nano gen` also writes `nanogen/search-exemptions.txt`: one line per `Unscoped`, `ScopeOrNull`, `ScopeNull`, coverage through a referenced row, `IgnoresFullText` and `APIHandWritten`. `-check` reports it stale.
+`nanostack gen` also writes `nanogen/search-exemptions.txt`: one line per `Unscoped`, `ScopeOrNull`, `ScopeNull`, coverage through a referenced row, `IgnoresFullText` and `APIHandWritten`. `-check` reports it stale.
 
 #### Tenant scopes
 
@@ -1567,7 +1567,7 @@ Postgres: &project.Postgres{
 
 | Code | Which columns count | Effect |
 |---|---|---|
-| A search (`nanorepo.Search`) | Every column of `Scopes` on every table instance the search reads, **nullable or not** | Each one must be covered, or `nano gen` fails (E9, E10). |
+| A search (`nanorepo.Search`) | Every column of `Scopes` on every table instance the search reads, **nullable or not** | Each one must be covered, or `nanostack gen` fails (E9, E10). |
 | Derived methods and hand-written queries on the base | Only **NOT NULL** columns of `Scopes` | A derived method must filter on the scope column first, or end in `Internal` on a read. A hand-written query that does not filter on it is a warning, not an error. |
 
 So a nullable `workspace_id` changes nothing for derived methods and hand-written finders. Only searches must cover it.
@@ -1658,15 +1658,15 @@ func (r *webhookRepositoryImpl) Search(ctx context.Context, q WebhookSearch) (se
 - A declared search that no method takes (E24).
 - With `API[Body]`: a `sort_by` value with no sort (A1), a body property that no option reads (A10), or a page size or `maxItems` that the runtime does not allow (A9).
 
-`nano gen repo -explain` prints, per search, how each table instance is covered and how each body property binds.
+`nanostack gen repo -explain` prints, per search, how each table instance is covered and how each body property binds.
 
 ### Adopting searches in a service
 
 Do one search per pull request. Each step is a check for the author and for the reviewer.
 
-1. **Framework.** Require root, `db` and `gen` at the same release. The db step must write `ColumnTypes()` and `ForeignKeys()`: run `go tool nano gen -fresh` once. Set `Postgres.Scopes` to every tenant column, and `Postgres.ContextScopes` for a column that a function scopes from the context ([Tenant scopes](#tenant-scopes)). Adding a nullable column to `Scopes` affects searches only.
+1. **Framework.** Require root, `db` and `gen` at the same release. The db step must write `ColumnTypes()` and `ForeignKeys()`: run `go tool nanostack gen -fresh` once. Set `Postgres.Scopes` to every tenant column, and `Postgres.ContextScopes` for a column that a function scopes from the context ([Tenant scopes](#tenant-scopes)). Adding a nullable column to `Scopes` affects searches only.
 2. **Bind the repository** with `nanorepo.Implement` and embed its base, if it is not bound yet. The generated search method calls the base.
-3. **Declare the search** next to `Implement`. Start with the filters, sorts and tiebreak of the hand-written query. Run `go tool nano gen repo -explain` and read the coverage of each instance.
+3. **Declare the search** next to `Implement`. Start with the filters, sorts and tiebreak of the hand-written query. Run `go tool nanostack gen repo -explain` and read the coverage of each instance.
 4. **Scope.** The handler builds the scope value from the authenticated principal, never from the body. With a scope struct, write keyed fields. In hand-written code, read the scope back with `q.Scope()`, not from a second parameter.
 5. **Exemptions.** Commit `nanogen/search-exemptions.txt`. Each line is a decision the reviewer approves: an `Unscoped` reason, a shared row, `IgnoresFullText`, `APIHandWritten`.
 6. **`full_text_search` changes.** A generated full text ignores case, matches `%`, `_` and `\` literally, trims the term, and ignores a blank term. A new `FullText` filters where nothing filtered before. Write it in the product release note.
@@ -1682,9 +1682,9 @@ A search that has no SQL builder (a remote call, data in memory) keeps its hand-
 
 The search prototype lives in the workspace `reports/prototypes/derived-repo/`, which another agent is still extending. The excerpts below come from the written report, `reports/prototype-derived-repositories.md`, which is a fixed snapshot. The prototype's current files have moved on; each section says how.
 
-### Derived names: `nano gen repo`
+### Derived names: `nanostack gen repo`
 
-Landed: see [section 10](#10-repositories-nano-gen-repo). The prototype report, `reports/prototype-derived-repositories.md`, stays as the record of the design's evidence: 55 database tests on anchor's migrations compare each derived method with anchor's own.
+Landed: see [section 10](#10-repositories-nanostack-gen-repo). The prototype report, `reports/prototype-derived-repositories.md`, stays as the record of the design's evidence: 55 database tests on anchor's migrations compare each derived method with anchor's own.
 
 ### Search builder
 
@@ -1711,8 +1711,8 @@ One request, from the spec to the database and back. **G** marks a generated fil
 
 Two generated files assembled this chain at start-up:
 
-- **G** (nano gen wire) `cmd/app/wire.gen.go`: `productUserMapper = mapper.NewProductUserMapper()` (`:1235`), `repository4.NewProductUserRepository(db2, productUserMapper, logger)` (`:1244`), `service8.NewProductUserService(…)` (`:1899`), `api.NewAPI(…)` with its 31 arguments (`:2144`), and `httpserver.NewHandler(ctx, cfg.Server, …, anchorAPI, …)` (`:2183`).
-- **G** (nano gen config) `cmd/app/config.gen.go`: binds the `postgres` section the database pool uses and the `server` section the handler uses.
+- **G** (nanostack gen wire) `cmd/app/wire.gen.go`: `productUserMapper = mapper.NewProductUserMapper()` (`:1235`), `repository4.NewProductUserRepository(db2, productUserMapper, logger)` (`:1244`), `service8.NewProductUserService(…)` (`:1899`), `api.NewAPI(…)` with its 31 arguments (`:2144`), and `httpserver.NewHandler(ctx, cfg.Server, …, anchorAPI, …)` (`:2183`).
+- **G** (nanostack gen config) `cmd/app/config.gen.go`: binds the `postgres` section the database pool uses and the `server` section the handler uses.
 
 What changes when the designed pieces land:
 
@@ -1721,7 +1721,7 @@ What changes when the designed pieces land:
 | 3-4 | Upstream chi wrapper, no parameter validation | nano template: `validateParams` runs before the handler (validate) |
 | 6 | `(*AnchorAPI).GetProductUser` on one 31-parameter struct | `productUserHandler.GetProductUser` behind a generated `ProductUserServer` (tag split) |
 | 11 | `(*ProductUserMapper).ToDomain`, wired as a provider | Generated `ProductUserToDomain(model.ProductUsers) (user.ProductUser, error)`, which rejects an unknown status (mapper) |
-| 8 | Hand-written `FindByProductIDAndID` | Derived from its name (`nano gen repo`, on main) |
+| 8 | Hand-written `FindByProductIDAndID` | Derived from its name (`nanostack gen repo`, on main) |
 | wire | 23 mapper provider blocks | None: generated mappers are plain functions |
 
 ---

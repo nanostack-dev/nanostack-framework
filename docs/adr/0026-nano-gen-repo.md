@@ -9,7 +9,7 @@ A Nanostack repository is an interface, an implementation struct and hand-writte
 
 The user's rule for part 1 (2026-11-08): "spring data like method following a standard that generate code if the method is not handmade; if the interface has a method he can't generate and found no implementation we fail in build." A raw-SQL directive (`//nano:query`) is dropped: go-jet stays the one way to write SQL. The design (`reports/design-repo.md` in the workspace, decisions D1 to D27) was prototyped on anchor's code: 55 database tests compare the derived methods with anchor's own.
 
-The design ships in three PRs: the db step with `UniqueKeys()` (PR 6, [decision log](../decision-log.md#2026-11-08-nano-gen-db-writes-the-models-uniquekeys-and-nanogensum)), the base (PR 7) and the derived methods (PR 8). This record covers both.
+The design ships in three PRs: the db step with `UniqueKeys()` (PR 6, [decision log](../decision-log.md#2026-11-08-nanostack-gen-db-writes-the-models-uniquekeys-and-nanogensum)), the base (PR 7) and the derived methods (PR 8). This record covers both.
 
 ## Decision
 

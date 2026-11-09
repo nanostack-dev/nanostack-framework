@@ -53,7 +53,7 @@ func (c *collector) quietTable(s *searchDecl, e ast.Expr) *tableBase {
 }
 
 // tableVariable reports whether obj is a table variable of a table package
-// that nano gen db generated.
+// that nanostack gen db generated.
 func (c *collector) tableVariable(obj types.Object) bool {
 	v, isVar := obj.(*types.Var)
 	if !isVar || v == nil || v.Pkg() == nil || v.Pkg() == c.l.pkg.Types || v.Parent() != v.Pkg().Scope() ||

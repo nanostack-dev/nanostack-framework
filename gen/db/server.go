@@ -21,7 +21,7 @@ import (
 const (
 	startTimeout = 2 * time.Minute
 	dropTimeout  = 30 * time.Second
-	// containerPassword is the superuser password of the container nano gen
+	// containerPassword is the superuser password of the container nanostack gen
 	// starts; it listens on a random local port and lives for one run.
 	containerPassword = "nanogen"
 )

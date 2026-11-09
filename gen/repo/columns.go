@@ -42,7 +42,7 @@ func (c *collector) columns(call *ast.CallExpr, t *tableBase) bool {
 // catalogTypes sets the catalogue type of each column from the ColumnTypes
 // method of the table type. Whether a string column gets Contains and
 // EqualsIgnoreCase depends on its type, so such a column without a type is
-// an error. A view is the exception: nano gen db does not write ColumnTypes
+// an error. A view is the exception: nanostack gen db does not write ColumnTypes
 // on a view yet, so no column of a view without it gets the two predicates.
 // A string column whose type is not text, such as inet or jsonb, gets no
 // equality predicate either: a text value does not compare with it.
@@ -65,14 +65,22 @@ func (c *collector) catalogTypes(call *ast.CallExpr, t *tableBase) bool {
 	case len(missing) == 0:
 		return true
 	case !t.catalogOK:
-		c.errorf(call, "run nano gen db, which writes ColumnTypes into the table package, then rerun nano gen repo",
-			"the table package has no ColumnTypes for %s, so nano gen repo cannot tell if %s is text or "+
+		c.errorf(
+			call,
+			"run nanostack gen db, which writes ColumnTypes into the table package, then rerun nanostack gen repo",
+			"the table package has no ColumnTypes for %s, so nanostack gen repo cannot tell if %s is text or "+
 				"another type that the model reads as a string, such as inet or jsonb",
-			t.sqlName, strings.Join(missing, ", "))
+			t.sqlName,
+			strings.Join(missing, ", "),
+		)
 	default:
-		c.errorf(call, "run nano gen db, which writes ColumnTypes again from the migrations, then rerun nano gen repo",
+		c.errorf(
+			call,
+			"run nanostack gen db, which writes ColumnTypes again from the migrations, then rerun nanostack gen repo",
 			"ColumnTypes of %s gives no type for %s: the table package is older than the table",
-			t.sqlName, strings.Join(missing, ", "))
+			t.sqlName,
+			strings.Join(missing, ", "),
+		)
 	}
 	return false
 }

@@ -1,4 +1,4 @@
-// Package computed declares SortExpr keys that nano gen repo refuses
+// Package computed declares SortExpr keys that nanostack gen repo refuses
 // (design S9, E15 and E8): a nullable aggregate in a non-pointer field, a
 // subquery that reads a column instead of an aggregate, a field the Row
 // lacks, and a field of another type.

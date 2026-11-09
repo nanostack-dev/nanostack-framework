@@ -22,7 +22,7 @@ type tableBase struct {
 	keysFound bool              // the table type has a UniqueKeys method
 	catalog   map[string]string // column name -> catalogue type, from the ColumnTypes method
 	catalogOK bool              // the table type has a ColumnTypes method
-	view      bool              // the table variable is in a view package of nano gen db
+	view      bool              // the table variable is in a view package of nanostack gen db
 
 	foreignKeys []foreignKey // from ForeignKeys, in its order
 	fksFound    bool         // the table type has a ForeignKeys method
@@ -159,7 +159,7 @@ func (t *tableBase) scopeFields(scopes []string) []string {
 }
 
 // table resolves the table argument of a declaration: a table variable of a
-// PostgreSQL table package that nano gen db generated.
+// PostgreSQL table package that nanostack gen db generated.
 func (c *collector) table(arg ast.Expr) (*tableBase, bool) {
 	v, named, dialect, ok := c.tableVar(arg)
 	if !ok {
@@ -168,7 +168,7 @@ func (c *collector) table(arg ast.Expr) (*tableBase, bool) {
 	if dialect != postgresPath {
 		c.errorf(arg, "remove the declaration; the repository stays hand-written, with pkg/db/transactor calls "+
 			"on the table",
-			"%s is a %s table; nano gen repo generates bases for PostgreSQL tables only", c.source(arg),
+			"%s is a %s table; nanostack gen repo generates bases for PostgreSQL tables only", c.source(arg),
 			dialects[dialect])
 		return nil, false
 	}
@@ -201,7 +201,7 @@ func (c *collector) tableVar(arg ast.Expr) (*types.Var, *types.Named, string, bo
 		dialect = embeddedDialect(named, 0)
 	}
 	if dialect == "" {
-		c.errorf(arg, "pass a table variable that nano gen db generated, such as table.Users",
+		c.errorf(arg, "pass a table variable that nanostack gen db generated, such as table.Users",
 			"%s is not a Nanostack DB table", c.source(arg))
 		return nil, nil, "", false
 	}
@@ -220,8 +220,8 @@ func (c *collector) tableOf(arg ast.Expr, v *types.Var, named *types.Named) (*ta
 	}
 	names, ok := src.tables[v.Name()]
 	if !ok {
-		c.errorf(arg, "regenerate the table package with nano gen db",
-			"the table package %s does not declare %s as nano gen db does (var %s = new%sTable(...))",
+		c.errorf(arg, "regenerate the table package with nanostack gen db",
+			"the table package %s does not declare %s as nanostack gen db does (var %s = new%sTable(...))",
 			v.Pkg().Path(), v.Name(), v.Name(), strings.TrimSuffix(named.Obj().Name(), "Table"))
 		return nil, false
 	}

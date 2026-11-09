@@ -279,7 +279,7 @@ func TestAPIPageDoesNotChangeItsArguments(t *testing.T) {
 	assert.Equal(t, search.Pagination{Limit: 20}, got, "the query keeps its page")
 }
 
-// TestAPIMapper writes a mapper as nano gen repo writes <Name>SearchFromAPI, and checks that
+// TestAPIMapper writes a mapper as nanostack gen repo writes <Name>SearchFromAPI, and checks that
 // an empty body runs the search as New does.
 func TestAPIMapper(t *testing.T) {
 	type filter struct {

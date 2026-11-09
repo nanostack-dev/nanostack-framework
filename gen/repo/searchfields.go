@@ -128,7 +128,7 @@ func (c *collector) filterValue(s *searchDecl, f *searchFilter, bf *builderField
 		if bf.lit == "" {
 			c.errorf(f.node, "filter through a FilterExpr whose function returns a string, integer or "+
 				"bool expression, such as postgres.CAST(...).AS_TEXT()",
-				"search %s: nano gen repo has no literal for %s values of %s", s.name, c.qualified(typeOrNil(v)),
+				"search %s: nanostack gen repo has no literal for %s values of %s", s.name, c.qualified(typeOrNil(v)),
 				c.filterTarget(f))
 			return nil
 		}

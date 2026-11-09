@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-// foreignKey is one foreign key of a table, as nano gen db lists it in the
+// foreignKey is one foreign key of a table, as nanostack gen db lists it in the
 // ForeignKeys method of the table type.
 type foreignKey struct {
 	name       string   // constraint name
@@ -25,7 +25,7 @@ func (k foreignKey) String() string {
 }
 
 // readForeignKeys reads each func (XTable) ForeignKeys() []postgres.ForeignKey
-// of f into src, keyed by the table type. nano gen repo reads them from
+// of f into src, keyed by the table type. nanostack gen repo reads them from
 // source and needs no database. A method is recorded even when it lists
 // nothing, so a table with no foreign key is told apart from a table package
 // that predates the method.

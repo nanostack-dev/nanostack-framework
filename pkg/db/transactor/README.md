@@ -43,7 +43,7 @@ Type arguments are inferred from `mapFunc` — spelling them out is unnecessary.
 deleted, err := transactor.ExecAffected(ctx, db, stmt).Value()
 ```
 
-`ErrMoreThanOneRow` is the error of a read that should match at most one row and matched two. The repository base that `nano gen repo` writes returns it from `findOne`, which reads `LIMIT 2`, so a key that stopped being unique fails instead of returning whichever row the database read first ([generation](../../../docs/generation.md#repositories-nano-gen-repo)). Match it with `errors.Is`: the wrapped error names the table.
+`ErrMoreThanOneRow` is the error of a read that should match at most one row and matched two. The repository base that `nanostack gen repo` writes returns it from `findOne`, which reads `LIMIT 2`, so a key that stopped being unique fails instead of returning whichever row the database read first ([generation](../../../docs/generation.md#repositories-nanostack-gen-repo)). Match it with `errors.Is`: the wrapped error names the table.
 
 ## Queries that may find nothing
 
@@ -126,7 +126,7 @@ return transactor.Page(r.db, r.mapper.ToDomain, table.Workspaces.AllColumns).
 
 ## Running a generated search
 
-A search that `nano gen repo` generates is a `db/searchexec` spec and builder. Repository code runs it with one of four functions. Each runs on `Executor(ctx, db)`, so it uses the context transaction, and each refuses a requested row lock with `ErrRowLockSearch` before any statement runs:
+A search that `nanostack gen repo` generates is a `db/searchexec` spec and builder. Repository code runs it with one of four functions. Each runs on `Executor(ctx, db)`, so it uses the context transaction, and each refuses a requested row lock with `ErrRowLockSearch` before any statement runs:
 
 - `Search(ctx, db, spec, q, toDomain)` runs the search: it is `searchexec.Run` in the context transaction. It refuses what `searchexec.Run` refuses, also a query built from another spec (`search.ErrUnscoped`).
 - `SearchPage` is `Search` with a mapper that maps the whole page in one call.

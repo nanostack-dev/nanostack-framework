@@ -1,6 +1,6 @@
-// Package nanorepo declares repositories for nano gen repo. Its functions do
+// Package nanorepo declares repositories for nanostack gen repo. Its functions do
 // nothing at run time: a declaration is a call inside func _() { ... }, which
-// Go never runs, and nano gen repo reads it from source. The package is part
+// Go never runs, and nanostack gen repo reads it from source. The package is part
 // of Nanostack DB, not of go-jet, and imports only the standard library.
 //
 //	func _() {
@@ -8,7 +8,7 @@
 //			table.ProductUsers, productUserToDomain)
 //	}
 //
-// For every table a declaration names, nano gen repo writes a base into
+// For every table a declaration names, nanostack gen repo writes a base into
 // repo_base.gen.go in the declaring package: productUsersBase, with the
 // table (b.t), typed predicates (b.where.Email(v)), helpers that run through
 // pkg/db/transactor (findOne, first, findAll, exists, count, deleteWhere,
@@ -26,14 +26,14 @@
 //
 // Each method of the interface that the implementation does not have is
 // derived from its name, such as FindByTenantIDAndSku, into
-// <file>_repo.gen.go next to the declaring file, or nano gen repo fails at
+// <file>_repo.gen.go next to the declaring file, or nanostack gen repo fails at
 // the method with the signature to write by hand.
 //
 // The declaring file carries no build tag, so go build, go vet and gopls
 // type-check the declaration and a rename updates it.
 package nanorepo
 
-// Table is satisfied by every table type that nano gen db generates.
+// Table is satisfied by every table type that nanostack gen db generates.
 type Table interface {
 	TableName() string
 }
@@ -49,7 +49,7 @@ type Table interface {
 // Two declarations on one table in one package share the base and pass the
 // same toDomain.
 //
-//nolint:revive // the parameters document the call; nano gen repo reads the arguments from source
+//nolint:revive // the parameters document the call; nanostack gen repo reads the arguments from source
 func Implement[I, Impl, E, D any](table Table, toDomain func(E) D) {}
 
 // NoMapper is the toDomain of a table whose rows the base returns as the
@@ -62,5 +62,5 @@ func NoMapper[E any](row E) E { return row }
 // and no mapper, for a table that a repository reads or writes without an
 // interface bound to it.
 //
-//nolint:revive // the parameter documents the call; nano gen repo reads the argument from source
+//nolint:revive // the parameter documents the call; nanostack gen repo reads the argument from source
 func Base[E any](table Table) {}

@@ -49,10 +49,10 @@ func OrZero[B any](body *B) B {
 //
 // fieldDirection is the direction that the API contract gives to a sort_by sent alone. It
 // differs from one API to the next (one contract says ASC, another DESC), so the caller
-// gives it and nano gen repo emits it from the API's declaration.
+// gives it and nanostack gen repo emits it from the API's declaration.
 //
 // sortBy is the builder's SortBy. A is the API's sort enum and D its direction enum (the
-// x-go-type of the body), converted by their string values. nano gen repo checks at
+// x-go-type of the body), converted by their string values. nanostack gen repo checks at
 // generation time that the values of A are the sorts of the search; Run refuses another
 // value with search.ErrUnknownSort. Resolve refuses a direction other than ASC or DESC with
 // search.ErrInvalidSortDirection: the helpers keep the value as sent.
@@ -84,7 +84,7 @@ func APIDirection[Q any, S ~string, D ~string](
 
 // APIPage applies the pagination object of an API request. A nil object keeps the page of
 // q. A zero limit is a limit that the request did not send: it keeps the limit of q, which is
-// the spec's default limit (nano gen repo checks it against the API's default). Every other
+// the spec's default limit (nanostack gen repo checks it against the API's default). Every other
 // limit, the offset and the cursor are taken as sent, also together, so Resolve refuses
 // what the client sent wrong (search.ErrInvalidLimit, search.ErrInvalidOffset,
 // search.ErrCursorWithOffset, search.ErrInvalidCursor).

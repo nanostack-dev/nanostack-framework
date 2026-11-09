@@ -6,10 +6,10 @@ Nanostack Framework removes repeated service shell code without absorbing produc
 
 New code lives in three layers. A package imports only its own layer and the layers below, and never the legacy trees (`pkg/`, `modules/`, `app/`). [Implemented architecture](technical/architecture.md#layers) states the rule and how it is enforced.
 
-- `core/` owns the runtime that services and generated code call: `core/nano` (lifecycle, `Main`, admin probes, manifest declarations; `core/nano/project` holds the project declaration that `nano gen` reads), `core/config` (configuration binding), `core/log` (slog logging and redaction), `core/fault` (the problem contract of error catalogues), `core/validate` (the runtime of request validators) and `core/secret` (the one secret type and every credential-redaction rule).
+- `core/` owns the runtime that services and generated code call: `core/nano` (lifecycle, `Main`, admin probes, manifest declarations; `core/nano/project` holds the project declaration that `nanostack gen` reads), `core/config` (configuration binding), `core/log` (slog logging and redaction), `core/fault` (the problem contract of error catalogues), `core/validate` (the runtime of request validators) and `core/secret` (the one secret type and every credential-redaction rule).
 - `http/` owns the HTTP boundary between `net/http` and generated handlers: strict decoding (`http/nanohttp`) and RFC 9457 problem responses (`http/problem`). [The HTTP boundary](http-boundary.md) is its contract.
-- `gen/` is its own module. It owns the generators behind `nano gen` (`gen/api`, which links oapi-codegen, `gen/config`, `gen/errors`, `gen/validate`, `gen/wire`), the db step (`gen/db`, which runs the migrations and the Nanostack DB generator), the repo step (`gen/repo`, whose declarations live in `db/nanorepo` so a service never imports `gen`), the pipeline that runs them in order (`gen/pipeline`), and the generator contract (package `gen`).
-- `gen/cmd/nano` owns the CLI, `nano`. Today it runs `nano gen`, the pipeline, and `nano gen <name>`, one generator.
+- `gen/` is its own module. It owns the generators behind `nanostack gen` (`gen/api`, which links oapi-codegen, `gen/config`, `gen/errors`, `gen/validate`, `gen/wire`), the db step (`gen/db`, which runs the migrations and the Nanostack DB generator), the repo step (`gen/repo`, whose declarations live in `db/nanorepo` so a service never imports `gen`), the pipeline that runs them in order (`gen/pipeline`), and the generator contract (package `gen`).
+- `gen/cmd/nanostack` owns the CLI, `nanostack`. Today it runs `nanostack gen`, the pipeline, and `nanostack gen <name>`, one generator.
 - `docs/` owns architecture, migration, and decision records.
 
 Legacy trees, which hold the Fx stack until services migrate:
@@ -20,7 +20,7 @@ Legacy trees, which hold the Fx stack until services migrate:
 
 Direction only, with no runnable code yet:
 
-- `cli/` describes developer workflows; new commands join `nano` in `gen/cmd/nano`.
+- `cli/` describes developer workflows; new commands join `nanostack` in `gen/cmd/nanostack`.
 - `starter/` describes new-service baseline files.
 
 ## Module Rules

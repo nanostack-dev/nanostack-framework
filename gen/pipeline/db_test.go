@@ -55,9 +55,9 @@ func TestDBCacheHitKeepsTheModels(t *testing.T) {
 	t.Parallel()
 	dir := copyFixtureOf(t, dbFixture)
 	stdout, stderr, code := runDBFixture(t, dir, Options{Check: true}, noDatabase(t))
-	wantRun(t, "nano gen -check", code, 0, stdout, "", stderr, "")
+	wantRun(t, "nanostack gen -check", code, 0, stdout, "", stderr, "")
 	stdout, stderr, code = runDBFixture(t, dir, Options{}, noDatabase(t))
-	wantRun(t, "nano gen", code, 0, stdout, "", stderr, "")
+	wantRun(t, "nanostack gen", code, 0, stdout, "", stderr, "")
 	if _, err := os.Stat(filepath.Join(dir, "internal/db/gen/app/public/table/users.go")); err != nil {
 		t.Fatalf("the committed model is gone: %v", err)
 	}
@@ -72,11 +72,11 @@ func TestDBMissWithoutDocker(t *testing.T) {
 	dir := copyFixtureOf(t, dbFixture)
 	write(t, dir, "migrations/000002_name.up.sql", "ALTER TABLE users ADD COLUMN name text;\n")
 	stdout, stderr, code := runDBFixture(t, dir, Options{}, noDocker)
-	wantRun(t, "nano gen", code, 3, stdout, "", stderr,
-		"nano gen db: migration 000002_name.up.sql is new since internal/db/gen/app/nanogen.sum, and Docker "+
+	wantRun(t, "nanostack gen", code, 3, stdout, "", stderr,
+		"nanostack gen db: migration 000002_name.up.sql is new since internal/db/gen/app/nanogen.sum, and Docker "+
 			"cannot start postgres:18-alpine: no socket\n"+
 			"  fix: start Docker, or set NANO_GEN_DATABASE_URL\n"+
-			"nano gen repo: skipped: needs db\n")
+			"nanostack gen repo: skipped: needs db\n")
 	if _, err := os.Stat(filepath.Join(dir, "internal/db/gen/app/public/table/users.go")); err != nil {
 		t.Fatalf("a failed db step deleted a model: %v", err)
 	}
@@ -87,11 +87,11 @@ func TestDBMissWithoutDocker(t *testing.T) {
 		t.Fatal(err)
 	}
 	stdout, stderr, code = runDBFixture(t, dir, Options{}, noDocker)
-	wantRun(t, "nano gen without nanogen.sum", code, 3, stdout, "", stderr,
-		"nano gen db: internal/db/gen/app/nanogen.sum does not exist, and Docker cannot start "+
+	wantRun(t, "nanostack gen without nanogen.sum", code, 3, stdout, "", stderr,
+		"nanostack gen db: internal/db/gen/app/nanogen.sum does not exist, and Docker cannot start "+
 			"postgres:18-alpine: no socket\n"+
 			"  fix: start Docker, or set NANO_GEN_DATABASE_URL\n"+
-			"nano gen repo: skipped: needs db\n")
+			"nanostack gen repo: skipped: needs db\n")
 	if _, err := os.Stat(filepath.Join(dir, "internal/db/gen/app/public/table/users.go")); err != nil {
 		t.Fatalf("a failed db step without nanogen.sum deleted a model: %v", err)
 	}
@@ -102,11 +102,12 @@ func TestDBFreshNeedsADatabase(t *testing.T) {
 	t.Parallel()
 	dir := copyFixtureOf(t, dbFixture)
 	_, stderr, code := runDBFixture(t, dir, Options{Check: true, Fresh: true}, noDocker)
-	if code != 3 || !strings.HasPrefix(stderr, "nano gen db: -fresh ignores nanogen.sum, and Docker cannot start") {
+	if code != 3 ||
+		!strings.HasPrefix(stderr, "nanostack gen db: -fresh ignores nanogen.sum, and Docker cannot start") {
 		t.Fatalf("exit %d, stderr:\n%s", code, stderr)
 	}
 	_, stderr, code = runDBFixture(t, dir, Options{Check: true, Fresh: true, Skip: []string{"db"}}, noDatabase(t))
-	wantRun(t, "nano gen -check -fresh -skip db", code, 0, "", "", stderr, "")
+	wantRun(t, "nanostack gen -check -fresh -skip db", code, 0, "", "", stderr, "")
 }
 
 // The Postgres declaration is checked at its line, and a declaration with
@@ -123,8 +124,8 @@ func TestDBDeclarationErrors(t *testing.T) {
 		{`Postgres: &project.Postgres{Name: "app", Migrations: "db/migrations"}`, `nanogen/project.go:7: Postgres.Migrations db/migrations is not a directory
   fix: set Postgres.Migrations to the directory of the SQL migrations
 `},
-		{`Postgres: &project.Postgres{Name: "app", Out: "../gen"}`, `nanogen/project.go:7: Postgres.Out ../gen is outside the directory nano gen runs on
-  fix: generate under the directory nano gen runs on; a module beside it declares its own nanogen/project.go
+		{`Postgres: &project.Postgres{Name: "app", Out: "../gen"}`, `nanogen/project.go:7: Postgres.Out ../gen is outside the directory nanostack gen runs on
+  fix: generate under the directory nanostack gen runs on; a module beside it declares its own nanogen/project.go
 `},
 		{`Postgres: &project.Postgres{Name: "app", Scopes: []string{"TenantID", "tenant_id", "tenant_id"}}`, `nanogen/project.go:7: Postgres.Scopes entry "TenantID" is not a lower-case column name
   fix: write each scope as the column name, such as "product_id"
@@ -148,11 +149,11 @@ nanogen/project.go:7: Postgres.ContextScopes: the function of "organization_id" 
 		dir := copyFixtureOf(t, dbFixture)
 		edit(t, dir, "nanogen/project.go", `Postgres: &project.Postgres{Name: "app"}`, tc.decl)
 		_, stderr, code := runDBFixture(t, dir, Options{Check: true}, noDatabase(t))
-		want := tc.want + "nano gen db: skipped: needs nanogen/project.go\n" +
-			"nano gen api: skipped: needs nanogen/project.go\n" +
-			"nano gen validate: skipped: needs nanogen/project.go\n" +
-			"nano gen repo: skipped: needs nanogen/project.go\n" +
-			"nano gen config: skipped: needs nanogen/project.go\n"
+		want := tc.want + "nanostack gen db: skipped: needs nanogen/project.go\n" +
+			"nanostack gen api: skipped: needs nanogen/project.go\n" +
+			"nanostack gen validate: skipped: needs nanogen/project.go\n" +
+			"nanostack gen repo: skipped: needs nanogen/project.go\n" +
+			"nanostack gen config: skipped: needs nanogen/project.go\n"
 		if code != 1 || stderr != want {
 			t.Errorf("%s: exit %d, stderr:\n%s\nwant:\n%s", tc.decl, code, stderr, want)
 		}

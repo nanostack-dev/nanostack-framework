@@ -1,5 +1,5 @@
 // Package builder declares searches that read without a problem and that
-// nano gen repo cannot write: each search shows one shape. -explain still
+// nanostack gen repo cannot write: each search shows one shape. -explain still
 // shows them.
 package builder
 

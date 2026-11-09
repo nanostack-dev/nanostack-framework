@@ -22,7 +22,7 @@ import (
 // kin-openapi define integer by value, not by spelling. 3.5 is still a type
 // error and 1e30 is out of range. The options cover Go's integer types; a
 // named integer type gets the same rule from the UnmarshalJSONFrom method
-// nano gen validate writes for it (see [DecodeInteger]).
+// nanostack gen validate writes for it (see [DecodeInteger]).
 func DecodeOptions() jsonv2.Options {
 	return jsonv2.JoinOptions(
 		jsontext.AllowDuplicateNames(false),
@@ -59,7 +59,7 @@ type Integer interface {
 // a fraction is a type error and a value v cannot hold a range error, as
 // json/v2 reports them.
 //
-// nano gen validate writes it as the UnmarshalJSONFrom method of every
+// nanostack gen validate writes it as the UnmarshalJSONFrom method of every
 // named integer type in the package it validates, such as an integer enum:
 //
 //	func (v *Priority) UnmarshalJSONFrom(dec *jsontext.Decoder) error {

@@ -1,4 +1,4 @@
-// Package validate is the runtime of the validators that nano gen validate
+// Package validate is the runtime of the validators that nanostack gen validate
 // generates from an OpenAPI document.
 //
 // A generated validator has one signature:

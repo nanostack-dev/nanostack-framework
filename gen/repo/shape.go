@@ -201,7 +201,7 @@ func (r *resolver) checkUnique(fn *types.Func, m *derivedMethod) *refusal {
 		return &refusal{altFirst: true,
 			msg: fmt.Sprintf("it returns one row, and the table package has no UniqueKeys for %s to prove it",
 				r.t.sqlName),
-			alt: "run nano gen db, which writes UniqueKeys into the table package, then rerun nano gen repo"}
+			alt: "run nanostack gen db, which writes UniqueKeys into the table package, then rerun nanostack gen repo"}
 	}
 	if k, ok := r.t.provingKey(m.preds); ok {
 		m.key = &k
@@ -210,7 +210,7 @@ func (r *resolver) checkUnique(fn *types.Func, m *derivedMethod) *refusal {
 	fail := &refusal{altFirst: true,
 		msg: fmt.Sprintf("it returns one row, but (%s) covers no unique key; %s", strings.Join(cols, ", "),
 			r.t.keyList()),
-		alt: fmt.Sprintf("return []%s; or add a unique index on (%s) in a migration and rerun nano gen db",
+		alt: fmt.Sprintf("return []%s; or add a unique index on (%s) in a migration and rerun nanostack gen db",
 			r.qualified(r.t.domain), strings.Join(cols, ", "))}
 	if m.shape == shapeOption {
 		// By hand, the row is chosen by an order, never by chance.

@@ -51,7 +51,7 @@ func (l *loaded) render(d *declarations) ([]byte, error) {
 	out.WriteString(e.b.String())
 	src, err := format.Source([]byte(out.String()))
 	if err != nil {
-		return nil, gen.Errorf("", 0, "report this nano gen repo bug with the declaration that caused it",
+		return nil, gen.Errorf("", 0, "report this nanostack gen repo bug with the declaration that caused it",
 			"the generated base does not parse: %v", err)
 	}
 	return src, nil
@@ -308,7 +308,7 @@ func (e *emitter) where(t *tableBase) {
 		e.p("//\n// No equality predicate on %s: compare on b.t.\n", strings.Join(skipped, ", "))
 	}
 	if untyped := t.untypedText(); len(untyped) > 0 {
-		e.p("//\n// %s is a view, and nano gen db writes no ColumnTypes on a view yet:\n", t.sqlName)
+		e.p("//\n// %s is a view, and nanostack gen db writes no ColumnTypes on a view yet:\n", t.sqlName)
 		e.p("// no Contains or EqualsIgnoreCase on %s. Call searchexec.Contains on b.t.\n",
 			strings.Join(untyped, ", "))
 	}

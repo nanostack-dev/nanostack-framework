@@ -13,7 +13,7 @@ This repository releases four Go modules. This runbook gives the rules for their
 
 - Each module has its own version ([ADR 0014](docs/adr/0014-one-repository-with-nested-modules.md)). The root `go.mod` records the nested versions that it was tested with. Do not tag a module that did not change.
 - `db` requires `pkg/functional`. The root requires `db` and `pkg/functional`. `gen` requires the root and `db` (its db step links the DB generator), and through them `pkg/functional`. So the tag order is always leaves first: `pkg/functional`, then `db`, then the root, then `gen`.
-- `gen` holds the generators and the `nano` CLI (`gen/cmd/nano`). The root never requires `gen`, so `golang.org/x/tools` and the other generator dependencies stay out of the module graph of a runtime consumer. A service pins `nano` with a `tool` directive ([Consumers of nano](#consumers-of-nano)).
+- `gen` holds the generators and the `nanostack` CLI (`gen/cmd/nanostack`). The root never requires `gen`, so `golang.org/x/tools` and the other generator dependencies stay out of the module graph of a runtime consumer. A service pins `nanostack` with a `tool` directive ([Consumers of nano](#consumers-of-nanostack)).
 - `db/tests` and `db/examples` are never tagged. They keep their local `replace` lines.
 - The module paths have no `/vN` suffix, so the major version stays 0 or 1.
 - A pre-release suffix (`-beta.N`) keeps `go get ...@latest` and `go get -u` on the last release. Use it while the API can still change.
@@ -23,7 +23,7 @@ This repository releases four Go modules. This runbook gives the rules for their
 `main` is always in the **development form**. A release commit, which only a tag points to, is in the **release form**.
 
 1. Development form (`main` and every branch): a released module requires each other module of this repository at the placeholder `v0.0.0`, with a `replace` to its relative directory (`./db`, `../pkg/functional`, `../`). The two always go together. A dependency's `replace` does not apply in the module that requires it, so `gen` also repeats the root's two `replace` lines: the root requires `db` and `pkg/functional` at `v0.0.0`. So `GOWORK=off` builds and CI test the modules of one commit together, and one pull request can change `db` and the root at once.
-2. Release form (a tagged commit): no `replace`, no `v0.0.0` and no pseudo-version. A released module requires each other module of this repository at its tag. Consumers ignore `replace`, and `go install module@version` (for example of `gen/cmd/nano`) refuses a `go.mod` that has one.
+2. Release form (a tagged commit): no `replace`, no `v0.0.0` and no pseudo-version. A released module requires each other module of this repository at its tag. Consumers ignore `replace`, and `go install module@version` (for example of `gen/cmd/nanostack`) refuses a `go.mod` that has one.
 3. A release commit is never merged into `main`. It lives on a `release/vX.Y.Z` branch, and `main` keeps the development form.
 4. `go.work` and `go.work.sum` are for development only. They are git-ignored. CI sets `GOWORK=off` and uses the `replace` lines.
 5. `lint/cmd/lintconfig` stays in the root module at its path, because consumers pin it as a `tool`.
@@ -149,7 +149,7 @@ git push origin gen/v0.23.0-beta.1
 git ls-remote --exit-code --tags origin refs/tags/gen/v0.23.0-beta.1
 ```
 
-`release.yml` builds a scratch consumer that pins `gen/cmd/nano` with `go get -tool` and runs `go tool nano`, as a service does.
+`release.yml` builds a scratch consumer that pins `gen/cmd/nanostack` with `go get -tool` and runs `go tool nanostack`, as a service does.
 
 At the `gen` release commit, `go test ./...` in `gen` fails in `gen/pipeline` and `gen/repo`. Their fixture modules (`pipeline/testdata/app`, `pipeline/testdata/dbapp`, `repo/testdata/problems/module`) replace the root with the repository directory and require `db` at `v0.0.0`, but the root and `gen` are now in the release form. The committed `nanogen.sum` of a fixture also records the development versions. This is expected, and CI on `main` runs these tests in the development form. Every other package must pass. Before you tag `gen`, check the release form with a consumer outside the repository instead:
 
@@ -157,28 +157,28 @@ At the `gen` release commit, `go test ./...` in `gen` fails in `gen/pipeline` an
 cp -R gen/pipeline/testdata/dbapp "$scratch" && cd "$scratch" && rm go.sum
 # go.mod: require the root and db tags of this release, and
 # replace github.com/nanostack-dev/nanostack-framework/gen => <repository>/gen
-go get -tool github.com/nanostack-dev/nanostack-framework/gen/cmd/nano@<version> && go mod tidy
+go get -tool github.com/nanostack-dev/nanostack-framework/gen/cmd/nanostack@<version> && go mod tidy
 go build ./... && go vet ./...
-go tool nano gen && go tool nano gen -check -fresh   # needs Docker or NANO_GEN_DATABASE_URL
+go tool nanostack gen && go tool nanostack gen -check -fresh   # needs Docker or NANO_GEN_DATABASE_URL
 ```
 
-The first `nano gen` rewrites only `nanogen.sum` (its version lines). `-check -fresh` must then pass.
+The first `nanostack gen` rewrites only `nanogen.sum` (its version lines). `-check -fresh` must then pass.
 
 ### 5. Verify
 
 - The push of each tag starts `release.yml`. Make sure that the run for each tag passed: `gh run list --workflow release.yml --limit 5`. To run the verification again: `gh workflow run release.yml --ref main -f version=v0.23.0-beta.1`. Each tag has its own concurrency group, so you can dispatch more than one tag at a time.
-- Do the consumer build check of [docs/runbooks/deployment.md](docs/runbooks/deployment.md) in echopoint and anchor with the published tag, in a scratch copy or a branch. Before the tags exist, that check must replace every released module that the service resolves (step 1 of that runbook): a replace of the root module alone leaves `db` and `pkg/functional` at versions that are not tagged, and a service that pins `nano` also resolves `gen`.
+- Do the consumer build check of [docs/runbooks/deployment.md](docs/runbooks/deployment.md) in echopoint and anchor with the published tag, in a scratch copy or a branch. Before the tags exist, that check must replace every released module that the service resolves (step 1 of that runbook): a replace of the root module alone leaves `db` and `pkg/functional` at versions that are not tagged, and a service that pins `nanostack` also resolves `gen`.
 
-## Consumers of nano
+## Consumers of nanostack
 
 A service runs the generators through a `tool` directive in its own `go.mod`. The directive pins the `gen` module, and `go.sum` records it:
 
 ```sh
-go get -tool github.com/nanostack-dev/nanostack-framework/gen/cmd/nano@<gen tag>
-go tool nano gen
+go get -tool github.com/nanostack-dev/nanostack-framework/gen/cmd/nanostack@<gen tag>
+go tool nanostack gen
 ```
 
-`go tool nano gen` runs every step in order, and CI runs it with `-check` ([generation](docs/generation.md#the-pipeline-nano-gen)). The pipeline rejects a `//go:generate` line that runs `nano gen`. The tool's dependencies (`golang.org/x/tools` among them) join the service's module graph, not the graph of a module that only imports the framework's runtime packages. The framework's own root module cannot pin `nano` this way: `gen` requires the root, so a `tool` line in the root `go.mod` would bring `gen` and its dependencies back into the root graph. It runs `go -C <path to gen> run ./cmd/nano gen -dir <directory>` instead.
+`go tool nanostack gen` runs every step in order, and CI runs it with `-check` ([generation](docs/generation.md#the-pipeline-nanostack-gen)). The pipeline rejects a `//go:generate` line that runs `nanostack gen`. The tool's dependencies (`golang.org/x/tools` among them) join the service's module graph, not the graph of a module that only imports the framework's runtime packages. The framework's own root module cannot pin `nanostack` this way: `gen` requires the root, so a `tool` line in the root `go.mod` would bring `gen` and its dependencies back into the root graph. It runs `go -C <path to gen> run ./cmd/nanostack gen -dir <directory>` instead.
 
 ## Rollback
 
@@ -191,6 +191,22 @@ go tool nano gen
   ```
 
 - A consumer goes back to the last good version with `go get <module>@<version>`, then `go mod tidy`.
+
+## Upgrade to the nanostack CLI
+
+The next `gen` release renames the CLI from `nano` to `nanostack` ([CHANGELOG.md](CHANGELOG.md#gen-next-release)).
+
+1. Swap the tool directive, then regenerate:
+
+   ```sh
+   go get -tool github.com/nanostack-dev/nanostack-framework/gen/cmd/nano@none
+   go get -tool github.com/nanostack-dev/nanostack-framework/gen/cmd/nanostack@<gen tag>
+   go mod tidy
+   go tool nanostack gen
+   ```
+
+   The run rewrites the header of every generated file from "Code generated by nano gen" to "Code generated by nanostack gen". It changes nothing else, so commit the regenerated files in the same pull request. The db step's outputs change with their headers, so `nanogen.sum` misses once: run it with Docker or `NANO_GEN_DATABASE_URL`, as `-fresh` does.
+2. Replace `go tool nano gen` with `go tool nanostack gen` in scripts, Makefiles, CI workflows and agent instructions. `grep -rn 'tool nano gen\|cmd/nano\b' .` finds them.
 
 ## Upgrade from v0.23.0-beta.3
 
@@ -230,7 +246,7 @@ go tool nano gen
    - A service with its own configuration copies the two `TEMP(golang/go#81188)` entries of [lint/base.golangci.yml](lint/base.golangci.yml): `nilness` under `govet.disable`, and `-SA4023` under `staticcheck.checks`. Use the linter release that [lint/README.md](lint/README.md#generic-methods-and-the-smoke-test) requires.
    - Delete each `.golangci.local.yml` rule that only hid a `nilness` or `SA4023` finding, and lower `exclusion-budget`.
    - When Go 1.27.4 ships, follow "To enable the checks again" in [lint/README.md](lint/README.md#generic-methods-and-the-smoke-test).
-3. Move the models to `nano gen db` ([generation](docs/generation.md#database-nano-gen-db)):
+3. Move the models to `nano gen db` ([generation](docs/generation.md#database-nanostack-gen-db)):
    1. Write `nanogen/project.go` with `Postgres`, if the service has no such file yet. Paths are relative to the directory that `nano gen` runs on. Set `Env` when the `.env.example` is not next to `Config` (echopoint and anchor: `Env: ".env.example"`), or the first run deletes the declared file as an orphan:
 
       ```go
@@ -248,7 +264,7 @@ go tool nano gen
    3. Run `go tool nano gen`. It needs Docker, or `NANO_GEN_DATABASE_URL` to a PostgreSQL server where the user has `CREATEDB`. Compare each model and table file with the file of the old generator: the files get a `Code generated by nano gen db` header and each table type gets `UniqueKeys()`. Check the columns of type `text[]`: the db step maps a one-dimensional `text[]` to a string array type, as the `useArray` hook of echopoint's `dbgen.go` did.
    4. Delete `dbgen.go` and its generation script, and commit the models, the table files and `<Out>/<Name>/nanogen.sum`. A later run that finds the same inputs in `nanogen.sum` opens no database. A framework upgrade changes a version line in `nanogen.sum`, so the first run after an upgrade needs a database again.
 4. Run `go tool nano gen -check -fresh` in CI, with Docker or `NANO_GEN_DATABASE_URL`. `-fresh` ignores `nanogen.sum` and generates from the migrations, so a stale model or key fails the job. It covers what the `wire.Run` and `genconfig.Run` freshness tests checked, so they can go.
-5. Declare the repositories ([generation](docs/generation.md#repositories-nano-gen-repo), [ADR 0026](docs/adr/0026-nano-gen-repo.md)). In each repository package, bind each interface to its implementation and table in a `func _()` in a file without a build tag:
+5. Declare the repositories ([generation](docs/generation.md#repositories-nanostack-gen-repo), [ADR 0026](docs/adr/0026-nano-gen-repo.md)). In each repository package, bind each interface to its implementation and table in a `func _()` in a file without a build tag:
 
    ```go
    func _() {
@@ -288,7 +304,7 @@ When a step changes a status, an error code or a response field after all, updat
    - With `LOG_WIRE=legacy`, the line's time and every `time.Time` attribute are RFC 3339 in whole seconds.
    - With `LegacySummary`, the request summary message is `METHOD /path -> STATUS (duration)`, the line has a `caller`, and its level is Error only for a 5xx status.
    - A key set with `Logger.With` that the context also carries is written once. A PostgreSQL statement cancelled at the client's request logs at Warn, and `pkg/search` client errors at Debug.
-6. Move to the pipeline, in its own pull request ([generation](docs/generation.md#the-pipeline-nano-gen)):
+6. Move to the pipeline, in its own pull request ([generation](docs/generation.md#the-pipeline-nanostack-gen)):
    1. Write `nanogen/project.go` before the first run. Set `Env` when the `.env.example` is not next to `Config`. The path is relative to the directory that `nano gen` runs on, the module root, so echopoint and anchor write `Env: ".env.example"`; the `../../.env.example` of their `//go:generate` lines is relative to `cmd/app`. Without it, the first run writes a new `.env.example` next to `Config` and deletes the declared one as an orphan.
    2. Declare the spec, the server package and each Go client in `API`. Delete the `//go:generate` lines that run `nano` or oapi-codegen, the oapi-codegen configuration files, and the client spec scripts that `PlainTypes` replaces: the pipeline refuses those lines.
    3. Tag every operation of a spec that has a server, and declare each tag under the top-level `tags` ([the tag split](docs/generation.md#the-tag-split)). Give each tag its own handler, whose constructor returns the tag interface (`func NewEmailHandler(...) api.EmailServer`), list the constructors and `api.NewHandlers` in `nano.Providers`, and pass `*api.Handlers` to `NewHTTPHandler`.

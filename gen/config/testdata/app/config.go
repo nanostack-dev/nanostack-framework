@@ -1,4 +1,4 @@
-// Package app is the golden fixture of nano gen config.
+// Package app is the golden fixture of nanostack gen config.
 package app
 
 import (

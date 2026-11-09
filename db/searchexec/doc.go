@@ -1,10 +1,10 @@
-// Package searchexec is the runtime of the searches that nano gen repo writes. The
+// Package searchexec is the runtime of the searches that nanostack gen repo writes. The
 // generated code and hand-written repositories call it; the package is not a query
 // language of its own, and every statement stays a Nanostack DB (go-jet) statement.
 //
 // # Generated searches
 //
-// nano gen repo writes three things per declared search: a Spec, a builder and the
+// nanostack gen repo writes three things per declared search: a Spec, a builder and the
 // repository method that runs it.
 //
 //   - The Spec is a package variable that DefineSpec returns. It holds the source (From), the
@@ -40,7 +40,7 @@
 //
 // A search runs on PostgreSQL (and CockroachDB), MySQL (and MariaDB) and SQLite: its source
 // is a table or join of db/postgres, db/mysql or db/sqlite, and the statement's dialect
-// selects the SQL of each condition. Any other source is keyset.ErrDialect. nano gen repo
+// selects the SQL of each condition. Any other source is keyset.ErrDialect. nanostack gen repo
 // writes PostgreSQL searches only for now; the runtime does not wait for it.
 //
 // # Field types

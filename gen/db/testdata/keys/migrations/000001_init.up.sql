@@ -1,4 +1,4 @@
--- One table per unique-index shape that nano gen db must classify, and one
+-- One table per unique-index shape that nanostack gen db must classify, and one
 -- foreign key and one column type per shape that ForeignKeys and ColumnTypes
 -- must report.
 CREATE COLLATION case_insensitive (provider = icu, locale = 'und-u-ks-level2', deterministic = false);

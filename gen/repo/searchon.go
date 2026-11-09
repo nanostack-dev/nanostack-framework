@@ -52,7 +52,7 @@ func (c *collector) walkExprs(s *searchDecl) []*readWalk {
 				what = "a function literal"
 			}
 			c.errorf(e.fn, "declare the function in this package, and pass its name",
-				"search %s: %s takes %s; nano gen repo reads a function of package %s by its name", s.name, e.role,
+				"search %s: %s takes %s; nanostack gen repo reads a function of package %s by its name", s.name, e.role,
 				what, c.l.pkg.Name)
 			continue
 		}

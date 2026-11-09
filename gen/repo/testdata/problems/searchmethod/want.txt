@@ -1,7 +1,7 @@
 searchmethod.go:37: Repository.SearchHandSort: search HandSort: sort popularity is hand-written, but SearchHandSort is generated and would refuse it
   fix: write SearchHandSort by hand on searchexec.Resolve, or declare the sort with nanorepo.SortExpr
-searchmethod.go:42: Repository.SearchPromoted: SearchPromoted takes a PromotedSearch and is promoted from the embedded searcher: nano gen repo cannot check that it runs the declared scope
-  fix: write SearchPromoted on *repositoryImpl by hand on searchexec.Resolve, or remove it from searcher so nano gen repo generates it
+searchmethod.go:42: Repository.SearchPromoted: SearchPromoted takes a PromotedSearch and is promoted from the embedded searcher: nanostack gen repo cannot check that it runs the declared scope
+  fix: write SearchPromoted on *repositoryImpl by hand on searchexec.Resolve, or remove it from searcher so nanostack gen repo generates it
 searchmethod.go:44: Repository.SearchWrongResult: SearchWrongResult returns ([]Item, error); the search WrongResult gives (search.Result[Item], error)
   fix: change it to:
          SearchWrongResult(ctx context.Context, q WrongResultSearch) (search.Result[Item], error)

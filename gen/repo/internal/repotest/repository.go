@@ -1,6 +1,6 @@
-// Package repotest is the fixture of nano gen repo: repositories declared on
-// the shop schema (migrations/), whose go-jet code nano gen db wrote into
-// db/shop, and the files nano gen repo writes for them: repo_base.gen.go and
+// Package repotest is the fixture of nanostack gen repo: repositories declared on
+// the shop schema (migrations/), whose go-jet code nanostack gen db wrote into
+// db/shop, and the files nanostack gen repo writes for them: repo_base.gen.go and
 // repository_repo.gen.go, with the derived methods. The generator's tests
 // check that the committed files are current, and the integration tests run
 // every helper of the base and every derived method on PostgreSQL.
@@ -113,7 +113,7 @@ type itemRepositoryImpl struct {
 }
 
 // SearchAssignableLabels runs the search on the base hatch, as the
-// generated method would: nano gen repo checks that it runs q.Query with
+// generated method would: nanostack gen repo checks that it runs q.Query with
 // its own ctx and the search's spec.
 func (r *itemRepositoryImpl) SearchAssignableLabels(
 	ctx context.Context, q AssignableLabelSearch,

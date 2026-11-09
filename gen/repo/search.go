@@ -13,7 +13,7 @@ import (
 )
 
 // searchDecl is one nanorepo.Search declaration (ADR 0027): the table
-// instances the search reads and every option. nano gen repo reads and
+// instances the search reads and every option. nanostack gen repo reads and
 // checks the declaration, then writes its builder (design 4.2).
 type searchDecl struct {
 	name      string
@@ -50,11 +50,11 @@ type searchDecl struct {
 	ignoresNode     ast.Node // the IgnoresFullText call
 	apiHandWritten  []string
 	handNode        ast.Node // the first APIHandWritten call
-	// mapper is the API mapper that nano gen repo writes, nil without API
+	// mapper is the API mapper that nanostack gen repo writes, nil without API
 	// or after a problem of the binding.
 	apiMapper *apiMapper
 
-	// builder is what nano gen repo writes for the search; unbuilt holds the
+	// builder is what nanostack gen repo writes for the search; unbuilt holds the
 	// problems of a shape it cannot write, which do not hide the search
 	// from -explain.
 	builder *builder
@@ -282,7 +282,7 @@ func (c *collector) searchName(s *searchDecl, arg ast.Expr) bool {
 }
 
 // searchTable resolves a table that a search reads: a PostgreSQL table of a
-// package that nano gen db generated with ColumnTypes and ForeignKeys, with
+// package that nanostack gen db generated with ColumnTypes and ForeignKeys, with
 // the facts of its model. Tables are read once per run.
 func (c *collector) searchTable(s *searchDecl, arg ast.Expr) *tableBase {
 	v, named, dialect, ok := c.tableVar(arg)
@@ -291,7 +291,7 @@ func (c *collector) searchTable(s *searchDecl, arg ast.Expr) *tableBase {
 	}
 	if dialect != postgresPath {
 		c.errorf(arg, "remove the declaration and write the search by hand on db/searchexec",
-			"search %s: %s is a %s table; nano gen repo writes PostgreSQL searches in this release",
+			"search %s: %s is a %s table; nanostack gen repo writes PostgreSQL searches in this release",
 			s.name, c.source(arg), dialects[dialect])
 		return nil
 	}
@@ -328,7 +328,7 @@ func (c *collector) searchFacts(s *searchDecl, arg ast.Expr, t *tableBase) *tabl
 	}
 	if len(missing) > 0 {
 		s.stale[t] = true
-		c.errorf(arg, "run nano gen db, which writes them",
+		c.errorf(arg, "run nanostack gen db, which writes them",
 			"search %s reads %s, and the table package has no %s for it", s.name, t.sqlName,
 			strings.Join(missing, " and no "))
 		return nil
@@ -336,7 +336,7 @@ func (c *collector) searchFacts(s *searchDecl, arg ast.Expr, t *tableBase) *tabl
 	for _, col := range t.columns {
 		if _, typed := t.catalog[col.sqlName]; !typed {
 			s.stale[t] = true
-			c.errorf(arg, "run nano gen db, which writes ColumnTypes from the catalogue",
+			c.errorf(arg, "run nanostack gen db, which writes ColumnTypes from the catalogue",
 				"search %s reads %s, and its ColumnTypes has no type for column %s", s.name, t.sqlName, col.sqlName)
 			return nil
 		}
@@ -345,7 +345,7 @@ func (c *collector) searchFacts(s *searchDecl, arg ast.Expr, t *tableBase) *tabl
 }
 
 // searchModel finds the model of t, the type of the same name in the model
-// package next to the table package, as nano gen db writes them, and sets
+// package next to the table package, as nanostack gen db writes them, and sets
 // the model facts of each column: Go type, nullability and primary key.
 func (c *collector) searchModel(arg ast.Expr, t *tableBase) bool {
 	modelPath := path.Join(path.Dir(t.pkgPath), "model")
@@ -362,13 +362,13 @@ func (c *collector) searchModel(arg ast.Expr, t *tableBase) bool {
 	}
 	st, isStruct := types.Unalias(types.Default(typeOrNil(model))).Underlying().(*types.Struct)
 	if model == nil || !isStruct {
-		c.errorf(arg, "regenerate the models with nano gen db",
+		c.errorf(arg, "regenerate the models with nanostack gen db",
 			"the model package %s has no struct %s for table %s", modelPath, t.goName, t.sqlName)
 		return false
 	}
 	t.model = model
 	if col := c.applyModel(t, model, st); col != nil {
-		c.errorf(arg, "regenerate the models with nano gen db",
+		c.errorf(arg, "regenerate the models with nanostack gen db",
 			"the model %s.%s has no field %s for column %s of table %s", pkg.Name(), t.goName, col.field,
 			col.sqlName, t.sqlName)
 		return false

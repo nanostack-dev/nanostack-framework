@@ -16,7 +16,7 @@ import (
 	gendb "github.com/nanostack-dev/nanostack-framework/gen/db"
 )
 
-// Main runs `nano gen [-dir d] [-check [-diff]] [-fresh] [-only s,s | -skip
+// Main runs `nanostack gen [-dir d] [-check [-diff]] [-fresh] [-only s,s | -skip
 // s,s] [-list] [-json]` and returns the exit code: 0 on success, 1 on a source
 // error, a validation gap or a stale, missing or orphaned file, 2 on bad
 // usage, 3 when the environment fails; -h prints the flags and returns 0.
@@ -27,7 +27,7 @@ import (
 // with an indented "fix:" line. With -json it prints one Event per line on
 // stdout instead. The db step reads NANO_GEN_DATABASE_URL.
 func Main(args []string, stdout, stderr io.Writer) int {
-	fs := flag.NewFlagSet("nano gen", flag.ContinueOnError)
+	fs := flag.NewFlagSet("nanostack gen", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	var opts Options
 	var only, skip string
@@ -48,7 +48,7 @@ func Main(args []string, stdout, stderr io.Writer) int {
 	if fs.NArg() > 0 {
 		_, _ = fmt.Fprintf(
 			stderr,
-			"nano gen: unexpected argument %q; generator names come before the flags\n",
+			"nanostack gen: unexpected argument %q; generator names come before the flags\n",
 			fs.Arg(0),
 		)
 		return 2
@@ -108,12 +108,12 @@ func writeText(stdout, stderr io.Writer, events []Event) {
 		}
 	}
 	if failed {
-		_, _ = fmt.Fprintln(stderr, "  fix: run nano gen without -check, then commit the result")
+		_, _ = fmt.Fprintln(stderr, "  fix: run nanostack gen without -check, then commit the result")
 	}
 	for _, e := range events {
 		switch e.Level {
 		case LevelSkipped:
-			_, _ = fmt.Fprintf(stderr, "nano gen %s: %s\n", e.Step, e.Msg)
+			_, _ = fmt.Fprintf(stderr, "nanostack gen %s: %s\n", e.Step, e.Msg)
 		case LevelError:
 			writeProblem(stderr, e)
 		case LevelWarning:
@@ -133,7 +133,7 @@ func writePlan(w io.Writer, e Event) {
 	}
 }
 
-// writeProblem prints "file:line: msg", or "nano gen <step>: msg" without a
+// writeProblem prints "file:line: msg", or "nanostack gen <step>: msg" without a
 // file, then the fix line.
 func writeProblem(w io.Writer, e Event) {
 	ge := gen.Error{File: e.File, Line: e.Line, Msg: e.Msg, Fix: e.Fix}
@@ -141,9 +141,9 @@ func writeProblem(w io.Writer, e Event) {
 	switch {
 	case e.File != "":
 	case e.Step == StepPlan:
-		prefix = "nano gen: "
+		prefix = "nanostack gen: "
 	default:
-		prefix = "nano gen " + e.Step + ": "
+		prefix = "nanostack gen " + e.Step + ": "
 	}
 	_, _ = fmt.Fprintln(w, prefix+ge.Error())
 }
@@ -164,10 +164,12 @@ func writeTemplate(w io.Writer, dir string) {
 		return
 	}
 	var b strings.Builder
-	b.WriteString("\nno " + projectFile + "; nano gen runs the steps it discovers. To declare the inputs it cannot " +
-		"discover, write " + projectFile + ":\n\n")
+	b.WriteString(
+		"\nno " + projectFile + "; nanostack gen runs the steps it discovers. To declare the inputs it cannot " +
+			"discover, write " + projectFile + ":\n\n",
+	)
 	b.WriteString("// Package nanogen declares the inputs of this module's code generation that\n" +
-		"// cannot be discovered. Run: go tool nano gen\npackage nanogen\n\n" +
+		"// cannot be discovered. Run: go tool nanostack gen\npackage nanogen\n\n" +
 		"import \"" + projectPkg + "\"\n\n")
 	b.WriteString("var Project = project.Project{")
 	if specs := findSpecs(root); len(specs) > 0 {

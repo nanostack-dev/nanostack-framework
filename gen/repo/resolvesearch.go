@@ -14,7 +14,7 @@ import (
 const searchPath = dbPath + "/search"
 
 // searchMethod is an interface method that takes a declared search and
-// that nano gen repo generates (design G8): it runs the search on the
+// that nanostack gen repo generates (design G8): it runs the search on the
 // search hatch of the base, mapping each row with the mapper of Map or
 // MapPage.
 type searchMethod struct {

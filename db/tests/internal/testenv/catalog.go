@@ -36,7 +36,7 @@ type catalogue struct {
 // CheckCatalog reads every schema of the test data of env's source with the
 // ReadSchema function of its dialect, renders the table types with
 // ColumnTypes and ForeignKeys, parses both methods back from the rendered
-// files with go/parser, as nano gen repo reads them, and compares them with
+// files with go/parser, as nanostack gen repo reads them, and compares them with
 // the catalogue: information_schema on PostgreSQL, MySQL and MariaDB, the
 // pragmas on SQLite. Every table must have both methods, and the test data
 // of the source must have at least one foreign key. CockroachDB is skipped:

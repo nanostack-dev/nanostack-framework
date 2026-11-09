@@ -93,7 +93,7 @@ type sfFixture struct {
 	// of the generated models on MySQL and SQLite. atLocal is a PostgreSQL timestamp, the
 	// same column as at on the other dialects.
 	at, atLocal Column
-	// timeRanges bind a TimeRange to each time column, as nano gen repo binds it.
+	// timeRanges bind a TimeRange to each time column, as nanostack gen repo binds it.
 	timeRanges                       map[string]func(sfSearch) searchexec.TimeRange[sfSearch]
 	spec                             *searchexec.Spec[sfRow, sfSort, string]
 	correlation, correlationNoTenant BoolExpression

@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// fromFix is the fix of a From function that nano gen repo cannot read.
+// fromFix is the fix of a From function that nanostack gen repo cannot read.
 const fromFix = "declare the function in this package with one statement, " +
 	"return table.X.INNER_JOIN(table.Y, <condition>) (or LEFT_JOIN), and pass its name to nanorepo.From"
 
@@ -22,7 +22,7 @@ var joins = map[string]string{ //nolint:gochecknoglobals // read-only table.
 func (c *collector) from(s *searchDecl, arg ast.Expr) {
 	info := c.l.pkg.TypesInfo
 	if _, isLit := ast.Unparen(arg).(*ast.FuncLit); isLit {
-		c.errorf(arg, fromFix, "search %s: From takes a function literal; nano gen repo reads a function of "+
+		c.errorf(arg, fromFix, "search %s: From takes a function literal; nanostack gen repo reads a function of "+
 			"package %s by its name", s.name, c.l.pkg.Name)
 		return
 	}
@@ -40,7 +40,7 @@ func (c *collector) from(s *searchDecl, arg ast.Expr) {
 		return
 	}
 	if ret, isReturn := onlyStatement(decl.Body).(*ast.ReturnStmt); !isReturn || len(ret.Results) != 1 {
-		c.errorf(arg, fromFix, "search %s: From %s is not one return statement: nano gen repo reads the tables "+
+		c.errorf(arg, fromFix, "search %s: From %s is not one return statement: nanostack gen repo reads the tables "+
 			"of the join from it", s.name, fn.Name())
 		return
 	}
@@ -131,7 +131,7 @@ func (c *collector) followJoin(s *searchDecl, call *ast.CallExpr, fn *types.Func
 		ret, isReturn = onlyStatement(decl.Body).(*ast.ReturnStmt)
 	}
 	if followed[fn] || !isReturn || len(ret.Results) != 1 {
-		c.errorf(call, fromFix, "search %s: From %s calls %s, which is not one return statement: nano gen repo "+
+		c.errorf(call, fromFix, "search %s: From %s calls %s, which is not one return statement: nanostack gen repo "+
 			"reads the tables of the join from it", s.name, s.from.name, fn.Name())
 		return false
 	}
@@ -217,7 +217,7 @@ func (c *collector) instanceRef(s *searchDecl, e ast.Expr) *instance {
 		sel, isSel := ast.Unparen(call.Fun).(*ast.SelectorExpr)
 		if !isSel || sel.Sel.Name != "AS" || len(call.Args) != 1 {
 			c.errorf(call, fromFix,
-				"search %s: From %s calls %s; nano gen repo reads table variables, AS and the join methods",
+				"search %s: From %s calls %s; nanostack gen repo reads table variables, AS and the join methods",
 				s.name, s.from.name, c.source(call.Fun))
 			return nil
 		}
@@ -229,7 +229,7 @@ func (c *collector) instanceRef(s *searchDecl, e ast.Expr) *instance {
 	}
 	if _, isVar := c.l.pkg.TypesInfo.Uses[tableIdent(e)].(*types.Var); !isVar {
 		c.errorf(e, fromFix,
-			"search %s: From %s reads %s; nano gen repo reads table variables, AS and the join methods",
+			"search %s: From %s reads %s; nanostack gen repo reads table variables, AS and the join methods",
 			s.name, s.from.name, c.source(e))
 		return nil
 	}

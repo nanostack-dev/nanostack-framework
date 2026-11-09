@@ -1,4 +1,4 @@
-// The fixture of the pipeline tests: its own module, so the paths nano gen
+// The fixture of the pipeline tests: its own module, so the paths nanostack gen
 // writes into headers do not depend on where a test copies it.
 module example.com/pipelineapp
 

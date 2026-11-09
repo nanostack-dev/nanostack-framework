@@ -1,5 +1,5 @@
 // Package misspelt names a column that its table does not have, in a search
-// (E1). go vet fails first; nano gen repo names the column it meant.
+// (E1). go vet fails first; nanostack gen repo names the column it meant.
 package misspelt
 
 import (

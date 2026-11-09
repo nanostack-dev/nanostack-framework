@@ -1,4 +1,4 @@
--- The schema of the nano gen repo fixture: one column per kind the base's
+-- The schema of the nanostack gen repo fixture: one column per kind the base's
 -- predicates branch on, a tenant column for the scope check, and a unique
 -- key for the OnUnique test. audit_events also has columns that the model
 -- reads as a string but that are not text (inet, jsonb), which get no

@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-// SearchExplanation is what nano gen repo read from one nanorepo.Search, as
+// SearchExplanation is what nanostack gen repo read from one nanorepo.Search, as
 // -explain prints it: the table instances, the scopes, the filters, the
 // sorts and the order.
 type SearchExplanation struct {
@@ -276,7 +276,7 @@ func (s *searchDecl) instanceOf(col *colRef) *instance {
 	return nil
 }
 
-// WriteSearchExplain writes the explanations of searches as nano gen repo
+// WriteSearchExplain writes the explanations of searches as nanostack gen repo
 // -explain prints them: per search a header line, then one labelled line
 // per fact, with the labels of every search in one column.
 func WriteSearchExplain(w io.Writer, explain []SearchExplanation) {

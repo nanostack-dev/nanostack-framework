@@ -45,13 +45,13 @@ derive.go:41: Items.FindBy: not implemented: no hand-written method on *itemsImp
          func (r *itemsImpl) FindBy(ctx context.Context) ([]Item, error)
        or name at least one column after By, or use FindAll or Count
 derive.go:43: Items.FindByTenantIDAndName: not implemented: no hand-written method on *itemsImpl, and the name does not derive: it returns one row, but (tenant_id, name) covers no unique key; the keys of items are items_pkey (id), items_tenant_sku_key (tenant_id, sku)
-  fix: return []Item; or add a unique index on (tenant_id, name) in a migration and rerun nano gen db;
+  fix: return []Item; or add a unique index on (tenant_id, name) in a migration and rerun nanostack gen db;
        or write it by hand on *itemsImpl, in a non-generated file of package derive:
          func (r *itemsImpl) FindByTenantIDAndName(ctx context.Context, tenantID uuid.UUID, name string) (functional.Option[Item], error) {
              return r.first(ctx, r.where.TenantID(tenantID).AND(r.where.Name(name)), r.t.CreatedAt.ASC(), r.t.ID.ASC())
          }
 derive.go:44: Items.GetByTenantIDAndStatus: not implemented: no hand-written method on *itemsImpl, and the name does not derive: it returns one row, but (tenant_id, status) covers no unique key; the keys of items are items_pkey (id), items_tenant_sku_key (tenant_id, sku)
-  fix: return []Item; or add a unique index on (tenant_id, status) in a migration and rerun nano gen db;
+  fix: return []Item; or add a unique index on (tenant_id, status) in a migration and rerun nanostack gen db;
        or write it by hand on *itemsImpl, in a non-generated file of package derive:
          func (r *itemsImpl) GetByTenantIDAndStatus(ctx context.Context, tenantID uuid.UUID, status model.ItemStatus) (Item, error)
 derive.go:46: Items.FindByTenantIDAndSkuAndName: not implemented: no hand-written method on *itemsImpl, and the name does not derive: has 2 value parameter(s), the name has 3 properties

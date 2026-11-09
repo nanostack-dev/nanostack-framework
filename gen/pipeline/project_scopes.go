@@ -27,7 +27,7 @@ func (c *projectCheck) scopes(scopes []string) {
 
 // contextScopes checks Postgres.ContextScopes: each column a column of
 // Scopes, once, with a function written as an import path, a dot and a
-// function name. nano gen repo checks the function itself where a search
+// function name. nanostack gen repo checks the function itself where a search
 // names it: the project check loads no package.
 func (c *projectCheck) contextScopes(scopes []string, ctx []project.ContextScope) {
 	const fix = `write the function as "example.com/app/internal/db/workspacescope.Filter"`
@@ -59,7 +59,7 @@ func funcPath(s string) bool {
 	return token.IsIdentifier(s[dot+1:])
 }
 
-// isColumnName reports whether s is a column name as nano gen db reads
+// isColumnName reports whether s is a column name as nanostack gen db reads
 // it: lower-case letters, digits and underscores, not starting with a digit.
 func isColumnName(s string) bool {
 	if s == "" || (s[0] >= '0' && s[0] <= '9') {

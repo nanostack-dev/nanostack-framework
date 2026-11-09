@@ -65,7 +65,7 @@ func renderHandlers(pkg, header string, groups []*tagGroup, defs []codegen.Opera
 
 	src, err := format.Source(b.Bytes())
 	if err != nil {
-		return nil, gen.Errorf(spec, 0, "report it: nano gen api wrote a "+HandlersFile+" that does not parse",
+		return nil, gen.Errorf(spec, 0, "report it: nanostack gen api wrote a "+HandlersFile+" that does not parse",
 			"format %s: %v", HandlersFile, err)
 	}
 	return src, nil

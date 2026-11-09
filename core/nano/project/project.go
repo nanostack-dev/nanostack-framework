@@ -1,9 +1,9 @@
 // Package project declares the inputs of a module's code generation that
-// nano gen cannot discover. A module holds one declaration, a package-level
+// nanostack gen cannot discover. A module holds one declaration, a package-level
 // variable named Project in nanogen/project.go:
 //
 //	// Package nanogen declares the inputs of this module's code generation
-//	// that cannot be discovered. Run: go tool nano gen
+//	// that cannot be discovered. Run: go tool nanostack gen
 //	package nanogen
 //
 //	import "github.com/nanostack-dev/nanostack-framework/core/nano/project"
@@ -23,7 +23,7 @@
 // The declaration is plain data, like nano.Manifest: nothing calls it and no
 // binary imports the nanogen package. The file carries no build tag, so
 // go build, go vet and gopls type-check it, and a misspelled field is a
-// compile error. nano gen reads the composite literal from source: every
+// compile error. nanostack gen reads the composite literal from source: every
 // value must be a literal or a constant.
 //
 // Everything else is discovered: //nano:errors catalogues, and the packages
@@ -36,22 +36,22 @@
 package project
 
 // Project is the declaration of one module's generation inputs. Every path is
-// relative to the directory nano gen runs on, the module root by default.
+// relative to the directory nanostack gen runs on, the module root by default.
 type Project struct {
 	// API is the OpenAPI document and the packages generated from it. Nil
 	// when the module has no OpenAPI document; the api and validate steps
 	// then have nothing to run on.
 	API *OpenAPI
-	// Postgres is the database whose go-jet models and table types nano gen
+	// Postgres is the database whose go-jet models and table types nanostack gen
 	// db generates from the migrations. Nil when the module has no database
 	// code to generate; the db step then has nothing to run on.
 	Postgres *Postgres
-	// Env is the .env.example file that nano gen config writes. Empty
+	// Env is the .env.example file that nanostack gen config writes. Empty
 	// writes .env.example next to the Config type.
 	Env string
 }
 
-// Postgres is a PostgreSQL database built from SQL migrations. nano gen db
+// Postgres is a PostgreSQL database built from SQL migrations. nanostack gen db
 // applies the migrations to an empty database, on a container it starts or
 // on the server NANO_GEN_DATABASE_URL names, and writes the go-jet code of
 // Schema to <Out>/<Name>/<Schema>/{model,table,view,enum}, with
@@ -70,16 +70,16 @@ type Postgres struct {
 	Out string
 	// Schema is the schema to generate. Default "public".
 	Schema string
-	// Image is the container image that nano gen db starts, such as
+	// Image is the container image that nanostack gen db starts, such as
 	// "timescale/timescaledb:2.23.0-pg18" when the migrations need an
 	// extension. Default "postgres:18-alpine".
 	Image string
 	// Scopes are the tenant columns, such as "platform_tenant_id" or
 	// "product_id". A table is scoped when it has one of them as a NOT NULL
-	// column. nano gen repo warns on a hand-written query of a scoped table,
+	// column. nanostack gen repo warns on a hand-written query of a scoped table,
 	// built on its generated base, that does not filter on the column,
 	// unless the method name ends in Internal. Empty: no table is scoped.
-	// nano gen repo also proves that every generated search covers each of
+	// nanostack gen repo also proves that every generated search covers each of
 	// them (ADR 0027): a column that is not in ContextScopes is a hard scope,
 	// whose value the caller passes in the scope value of the search.
 	Scopes []string
@@ -106,17 +106,17 @@ type ContextScope struct {
 	Func string
 }
 
-// OpenAPI is the API contract and the Go packages generated from it. nano
+// OpenAPI is the API contract and the Go packages generated from it. nanostack
 // gen api runs oapi-codegen v2.8.2 in-process on Spec, with the framework's
 // server templates, and writes the server and each client.
 type OpenAPI struct {
 	// Spec is the OpenAPI 3.0 or 3.1 document. It may sit outside the
-	// directory nano gen runs on, such as the spec of a service in a client
+	// directory nanostack gen runs on, such as the spec of a service in a client
 	// module: "../../apps/anchor/cmd/http/openapi.yaml".
 	Spec string
 	// Server is the package that holds the models and the strict server on
-	// net/http's ServeMux. nano gen api also writes handlers.gen.go there,
-	// the split of the server by OpenAPI tag, and nano gen validate writes
+	// net/http's ServeMux. nanostack gen api also writes handlers.gen.go there,
+	// the split of the server by OpenAPI tag, and nanostack gen validate writes
 	// validate.gen.go. A spec with a server tags every operation (ADR 0024).
 	// Its package name is the one its Go files declare, or the directory
 	// name when it has none. Zero in a module that holds only clients.
@@ -125,7 +125,7 @@ type OpenAPI struct {
 	Clients []Client
 	// SortByDirection is the direction of a search request that sends a
 	// sort_by and no sort_direction, as the API contract states it: "ASC"
-	// or "DESC". APIs differ here, so there is no default. nano gen repo
+	// or "DESC". APIs differ here, so there is no default. nanostack gen repo
 	// writes it into each generated API mapper (<Name>SearchFromAPI). It is
 	// required when the request body of a nanorepo.Search that declares API
 	// has a sort_by property.
@@ -143,7 +143,7 @@ type Package struct {
 
 // Client is a Go client of the API: models and a client type, in one file.
 type Client struct {
-	// Dir is the package directory. nano gen creates it when it is missing.
+	// Dir is the package directory. nanostack gen creates it when it is missing.
 	// A client holds the models of the whole spec, so it needs a directory
 	// of its own, apart from the server and the other clients.
 	Dir string

@@ -1,4 +1,4 @@
-// Package apigen holds the request bodies of openapi.yaml, as nano gen api
+// Package apigen holds the request bodies of openapi.yaml, as nanostack gen api
 // writes them.
 package apigen
 

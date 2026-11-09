@@ -1,6 +1,6 @@
 package metadata
 
-// Two facts from the catalogue are for nano gen db and nano gen repo:
+// Two facts from the catalogue are for nanostack gen db and nanostack gen repo:
 // Column.CatalogType and Table.ForeignKeys (Nanostack).
 //
 // Only the ReadSchema function of each dialect (postgres, mysql and sqlite)

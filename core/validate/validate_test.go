@@ -303,7 +303,7 @@ func assertErrors(t *testing.T, got, want validate.Errors) {
 
 type priority int
 
-// UnmarshalJSONFrom is the method nano gen validate writes for a named
+// UnmarshalJSONFrom is the method nanostack gen validate writes for a named
 // integer type.
 func (v *priority) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
 	return validate.DecodeInteger(dec, v)

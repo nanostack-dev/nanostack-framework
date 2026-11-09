@@ -2,7 +2,7 @@
   nanostack override of oapi-codegen v2.8.2 strict/strict-http.tmpl.
   Differences from upstream, and nothing else:
   - JSON bodies are read by nanohttp.Decode: strict json/v2 decoding plus the
-    Validate method nano gen validate generates. Errors are RFC 9457 problems.
+    Validate method nanostack gen validate generates. Errors are RFC 9457 problems.
   - Path, query, header and cookie parameters run the generated
     validateParams method after binding.
   - The default request and response error handlers are problem writers, so

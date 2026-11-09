@@ -13,7 +13,7 @@ import (
 )
 
 // stubBody replaces every function body of a stub.
-const stubBody = ` panic("nano gen stub") `
+const stubBody = ` panic("nanostack gen stub") `
 
 // stub returns src with every function body replaced by a panic. Every
 // declaration stays, so code that calls the file's functions still

@@ -16,7 +16,7 @@ import (
 	"github.com/nanostack-dev/nanostack-framework/db/searchexec"
 )
 
-// The filter methods of itemSearch, as nano gen repo writes them. The fixture's table has no
+// The filter methods of itemSearch, as nanostack gen repo writes them. The fixture's table has no
 // time column, so the time field reads a column of another table: the SQL test only reads
 // the condition.
 

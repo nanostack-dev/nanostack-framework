@@ -7,7 +7,7 @@ import (
 	"github.com/nanostack-dev/nanostack-framework/gen/repo/internal/repotest/db/shop/public/table"
 )
 
-// This file declares only a search: nano gen repo writes joined_repo.gen.go
+// This file declares only a search: nanostack gen repo writes joined_repo.gen.go
 // for it all the same.
 func _() {
 	// Two scope fields make the struct ItemOfTenantScope. One Scope with two

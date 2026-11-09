@@ -20,7 +20,7 @@ const (
 )
 
 // AppConfig holds the App's timeouts. A service embeds it in its Config as a
-// section, App nano.AppConfig `config:"app"`, so nano gen config binds it from
+// section, App nano.AppConfig `config:"app"`, so nanostack gen config binds it from
 // APP_START_TIMEOUT, APP_STOP_TIMEOUT and APP_HEALTH_TIMEOUT (or the app
 // section of a YAML layer) with the defaults below, and the generated Build
 // passes it to NewApp. A zero field of an AppConfig built by hand also takes

@@ -1,4 +1,4 @@
-// Package oas is the model of an OpenAPI 3.0 or 3.1 document that nano gen
+// Package oas is the model of an OpenAPI 3.0 or 3.1 document that nanostack gen
 // validate reads: operations, request bodies, parameters and schemas. It is
 // internal so the generator can change it without breaking an importer.
 package oas
