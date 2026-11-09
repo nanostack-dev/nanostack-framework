@@ -84,12 +84,60 @@ func _() {
 		nanorepo.DefaultSort(table.Items.CreatedAt, nanorepo.Asc),
 	)
 
-	// A joined table with an alias.
+	// A joined table with an alias: the options name its columns through
+	// AS, and -explain names them by the alias.
 	nanorepo.Search[model.Items]("ItemAliasedTenant", table.Items,
 		nanorepo.From(itemsWithAnAliasedTenant),
+		nanorepo.Filter(table.Tenants.AS("owner").Name, nanorepo.Eq),
 		nanorepo.Sort(table.Items.Name),
+		nanorepo.SortKey(table.Tenants.AS("owner").Name).API("owner_name"),
+		nanorepo.FilterExpr("OwnerName", ownerName, nanorepo.Eq),
+	)
+
+	// A From function that calls a helper, which nano gen repo follows; an
+	// ON condition that equates the unique key tenants_name_key with a field
+	// of the scope value, so the join adds one row; and expression functions
+	// with Func, CAST and a subquery whose instance has an alias.
+	nanorepo.Search[model.Items]("ItemOfNamedTenant", table.Items,
+		nanorepo.From(itemsOfNamedTenant),
+		nanorepo.SortExpr("Siblings", siblingCount),
+		nanorepo.Flag("HasSiblings", hasSiblings),
+		nanorepo.FilterExpr("LowerName", lowerName, nanorepo.Eq),
+		nanorepo.FullTextExpr(skuText),
 	)
 }
+
+// namedTenantScope stands for the scope value that nano gen repo generates.
+type namedTenantScope struct{ TenantName string }
+
+func itemsOfNamedTenant(s namedTenantScope) postgres.ReadableTable { return joinNamedTenant(s) }
+
+func joinNamedTenant(s namedTenantScope) postgres.ReadableTable {
+	return table.Items.INNER_JOIN(table.Tenants, table.Tenants.Name.EQ(postgres.String(s.TenantName)))
+}
+
+func siblingCount() postgres.IntegerExpression {
+	return postgres.IntExp(postgres.SELECT(postgres.COUNT(postgres.STAR)).
+		FROM(table.Items.AS("sibling")).
+		WHERE(table.Items.AS("sibling").TenantID.EQ(table.Items.TenantID)))
+}
+
+func hasSiblings() postgres.BoolExpression {
+	return postgres.EXISTS(postgres.SELECT(postgres.Int(1)).
+		FROM(table.Items.AS("sibling")).
+		WHERE(table.Items.AS("sibling").TenantID.EQ(table.Items.TenantID).
+			AND(table.Items.AS("sibling").ID.NOT_EQ(table.Items.ID))))
+}
+
+func lowerName() postgres.StringExpression {
+	return postgres.StringExp(postgres.Func("lower", table.Items.Name))
+}
+
+func skuText() postgres.StringExpression {
+	return postgres.StringExp(postgres.CAST(table.Items.Sku).AS("text"))
+}
+
+func ownerName() postgres.StringExpression { return table.Tenants.AS("owner").Name }
 
 func itemsWithTheirTenant() postgres.ReadableTable {
 	return table.Items.INNER_JOIN(table.Tenants, table.Tenants.ID.EQ(table.Items.TenantID))

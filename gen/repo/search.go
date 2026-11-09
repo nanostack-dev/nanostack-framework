@@ -14,7 +14,7 @@ import (
 
 // searchDecl is one nanorepo.Search declaration (ADR 0027): the table
 // instances the search reads and every option, as later steps generate them.
-// G3 reads and checks the declaration; it generates nothing yet.
+// nano gen repo reads and checks the declaration; it generates nothing yet.
 type searchDecl struct {
 	name      string
 	at        at
@@ -24,6 +24,8 @@ type searchDecl struct {
 	root      *instance   // the searched table
 	reads     []*instance // the root alone, or every table of the From function in join order
 	from      *fromFunc
+	exprs     []exprFunc  // the expression functions of the options, in option order
+	inner     []innerRead // the instances that a subquery of a From or expression function reads
 
 	mapper          *searchMapper
 	scopes          []scopeDecl
@@ -56,11 +58,16 @@ type searchDecl struct {
 type instance struct {
 	table *tableBase
 	alias string
-	join  string   // "" for the first table of the join, else "INNER JOIN", "LEFT JOIN", ...
-	on    ast.Expr // the ON condition, nil for the first table and a CROSS JOIN
+	text  string   // the table variable as written, such as table.Items
+	node  ast.Expr // where the instance is written
+	join  string   // "" for the first table of the join, else "INNER JOIN" or "LEFT JOIN"
+	on    ast.Expr // the ON condition, nil for the first table
 	// nullable is true on the nullable side of an outer join: every column of
 	// the instance can be NULL in a result row, whatever its model says.
 	nullable bool
+	// key is the unique key that the ON condition equates, so that the join
+	// adds at most one row per row before it (E31). nil for the first table.
+	key *uniqueKey
 }
 
 func (i *instance) String() string {
@@ -68,6 +75,31 @@ func (i *instance) String() string {
 		return i.table.sqlName + " AS " + i.alias
 	}
 	return i.table.sqlName
+}
+
+// name is the name that SQL gives the instance: its alias, or its table.
+func (i *instance) name() string {
+	if i.alias != "" {
+		return i.alias
+	}
+	return i.table.sqlName
+}
+
+// is reports whether the instance is the table t with alias.
+func (i *instance) is(t *tableBase, alias string) bool { return i.table == t && i.alias == alias }
+
+// exprFunc is the function of an expression option: FilterExpr, Flag,
+// Condition, SortExpr or FullTextExpr.
+type exprFunc struct {
+	role string   // how a message names it, such as "Flag Fresh"
+	fn   ast.Expr // the argument that names the function
+}
+
+// innerRead is an instance that a subquery reads, inside the function of
+// role.
+type innerRead struct {
+	role string
+	inst *instance
 }
 
 // nullable reports whether col of the instance can be NULL in a result row.
@@ -78,13 +110,18 @@ type fromFunc struct {
 	name       string
 	takesScope bool     // func(P) T: the function reads the scope value
 	arg        ast.Expr // the argument of From, where its problems are reported
+	decl       *ast.FuncDecl
+	param      types.Type // P, the type of the scope value; nil for func() T
 }
 
-// colRef is a column that an option names, such as table.Items.Name.
+// colRef is a column that an option names, such as table.Items.Name or
+// table.Tenants.AS("owner").Name.
 type colRef struct {
-	expr  ast.Expr
-	table *tableBase
-	col   column
+	expr      ast.Expr
+	table     *tableBase
+	alias     string
+	tableText string // the table variable as written, such as table.Tenants
+	col       column
 }
 
 func (r *colRef) String() string { return types.ExprString(r.expr) }
@@ -178,13 +215,17 @@ func (c *collector) searchCall(call *ast.CallExpr, inst types.Instance, typed bo
 	if root == nil {
 		return
 	}
-	s.root = &instance{table: root}
+	s.root = &instance{table: root, text: s.tableText, node: call.Args[1]}
 	for _, arg := range call.Args[2:] {
 		c.searchOption(s, arg, false)
 	}
 	if s.from == nil {
 		s.reads = []*instance{s.root}
 	}
+	if len(c.problems) > before {
+		return
+	}
+	c.readSet(s)
 	if len(c.problems) > before {
 		return
 	}

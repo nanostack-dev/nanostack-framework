@@ -145,8 +145,11 @@ func itemsWithTheirTenant() postgres.ReadableTable {
 	return shop.Items.INNER_JOIN(shop.Tenants, shop.Tenants.ID.EQ(shop.Items.TenantID))
 }
 
+// tenantsAndTheirItems joins at most one item per tenant (the key
+// items_tenant_sku_key), so the problem is the nullable side alone.
 func tenantsAndTheirItems() postgres.ReadableTable {
-	return shop.Tenants.LEFT_JOIN(shop.Items, shop.Items.TenantID.EQ(shop.Tenants.ID))
+	return shop.Tenants.LEFT_JOIN(shop.Items,
+		shop.Items.TenantID.EQ(shop.Tenants.ID).AND(shop.Items.Sku.EQ(shop.Tenants.Name)))
 }
 
 func aliasedItems() postgres.ReadableTable {

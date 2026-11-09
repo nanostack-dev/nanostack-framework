@@ -104,6 +104,7 @@ func (c *collector) option(s *searchDecl, name string, call *ast.CallExpr, goOnl
 		}
 	case "Condition":
 		s.conditions = append(s.conditions, call.Args[0])
+		s.exprs = append(s.exprs, exprFunc{role: name, fn: call.Args[0]})
 	case "Filter", "FilterAs", "FilterExpr", "FilterExists", "Flag":
 		c.filter(s, name, call, goOnly)
 	case "FullText", "FullTextExpr":
@@ -120,6 +121,7 @@ func (c *collector) option(s *searchDecl, name string, call *ast.CallExpr, goOnl
 		if field, ok := c.constString(s, call.Args[0]); ok {
 			s.sorts = append(s.sorts,
 				&searchSort{kind: name, field: field, expr: call.Args[1], api: []string{snake(field)}})
+			s.exprs = append(s.exprs, exprFunc{role: name + " " + field, fn: call.Args[1]})
 		}
 	case "SortHandWritten":
 		if api, ok := c.constString(s, call.Args[0]); ok {
@@ -136,6 +138,7 @@ func (c *collector) fullText(s *searchDecl, name string, call *ast.CallExpr, goO
 	if name == "FullTextExpr" {
 		for _, fn := range call.Args {
 			s.fullTextGoOnly[fn] = goOnly
+			s.exprs = append(s.exprs, exprFunc{role: name, fn: fn})
 		}
 		s.fullTextExprs = append(s.fullTextExprs, call.Args...)
 		return
@@ -274,7 +277,8 @@ func (c *collector) columnRefs(s *searchDecl, args []ast.Expr) []*colRef {
 }
 
 // columnRef reads a column argument: a column field of a table variable,
-// such as table.Items.Name.
+// such as table.Items.Name, or of an instance with an alias, such as
+// table.Tenants.AS("owner").Name.
 func (c *collector) columnRef(s *searchDecl, arg ast.Expr) *colRef {
 	sel, ok := ast.Unparen(arg).(*ast.SelectorExpr)
 	if !ok {
@@ -282,14 +286,22 @@ func (c *collector) columnRef(s *searchDecl, arg ast.Expr) *colRef {
 			"search %s: %s is not a column of a table variable", s.name, c.source(arg))
 		return nil
 	}
-	if _, isTable := ast.Unparen(sel.X).(*ast.SelectorExpr); !isTable {
-		if _, isIdent := sel.X.(*ast.Ident); !isIdent {
+	tableExpr, alias := ast.Unparen(sel.X), ""
+	if as, isAS := c.aliasCall(tableExpr); isAS {
+		var isString bool
+		if alias, isString = c.constString(s, as.Args[0]); !isString {
+			return nil
+		}
+		tableExpr = tableOperand(tableExpr)
+	}
+	if _, isTable := tableExpr.(*ast.SelectorExpr); !isTable {
+		if _, isIdent := tableExpr.(*ast.Ident); !isIdent {
 			c.errorf(arg, "name a column of a generated table, such as table.Items.Name",
 				"search %s: %s is not a column of a table variable", s.name, c.source(arg))
 			return nil
 		}
 	}
-	t := c.searchTable(s, sel.X)
+	t := c.searchTable(s, tableExpr)
 	if t == nil {
 		return nil
 	}
@@ -299,7 +311,21 @@ func (c *collector) columnRef(s *searchDecl, arg ast.Expr) *colRef {
 			"search %s: %s is not a column of %s", s.name, c.source(arg), t.sqlName)
 		return nil
 	}
-	return &colRef{expr: arg, table: t, col: col}
+	return &colRef{expr: arg, table: t, alias: alias, tableText: c.source(tableExpr), col: col}
+}
+
+// aliasCall reports whether e is X.AS(alias) on a table variable X.
+func (c *collector) aliasCall(e ast.Expr) (*ast.CallExpr, bool) {
+	call, ok := ast.Unparen(e).(*ast.CallExpr)
+	if !ok || len(call.Args) != 1 {
+		return nil, false
+	}
+	sel, isSel := ast.Unparen(call.Fun).(*ast.SelectorExpr)
+	if !isSel || sel.Sel.Name != "AS" {
+		return nil, false
+	}
+	v, isVar := c.l.pkg.TypesInfo.Uses[tableIdent(sel.X)].(*types.Var)
+	return call, isVar && tableNamed(v.Type()) != nil
 }
 
 // filter reads Filter, FilterAs, FilterExpr, FilterExists and Flag.
@@ -329,6 +355,7 @@ func (c *collector) filter(s *searchDecl, name string, call *ast.CallExpr, goOnl
 			return
 		}
 		f.expr, ops = call.Args[1], call.Args[2:]
+		s.exprs = append(s.exprs, exprFunc{role: name + " " + f.name, fn: f.expr})
 	}
 	for _, a := range ops {
 		op, ok := c.op(s, a)

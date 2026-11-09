@@ -10,9 +10,11 @@ import (
 
 // The searches of testdata/search read without a problem, and -explain
 // shows what nano gen repo found: the instances of each From function, with
-// the columns of a LEFT JOIN marked nullable and an alias; a Tiebreak that covers the
-// primary key (shaped like echopoint B10); the primary key as the default
-// tiebreak; and every option.
+// the columns of a LEFT JOIN marked nullable, an alias, and the unique key
+// that makes each join add at most one row (one equated with a scope field);
+// the instances of a subquery; a Tiebreak that covers the primary key
+// (shaped like echopoint B10); the primary key as the default tiebreak; and
+// every option.
 func TestSearchExplain(t *testing.T) {
 	t.Parallel()
 	res, err := Generate(Options{Dir: "testdata/search", Scopes: []string{"tenant_id"}})
@@ -25,7 +27,11 @@ func TestSearchExplain(t *testing.T) {
 	explain := b.String()
 	for _, want := range []string{
 		"tiebreak   sku, id: covers items_pkey (id)\n",
-		"read       tenants; LEFT JOIN; ON table.Tenants.ID.EQ(table.Items.TenantID); every column nullable\n",
+		"read       tenants; LEFT JOIN; ON table.Tenants.ID.EQ(table.Items.TenantID); one row by tenants_pkey (id); " +
+			"every column nullable\n",
+		"ON table.Tenants.Name.EQ(postgres.String(s.TenantName)); one row by tenants_name_key (name)\n",
+		"sort       owner_name: owner.name\n",
+		"subquery   SortExpr Siblings siblingCount reads items AS sibling\n",
 		"tiebreak   id: the primary key items_pkey (id), by default\n",
 		"sort       name: tenants.name, nullable\n",
 		"read       tenants AS owner; INNER JOIN; ",

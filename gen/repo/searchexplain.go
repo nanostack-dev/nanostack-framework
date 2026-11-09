@@ -45,6 +45,9 @@ func (c *collector) explainSearch(s *searchDecl) SearchExplanation {
 	for _, inst := range s.reads {
 		add("read", "%s", c.explainInstance(s, inst))
 	}
+	for _, in := range s.inner {
+		add("subquery", "%s reads %s", in.role, in.inst)
+	}
 	if s.mapper != nil {
 		kind := "Map"
 		if s.mapper.page {
@@ -107,6 +110,9 @@ func (c *collector) explainInstance(s *searchDecl, inst *instance) string {
 	}
 	if inst.on != nil {
 		parts = append(parts, "ON "+c.source(inst.on))
+	}
+	if inst.key != nil {
+		parts = append(parts, "one row by "+inst.key.String())
 	}
 	if inst.nullable {
 		parts = append(parts, "every column nullable")
@@ -226,17 +232,17 @@ func (c *collector) explainAPI(s *searchDecl, add func(label, format string, arg
 
 // qualifiedColumn renders a column as table.column, or alias.column.
 func (c *collector) qualifiedColumn(s *searchDecl, col *colRef) string {
-	if inst := s.instanceOf(col); inst == nil {
-		return col.table.sqlName + "." + col.col.sqlName + " (not read)"
+	if inst := s.instanceOf(col); inst != nil {
+		return inst.name() + "." + col.col.sqlName
 	}
-	return col.table.sqlName + "." + col.col.sqlName
+	return (&instance{table: col.table, alias: col.alias}).name() + "." + col.col.sqlName
 }
 
-// instanceOf returns the instance without an alias of the table of col, or
-// nil when the search does not read it (G5 reports that).
+// instanceOf returns the instance that col names, or nil when the search
+// does not read it (E5).
 func (s *searchDecl) instanceOf(col *colRef) *instance {
 	for _, inst := range s.reads {
-		if inst.table == col.table && inst.alias == "" {
+		if inst.is(col.table, col.alias) {
 			return inst
 		}
 	}

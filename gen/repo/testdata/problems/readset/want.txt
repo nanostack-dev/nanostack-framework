@@ -1,0 +1,64 @@
+readset.go:28: search ScopeNotRead: Scope(table.Tenants.ID) names tenants, which search ScopeNotRead does not read (it reads items)
+  fix: read it with nanorepo.From(fn), where fn returns table.Items.INNER_JOIN(table.Tenants, table.Items.TenantID.EQ(table.Tenants.ID))
+readset.go:33: search AliasNotRead: SortKey(table.Tenants.AS("owner").Name) names tenants AS owner, which search AliasNotRead does not read (it reads items, tenants)
+  fix: join it in itemsWithTheirTenant: INNER_JOIN(table.Tenants.AS("owner"), table.Items.TenantID.EQ(table.Tenants.AS("owner").ID))
+readset.go:36: search ExistsOtherTable: FilterExists(items, ...) names table.Tenants.ID, which is not a column of items
+  fix: name a column of items, the child table of FilterExists
+readset.go:88: Flag NamedTenant tenantNamed reads tenants, which search ExprNotRead does not read
+  fix: read it with nanorepo.From(fn), where fn returns table.Items.INNER_JOIN(table.Tenants, table.Items.TenantID.EQ(table.Tenants.ID))
+readset.go:90: FilterExpr BossName bossName reads tenants AS boss, which search ExprNotRead does not read
+  fix: read it with nanorepo.From(fn), where fn returns table.Items.INNER_JOIN(table.Tenants.AS("boss"), table.Items.TenantID.EQ(table.Tenants.AS("boss").ID))
+readset.go:85: From itemsOnOtherAlias reads tenants AS t, which search OnOtherAlias does not read
+  fix: join it in itemsOnOtherAlias: INNER_JOIN(table.Tenants.AS("t"), table.Items.TenantID.EQ(table.Tenants.AS("t").ID))
+readset.go:93: From rawJoin calls postgres.RawBool: it writes SQL that the tenant check cannot read
+  fix: build the expression with Nanostack DB constructors (columns, EQ, AND, postgres.LOWER, ...), inside a function
+readset.go:97: Condition custom calls postgres.CustomExpression: it writes SQL that the tenant check cannot read
+  fix: build the expression with Nanostack DB constructors (columns, EQ, AND, postgres.LOWER, ...), inside a function
+readset.go:101: Condition tokenConversion converts to postgres.Token: it writes SQL that the tenant check cannot read
+  fix: build the expression with Nanostack DB constructors (columns, EQ, AND, postgres.LOWER, ...), inside a function
+readset.go:107: FilterExpr Lower lowerByName calls postgres.Func with name, which is not a constant that matches ^[a-z_][a-z0-9_]*$: it writes SQL text
+  fix: pass the function name as a string constant, such as postgres.Func("lower", x)
+readset.go:111: FullTextExpr castByName calls postgres.CAST(table.Items.Sku).AS with "text; DROP TABLE items", which is not a constant that matches ^[a-z_][a-z0-9_]*$: it writes SQL text
+  fix: pass the type as a string constant, such as CAST(x).AS("text"), or use a typed cast, such as AS_TEXT()
+readset.go:115: From itemsWithParent reads the package variable parent: nano gen repo reads functions, not prebuilt values
+  fix: write table.Tenants.AS("parent") in the function in place of parent
+readset.go:118: Condition prebuilt reads the package variable expensiveCondition: nano gen repo reads functions, not prebuilt values
+  fix: write table.Items.Price.GT(postgres.Float(100)) in the function in place of expensiveCondition
+readset.go:121: From itemsInOtherSchema calls table.Tenants.FromSchema: it reads another table than the one whose facts nano gen db wrote
+  fix: read the table as nano gen db generated it: table.Tenants
+readset.go:125: Condition prefixed reads Active through table.Items.WithPrefix("old_"): nano gen repo reads the columns of table variables and of AS
+  fix: write the table variable in place, such as table.Items.WithPrefix("old_").Active
+readset.go:129: Condition enumValue calls postgres.NewEnumValue: it writes SQL that the tenant check cannot read
+  fix: build the expression with Nanostack DB constructors (columns, EQ, AND, postgres.LOWER, ...), inside a function
+readset.go:132: SortExpr Named columnByName calls postgres.StringColumn: it takes a string that becomes SQL text
+  fix: build the expression with Nanostack DB constructors (columns, EQ, AND, postgres.LOWER, ...), inside a function
+readset.go:135: Condition otherPackage calls strings.ToLower, which nano gen repo cannot follow
+  fix: call a function of this package, or a Nanostack DB constructor, directly
+readset.go:139: SortExpr First orderedSubquery uses LIMIT in a subquery: a subquery of a search reads with SELECT, FROM and WHERE only
+  fix: write the subquery with SELECT, FROM and WHERE only, or the search by hand on db/searchexec
+readset.go:144: Condition closure declares a function literal, which nano gen repo cannot follow
+  fix: call a function of this package, or a Nanostack DB constructor, directly
+readset.go:145: Condition closure calls active, which nano gen repo cannot resolve
+  fix: call a function of this package, or a Nanostack DB constructor, directly
+readset.go:149: Flag HasItems tableSelect calls table.Items.SELECT: a table of a search is read with INNER_JOIN, LEFT_JOIN or a subquery's FROM
+  fix: write a subquery as postgres.SELECT(...).FROM(table).WHERE(...)
+readset.go:62: search FuncLiteral: Flag Active takes a function literal; nano gen repo reads a function of package readset by its name
+  fix: declare the function in this package, and pass its name
+readset.go:153: From itemsCrossTenants uses CROSS_JOIN: it brings rows that no tenant link reaches
+  fix: INNER_JOIN(table.Tenants, table.Items.TenantID.EQ(table.Tenants.ID))
+readset.go:157: From itemsRightTenants uses RIGHT_JOIN: it brings rows that no tenant link reaches
+  fix: INNER_JOIN(table.Tenants, table.Items.TenantID.EQ(table.Tenants.ID))
+readset.go:161: From itemsFullTenants uses FULL_JOIN: it brings rows that no tenant link reaches
+  fix: INNER_JOIN(table.Tenants, table.Items.TenantID.EQ(table.Tenants.ID))
+readset.go:167: search AliasTwice: From ownerTwice reads owner twice: two instances of one name in a join make the query ambiguous
+  fix: give each instance its own alias, such as table.Tenants.AS("owner2")
+readset.go:171: search AliasIsATable: From tenantsNamedItems reads items twice: two instances of one name in a join make the query ambiguous
+  fix: give each instance its own alias, such as table.Tenants.AS("items2")
+readset.go:73: search TenantItem: tenantsAndTheirItems joins items ON table.Items.TenantID.EQ(table.Tenants.ID), which equates no unique key of items: a row of tenants can repeat
+  fix: join to one row: equate every column of a key that orders every row (its keys are items_pkey (id), items_tenant_sku_key (tenant_id, sku)), or filter on the child rows with nanorepo.FilterExists(...)
+readset.go:74: search OrJoin: itemsOrTenants joins tenants ON table.Tenants.ID.EQ(table.Items.TenantID).OR(table.Tenants.Name.EQ(table.Items.Name)), which equates no unique key of tenants: a row of items can repeat
+  fix: join to one row: equate every column of a key that orders every row (its keys are tenants_pkey (id), tenants_name_key (name)), or filter on the child rows with nanorepo.FilterExists(...)
+readset.go:75: search HalfKey: tenantsAndOneSku joins items ON table.Items.TenantID.EQ(table.Tenants.ID).AND(table.Items.Sku.NOT_EQ(table.Tenants.Name)), which equates no unique key of items: a row of tenants can repeat
+  fix: join to one row: equate every column of a key that orders every row (its keys are items_pkey (id), items_tenant_sku_key (tenant_id, sku)), or filter on the child rows with nanorepo.FilterExists(...)
+readset.go:188: search HelperTwoSteps: From viaHelperInTwoSteps calls twoSteps, which is not one return statement: nano gen repo reads the tables of the join from it
+  fix: declare the function in this package with one statement, return table.X.INNER_JOIN(table.Y, <condition>) (or LEFT_JOIN), and pass its name to nanorepo.From
