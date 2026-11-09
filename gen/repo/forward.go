@@ -184,10 +184,15 @@ func (p *parsedPackage) readMethod(d *ast.FuncDecl) {
 	p.ptr[recv], p.val[recv] = p.ptr[recv] || star, p.val[recv] || !star
 }
 
-// ownRepo reports whether f starts with the header of nanostack gen repo.
+// ownRepo reports whether f starts with the header of nanostack gen repo,
+// under the CLI's current name or its old one.
 func ownRepo(f *ast.File) bool {
-	return len(f.Comments) > 0 && f.Comments[0].Pos() < f.Package &&
-		strings.HasPrefix(f.Comments[0].List[0].Text, strings.TrimSpace(strings.SplitN(header, "\n", 2)[0]))
+	if len(f.Comments) == 0 || f.Comments[0].Pos() >= f.Package {
+		return false
+	}
+	first := f.Comments[0].List[0].Text
+	return strings.HasPrefix(first, strings.TrimSpace(header)) ||
+		strings.HasPrefix(first, strings.TrimSpace(legacyHeader))
 }
 
 // callsSearch reports whether f calls nanorepo.Search[...].

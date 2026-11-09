@@ -4,6 +4,10 @@ go 1.27
 
 toolchain go1.27.3
 
+// The repo step reads the files of a service upgrading from the nano CLI as
+// hand-written and reports each method twice. Use v0.23.0-beta.8.
+retract v0.23.0-beta.7
+
 require (
 	github.com/getkin/kin-openapi v0.149.0
 	github.com/google/uuid v1.6.0

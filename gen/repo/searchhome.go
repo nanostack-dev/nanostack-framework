@@ -103,7 +103,7 @@ func (l *loaded) declaredIn(dir, name string) (file string, line int, found bool
 			continue
 		}
 		data, ok := l.source(p)
-		if !ok || bytes.HasPrefix(data, []byte(header)) || !bytes.Contains(data, []byte(name)) {
+		if !ok || hasOwnHeader(data) || !bytes.Contains(data, []byte(name)) {
 			continue
 		}
 		f, parseErr := parser.ParseFile(fset, p, data, parser.SkipObjectResolution)
