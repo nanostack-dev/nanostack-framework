@@ -16,6 +16,11 @@ var (
 	// ErrRowLockNotSelect is returned when a locked context runs a statement
 	// that is not a SELECT, which has no row lock clause.
 	ErrRowLockNotSelect = errors.New("transactor: row lock requested on a statement that is not a SELECT")
+	// ErrRowLockSearch is returned when a page runs under a requested row
+	// lock. A page reads with a count, which PostgreSQL cannot lock, and a
+	// page never locks the rows it shows. Lock the rows in the statement that
+	// writes them instead.
+	ErrRowLockSearch = errors.New("transactor: row lock requested on a search page")
 )
 
 // ForShare asks every query run with the returned context to lock the rows it
@@ -52,6 +57,12 @@ func ForKeyShare(ctx context.Context) context.Context {
 // jet.UPDATE().NOWAIT() or jet.UPDATE().SKIP_LOCKED().
 func WithRowLock(ctx context.Context, lock jet.RowLock) context.Context {
 	return context.WithValue(ctx, rowLockContextKey{}, lock)
+}
+
+// rowLockRequested reports whether ctx asks for a row lock.
+func rowLockRequested(ctx context.Context) bool {
+	_, requested := ctx.Value(rowLockContextKey{}).(jet.RowLock)
+	return requested
 }
 
 func withRequestedRowLock(ctx context.Context, stmt jet.Statement) (jet.Statement, error) {
