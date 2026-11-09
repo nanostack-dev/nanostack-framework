@@ -105,6 +105,21 @@ return keyset.Page(db, func(m model.Invoice) model.Invoice { return m }, Invoice
 	Run(ctx, page.Pagination)
 ```
 
+**Search runtime** (`db/searchexec`): the runtime of the searches that `nano gen repo` writes.
+`Contains(term, exprs...)` is the substring rule of every search: it trims the term, makes
+`%`, `_` and `!` literal, and matches without case (`ILIKE` on PostgreSQL, `LOWER() LIKE
+LOWER()` on MySQL and SQLite). A blank term gives `TRUE`, and a term that is not valid UTF-8
+or holds NUL gives `FALSE`. Matching follows the column's collation: SQLite folds the case of
+ASCII letters only (load the ICU extension for Unicode), PostgreSQL on a `"C"` or `"POSIX"`
+column does the same, and the accent-insensitive collations of MySQL and MariaDB also ignore
+accents.
+
+```go
+stmt := SELECT(Invoice.AllColumns).FROM(Invoice).WHERE(
+	Invoice.TenantID.EQ(UUID(tenant)).AND(searchexec.Contains(term, Invoice.Number, Invoice.Customer)),
+)
+```
+
 The complete list of changes, the upstream commit we started from, and how we merge upstream
 releases are in [UPSTREAM.md](UPSTREAM.md). The go-jet README, which documents the statement
 builder in depth, is kept in [docs/upstream/README.md](docs/upstream/README.md); go-jet's
