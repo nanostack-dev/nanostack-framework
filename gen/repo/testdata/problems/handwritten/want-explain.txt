@@ -1,0 +1,13 @@
+Items on *itemsImpl (table items, scope tenant_id)
+  FindByTenantIDAndSku     derived: SELECT * FROM items WHERE tenant_id = $1 AND sku = $2 LIMIT 2 -- at most one row: items_tenant_sku_key (tenant_id, sku); a second row is ErrMoreThanOneRow
+  ExistsByTenantIDAndName  hand-written handwritten.go:50
+                           note: the name also derives (SELECT COUNT(*) FROM (SELECT 1 FROM items WHERE tenant_id = $1 AND name = $2 LIMIT 1) found); the hand-written method wins
+  FindByTenantIDAndName    hand-written handwritten.go:54
+                           note: the name would not derive: it returns one row, but (tenant_id, name) covers no unique key; the keys of items are items_pkey (id), items_tenant_sku_key (tenant_id, sku)
+  CountByTenantIDAndStock  hand-written handwritten.go:60  ERROR: signature differs from the interface
+                           note: the name also derives (SELECT COUNT(*) FROM items WHERE tenant_id = $1 AND stock = $2); the hand-written method wins
+  Touch                    hand-written: promoted from the embedded toucher, handwritten.go:66
+  ExistsByTenantIDAndSku   hand-written: promoted from the embedded skuHelper, handwritten.go:70  ERROR: signature differs from the interface
+                           note: the name also derives (SELECT COUNT(*) FROM (SELECT 1 FROM items WHERE tenant_id = $1 AND sku = $2 LIMIT 1) found); the hand-written method wins
+  Ping                     ERROR: ambiguous: promoted from pingA and pingB
+  Reset                    ERROR: ambiguous: promoted from resetter

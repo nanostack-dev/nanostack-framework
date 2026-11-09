@@ -202,9 +202,15 @@ Source: one Go interface per package whose doc comment holds `//nano:errors name
 
 Outputs, next to the declaration: `errors.gen.go` (a constructor, a typed error and an `Err<Name>` sentinel per error, plus the `Kinds` list) and `ERRORS.md` (the catalogue). The generator type-checks the package and its own output, so a declaration either generates code that compiles or fails with its `file:line`.
 
-## Repository bases: `nano gen repo`
+## Repositories: `nano gen repo`
 
 Package: [`gen/repo`](../gen/repo). Declarations: [`db/nanorepo`](../db/nanorepo). Runtime: [`pkg/db/transactor`](../pkg/db/transactor). Decision: [ADR 0026](adr/0026-nano-gen-repo.md).
+
+A repository is one interface and its implementation struct. Each method of the interface is, in this order:
+
+1. **hand-written**: the implementation has the method, in a file nano gen repo did not write, or promoted from an embedded field. It wins, and its signature must match the interface;
+2. **derived**: its name follows the grammar below on the bound table, so nano gen repo generates it on the implementation, as one call to a helper of the generated base;
+3. otherwise **an error** at the interface method, with the signature to paste on the implementation and, when one works, a derivable rename.
 
 **The declaration.** A repository package binds each repository interface to its implementation struct and a go-jet table, inside `func _() { … }` in a file without a build tag, so the compiler, `go vet` and gopls check it and a rename updates it:
 
@@ -218,7 +224,7 @@ func _() {
 
 The model row and the domain type come from the mapper, `func(model.Items) Item`. `nanorepo.NoMapper[model.X]` keeps the model rows. The mapper takes no state: it is a function, or a variable of the declaring package set to a function, a function literal or a method value on a type without fields; the base calls it with no dependencies. Two declarations on one table in one package share its base, so they pass the same mapper. Part 1 supports PostgreSQL tables only.
 
-**The base.** `repo_base.gen.go`, one per declaring package, holds a base per table. The implementation embeds it and sets it with the generated constructor:
+**The base.** `repo_base.gen.go`, one per declaring package, holds a base per table. The implementation embeds it and sets it with the generated constructor; hand-written methods use its members:
 
 ```go
 type itemRepositoryImpl struct {
@@ -229,8 +235,9 @@ func NewItemRepository(db qrm.DB) ItemRepository {
 	return &itemRepositoryImpl{itemsBase: newItemsBase(db)}
 }
 
-func (r *itemRepositoryImpl) FindBySKU(ctx context.Context, tenantID uuid.UUID, sku string) (functional.Option[Item], error) {
-	return r.findOne(ctx, r.where.TenantID(tenantID).AND(r.where.Sku(sku)))
+func (r *itemRepositoryImpl) ListActive(ctx context.Context, tenantID uuid.UUID) ([]Item, error) {
+	return r.findAll(ctx, r.where.TenantID(tenantID).AND(r.where.Status(model.ItemStatus_Active)),
+		r.t.Sku.ASC(), r.t.ID.ASC())
 }
 ```
 
@@ -247,6 +254,24 @@ func (r *itemRepositoryImpl) FindBySKU(ctx context.Context, tenantID uuid.UUID, 
 
 A nil `cond` on a read means every row. Every helper runs through `pkg/db/transactor`, so it joins the context transaction and keeps the row-lock rules: `findOne`, `first` and `findAll` honour `transactor.ForUpdate`, PostgreSQL refuses the lock on `exists` and `count`, and the two writes refuse it as `Exec` does. Predicate values are typed: `uuid` columns compare as `uuid`, enum columns cast to their type, so their index applies. Other string columns compare as text; a column of another type that the model reads as a string (`json`, `inet`, `tsvector`) needs a statement on `b.t`.
 
+**Derived methods.** A method of the interface without a hand-written body derives from its name:
+
+| Prefix | Example | Runs | Returns |
+| --- | --- | --- | --- |
+| `FindBy`, `GetBy` | `FindByTenantIDAndSku` | `findOne` (`LIMIT 2`) for one row, `findAll` for a slice | `(functional.Option[D], error)`, `(D, error)` (`sql.ErrNoRows` on no row), `([]D, error)` |
+| `FindAll` | `FindAllInternal` | `findAll` on every row | `([]D, error)` |
+| `ExistsBy` | `ExistsByTenantIDAndExternalID` | `exists` | `(bool, error)` |
+| `CountBy`, `Count` | `CountByTenantIDAndActive` | `count` | `(int64, error)` |
+| `DeleteBy` | `DeleteByTenantIDAndID` | `deleteWhere` | `error`, `(bool, error)` (a row was deleted), `(int64, error)` (how many) |
+
+- The properties are the Go field names of the table (`TenantID`, `Sku`), joined by `And`, equality only. `IgnoreCase`, `In`, `OrderBy`, `Or` and the other operators do not derive: the error gives the hand-written body on the base.
+- `ctx context.Context` comes first, then one parameter per property, bound by position. A parameter named after another column of the name is an error (`ExistsByTenantIDAndSku(ctx, sku, tenantID)`); a name that is no column binds by position. A parameter has the model field's type, or a named type over it, which the method converts; a pointer is an error, because `=` never matches `NULL`.
+- A single-row find, `Option[D]` or `D`, derives only when its columns cover the primary key or a key that `UniqueKeys()` lists ([the db step](#database-nano-gen-db)). Otherwise the error offers a slice, a unique index, or the hand-written body with `first` and an order.
+- On a table scoped by `Postgres.Scopes`, the name filters on a scope column first. A name that ends in `Internal` skips the rule **on a read** (`FindAllInternal`, `CountInternal`): the generated comment and `-explain` mark it `UNSCOPED`. A delete across tenants never derives; it is written by hand, where review sees it. When the name splits into columns with its `Internal`, as `FindByIsInternal` on a column `IsInternal`, the suffix is the column's: `FindByIsInternalInternal` skips the rule.
+- The rows a find returns are the mapper's domain type, or the model with `NoMapper`.
+
+The generated file is `<file>_repo.gen.go`, next to each declaring file that calls `nanorepo.Implement`: the derived methods of its bindings, each with its SQL in the comment, and a `var _ Iface = (*impl)(nil)` line per binding. When a hand-written body is deleted and nobody reruns nano gen, `go build` fails at that line. When the implementation embeds several bases, a derived method calls the one of its table by name.
+
 **Scope columns.** `Postgres.Scopes` in `nanogen/project.go` names the tenant columns (lower case, each once):
 
 ```go
@@ -260,11 +285,21 @@ warning: internal/repository/users.go:31: ByEmail: condition on users has no ten
   fix: add u.where.TenantID(…) to the condition, or name it ByEmailInternal for a trusted system path
 ```
 
-A warning keeps exit 0. The check is a guard against a forgotten filter, not a proof: a function that builds its condition elsewhere is judged by what it calls.
+A warning keeps exit 0. The check is a guard against a forgotten filter, not a proof: a function that builds its condition elsewhere is judged by what it calls. Derived methods are never warned about: their names already follow the scope rule.
 
-**All or nothing.** The generator loads the package with `repo_base.gen.go` replaced by an empty file, so a stale base never blocks a run, then type-checks the package with the new base. A compile error that remains is reported at its line, and nothing is written. An import of the base that the module cannot load, such as `pkg/db/transactor` in a module that has never imported it, is reported at the declaration with the `go get` that adds it. Every declaration problem is reported in one run, each at its line with a fix: a declaration that is not an interface and a struct of this package, a mapper with state, a table of another dialect, a hand-written name that clashes with a generated one.
+**All or nothing.** The generator loads the package with every file it wrote replaced by an empty file, so a stale output never blocks a run and a method a previous run derived never counts as hand-written. It resolves every method, then type-checks the package with the new files. A compile error that remains is reported at its line, beside every method that does not resolve, and nothing is written. An import of a generated file that the module cannot load, such as `pkg/db/transactor` in a module that has never imported it, is reported at the declaration with the `go get` that adds it. Every declaration problem is reported in one run, each at its line with a fix: a declaration that is not an interface and a struct of this package, a mapper with state, a table of another dialect, a hand-written name that clashes with a generated one, an implementation that does not embed the base its derived methods run on, a table package without `UniqueKeys` (run `nano gen db`), a hand-written file in the place of an output. A column that the base on disk had and the table lost is reported as a migration's rename, with the rename first.
 
-`nano gen repo [-dir d] [-scopes tenant_id,org_id] [-check]` is the single run on one package. The pipeline runs the step on each package that declares a repository, with the `Postgres.Scopes` of the declaration; it reads the table code from Go source, never a database.
+**The command.** `nano gen repo [-dir d] [-scopes tenant_id,org_id] [-check] [-explain [Iface…]]` is the single run on one package. `-check` writes nothing and exits 1 on a stale output, or on an orphan: a `<file>_repo.gen.go` whose declaring file binds nothing any more, which a run deletes. `-explain` prints how each method of each bound interface, or of those named, resolves, and writes nothing:
+
+```text
+ItemRepository on *itemRepositoryImpl (table items, scope tenant_id)
+  FindByTenantIDAndSku           derived: SELECT * FROM items WHERE tenant_id = $1 AND sku = $2 LIMIT 2 -- at most one row: items_tenant_sku_key (tenant_id, sku); a second row is ErrMoreThanOneRow
+  FindAllInternal                derived, UNSCOPED (Internal): SELECT * FROM items
+  ExistsByTenantIDAndName        hand-written repository.go:98
+                                 note: the name also derives (SELECT COUNT(*) FROM (SELECT 1 FROM items WHERE tenant_id = $1 AND name = $2 LIMIT 1) found); the hand-written method wins
+```
+
+The single run takes the scope columns from `-scopes`; the pipeline passes the `Postgres.Scopes` of the declaration, so `go tool nano gen -only repo` is the run to use in a service. The pipeline runs the step on each package that declares a repository, and reads the table code from Go source, never a database. The steps before repo load the package with a forward stub of each `<file>_repo.gen.go`: a method that panics for each interface method without a hand-written one, built by parsing alone. So the errors step still compiles a package whose interface just gained a method, or whose implementation just got a hand-written method that the last run derived. The methods of an interface of another package, or embedded from one, come from the last output on disk, minus those the implementation now has.
 
 ## The pipeline: `nano gen`
 
@@ -310,11 +345,11 @@ A module without the file still runs the steps nano discovers. `nano gen -list` 
 | api | the `API` of the declaration | the server file (`api.gen.go`), `handlers.gen.go` next to it, and each client file (`client.gen.go`) |
 | validate | the `API` of the declaration, when it has a server | `validate.gen.go` in the server package |
 | errors | each package with a `//nano:errors` declaration | `errors.gen.go`, `ERRORS.md` |
-| repo | each package that calls `nanorepo.Implement` or `nanorepo.Base`, with the `Postgres.Scopes` of the declaration | `repo_base.gen.go` |
+| repo | each package that calls `nanorepo.Implement` or `nanorepo.Base`, with the `Postgres.Scopes` of the declaration | `repo_base.gen.go`, and `<file>_repo.gen.go` per file that calls `nanorepo.Implement` |
 | config | each package with a `//go:build nanogen` file that calls `nano.Manifest` | `config.gen.go`, `CONFIG.md`, the `Env` file |
 | wire | the same packages | `wire.gen.go`, in the manifest package |
 
-**Order and failures.** Each step loads the fresh output of the steps before it. Without `-check`, a step writes before the next one loads. With `-check`, nothing is written: later loads see the fresh outputs as a `go/packages` overlay. In both modes, an existing output of a later step is replaced in each load by a stub whose function bodies panic, so a stale later output cannot break an earlier step. A failed step skips the steps that need it (validate needs api; repo needs db; config needs validate, errors and repo; wire needs config), and the other steps still run. When db fails, repo is skipped and keeps its base; api, validate and errors load the models on disk, which are the last good ones. db, api, validate, repo and config read `nanogen/project.go`, so a declaration with an error skips them, and wire. A validation gap fails the run but skips nothing.
+**Order and failures.** Each step loads the fresh output of the steps before it. Without `-check`, a step writes before the next one loads. With `-check`, nothing is written: later loads see the fresh outputs as a `go/packages` overlay. In both modes, an existing output of a later step is replaced in each load by a stub whose function bodies panic, so a stale later output cannot break an earlier step. The repo step gives its derived files a forward stub instead: it declares the methods the next run will add, so an interface that just gained a method breaks no earlier step. A failed step skips the steps that need it (validate needs api; repo needs db; config needs validate, errors and repo; wire needs config), and the other steps still run. When db fails, repo is skipped and keeps its base; api, validate and errors load the models on disk, which are the last good ones. db, api, validate, repo and config read `nanogen/project.go`, so a declaration with an error skips them, and wire. A validation gap fails the run but skips nothing.
 
 **Orphans.** Every output starts with `Code generated by nano gen <step>`. A file with that header, for a step that ran, that the run did not produce, is an orphan: `nano gen` deletes it and `-check` fails on it. So a deleted catalogue cannot leave its generated code behind, and neither can an `API` removed from the declaration. A skipped or failed step produced nothing, so its files stay. The db step plans `nanogen.sum` and the files it lists before it runs, and the files it produced after, so a run that hits its cache keeps the committed models and a dropped table's file is deleted. The scan does not run when a Go file fails to parse or holds an unknown `//nano:` directive: a misspelled `//nano:errors` would otherwise delete its catalogue's outputs.
 

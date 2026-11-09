@@ -43,7 +43,7 @@ Type arguments are inferred from `mapFunc` — spelling them out is unnecessary.
 deleted, err := transactor.ExecAffected(ctx, db, stmt).Value()
 ```
 
-`ErrMoreThanOneRow` is the error of a read that should match at most one row and matched two. The repository base that `nano gen repo` writes returns it from `findOne`, which reads `LIMIT 2`, so a key that stopped being unique fails instead of returning whichever row the database read first ([generation](../../../docs/generation.md#repository-bases-nano-gen-repo)). Match it with `errors.Is`: the wrapped error names the table.
+`ErrMoreThanOneRow` is the error of a read that should match at most one row and matched two. The repository base that `nano gen repo` writes returns it from `findOne`, which reads `LIMIT 2`, so a key that stopped being unique fails instead of returning whichever row the database read first ([generation](../../../docs/generation.md#repositories-nano-gen-repo)). Match it with `errors.Is`: the wrapped error names the table.
 
 ## Queries that may find nothing
 

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -48,9 +49,11 @@ func TestFixtureBaseIsCurrent(t *testing.T) {
 	if len(res.Warnings) > 0 {
 		t.Errorf("warnings on the fixture: %v", res.Warnings)
 	}
-	golden(t, filepath.Join(fixture, FileName), res.File.Data)
-	if res.File.Path != mustAbs(t, filepath.Join(fixture, FileName)) {
-		t.Errorf("path %s", res.File.Path)
+	if res.Files[0].Path != mustAbs(t, filepath.Join(fixture, FileName)) {
+		t.Errorf("path %s", res.Files[0].Path)
+	}
+	for _, f := range res.Files {
+		golden(t, f.Path, f.Data)
 	}
 }
 
@@ -71,8 +74,8 @@ func TestSharedBase(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	golden(t, "testdata/shared/repo_base.gen.go.golden", res.File.Data)
-	if n := bytes.Count(res.File.Data, []byte("type itemsBase struct")); n != 1 {
+	golden(t, "testdata/shared/repo_base.gen.go.golden", res.Files[0].Data)
+	if n := bytes.Count(res.Files[0].Data, []byte("type itemsBase struct")); n != 1 {
 		t.Errorf("itemsBase declared %d times, want once", n)
 	}
 }
@@ -94,7 +97,8 @@ func report(warnings []*gen.Error, err error) []byte {
 var declaredAt = regexp.MustCompile(`\(declared at [^)]*\)`)
 
 // Each package under testdata/problems prints the errors and warnings of
-// want.txt: one per rule, all in one run, each with a fix.
+// want.txt: one per rule, all in one run, each with a fix. A package whose
+// declarations resolve also prints the -explain of want-explain.txt.
 func TestProblems(t *testing.T) {
 	t.Parallel()
 	dirs, err := filepath.Glob("testdata/problems/*")
@@ -120,8 +124,24 @@ func TestProblems(t *testing.T) {
 				}
 			}
 			golden(t, filepath.Join(dir, "want.txt"), report(warnings, genErr))
+			explainGolden(t, filepath.Join(dir, "want-explain.txt"), res)
 		})
 	}
+}
+
+// explainGolden compares the -explain of res with path, which exists only
+// when the declarations resolved.
+func explainGolden(t *testing.T, path string, res *Result) {
+	t.Helper()
+	if res == nil || len(res.Explain) == 0 {
+		if _, err := os.Stat(path); err == nil && !*update {
+			t.Errorf("%s exists, but the run explains nothing", path)
+		}
+		return
+	}
+	var b bytes.Buffer
+	WriteExplain(&b, res.Explain)
+	golden(t, path, b.Bytes())
 }
 
 // Main writes the base, prints the warnings and exits 0; -check exits 1 on
@@ -194,7 +214,9 @@ func TestDeterministic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Equal(first.File.Data, again.File.Data) {
+	if !slices.EqualFunc(first.Files, again.Files, func(a, b gen.File) bool {
+		return a.Path == b.Path && bytes.Equal(a.Data, b.Data)
+	}) {
 		t.Fatal("two runs differ")
 	}
 }
@@ -218,8 +240,8 @@ func _() { nanorepo.Base[model.Tenants](table.Tenants) }
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Contains(res.File.Data, []byte("type tenantsBase struct")) {
-		t.Fatalf("no tenantsBase in:\n%s", res.File.Data)
+	if !bytes.Contains(res.Files[0].Data, []byte("type tenantsBase struct")) {
+		t.Fatalf("no tenantsBase in:\n%s", res.Files[0].Data)
 	}
 	if _, err = Generate(Options{Dir: dir, Overlay: map[string][]byte{"relative.go": src}}); err == nil {
 		t.Fatal("a relative overlay path was accepted")

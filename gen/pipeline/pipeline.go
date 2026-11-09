@@ -30,7 +30,8 @@
 //     into handlers.gen.go (package gen/api);
 //   - validate: the server of the Project's API;
 //   - repo: each package that calls nanorepo.Implement or nanorepo.Base:
-//     repo_base.gen.go holds a base per table (package gen/repo), and a
+//     repo_base.gen.go holds a base per table, and <file>_repo.gen.go the
+//     interface methods derived from their names (package gen/repo). A
 //     hand-written query without a column of the Project's Postgres.Scopes
 //     is a warning, which keeps exit 0.
 //
@@ -40,7 +41,8 @@
 // written: the fresh outputs reach later loads as a go/packages overlay. In
 // both modes an existing output of a later step is replaced, in every load,
 // by a stub whose function bodies panic, so a stale later output cannot
-// break an earlier step.
+// break an earlier step. The repo step supplies a forward stub of its
+// derived files instead, which declares the methods its next run adds.
 //
 // A failed step skips the steps that need it, and the other steps still
 // run, so one run reports every problem. repo needs db, and config needs
@@ -80,6 +82,7 @@ import (
 	"github.com/nanostack-dev/nanostack-framework/core/nano/project"
 	"github.com/nanostack-dev/nanostack-framework/gen"
 	gendb "github.com/nanostack-dev/nanostack-framework/gen/db"
+	genrepo "github.com/nanostack-dev/nanostack-framework/gen/repo"
 )
 
 // Options configures one run.
@@ -169,6 +172,12 @@ type step struct {
 	// as db's depend on the schema: the unit's outputs are a guess before
 	// the run, and only the files it produces are planned after it.
 	readsOutputs bool
+	// forward returns stubs of the unit's outputs, by absolute path, for the
+	// loads of the units before it, in place of the body-stripped stub of
+	// each existing output. A forward stub can declare what the next run
+	// will add, such as the method an interface just gained. nil: every
+	// existing Go output gets the body-stripped stub.
+	forward func(u *unit) map[string][]byte
 }
 
 // steps is the fixed order. The mapper and lint steps of the design join it
@@ -182,7 +191,8 @@ var steps = []step{ //nolint:gochecknoglobals // read-only table.
 	{name: "validate", needs: []string{"api"}, project: true, run: runValidate,
 		base: func(r *runner, _ *unit) string { return r.wd }},
 	{name: "errors", run: runErrors, base: unitBase},
-	{name: "repo", needs: []string{"db"}, project: true, run: runRepo, base: unitBase},
+	{name: "repo", needs: []string{"db"}, project: true, run: runRepo, base: unitBase,
+		forward: func(u *unit) map[string][]byte { return genrepo.ForwardStubs(u.dir) }},
 	{name: "config", needs: []string{"validate", "errors", "repo"}, project: true, run: runConfig, base: unitBase},
 	{name: "wire", needs: []string{"config"}, run: runWire, base: func(r *runner, _ *unit) string { return r.root }},
 }
@@ -457,40 +467,6 @@ func (r *runner) runUnit(i int, u *unit) {
 	}
 	r.problem(name, u.step.base(r, u), out.gaps)
 	r.warn(name, u.step.base(r, u), out.warnings)
-}
-
-// overlay returns the files that replace the disk in unit i's package
-// loads: the fresh outputs of earlier units under -check, and a stub of each
-// existing Go output of a later unit.
-func (r *runner) overlay(i int) map[string][]byte {
-	ov := map[string][]byte{}
-	if r.opts.Check {
-		for path, data := range r.fresh {
-			if strings.HasSuffix(path, ".go") && dirExists(filepath.Dir(path)) {
-				ov[path] = data
-			}
-		}
-	}
-	for _, later := range r.units[i+1:] {
-		for _, out := range later.outputs {
-			if _, done := r.fresh[out]; done || !strings.HasSuffix(out, ".go") {
-				continue
-			}
-			src, err := os.ReadFile(out)
-			if err != nil {
-				continue // missing: nothing to replace
-			}
-			if s, ok := stub(src); ok {
-				ov[out] = s
-			}
-		}
-	}
-	return ov
-}
-
-func dirExists(dir string) bool {
-	fi, err := os.Stat(dir)
-	return err == nil && fi.IsDir()
 }
 
 // sync compares one output with the disk and, without Check, writes it.

@@ -1,0 +1,3 @@
+Items on *itemsImpl (table items, scope tenant_id)
+  DeleteByTenantIDAndExternalRef  ERROR: not implemented
+                                  note: no column "ExternalRef" on table items any more: the last generated base had it, so a migration removed or renamed it

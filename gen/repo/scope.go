@@ -38,13 +38,7 @@ type scoped struct {
 func scopedTables(d *declarations, scopes []string) []scoped {
 	var out []scoped
 	for _, t := range d.tables {
-		var fields []string
-		for _, c := range t.columns {
-			if slices.Contains(scopes, c.sqlName) && !c.nullable {
-				fields = append(fields, c.field)
-			}
-		}
-		if len(fields) > 0 {
+		if fields := t.scopeFields(scopes); len(fields) > 0 {
 			out = append(out, scoped{t: t, fields: fields})
 		}
 	}

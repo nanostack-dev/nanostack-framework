@@ -1,2 +1,2 @@
-module.go:13: the generated base imports github.com/nanostack-dev/nanostack-framework/pkg/db/transactor, which the module cannot load: no required module provides package github.com/nanostack-dev/nanostack-framework/pkg/db/transactor
+module.go:13: the generated repo_base.gen.go imports github.com/nanostack-dev/nanostack-framework/pkg/db/transactor, which the module cannot load: no required module provides package github.com/nanostack-dev/nanostack-framework/pkg/db/transactor
   fix: add its module to go.mod: go get github.com/nanostack-dev/nanostack-framework/pkg/db/transactor, then rerun nano gen repo

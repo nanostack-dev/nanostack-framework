@@ -3,6 +3,7 @@ package genrepo
 import (
 	"go/ast"
 	"go/types"
+	"slices"
 	"strings"
 )
 
@@ -21,6 +22,8 @@ type tableBase struct {
 	schema    string     // the schema of the table, as the table file names it
 	sqlName   string     // product_users, as the table file names it
 	columns   []column   // in the table type's order
+	keys      []uniqueKey
+	keysFound bool // the table type has a UniqueKeys method
 
 	row    types.Type // the generated model, E
 	domain types.Type // what the row helpers return, D
@@ -81,6 +84,37 @@ func (t *tableBase) declaredNames() []string {
 // predicates: a plain string column that is not a key or an identifier.
 func (c column) textual() bool {
 	return c.lit == litString && !c.primary && !strings.HasSuffix(c.field, "ID")
+}
+
+// column returns the column of the Go field name.
+func (t *tableBase) column(field string) (column, bool) {
+	for _, c := range t.columns {
+		if c.field == field {
+			return c, true
+		}
+	}
+	return column{}, false
+}
+
+// fields returns the Go field names of the columns, in table order.
+func (t *tableBase) fields() []string {
+	out := make([]string, len(t.columns))
+	for i, c := range t.columns {
+		out[i] = c.field
+	}
+	return out
+}
+
+// scopeFields returns the Go fields of the scope columns of t: its NOT NULL
+// columns that scopes names (design D25).
+func (t *tableBase) scopeFields(scopes []string) []string {
+	var out []string
+	for _, c := range t.columns {
+		if slices.Contains(scopes, c.sqlName) && !c.nullable {
+			out = append(out, c.field)
+		}
+	}
+	return out
 }
 
 func (t *tableBase) hasContains() bool {
@@ -145,6 +179,8 @@ func (c *collector) table(arg ast.Expr) (*tableBase, bool) {
 	}
 	t.schema, t.sqlName = names.schema, names.table
 	t.columns = tableColumns(named, names.columns)
+	keys, found := src.keys[named.Obj().Name()]
+	t.resolveKeys(keys, found)
 	return t, true
 }
 

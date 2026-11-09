@@ -1,0 +1,12 @@
+handwritten.go:32: Items.Ping: Ping is promoted from embedded fields pingA and pingB at the same depth: the selector is ambiguous, so *itemsImpl has no Ping
+  fix: write Ping on *itemsImpl by hand to choose one, or remove it from all but one field:
+         func (r *itemsImpl) Ping(ctx context.Context) error
+handwritten.go:34: Items.Reset: Reset is promoted from the embedded resetter, through two of its own embedded fields at the same depth: the selector is ambiguous, so *itemsImpl has no Reset
+  fix: write Reset on *itemsImpl by hand to choose one, or remove it from all but one field:
+         func (r *itemsImpl) Reset(ctx context.Context) error
+handwritten.go:60: Items.CountByTenantIDAndStock: the hand-written method on *itemsImpl does not match Items: it is func(ctx context.Context, tenantID uuid.UUID, stock int64) (int64, error), the interface wants func(ctx context.Context, tenantID uuid.UUID, stock int32) (int64, error)
+  fix: change it to:
+         func (r *itemsImpl) CountByTenantIDAndStock(ctx context.Context, tenantID uuid.UUID, stock int32) (int64, error)
+handwritten.go:70: Items.ExistsByTenantIDAndSku: the method promoted from the embedded skuHelper does not match Items: it is func(context.Context, uuid.UUID, int) (bool, error), the interface wants func(ctx context.Context, tenantID uuid.UUID, sku string) (bool, error)
+  fix: change it to:
+         func (r skuHelper) ExistsByTenantIDAndSku(ctx context.Context, tenantID uuid.UUID, sku string) (bool, error)

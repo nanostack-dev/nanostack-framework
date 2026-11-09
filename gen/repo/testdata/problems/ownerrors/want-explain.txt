@@ -1,0 +1,5 @@
+Items on *itemsImpl (table items, scope tenant_id)
+  FindByTenantIDAndSku    ERROR: the signature does not type-check
+  FindActive              ERROR: not implemented
+                          note: it does not start with FindBy, GetBy, ExistsBy, CountBy, DeleteBy, FindAll or Count
+  CountByTenantIDAndName  derived: SELECT COUNT(*) FROM items WHERE tenant_id = $1 AND name = $2

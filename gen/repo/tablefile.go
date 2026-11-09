@@ -24,7 +24,8 @@ type tableNames struct {
 
 // tableFiles is what the files of one table package declare.
 type tableFiles struct {
-	tables map[string]tableNames // table variable -> names
+	tables map[string]tableNames  // table variable -> names
+	keys   map[string][]uniqueKey // table type, such as ItemsTable -> its UniqueKeys
 }
 
 // tableSource reads what the table package at path declares.
@@ -33,16 +34,18 @@ func (l *loaded) tableSource(path string) (*tableFiles, error) {
 	if err != nil {
 		return nil, err
 	}
-	src := &tableFiles{tables: map[string]tableNames{}}
+	src := &tableFiles{tables: map[string]tableNames{}, keys: map[string][]uniqueKey{}}
 	for _, f := range files {
 		readTableFile(f, src)
+		readUniqueKeys(l.fset, f, src)
 	}
 	return src, nil
 }
 
 // parsed returns the parsed Go files of the package at path, with the
-// overlay, by parsing alone: the names nano gen db gives tables, columns
-// and enums are string literals and file names in them. A file that does
+// overlay, by parsing alone: the names nano gen db gives tables, columns,
+// enums and unique keys are string literals, comments and file names in
+// them. A file that does
 // not parse is left out; the type check reports it.
 func (l *loaded) parsed(path string) (map[string]*ast.File, error) {
 	if files, ok := l.files[path]; ok {
@@ -58,7 +61,9 @@ func (l *loaded) parsed(path string) (map[string]*ast.File, error) {
 		return nil, gopkg.LoadFailed(l.dir, err)
 	}
 	files := map[string]*ast.File{}
-	fset := token.NewFileSet()
+	if l.fset == nil {
+		l.fset = token.NewFileSet()
+	}
 	for _, p := range pkgs {
 		for _, name := range p.GoFiles {
 			data, ok := overlay[name]
@@ -67,7 +72,8 @@ func (l *loaded) parsed(path string) (map[string]*ast.File, error) {
 					continue
 				}
 			}
-			if f, parseErr := parser.ParseFile(fset, name, data, parser.SkipObjectResolution); parseErr == nil {
+			f, parseErr := parser.ParseFile(l.fset, name, data, parser.SkipObjectResolution|parser.ParseComments)
+			if parseErr == nil {
 				files[name] = f
 			}
 		}

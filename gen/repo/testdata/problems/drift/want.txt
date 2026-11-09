@@ -1,0 +1,4 @@
+drift.go:17: Items.DeleteByTenantIDAndExternalRef: not implemented: no hand-written method on *itemsImpl, and the name does not derive: no column "ExternalRef" on table items any more: the last generated base had it, so a migration removed or renamed it
+  fix: rename it DeleteByTenantIDAndExternalID (did you mean ExternalID?);
+       or write it by hand on *itemsImpl, in a non-generated file of package drift:
+         func (r *itemsImpl) DeleteByTenantIDAndExternalRef(ctx context.Context, tenantID uuid.UUID, externalRef string) error
