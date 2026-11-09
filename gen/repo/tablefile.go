@@ -48,7 +48,7 @@ func (l *loaded) tableSource(path string) (*tableFiles, error) {
 }
 
 // parsed returns the parsed Go files of the package at path, with the
-// overlay, by parsing alone: the names nano gen db gives tables, columns,
+// overlay, by parsing alone: the names nanostack gen db gives tables, columns,
 // enums and unique keys are string literals, comments and file names in
 // them. A file that does
 // not parse is left out; the type check reports it.
@@ -91,7 +91,7 @@ func (l *loaded) parsed(path string) (map[string]*ast.File, error) {
 }
 
 // enumType returns the schema-qualified, quoted name of the PostgreSQL enum
-// that the model type n stands for: nano gen db writes the type of enum e
+// that the model type n stands for: nanostack gen db writes the type of enum e
 // into the model file e.go. ok is false when no such file declares n.
 func (l *loaded) enumType(t types.Type, schema string) (string, bool) {
 	n, ok := types.Unalias(t).(*types.Named)

@@ -17,7 +17,7 @@ import (
 var sizes = types.SizesFor("gc", "amd64")
 
 // value is a default or rule argument parsed at generation time, so a bad one
-// fails `nano gen config` instead of the service at start-up.
+// fails `nanostack gen config` instead of the service at start-up.
 type value struct {
 	i int64   // int and duration
 	u uint64  // uint

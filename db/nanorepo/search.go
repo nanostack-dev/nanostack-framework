@@ -2,7 +2,7 @@ package nanorepo
 
 import "context"
 
-// Column is satisfied by every column of a table type that nano gen db
+// Column is satisfied by every column of a table type that nanostack gen db
 // generates.
 type Column interface {
 	Name() string
@@ -10,7 +10,7 @@ type Column interface {
 
 // SearchOption configures one search declaration. Implement and Base take
 // none. Make search options only with the functions of this package: Go cannot
-// stop a type that embeds an option, a zero value or nil, so nano gen repo
+// stop a type that embeds an option, a zero value or nil, so nanostack gen repo
 // reads each argument of Search from source and refuses an argument that is
 // not a direct call of an option function of this package (a variable, a
 // spread slice, a call of another function or a composite literal).
@@ -26,14 +26,14 @@ func (option) searchOption() {}
 // Search declares a search named name over table, which reads rows of type
 // Row. Row is the generated model of table, or a struct that embeds the models
 // of the tables it reads and tags other fields with alias:"table.column".
-// nano gen repo generates the scope type, the New<name>Search constructor, the
+// nanostack gen repo generates the scope type, the New<name>Search constructor, the
 // <name>Sort enum and the query builder. With API, it also generates the API
 // mapper. A method of the repository interface that takes the query and
 // returns a search result is generated on the implementation, unless the
 // implementation has a hand-written method of that name.
 //
 // Like Implement, a search is a call inside func _() { ... }: Go type-checks
-// it and never runs it, and nano gen repo reads it from source. Columns and
+// it and never runs it, and nanostack gen repo reads it from source. Columns and
 // tables are Go values of the generated table types, so a missing column is a
 // compile error and a rename updates the declaration.
 //
@@ -54,19 +54,19 @@ func (option) searchOption() {}
 //	}
 //
 // The functions that a declaration names (From, Condition, FilterExpr, Flag,
-// FullTextExpr, SortExpr) are typed SQL of Nanostack DB. nano gen repo reads
+// FullTextExpr, SortExpr) are typed SQL of Nanostack DB. nanostack gen repo reads
 // their bodies to find every table instance that the search reads, and it
 // refuses raw SQL and calls that it cannot follow.
 //
 // The declarations compile with the tables of every dialect, because the
-// conditions and expressions are type parameters. In this release, nano gen
+// conditions and expressions are type parameters. In this release, nanostack gen
 // repo generates PostgreSQL searches only: a search on a MySQL or SQLite table
 // is a gen error (E16, ADR 0027 decision 7).
 //
 // The search functions do nothing at run time. Their parameters document the
-// call, and nano gen repo reads the arguments from source.
+// call, and nanostack gen repo reads the arguments from source.
 //
-//nolint:revive // the parameters document the call; nano gen repo reads the arguments from source
+//nolint:revive // the parameters document the call; nanostack gen repo reads the arguments from source
 func Search[Row any](name string, table Table, options ...SearchOption) {}
 
 // Map maps each row of the search to the domain type with fn. fn is a
@@ -74,7 +74,7 @@ func Search[Row any](name string, table Table, options ...SearchOption) {}
 // the type of one of its fields: nanorepo.Map((*WebhookMapper).RequestToDomain).
 // Without Map or MapPage, the search returns the rows.
 //
-//nolint:revive // the parameter documents the call; nano gen repo reads the argument from source
+//nolint:revive // the parameter documents the call; nanostack gen repo reads the argument from source
 func Map[F any](fn F) SearchOption { return option{} }
 
 // MapPage maps one page of rows with one call to fn, so that the mapper can
@@ -82,7 +82,7 @@ func Map[F any](fn F) SearchOption { return option{} }
 // func(context.Context, []Row) ([]D, error), or a method expression with the
 // same receivers as Map.
 //
-//nolint:revive // the parameter documents the call; nano gen repo reads the argument from source
+//nolint:revive // the parameter documents the call; nanostack gen repo reads the argument from source
 func MapPage[F any](fn F) SearchOption { return option{} }
 
 // From makes the search read a join instead of the bare table. fn is a
@@ -101,9 +101,9 @@ func MapPage[F any](fn F) SearchOption { return option{} }
 // covered, for example by a scope, or by an ON clause that equates the column
 // with a covered tenant column or a scope field. S6.2 of ADR 0027 gives the
 // full rule, and Unscoped gives the only exemption of a hard tenant column.
-// nano gen repo refuses CROSS, FULL and RIGHT joins.
+// nanostack gen repo refuses CROSS, FULL and RIGHT joins.
 //
-//nolint:revive // the parameter documents the call; nano gen repo reads the argument from source
+//nolint:revive // the parameter documents the call; nanostack gen repo reads the argument from source
 func From[F any](fn F) SearchOption { return option{} }
 
 // Scope makes the search require a value for column and more: the value is a
@@ -119,19 +119,19 @@ func From[F any](fn F) SearchOption { return option{} }
 // instance that is not on the nullable side of a LEFT JOIN. A zero value is
 // an error at run time.
 //
-//nolint:revive // the parameters document the call; nano gen repo reads the arguments from source
+//nolint:revive // the parameters document the call; nanostack gen repo reads the arguments from source
 func Scope(column Column, more ...Column) SearchOption { return option{} }
 
 // ScopeOrNull is Scope for rows that every tenant shares: the condition is
 // (column = value OR column IS NULL). The exemption file lists it.
 //
-//nolint:revive // the parameter documents the call; nano gen repo reads the argument from source
+//nolint:revive // the parameter documents the call; nanostack gen repo reads the argument from source
 func ScopeOrNull(column Column) SearchOption { return option{} }
 
 // ScopeNull keeps only the rows that no tenant owns: column IS NULL. It takes
 // no value. The exemption file lists it.
 //
-//nolint:revive // the parameter documents the call; nano gen repo reads the argument from source
+//nolint:revive // the parameter documents the call; nanostack gen repo reads the argument from source
 func ScopeNull(column Column) SearchOption { return option{} }
 
 // ScopeFunc scopes a context tenant column: every page and count applies
@@ -140,7 +140,7 @@ func ScopeNull(column Column) SearchOption { return option{} }
 // context scope column. fn can return TRUE (an organization-wide read). A nil
 // result is an error at run time.
 //
-//nolint:revive // the parameters document the call; nano gen repo reads the arguments from source
+//nolint:revive // the parameters document the call; nanostack gen repo reads the arguments from source
 func ScopeFunc[C Column, B any](fn func(context.Context, C) B, column C) SearchOption {
 	return option{}
 }
@@ -150,33 +150,33 @@ func ScopeFunc[C Column, B any](fn func(context.Context, C) B, column C) SearchO
 // be covered, so a search is never unscoped as a whole. The exemption file
 // lists the column with why.
 //
-//nolint:revive // the parameters document the call; nano gen repo reads the arguments from source
+//nolint:revive // the parameters document the call; nanostack gen repo reads the arguments from source
 func Unscoped(column Column, why string) SearchOption { return option{} }
 
 // Condition adds the condition that fn returns to every page and count
 // (kind = 'standalone'). fn returns a boolean expression of Nanostack DB. A
 // condition is not a tenant scope.
 //
-//nolint:revive // the parameter documents the call; nano gen repo reads the argument from source
+//nolint:revive // the parameter documents the call; nanostack gen repo reads the argument from source
 func Condition[B any](fn func() B) SearchOption { return option{} }
 
 // Filter makes column a field of the query builder with one method per op.
 // The values have the type of the model field.
 //
-//nolint:revive // the parameters document the call; nano gen repo reads the arguments from source
+//nolint:revive // the parameters document the call; nanostack gen repo reads the arguments from source
 func Filter(column Column, ops ...Op) SearchOption { return option{} }
 
 // FilterAs is Filter with values of type V, a named type over the type of the
 // model field (an enum).
 //
-//nolint:revive // the parameters document the call; nano gen repo reads the arguments from source
+//nolint:revive // the parameters document the call; nanostack gen repo reads the arguments from source
 func FilterAs[V any](column Column, ops ...Op) SearchOption { return option{} }
 
 // FilterExpr makes the expression that expr returns a field named name. Use
 // it when the column is not the value that the search filters on
 // (host(ip_address)).
 //
-//nolint:revive // the parameters document the call; nano gen repo reads the arguments from source
+//nolint:revive // the parameters document the call; nanostack gen repo reads the arguments from source
 func FilterExpr[E any](name string, expr func() E, ops ...Op) SearchOption { return option{} }
 
 // FilterExists keeps the rows that have a row of child whose column passes the
@@ -184,34 +184,34 @@ func FilterExpr[E any](name string, expr func() E, ops ...Op) SearchOption { ret
 // ...). link must match a declared foreign key to a covered instance, and the
 // tenant columns of child must be covered like those of any other instance.
 //
-//nolint:revive // the parameters document the call; nano gen repo reads the arguments from source
+//nolint:revive // the parameters document the call; nanostack gen repo reads the arguments from source
 func FilterExists(child Table, link, column Column, ops ...Op) SearchOption { return option{} }
 
 // Flag is a named condition that the query builder applies or negates:
 // <name>.Is(bool). The API property is the snake case of name
 // ("has_query_params").
 //
-//nolint:revive // the parameters document the call; nano gen repo reads the arguments from source
+//nolint:revive // the parameters document the call; nanostack gen repo reads the arguments from source
 func Flag[B any](name string, condition func() B) SearchOption { return option{} }
 
 // GoOnly marks a filter that the API does not expose: Go callers set it, and
 // the API check does not ask for a property.
 //
-//nolint:revive // the parameter documents the call; nano gen repo reads the argument from source
+//nolint:revive // the parameter documents the call; nanostack gen repo reads the argument from source
 func GoOnly(filter SearchOption) SearchOption { return option{} }
 
 // FullText matches the full-text term of the query against the text columns:
 // case-insensitive, with the wildcards of the term escaped. A row matches when
 // one column contains the term. A blank term matches every row.
 //
-//nolint:revive // the parameter documents the call; nano gen repo reads the argument from source
+//nolint:revive // the parameter documents the call; nanostack gen repo reads the argument from source
 func FullText(columns ...Column) SearchOption { return option{} }
 
 // FullTextExpr matches the full-text term against the text expressions that
 // exprs return. With FullText, the term matches the columns and the
 // expressions.
 //
-//nolint:revive // the parameter documents the call; nano gen repo reads the argument from source
+//nolint:revive // the parameter documents the call; nanostack gen repo reads the argument from source
 func FullTextExpr[E any](exprs ...func() E) SearchOption { return option{} }
 
 // Op is a filter operator. Each op is one method of the field on the query
@@ -223,7 +223,7 @@ type Op struct{}
 // conventional name: nanorepo.In.API("signature_statuses"). For Range, the
 // names are the two bounds, in the order of Range.
 //
-//nolint:revive // the parameters document the call; nano gen repo reads the arguments from source
+//nolint:revive // the parameters document the call; nanostack gen repo reads the arguments from source
 func (o Op) API(properties ...string) Op { return o }
 
 // HalfOpen makes a Range include its lower bound and exclude its upper bound:
@@ -240,7 +240,7 @@ func (o Op) Exclusive() Op { return o }
 // The time field of the query builder has Since (>=), Until (<=), After (>)
 // and Before (<) for Go callers.
 //
-//nolint:revive // the parameters document the call; nano gen repo reads the arguments from source
+//nolint:revive // the parameters document the call; nanostack gen repo reads the arguments from source
 func Range(names ...string) Op { return Op{} }
 
 // The operators of Filter, FilterAs, FilterExpr and FilterExists.
@@ -276,7 +276,7 @@ var (
 // Sort makes columns sortable. The API name of each sort is the column name.
 // Every column must map to a field of Row.
 //
-//nolint:revive // the parameter documents the call; nano gen repo reads the argument from source
+//nolint:revive // the parameter documents the call; nanostack gen repo reads the argument from source
 func Sort(columns ...Column) SearchOption { return option{} }
 
 // SortSpec is a sort that SortKey declares. It is a SearchOption.
@@ -287,13 +287,13 @@ func (SortSpec) searchOption() {}
 // SortKey makes column sortable, with the API names and the NULL placement
 // that the methods of SortSpec give.
 //
-//nolint:revive // the parameter documents the call; nano gen repo reads the argument from source
+//nolint:revive // the parameter documents the call; nanostack gen repo reads the argument from source
 func SortKey(column Column) SortSpec { return SortSpec{} }
 
 // API gives the sort_by values of the sort instead of the column name. Two
 // names are two API values of one key with one cursor signature.
 //
-//nolint:revive // the parameters document the call; nano gen repo reads the arguments from source
+//nolint:revive // the parameters document the call; nanostack gen repo reads the arguments from source
 func (s SortSpec) API(names ...string) SortSpec { return s }
 
 // NullsFirst puts NULL before every value, in both directions. The column
@@ -311,21 +311,21 @@ func (s SortSpec) NullsLast() SortSpec { return s }
 // the expression: a pointer when the expression can be NULL. A subquery in
 // expr can only aggregate (COUNT, SUM, MIN, MAX).
 //
-//nolint:revive // the parameters document the call; nano gen repo reads the arguments from source
+//nolint:revive // the parameters document the call; nanostack gen repo reads the arguments from source
 func SortExpr[E any](field string, expr func() E) SearchOption { return option{} }
 
 // SortHandWritten declares a sort value that the declaration cannot express.
 // It adds a constant to the sort enum. Only a hand-written repository method
-// can serve it, so nano gen repo refuses it on a generated method.
+// can serve it, so nanostack gen repo refuses it on a generated method.
 //
-//nolint:revive // the parameter documents the call; nano gen repo reads the argument from source
+//nolint:revive // the parameter documents the call; nanostack gen repo reads the argument from source
 func SortHandWritten(name string) SearchOption { return option{} }
 
 // Tiebreak ends every order with columns, so that the order is total and a
 // cursor is stable. The columns must cover a unique key of the table. Without
 // Tiebreak, the primary key ends every order.
 //
-//nolint:revive // the parameter documents the call; nano gen repo reads the argument from source
+//nolint:revive // the parameter documents the call; nanostack gen repo reads the argument from source
 func Tiebreak(columns ...Column) SearchOption { return option{} }
 
 // Direction is the direction of a default sort.
@@ -342,24 +342,24 @@ const (
 // DefaultSort is the order when the caller gives none. column must be
 // sortable.
 //
-//nolint:revive // the parameters document the call; nano gen repo reads the arguments from source
+//nolint:revive // the parameters document the call; nanostack gen repo reads the arguments from source
 func DefaultSort(column Column, direction Direction) SearchOption { return option{} }
 
 // DefaultSortExpr is the order when the caller gives none, on the Row field of
 // a SortExpr.
 //
-//nolint:revive // the parameters document the call; nano gen repo reads the arguments from source
+//nolint:revive // the parameters document the call; nanostack gen repo reads the arguments from source
 func DefaultSortExpr(field string, direction Direction) SearchOption { return option{} }
 
 // DefaultLimit is the page size when the caller gives none. With API, the
 // default of pagination.limit in the request body applies, and both must agree
 // when both are given.
 //
-//nolint:revive // the parameter documents the call; nano gen repo reads the argument from source
+//nolint:revive // the parameter documents the call; nanostack gen repo reads the argument from source
 func DefaultLimit(n int32) SearchOption { return option{} }
 
 // API generates the mapper from the request body type Body to the query
-// builder. nano gen repo checks the declaration against Body and the OpenAPI
+// builder. nanostack gen repo checks the declaration against Body and the OpenAPI
 // spec both ways: every filter property, every sort_by value and
 // full_text_search. A body property that the mapper does not read is an
 // error, unless IgnoresFullText or APIHandWritten names it.
@@ -370,12 +370,12 @@ func API[Body any]() SearchOption { return option{} }
 // the schema of the endpoint. why is the reason that a reviewer reads, and the
 // exemption file lists it.
 //
-//nolint:revive // the parameter documents the call; nano gen repo reads the argument from source
+//nolint:revive // the parameter documents the call; nanostack gen repo reads the argument from source
 func IgnoresFullText(why string) SearchOption { return option{} }
 
 // APIHandWritten names the body properties that the service resolves before
 // it filters: the generated mapper skips them, and the service sets the
 // matching GoOnly filter. The exemption file lists each property.
 //
-//nolint:revive // the parameter documents the call; nano gen repo reads the argument from source
+//nolint:revive // the parameter documents the call; nanostack gen repo reads the argument from source
 func APIHandWritten(properties ...string) SearchOption { return option{} }

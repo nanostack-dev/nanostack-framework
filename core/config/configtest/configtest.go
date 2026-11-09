@@ -1,5 +1,5 @@
 // Package configtest checks a hand-written default Config against the
-// default: struct tags that nano gen config reads, so the tags stay the one
+// default: struct tags that nanostack gen config reads, so the tags stay the one
 // source of truth for the defaults.
 package configtest
 

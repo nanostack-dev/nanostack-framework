@@ -82,7 +82,7 @@ func write(t *testing.T, dir, rel, content string) {
 	}
 }
 
-// nano runs `nano gen` with args on dir.
+// nanostack runs `nanostack gen` with args on dir.
 func nano(t *testing.T, dir string, args ...string) (stdout, stderr string, code int) {
 	t.Helper()
 	var out, errOut bytes.Buffer
@@ -102,7 +102,7 @@ func wantRun(t *testing.T, name string, code, wantCode int, stdout, wantStdout, 
 func TestFreshFixtureChecksClean(t *testing.T) {
 	t.Parallel()
 	stdout, stderr, code := nano(t, fixture, "-check")
-	wantRun(t, "nano gen -check", code, 0, stdout, "", stderr, "")
+	wantRun(t, "nanostack gen -check", code, 0, stdout, "", stderr, "")
 }
 
 // A renamed Config field makes config and wire stale. -check lists them and
@@ -115,22 +115,22 @@ func TestStaleConfigAndWire(t *testing.T) {
 		"Welcome GreetingConfig `config:\"welcome\"`")
 
 	stdout, stderr, code := nano(t, dir, "-check")
-	wantRun(t, "nano gen -check", code, 1, stdout, "", stderr, `stale cmd/app/config.gen.go
+	wantRun(t, "nanostack gen -check", code, 1, stdout, "", stderr, `stale cmd/app/config.gen.go
 stale cmd/app/CONFIG.md
 stale cmd/app/.env.example
 stale cmd/app/wire.gen.go
-  fix: run nano gen without -check, then commit the result
+  fix: run nanostack gen without -check, then commit the result
 `)
 
 	stdout, stderr, code = nano(t, dir)
-	wantRun(t, "nano gen", code, 0, stdout, `wrote cmd/app/config.gen.go
+	wantRun(t, "nanostack gen", code, 0, stdout, `wrote cmd/app/config.gen.go
 wrote cmd/app/CONFIG.md
 wrote cmd/app/.env.example
 wrote cmd/app/wire.gen.go
 `, stderr, "")
 
 	stdout, stderr, code = nano(t, dir, "-check")
-	wantRun(t, "nano gen -check after the run", code, 0, stdout, "", stderr, "")
+	wantRun(t, "nanostack gen -check after the run", code, 0, stdout, "", stderr, "")
 }
 
 // -diff shows where a stale file differs.
@@ -145,7 +145,7 @@ func TestCheckDiff(t *testing.T) {
 	}
 }
 
-// Deleting a catalogue leaves its outputs behind with a nano gen errors
+// Deleting a catalogue leaves its outputs behind with a nanostack gen errors
 // header: -check reports them as orphans, a run deletes them.
 func TestOrphanAfterDeletedCatalogue(t *testing.T) {
 	t.Parallel()
@@ -154,13 +154,22 @@ func TestOrphanAfterDeletedCatalogue(t *testing.T) {
 		t.Fatal(err)
 	}
 	stdout, stderr, code := nano(t, dir, "-check", "-only", "errors")
-	wantRun(t, "nano gen -check", code, 1, stdout, "", stderr, `orphan greeterr/ERRORS.md
+	wantRun(t, "nanostack gen -check", code, 1, stdout, "", stderr, `orphan greeterr/ERRORS.md
 orphan greeterr/errors.gen.go
-  fix: run nano gen without -check, then commit the result
+  fix: run nanostack gen without -check, then commit the result
 `)
 
 	stdout, stderr, code = nano(t, dir, "-only", "errors")
-	wantRun(t, "nano gen", code, 0, stdout, "deleted greeterr/ERRORS.md\ndeleted greeterr/errors.gen.go\n", stderr, "")
+	wantRun(
+		t,
+		"nanostack gen",
+		code,
+		0,
+		stdout,
+		"deleted greeterr/ERRORS.md\ndeleted greeterr/errors.gen.go\n",
+		stderr,
+		"",
+	)
 	if _, err := os.Stat(filepath.Join(dir, "greeterr", "errors.gen.go")); !os.IsNotExist(err) {
 		t.Fatalf("errors.gen.go still exists: %v", err)
 	}
@@ -175,7 +184,7 @@ func TestNoOrphanForAStepThatDidNotRun(t *testing.T) {
 		t.Fatal(err)
 	}
 	stdout, stderr, code := nano(t, dir, "-check", "-only", "validate")
-	wantRun(t, "nano gen -check -only validate", code, 0, stdout, "", stderr, "")
+	wantRun(t, "nanostack gen -check -only validate", code, 0, stdout, "", stderr, "")
 }
 
 // An unknown //nano: directive is an error at its line, so a misspelled
@@ -185,21 +194,21 @@ func TestUnknownDirective(t *testing.T) {
 	dir := copyFixture(t)
 	write(t, dir, "greeterr/doc.go", "package greeterr\n\n//nano:mapers\n")
 	stdout, stderr, code := nano(t, dir, "-check")
-	wantRun(t, "nano gen -check", code, 1, stdout, "", stderr, `greeterr/doc.go:3: unknown directive //nano:mapers
+	wantRun(t, "nanostack gen -check", code, 1, stdout, "", stderr, `greeterr/doc.go:3: unknown directive //nano:mapers
   fix: known directives are //nano:errors and //nano:error
 `)
 }
 
-// A //go:generate line that runs nano gen bypasses the pipeline's order.
+// A //go:generate line that runs nanostack gen bypasses the pipeline's order.
 func TestForbiddenGoGenerate(t *testing.T) {
 	t.Parallel()
 	dir := copyFixture(t)
 	edit(t, dir, "cmd/app/config.go", "package app\n",
-		"package app\n\n//go:generate go tool nano gen config -dir .\n")
+		"package app\n\n//go:generate go tool nanostack gen config -dir .\n")
 	stdout, stderr, code := nano(t, dir, "-check")
-	wantRun(t, "nano gen -check", code, 1, stdout, "", stderr,
-		`cmd/app/config.go:5: //go:generate runs nano gen config; the pipeline runs this step
-  fix: delete the line; run go tool nano gen
+	wantRun(t, "nanostack gen -check", code, 1, stdout, "", stderr,
+		`cmd/app/config.go:5: //go:generate runs nanostack gen config; the pipeline runs this step
+  fix: delete the line; run go tool nanostack gen
 `)
 }
 
@@ -213,7 +222,7 @@ func TestValidateGapStillRunsWire(t *testing.T) {
 	edit(t, dir, "cmd/app/config.go", "Greeting GreetingConfig `config:\"greeting\"`",
 		"Welcome GreetingConfig `config:\"welcome\"`")
 	stdout, stderr, code := nano(t, dir)
-	wantRun(t, "nano gen", code, 1, stdout, `wrote api/validate.gen.go
+	wantRun(t, "nanostack gen", code, 1, stdout, `wrote api/validate.gen.go
 wrote cmd/app/config.gen.go
 wrote cmd/app/CONFIG.md
 wrote cmd/app/.env.example
@@ -232,12 +241,15 @@ func TestFailedStepSkipsDependents(t *testing.T) {
 	stdout, stderr, code := nano(t, dir, "-check")
 	if code != 1 || !strings.Contains(stderr, "stale api/validate.gen.go\n") ||
 		!strings.Contains(stderr, "greeterr/errors.go:11: ") ||
-		!strings.Contains(stderr, "nano gen config: skipped: needs errors\nnano gen wire: skipped: needs config\n") {
+		!strings.Contains(
+			stderr,
+			"nanostack gen config: skipped: needs errors\nnanostack gen wire: skipped: needs config\n",
+		) {
 		t.Fatalf("exit %d\nstdout:\n%s\nstderr:\n%s", code, stdout, stderr)
 	}
 }
 
-// Project values must be literals or constants, so nano can read them
+// Project values must be literals or constants, so nanostack can read them
 // without running code.
 func TestNonLiteralProjectValue(t *testing.T) {
 	t.Parallel()
@@ -245,10 +257,10 @@ func TestNonLiteralProjectValue(t *testing.T) {
 	edit(t, dir, "nanogen/project.go", "Spec:   spec,", "Spec:   specPath(),")
 	edit(t, dir, "nanogen/project.go", "var Project", "func specPath() string { return spec }\n\nvar Project")
 	stdout, stderr, code := nano(t, dir, "-check", "-only", "validate")
-	wantRun(t, "nano gen -check", code, 1, stdout, "", stderr,
+	wantRun(t, "nanostack gen -check", code, 1, stdout, "", stderr,
 		`nanogen/project.go:13: project values must be literals or constants; API.Spec is specPath()
   fix: replace specPath() with a string
-nano gen validate: skipped: needs nanogen/project.go
+nanostack gen validate: skipped: needs nanogen/project.go
 `)
 }
 
@@ -259,7 +271,7 @@ func TestMissingSpec(t *testing.T) {
 	edit(t, dir, "nanogen/project.go", `const spec = "api/openapi.yaml"`, `const spec = "api/openapi.yml"`)
 	_, stderr, code := nano(t, dir, "-check", "-only", "validate")
 	want := "nanogen/project.go:11: API.Spec api/openapi.yml does not exist\n  fix: the module has api/openapi.yaml\n" +
-		"nano gen validate: skipped: needs nanogen/project.go\n"
+		"nanostack gen validate: skipped: needs nanogen/project.go\n"
 	if code != 1 || stderr != want {
 		t.Fatalf("exit %d, stderr:\n%s\nwant:\n%s", code, stderr, want)
 	}
@@ -325,7 +337,7 @@ func TestJSONEvents(t *testing.T) {
 func TestList(t *testing.T) {
 	t.Parallel()
 	stdout, stderr, code := nano(t, fixture, "-list")
-	wantRun(t, "nano gen -list", code, 0, stdout, `api       api
+	wantRun(t, "nanostack gen -list", code, 0, stdout, `api       api
   in   api/openapi.yaml
   out  api/api.gen.go
   out  api/handlers.gen.go
@@ -372,14 +384,14 @@ func TestUsage(t *testing.T) {
 		{"-dir", "no-such-dir"},
 	} {
 		if _, stderr, code := nano(t, fixture, args...); code != 2 || stderr == "" {
-			t.Errorf("nano gen %v: exit %d, stderr %q; want 2 and a message", args, code, stderr)
+			t.Errorf("nanostack gen %v: exit %d, stderr %q; want 2 and a message", args, code, stderr)
 		}
 	}
 }
 
 func TestStub(t *testing.T) {
 	t.Parallel()
-	src := []byte(`// Code generated by nano gen config. DO NOT EDIT.
+	src := []byte(`// Code generated by nanostack gen config. DO NOT EDIT.
 
 //go:build !nanogen
 
@@ -406,7 +418,7 @@ var _ = fmt.Sprintf
 	if !ok {
 		t.Fatal("stub failed")
 	}
-	want := `// Code generated by nano gen config. DO NOT EDIT.
+	want := `// Code generated by nanostack gen config. DO NOT EDIT.
 
 //go:build !nanogen
 
@@ -420,9 +432,9 @@ import (
 )
 
 // Build builds.
-func Build(ctx context.Context, cfg Config) (*App, error) { panic("nano gen stub") }
+func Build(ctx context.Context, cfg Config) (*App, error) { panic("nanostack gen stub") }
 
-func (a *App) Name() string { panic("nano gen stub") }
+func (a *App) Name() string { panic("nanostack gen stub") }
 
 var _ = fmt.Sprintf
 `

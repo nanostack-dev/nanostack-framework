@@ -1,4 +1,4 @@
-// Package search holds one wrong search declaration per rule; nano gen repo
+// Package search holds one wrong search declaration per rule; nanostack gen repo
 // reports every one of them in one run.
 package search
 
@@ -26,10 +26,10 @@ type mysqlItemsTable struct {
 
 var mysqlItems = &mysqlItemsTable{}
 
-// nameFilter is an option in a variable: nano gen repo cannot read it.
+// nameFilter is an option in a variable: nanostack gen repo cannot read it.
 var nameFilter = nanorepo.Filter(shop.Items.Name, nanorepo.Eq)
 
-// A direction and an API name in variables: nano gen repo cannot read them.
+// A direction and an API name in variables: nanostack gen repo cannot read them.
 var (
 	dir   = nanorepo.Desc
 	until = "created_until"
@@ -79,7 +79,7 @@ func _() {
 		nanorepo.DefaultSort(table.LegacyEvents.Action, nanorepo.Asc),
 	)
 
-	// Shapes that nano gen repo cannot read.
+	// Shapes that nanostack gen repo cannot read.
 	nanorepo.Search[shopmodel.Items]("OptionVariable", shop.Items, nameFilter)
 	nanorepo.Search[shopmodel.Items]("lowercase", shop.Items)
 	nanorepo.Search[shopmodel.Items]("FromLiteral", shop.Items,
@@ -112,7 +112,7 @@ func _() {
 		nanorepo.Sort(shop.Items.Name),
 		nanorepo.DefaultSort(shop.Tenants.Name, nanorepo.Asc),
 	)
-	// Options that nano gen repo cannot read, or that are out of range.
+	// Options that nanostack gen repo cannot read, or that are out of range.
 	nanorepo.Search[shopmodel.Items]("VariableDirection", shop.Items,
 		nanorepo.Sort(shop.Items.CreatedAt),
 		nanorepo.DefaultSort(shop.Items.CreatedAt, dir),

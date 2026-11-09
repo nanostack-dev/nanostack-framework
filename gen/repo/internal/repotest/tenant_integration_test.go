@@ -195,7 +195,10 @@ func TestCountAboveLimitWhenNotSorted(t *testing.T) {
 		above bool
 	}{{CountedItemSortName, true}, {CountedItemSortEventCount, false}} {
 		rec.last = ""
-		if _, err := repo.SearchCountedItems(ctx, NewCountedItemSearch(f.tenant).SortBy(test.sort, search.SortAscending)); err != nil {
+		if _, err := repo.SearchCountedItems(
+			ctx,
+			NewCountedItemSearch(f.tenant).SortBy(test.sort, search.SortAscending),
+		); err != nil {
 			t.Fatal(err)
 		}
 		var plan strings.Builder

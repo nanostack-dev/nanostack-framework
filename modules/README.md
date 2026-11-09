@@ -14,7 +14,7 @@ Every fx module in this tree is deprecated and is removed with fx (ADR 0013). Ea
 | `modules/cache` | `redis/nanocache` |
 | `modules/httpserver` | `http/nanoserver` |
 | `modules/pprof` | `http/nanopprof` |
-| `modules/config` | `core/config` and `nano gen config` |
+| `modules/config` | `core/config` and `nanostack gen config` |
 | `modules/apisec` | `http/nanoapisec`: `ChiModule` for a chi router, `Module` for `nanohttp.NewRouter` (the fx module wraps it) |
 | `modules/pgqueue` | pgkit (see its README) |
 

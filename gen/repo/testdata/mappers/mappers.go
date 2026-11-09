@@ -1,4 +1,4 @@
-// Package mappers holds the mappers the test packages of nano gen repo
+// Package mappers holds the mappers the test packages of nanostack gen repo
 // import from another package.
 package mappers
 

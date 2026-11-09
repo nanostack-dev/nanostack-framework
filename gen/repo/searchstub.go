@@ -52,7 +52,7 @@ type stubEntry struct {
 	result *stubSearches
 }
 
-// typedSearches loads the package in dir as a run does, with the files nano
+// typedSearches loads the package in dir as a run does, with the files nanostack
 // gen repo wrote left empty, and reads its declarations. It returns nil when
 // the package does not load or a declaration has a problem. A nil result is
 // not cached: a table package that the declarations need can appear later
@@ -87,7 +87,7 @@ func readSearches(dir string) (*stubSearches, []string) {
 	decls, err := l.declarations()
 	for path := range l.files {
 		for name := range l.files[path] {
-			// A table package of nano gen db sits next to its model and enum
+			// A table package of nanostack gen db sits next to its model and enum
 			// packages, which a builder reads too.
 			tableDir := filepath.Dir(name)
 			dirs = append(dirs, tableDir, filepath.Join(filepath.Dir(tableDir), "model"),

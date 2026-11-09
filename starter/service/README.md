@@ -10,6 +10,6 @@ The starter should be intentionally small and should show how to compose:
 - `modules/postgres`
 - `modules/migrations`
 - `modules/httpserver`
-- `nanogen/project.go` and `go tool nano gen` (the go-jet models from the migrations, the OpenAPI server and clients)
+- `nanogen/project.go` and `go tool nanostack gen` (the go-jet models from the migrations, the OpenAPI server and clients)
 
 Generated code, OpenAPI specs, migrations, and feature modules remain app-owned after creation.

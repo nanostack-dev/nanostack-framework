@@ -11,7 +11,7 @@ golangci-lint run ./...
 go test -tags lintsmoke -count=1 ./lint/smoke/
 ```
 
-The generators and the `nano` CLI are the nested module `gen`, which the root `./...` does not reach. Run its checks from `gen/`:
+The generators and the `nanostack` CLI are the nested module `gen`, which the root `./...` does not reach. Run its checks from `gen/`:
 
 ```sh
 cd gen

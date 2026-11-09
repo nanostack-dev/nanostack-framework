@@ -1,4 +1,4 @@
-// Package example is a small service built with nano gen wire. Its manifest
+// Package example is a small service built with nanostack gen wire. Its manifest
 // is nano.go; cmd/example runs it.
 package example
 

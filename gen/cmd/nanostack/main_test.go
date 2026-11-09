@@ -33,33 +33,33 @@ func TestRun(t *testing.T) {
 	for _, args := range [][]string{{}, {"gen", "nope"}, {"build", "wire"}} {
 		stderr.Reset()
 		code := run(args, &stdout, &stderr)
-		if code != 2 || !strings.Contains(stderr.String(), "usage: nano gen [flags]\n") ||
-			!strings.Contains(stderr.String(), "nano gen {api,config,db,errors,repo,validate,wire} [flags]") {
+		if code != 2 || !strings.Contains(stderr.String(), "usage: nanostack gen [flags]\n") ||
+			!strings.Contains(stderr.String(), "nanostack gen {api,config,db,errors,repo,validate,wire} [flags]") {
 			t.Fatalf("run(%q): exit %d stderr %q, want usage and exit 2", args, code, stderr.String())
 		}
 	}
 }
 
-// TestPipelineIsRouted runs `nano gen` without a generator name: the
+// TestPipelineIsRouted runs `nanostack gen` without a generator name: the
 // pipeline, on its committed fixture module.
 func TestPipelineIsRouted(t *testing.T) {
 	const fixture = "../../pipeline/testdata/app"
 	var stdout, stderr bytes.Buffer
 	if code := run([]string{"gen", "-check", "-dir", fixture}, &stdout, &stderr); code != 0 ||
 		stdout.Len() != 0 || stderr.Len() != 0 {
-		t.Fatalf("nano gen -check: exit %d\nstdout: %s\nstderr: %s", code, stdout.String(), stderr.String())
+		t.Fatalf("nanostack gen -check: exit %d\nstdout: %s\nstderr: %s", code, stdout.String(), stderr.String())
 	}
 
 	if code := run([]string{"gen", "-list", "-dir", fixture}, &stdout, &stderr); code != 0 ||
 		!strings.Contains(stdout.String(), "api       api\n  in   api/openapi.yaml\n  out  api/api.gen.go\n") ||
 		!strings.Contains(stdout.String(), "validate  api\n  in   api/openapi.yaml\n") ||
 		!strings.Contains(stdout.String(), "wire      cmd/app\n") {
-		t.Fatalf("nano gen -list: exit %d\nstdout: %s\nstderr: %s", code, stdout.String(), stderr.String())
+		t.Fatalf("nanostack gen -list: exit %d\nstdout: %s\nstderr: %s", code, stdout.String(), stderr.String())
 	}
 
 	stderr.Reset()
 	if code := run([]string{"gen", "-h"}, &stdout, &stderr); code != 0 || !strings.Contains(stderr.String(), "-only") {
-		t.Fatalf("nano gen -h: exit %d, stderr %q; want the flags and exit 0", code, stderr.String())
+		t.Fatalf("nanostack gen -h: exit %d, stderr %q; want the flags and exit 0", code, stderr.String())
 	}
 }
 
@@ -86,10 +86,15 @@ func TestEveryGeneratorIsRouted(t *testing.T) {
 			stderr.Reset()
 			if code := run([]string{"gen", name, "-h"}, &stdout, &stderr); code != 0 ||
 				!strings.Contains(stderr.String(), "-check") {
-				t.Fatalf("nano gen %s -h: exit %d, stderr %q; want the flags and exit 0", name, code, stderr.String())
+				t.Fatalf(
+					"nanostack gen %s -h: exit %d, stderr %q; want the flags and exit 0",
+					name,
+					code,
+					stderr.String(),
+				)
 			}
 			if code := run([]string{"gen", name, "-no-such-flag"}, &stdout, &stderr); code != 2 {
-				t.Fatalf("nano gen %s -no-such-flag: exit %d, want 2", name, code)
+				t.Fatalf("nanostack gen %s -no-such-flag: exit %d, want 2", name, code)
 			}
 		})
 	}

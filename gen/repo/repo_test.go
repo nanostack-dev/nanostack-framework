@@ -121,7 +121,7 @@ func TestViewBaseWithoutColumnTypes(t *testing.T) {
 	src := string(res.Files[0].Data)
 	for _, want := range []string{
 		"func (auditEventsWhere) Action(v string)",
-		"// audit_events is a view, and nano gen db writes no ColumnTypes on a view yet:\n" +
+		"// audit_events is a view, and nanostack gen db writes no ColumnTypes on a view yet:\n" +
 			"// no Contains or EqualsIgnoreCase on action. Call searchexec.Contains on b.t.",
 	} {
 		if !strings.Contains(src, want) {
@@ -264,7 +264,7 @@ func TestMain_(t *testing.T) {
 	if code := Main([]string{"-dir", dir, "-scopes", "tenant_id, other"}, &stdout, &stderr); code != 0 {
 		t.Fatalf("exit %d, stderr:\n%s", code, stderr.String())
 	}
-	if !strings.Contains(stdout.String(), "nano gen repo: wrote ") ||
+	if !strings.Contains(stdout.String(), "nanostack gen repo: wrote ") ||
 		!strings.HasPrefix(stderr.String(), "warning: scope.go:") {
 		t.Fatalf("stdout:\n%s\nstderr:\n%s", stdout.String(), stderr.String())
 	}
@@ -278,7 +278,7 @@ func TestMain_(t *testing.T) {
 	}
 	stderr.Reset()
 	if code := Main([]string{"-dir", dir, "-check"}, &stdout, &stderr); code != 1 ||
-		!strings.Contains(stderr.String(), "run nano gen repo") {
+		!strings.Contains(stderr.String(), "run nanostack gen repo") {
 		t.Fatalf("-check on a stale base: exit %d, stderr:\n%s", code, stderr.String())
 	}
 	if code := Main([]string{"-nope"}, &stdout, &stderr); code != 2 {

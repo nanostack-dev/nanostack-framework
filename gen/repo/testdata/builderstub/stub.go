@@ -1,4 +1,4 @@
-// Package builderstub declares a search that nano gen repo cannot write (an
+// Package builderstub declares a search that nanostack gen repo cannot write (an
 // Eq on a float column has no literal) and whose From function takes the
 // scope struct. The
 // forward stub has the scope struct and no builder, so the package

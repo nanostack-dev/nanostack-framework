@@ -1,4 +1,4 @@
-// Package search declares searches that nano gen repo reads without a
+// Package search declares searches that nanostack gen repo reads without a
 // problem; its -explain shows what it found.
 package search
 
@@ -96,13 +96,13 @@ func _() {
 		nanorepo.FilterExpr("OwnerName", ownerName, nanorepo.Eq),
 	)
 
-	// A From function that calls a helper, which nano gen repo follows; an
+	// A From function that calls a helper, which nanostack gen repo follows; an
 	// ON condition that equates the unique key tenants_name_key with a field
 	// of the scope value, so the join adds one row; and expression functions
 	// with Func, CAST, DATE_TRUNC with a constant time zone, and subqueries
 	// whose instances have an alias. The join links no column of items to
 	// tenants: the tenant check refuses this shape, and only the one-row
-	// rule is shown here. The From function takes the scope value that nano
+	// rule is shown here. The From function takes the scope value that nanostack
 	// gen repo generates, ItemOfNamedTenantScope: the first load of the
 	// package does not have it yet.
 	nanorepo.Search[model.Items]("ItemOfNamedTenant", table.Items,

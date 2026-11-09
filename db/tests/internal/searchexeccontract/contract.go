@@ -3,7 +3,7 @@
 
 // Package searchexeccontract is the suite of the search runtime, written once and run on
 // PostgreSQL, CockroachDB, MySQL, MariaDB and SQLite. Each search is a SpecDef written by
-// hand as nano gen repo writes it, and runs against tables that the suite creates with new
+// hand as nanostack gen repo writes it, and runs against tables that the suite creates with new
 // random names, so a statement-cache run never meets a cached statement of a dropped table.
 //
 // The text columns use a binary collation on MySQL and MariaDB, so the answers that Go

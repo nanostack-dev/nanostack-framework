@@ -19,7 +19,7 @@ A nano module is the generated-wiring replacement of an fx module in `modules/`.
 
 No nano module replaces these fx modules:
 
-- `modules/config`: the service binds its own `Config` with `nano gen config` (see [generation](generation.md#configuration-nano-gen-config)). Each module's `Config` is a field of it.
+- `modules/config`: the service binds its own `Config` with `nanostack gen config` (see [generation](generation.md#configuration-nanostack-gen-config)). Each module's `Config` is a field of it.
 - `modules/pgqueue`: pgkit owns the queue lifecycle (see [its README](../modules/pgqueue/README.md)).
 
 ## The module contract
@@ -34,7 +34,7 @@ Every nano module has the same shape, so a service migrates each one the same wa
 
 ## Moving a service from fx, one module at a time
 
-1. **Typed configuration first.** Declare the service `Config` with a field per module, generate `Bind` with `nano gen config`, and call it in `main`. For `*_FILE` secrets, keep the service's own `runtimeenv.HydrateFileBackedEnv()` before `Bind` (echopoint and anchor code, not a framework package), or pass a secret store to the sources: `config.Secrets(config.SecretDir(dir))` reads one file per secret from a mounted directory.
+1. **Typed configuration first.** Declare the service `Config` with a field per module, generate `Bind` with `nanostack gen config`, and call it in `main`. For `*_FILE` secrets, keep the service's own `runtimeenv.HydrateFileBackedEnv()` before `Bind` (echopoint and anchor code, not a framework package), or pass a secret store to the sources: `config.Secrets(config.SecretDir(dir))` reads one file per secret from a mounted directory.
 
    ```go
    type Config struct {
@@ -61,7 +61,7 @@ Every nano module has the same shape, so a service migrates each one the same wa
    For migrations, call `nanomigrate.Run` from an `fx.Invoke`, as `modules/migrations` does: `fx.Invoke(func(m *nanomigrate.Migrator) error { return nanomigrate.Run(signalCtx, m) })`. Use a context that a SIGTERM cancels, so a stop during a migration ends clean.
 
 3. **Repeat** for each module. Run the golden HTTP suite before and after each step.
-4. **Replace `fx.New`** with a manifest and `nano gen wire` when every module is nano-shaped (see [generation](generation.md#wiring-nano-gen-wire)). `nano.Main` replaces the service's signal handling and its `Fatal` calls. Before this step, move every database read out of the constructors (see [Construction order](#construction-order)).
+4. **Replace `fx.New`** with a manifest and `nanostack gen wire` when every module is nano-shaped (see [generation](generation.md#wiring-nanostack-gen-wire)). `nano.Main` replaces the service's signal handling and its `Fatal` calls. Before this step, move every database read out of the constructors (see [Construction order](#construction-order)).
 
 A service that moves its logging to `core/logging` gets the slog default, and the standard library `log` package then writes JSON through it. Set `LOG_WIRE=legacy` (or `wire: legacy` in the committed YAML layer) until the collector and the alerts read the slog shape.
 
@@ -69,7 +69,7 @@ A service that moves its logging to `core/logging` gets the slog default, and th
 
 The generated `Build` works in three phases:
 
-1. It calls every provider of the graph, in dependency order: each value that a `Starter`, a `Runner` or a `nano.Invoke` needs, and each `Starter` and `Runner` (see [generation](generation.md#wiring-nano-gen-wire)).
+1. It calls every provider of the graph, in dependency order: each value that a `Starter`, a `Runner` or a `nano.Invoke` needs, and each `Starter` and `Runner` (see [generation](generation.md#wiring-nanostack-gen-wire)).
 2. It runs the `nano.Invoke` functions in declaration order. `nanomigrate.Module` declares `nano.Invoke(nanomigrate.Run)`, so the migrations run here.
 3. `nano.Main` then starts the App: each `Starter`'s `Start` runs in dependency order, then the `Runner`s.
 

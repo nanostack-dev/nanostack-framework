@@ -16,7 +16,7 @@ import (
 	"github.com/nanostack-dev/nanostack-framework/db/searchexec"
 )
 
-// The fixture is a search of items joined to their team, written by hand as nano gen repo
+// The fixture is a search of items joined to their team, written by hand as nanostack gen repo
 // would write it: the organization is scoped on both tables through one field, the team on
 // items, the owner with ScopeOrNull, and the workspace through a context scope.
 

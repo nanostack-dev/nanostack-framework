@@ -1,4 +1,4 @@
-// Package wire implements nano gen wire: it reads an app manifest (a
+// Package wire implements nanostack gen wire: it reads an app manifest (a
 // nano.Manifest variable, see package core/nano), resolves the provider
 // graph with go/packages and go/types, and writes wire.gen.go with
 //
@@ -119,12 +119,12 @@ func run(opts Options) ([]string, error) {
 	return gen.Sync("wire", files, opts.Check)
 }
 
-// Main runs `nano gen wire [-dir dir] [-out dir] [-tags list] [-check]` and
+// Main runs `nanostack gen wire [-dir dir] [-out dir] [-tags list] [-check]` and
 // returns the exit code: 0 on success, 1 on a manifest error or stale output,
 // 2 on bad flags, 3 when the environment fails; -h prints the flags and
 // returns 0. It is a gen.Command.
 func Main(args []string, stdout, stderr io.Writer) int {
-	fs := flag.NewFlagSet("nano gen wire", flag.ContinueOnError)
+	fs := flag.NewFlagSet("nanostack gen wire", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	var opts Options
 	fs.StringVar(&opts.Dir, "dir", ".", "manifest package directory")
@@ -142,7 +142,7 @@ func Main(args []string, stdout, stderr io.Writer) int {
 		return gen.Report(stderr, "wire", err)
 	}
 	for _, path := range written {
-		_, _ = fmt.Fprintf(stdout, "nano gen wire: wrote %s\n", path)
+		_, _ = fmt.Fprintf(stdout, "nanostack gen wire: wrote %s\n", path)
 	}
 	return 0
 }

@@ -14,7 +14,7 @@ row.go:65: search LeftEmbedded: leftEmbedded.Tenants embeds model.Tenants, whose
   fix: replace the embedded model.Tenants with alias-tagged pointer fields, such as TenantID *uuid.UUID `alias:"tenants.id"`
 row.go:71: search NullValue: nullValue.Weight reads items.weight, which can be NULL (the model field is a pointer)
   fix: make it *float32
-row.go:77: search PointerEmbedded: pointerEmbedded.Tenants embeds a pointer to a model, and nano gen repo reads only an embedded model
+row.go:77: search PointerEmbedded: pointerEmbedded.Tenants embeds a pointer to a model, and nanostack gen repo reads only an embedded model
   fix: embed model.Tenants, or read a nullable instance with alias-tagged pointer fields
 row.go:84: search OwnerUntagged: ownerUntagged.Tenants embeds model.Tenants, and the search reads tenants only as owner: the embedded field names the instance with an alias tag
   fix: tag the field alias:"owner"

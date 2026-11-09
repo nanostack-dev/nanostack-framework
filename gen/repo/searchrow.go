@@ -107,7 +107,7 @@ func (c *collector) rowEmbedded(b *builder, f *types.Var, tag string) {
 	name := c.rowFieldName(b, f)
 	if p, isPtr := types.Unalias(f.Type()).(*types.Pointer); isPtr && c.modelInstance(s, p.Elem()) != nil {
 		c.rowError(b, f, "embed "+c.qualified(p.Elem())+", or read a nullable instance with alias-tagged pointer "+
-			"fields", "%s embeds a pointer to a model, and nano gen repo reads only an embedded model", name)
+			"fields", "%s embeds a pointer to a model, and nanostack gen repo reads only an embedded model", name)
 		return
 	}
 	var inst *instance

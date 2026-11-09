@@ -1,6 +1,6 @@
 package jet
 
-// ForeignKey is one foreign key of a table, as nano gen db writes it in the
+// ForeignKey is one foreign key of a table, as nanostack gen db writes it in the
 // ForeignKeys method of a generated table type. The generator reads that
 // method from source to find the joins that a key declares; nothing reads it
 // at run time.

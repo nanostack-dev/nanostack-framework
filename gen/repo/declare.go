@@ -73,7 +73,7 @@ func (d *declarations) tableAtLine(src []byte, line int) *tableBase {
 }
 
 // declarations finds every declaration of the package and checks it. A
-// package without one is an error: nano gen repo runs on declaring
+// package without one is an error: nanostack gen repo runs on declaring
 // packages only.
 func (l *loaded) declarations() (*declarations, error) {
 	var problems []error
@@ -210,7 +210,7 @@ func (c *collector) implement(call *ast.CallExpr, args *types.TypeList) {
 	if impl.TypeArgs().Len() > 0 {
 		c.errorf(call, "bind a non-generic implementation type; to share code between repositories, "+
 			"embed a generic helper in it",
-			"%s is generic: nano gen repo binds an implementation type without type parameters",
+			"%s is generic: nanostack gen repo binds an implementation type without type parameters",
 			c.qualified(impl))
 		return
 	}
@@ -272,7 +272,7 @@ func (c *collector) mapper(arg ast.Expr, row types.Type) (*mapperRef, bool) {
 	if id == nil {
 		c.errorf(arg, "declare var <name>ToDomain = "+text+" in package "+c.l.pkg.Name+" and pass its name, "+
 			"or pass a function",
-			"the mapper %s is an expression; nano gen repo calls the mapper by name from the base", text)
+			"the mapper %s is an expression; nanostack gen repo calls the mapper by name from the base", text)
 		return nil, false
 	}
 	switch obj := info.Uses[id].(type) {
@@ -284,7 +284,7 @@ func (c *collector) mapper(arg ast.Expr, row types.Type) (*mapperRef, bool) {
 	case *types.Var:
 		if obj.Pkg() != c.l.pkg.Types || obj.Parent() != c.l.pkg.Types.Scope() {
 			c.errorf(arg, "pass a function, or declare the variable in package "+c.l.pkg.Name,
-				"the mapper %s is a variable of package %s; nano gen repo checks the value of a variable "+
+				"the mapper %s is a variable of package %s; nanostack gen repo checks the value of a variable "+
 					"of the declaring package only", text, obj.Pkg().Name())
 			return nil, false
 		}
@@ -352,7 +352,7 @@ func (c *collector) mapperVar(arg ast.Expr, v *types.Var, row types.Type) bool {
 		}
 	}
 	c.errorf(arg, "set "+v.Name()+" to a function, a function literal, or a method value on a type without fields",
-		"the mapper variable %s is set to %s, which nano gen repo cannot check", v.Name(), c.source(value))
+		"the mapper variable %s is set to %s, which nanostack gen repo cannot check", v.Name(), c.source(value))
 	return false
 }
 
@@ -463,7 +463,7 @@ func (l *loaded) checkNames(d *declarations) []error {
 			if obj := scope.Lookup(name); obj != nil && obj.Pos().IsValid() {
 				file, line := l.position(l.pkg.Fset, obj.Pos())
 				problems = append(problems, gen.Errorf(file, line, "rename it",
-					"%s is declared here, and nano gen repo declares it in %s for table %s",
+					"%s is declared here, and nanostack gen repo declares it in %s for table %s",
 					name, FileName, t.sqlName))
 			}
 		}

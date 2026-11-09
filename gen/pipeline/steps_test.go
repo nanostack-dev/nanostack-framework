@@ -18,19 +18,19 @@ func TestBrokenProjectSkipsItsSteps(t *testing.T) {
 	dir := copyFixture(t)
 	edit(t, dir, "nanogen/project.go", "\n}\n", "\n\tEnv: \"app.env\",\n}\n")
 	stdout, stderr, code := nano(t, dir)
-	wantRun(t, "nano gen with Env", code, 0, stdout, "wrote app.env\ndeleted cmd/app/.env.example\n", stderr, "")
+	wantRun(t, "nanostack gen with Env", code, 0, stdout, "wrote app.env\ndeleted cmd/app/.env.example\n", stderr, "")
 
 	edit(t, dir, "nanogen/project.go", `Env: "app.env"`, "Env: 1")
 	stdout, stderr, code = nano(t, dir)
-	wantRun(t, "nano gen with a broken declaration", code, 1, stdout, "", stderr,
+	wantRun(t, "nanostack gen with a broken declaration", code, 1, stdout, "", stderr,
 		`nanogen/project.go:14: cannot use 1 (untyped int constant) as string value in struct literal
   fix: make nanogen/project.go compile
-nano gen db: skipped: needs nanogen/project.go
-nano gen api: skipped: needs nanogen/project.go
-nano gen validate: skipped: needs nanogen/project.go
-nano gen repo: skipped: needs nanogen/project.go
-nano gen config: skipped: needs nanogen/project.go
-nano gen wire: skipped: needs config
+nanostack gen db: skipped: needs nanogen/project.go
+nanostack gen api: skipped: needs nanogen/project.go
+nanostack gen validate: skipped: needs nanogen/project.go
+nanostack gen repo: skipped: needs nanogen/project.go
+nanostack gen config: skipped: needs nanogen/project.go
+nanostack gen wire: skipped: needs config
 `)
 	if _, err := os.Stat(filepath.Join(dir, "app.env")); err != nil {
 		t.Fatalf("the declared Env file is gone: %v", err)
@@ -52,17 +52,17 @@ import "github.com/nanostack-dev/nanostack-framework/core/nano/project"
 var Project = project.Project{}
 `)
 	stdout, stderr, code := nano(t, dir, "-check")
-	wantRun(t, "nano gen -check", code, 1, stdout, "", stderr, `orphan api/api.gen.go
+	wantRun(t, "nanostack gen -check", code, 1, stdout, "", stderr, `orphan api/api.gen.go
 orphan api/handlers.gen.go
 orphan api/validate.gen.go
-  fix: run nano gen without -check, then commit the result
+  fix: run nanostack gen without -check, then commit the result
 `)
 
 	if err := os.RemoveAll(filepath.Join(dir, "nanogen")); err != nil {
 		t.Fatal(err)
 	}
 	stdout, stderr, code = nano(t, dir, "-check")
-	wantRun(t, "nano gen -check without a declaration", code, 0, stdout, "", stderr, "")
+	wantRun(t, "nanostack gen -check without a declaration", code, 0, stdout, "", stderr, "")
 }
 
 // An existing output of a later step is a stub in every load, so a stale
@@ -88,16 +88,16 @@ type declarations interface {
 		"Welcome GreetingConfig `config:\"welcome\"`")
 
 	stdout, stderr, code := nano(t, dir, "-check")
-	wantRun(t, "nano gen -check", code, 1, stdout, "", stderr, `missing cmd/app/errors.gen.go
+	wantRun(t, "nanostack gen -check", code, 1, stdout, "", stderr, `missing cmd/app/errors.gen.go
 missing cmd/app/ERRORS.md
 stale cmd/app/config.gen.go
 stale cmd/app/CONFIG.md
 stale cmd/app/.env.example
 stale cmd/app/wire.gen.go
-  fix: run nano gen without -check, then commit the result
+  fix: run nanostack gen without -check, then commit the result
 `)
 	stdout, stderr, code = nano(t, dir)
-	wantRun(t, "nano gen", code, 0, stdout, `wrote cmd/app/errors.gen.go
+	wantRun(t, "nanostack gen", code, 0, stdout, `wrote cmd/app/errors.gen.go
 wrote cmd/app/ERRORS.md
 wrote cmd/app/config.gen.go
 wrote cmd/app/CONFIG.md
@@ -167,10 +167,10 @@ func TestSkip(t *testing.T) {
 	edit(t, dir, "cmd/app/config.go", "Greeting GreetingConfig `config:\"greeting\"`",
 		"Welcome GreetingConfig `config:\"welcome\"`")
 	stdout, stderr, code := nano(t, dir, "-check", "-skip", "config,wire")
-	wantRun(t, "nano gen -check -skip config,wire", code, 0, stdout, "", stderr, "")
+	wantRun(t, "nanostack gen -check -skip config,wire", code, 0, stdout, "", stderr, "")
 	_, _, code = nano(t, dir, "-check", "-skip", "wire")
 	if code != 1 {
-		t.Fatalf("nano gen -check -skip wire: exit %d, want 1 for the stale config", code)
+		t.Fatalf("nanostack gen -check -skip wire: exit %d, want 1 for the stale config", code)
 	}
 }
 
@@ -202,24 +202,24 @@ func TestServerDirOutside(t *testing.T) {
 	dir := copyFixture(t)
 	edit(t, dir, "nanogen/project.go", `Server: project.Package{Dir: "api"}`, `Server: project.Package{Dir: "../api"}`)
 	_, stderr, code := nano(t, dir, "-check", "-only", "validate")
-	want := "nanogen/project.go:12: API.Server.Dir ../api is outside the directory nano gen runs on\n" +
-		"  fix: generate under the directory nano gen runs on; " +
-		"a module beside it declares its own nanogen/project.go\nnano gen validate: skipped: needs nanogen/project.go\n"
+	want := "nanogen/project.go:12: API.Server.Dir ../api is outside the directory nanostack gen runs on\n" +
+		"  fix: generate under the directory nanostack gen runs on; " +
+		"a module beside it declares its own nanogen/project.go\nnanostack gen validate: skipped: needs nanogen/project.go\n"
 	if code != 1 || stderr != want {
 		t.Fatalf("exit %d, stderr:\n%s\nwant:\n%s", code, stderr, want)
 	}
 }
 
-// nano reads only the literal of var Project: a value set anywhere else,
+// nanostack reads only the literal of var Project: a value set anywhere else,
 // such as in init, would be ignored, so it is an error.
 func TestProjectSetOutsideItsLiteral(t *testing.T) {
 	t.Parallel()
 	dir := copyFixture(t)
 	edit(t, dir, "nanogen/project.go", "\n}\n", "\n}\n\nfunc init() { Project.Env = \"app.env\" }\n")
 	_, stderr, code := nano(t, dir, "-check", "-only", "validate")
-	want := "nanogen/project.go:16: nano gen reads only the literal of var Project; this use of Project is ignored\n" +
+	want := "nanogen/project.go:16: nanostack gen reads only the literal of var Project; this use of Project is ignored\n" +
 		"  fix: set every value in the var Project literal, and do not refer to Project elsewhere\n" +
-		"nano gen validate: skipped: needs nanogen/project.go\n"
+		"nanostack gen validate: skipped: needs nanogen/project.go\n"
 	if code != 1 || stderr != want {
 		t.Fatalf("exit %d, stderr:\n%s\nwant:\n%s", code, stderr, want)
 	}

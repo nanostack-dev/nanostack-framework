@@ -12,7 +12,7 @@ import (
 	"github.com/nanostack-dev/nanostack-framework/db/search"
 )
 
-// Spec is what nano gen repo knows about one search: the rows of type T it reads, its sort
+// Spec is what nanostack gen repo knows about one search: the rows of type T it reads, its sort
 // enum S and its scope type P. Its fields are unexported. Generated code builds one per
 // search with DefineSpec, as a package variable, and passes that variable to New, Resolve,
 // Run and RunPage. The runtime compares spec pointers, so a query runs only with the spec
@@ -30,7 +30,7 @@ type Spec[T any, S ~string, P comparable] struct {
 	limit      int32
 }
 
-// SpecDef is the definition of a search that DefineSpec checks. nano gen repo writes it from
+// SpecDef is the definition of a search that DefineSpec checks. nanostack gen repo writes it from
 // the declaration.
 type SpecDef[T any, S ~string, P comparable] struct {
 	// From returns the table or the join the search reads. It gets the scope value, so a

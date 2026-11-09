@@ -92,7 +92,7 @@ func loadPackage(opts Options) (*goPackage, error) {
 // strictFix is the fix when the package lacks what oapi-codegen's strict
 // server writes.
 const strictFix = "generate the package with oapi-codegen and strict-server: true; " +
-	"nano gen validate reads the StrictServerInterface it writes"
+	"nanostack gen validate reads the StrictServerInterface it writes"
 
 // findOperations reads StrictServerInterface: each method is documented
 // with "(METHOD /path)", which joins it to the spec without re-deriving

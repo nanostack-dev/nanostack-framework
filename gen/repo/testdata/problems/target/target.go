@@ -1,5 +1,5 @@
 // Package target has a hand-written file named like the derived file of
-// target.go: nano gen repo never overwrites a file it did not write.
+// target.go: nanostack gen repo never overwrites a file it did not write.
 package target
 
 import (

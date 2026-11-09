@@ -1,6 +1,6 @@
 // Package nanohttp is the HTTP boundary between net/http and the handlers
 // oapi-codegen generates. It decodes request bodies strictly, runs the
-// validators nano gen validate generates, and by default sends every error
+// validators nanostack gen validate generates, and by default sends every error
 // through problem.Write. The generated HTTPHandlerOptions and NewRouter let a
 // service replace those error writers, for example to keep a legacy error
 // body.
@@ -24,7 +24,7 @@ import (
 	"github.com/nanostack-dev/nanostack-framework/http/problem"
 )
 
-// Validator is implemented by every request body type: nano gen validate
+// Validator is implemented by every request body type: nanostack gen validate
 // generates the method from the OpenAPI schema.
 type Validator interface {
 	Validate(validate.Path) validate.Errors

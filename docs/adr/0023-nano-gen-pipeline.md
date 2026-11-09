@@ -42,7 +42,7 @@ The [pipeline design](../design/nano-gen-pipeline.md) (decisions P1 to P12) sett
 
 - The framework CI runs `nano gen -check` on `internal/nanoexample`. Its `//go:generate` lines are gone, because the guard rejects them.
 - A service adopts the pipeline with `nanogen/project.go` and `go tool nano gen -check` in CI. It deletes its `//go:generate` lines for `nano gen` and its `Run(Check)` tests.
-- The guard did not reject a `//go:generate` line that runs oapi-codegen (P12) until the api step (design PR 4) could generate the server. The api step now runs first in the order (api, validate, errors, config, wire), and the guard rejects that line ([decision log](../decision-log.md#2026-11-08-nano-gen-runs-oapi-codegen-in-process)).
+- The guard did not reject a `//go:generate` line that runs oapi-codegen (P12) until the api step (design PR 4) could generate the server. The api step now runs first in the order (api, validate, errors, config, wire), and the guard rejects that line ([decision log](../decision-log.md#2026-11-08-nanostack-gen-runs-oapi-codegen-in-process)).
 - `-fresh` and exit 3 for Docker belong to the db step (design PR 6).
 - The repo step (design PR 7, [ADR 0026](0026-nano-gen-repo.md)) runs after errors and before config, so the order is db, api, validate, errors, repo, config, wire. It is the first step that needs db, and config needs it. Its scope check adds the `warning` event level, which keeps exit 0.
 - A `-list` run without `nanogen/project.go` prints a declaration filled with the OpenAPI document and the server package it finds.

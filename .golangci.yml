@@ -159,11 +159,11 @@ linters:
             - pkg: github.com/nanostack-dev/nanostack-framework/pkg/
               desc: pkg is legacy; move what the layers need into core
             - pkg: github.com/nanostack-dev/nanostack-framework/modules/
-              desc: modules is legacy Fx wiring; the layers use core/nano and nano gen wire
+              desc: modules is legacy Fx wiring; the layers use core/nano and nanostack gen wire
             - pkg: github.com/nanostack-dev/nanostack-framework/app$
-              desc: app is legacy Fx assembly; the layers use core/nano and nano gen wire
+              desc: app is legacy Fx assembly; the layers use core/nano and nanostack gen wire
             - pkg: github.com/nanostack-dev/nanostack-framework/app/
-              desc: app is legacy Fx assembly; the layers use core/nano and nano gen wire
+              desc: app is legacy Fx assembly; the layers use core/nano and nanostack gen wire
         # Design B1: an integration package may import only the pkg primitives
         # of internal/layers.AllowedLegacy, which carry no Fx and no zerolog,
         # and the leaf pkg/functional (internal/layers.Leaves). Keep this list
@@ -189,11 +189,11 @@ linters:
             - pkg: github.com/nanostack-dev/nanostack-framework/pkg/
               desc: pkg is legacy; only the primitives of internal/layers.AllowedLegacy are allowed
             - pkg: github.com/nanostack-dev/nanostack-framework/modules/
-              desc: modules is legacy Fx wiring; the layers use core/nano and nano gen wire
+              desc: modules is legacy Fx wiring; the layers use core/nano and nanostack gen wire
             - pkg: github.com/nanostack-dev/nanostack-framework/app$
-              desc: app is legacy Fx assembly; the layers use core/nano and nano gen wire
+              desc: app is legacy Fx assembly; the layers use core/nano and nanostack gen wire
             - pkg: github.com/nanostack-dev/nanostack-framework/app/
-              desc: app is legacy Fx assembly; the layers use core/nano and nano gen wire
+              desc: app is legacy Fx assembly; the layers use core/nano and nanostack gen wire
         # zerolog is denied everywhere by the base rules.
         layers use no fx:
           files:
@@ -204,9 +204,9 @@ linters:
             - "**/otel/**"
           deny:
             - pkg: go.uber.org/fx
-              desc: the layers replace Fx; use core/nano and nano gen wire (ADR 0013)
+              desc: the layers replace Fx; use core/nano and nanostack gen wire (ADR 0013)
             - pkg: go.uber.org/dig
-              desc: the layers replace Fx; use core/nano and nano gen wire (ADR 0013)
+              desc: the layers replace Fx; use core/nano and nanostack gen wire (ADR 0013)
     errcheck:
       check-type-assertions: true
     exhaustive:

@@ -1,4 +1,4 @@
-// Package generrors implements `nano gen errors`: it reads a module's error
+// Package generrors implements `nanostack gen errors`: it reads a module's error
 // declarations, a Go interface annotated with //nano:errors, and writes typed
 // error constructors (errors.gen.go) and a Markdown catalogue (ERRORS.md).
 // ADR 0022 records why the source is a Go interface rather than errors.yaml.
@@ -32,7 +32,7 @@
 // <type_base>/<namespace>/<code>. Both are the client contract, so code= is
 // required on every error: renaming the Go method changes call sites only,
 // never the contract. Changing a code is a breaking API change; the
-// committed ERRORS.md and `nano gen errors -check` in CI make it visible in
+// committed ERRORS.md and `nanostack gen errors -check` in CI make it visible in
 // review. The generator checks that codes are unique within one namespace;
 // it cannot see other packages, so keep namespaces distinct per service.
 //
@@ -123,12 +123,12 @@ func run(opts Options) ([]string, error) {
 	return gen.Sync("errors", files, opts.Check)
 }
 
-// Main runs `nano gen errors [-dir d] [-out f] [-doc f] [-check]` and returns
+// Main runs `nanostack gen errors [-dir d] [-out f] [-doc f] [-check]` and returns
 // the process exit code: 0 on success, 1 on stale output or a declaration
 // error, 2 on bad flags, 3 when the environment fails; -h prints the flags
 // and returns 0. It is a gen.Command.
 func Main(args []string, stdout, stderr io.Writer) int {
-	fs := flag.NewFlagSet("nano gen errors", flag.ContinueOnError)
+	fs := flag.NewFlagSet("nanostack gen errors", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	var opts Options
 	fs.StringVar(&opts.Dir, "dir", ".", "package directory holding the //nano:errors declaration")
@@ -143,7 +143,7 @@ func Main(args []string, stdout, stderr io.Writer) int {
 		return gen.Report(stderr, "errors", err)
 	}
 	for _, path := range written {
-		_, _ = fmt.Fprintf(stdout, "nano gen errors: wrote %s\n", path)
+		_, _ = fmt.Fprintf(stdout, "nanostack gen errors: wrote %s\n", path)
 	}
 	return 0
 }

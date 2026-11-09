@@ -1,5 +1,5 @@
 // Package repository holds the repositories of the db step fixture, on the
-// base that nano gen repo writes.
+// base that nanostack gen repo writes.
 package repository
 
 import (

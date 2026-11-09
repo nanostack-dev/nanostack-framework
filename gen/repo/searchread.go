@@ -118,7 +118,7 @@ func (w *readWalk) visit(n ast.Node) bool {
 	case *ast.Ident:
 		w.ident(x)
 	case *ast.FuncLit:
-		w.refuse(x, followFix, "declares a function literal, which nano gen repo cannot follow")
+		w.refuse(x, followFix, "declares a function literal, which nanostack gen repo cannot follow")
 		return false
 	}
 	return true
@@ -159,7 +159,7 @@ func (w *readWalk) call(call *ast.CallExpr) {
 	case *ast.Ident:
 		w.function(call, info.Uses[f])
 	default:
-		w.refuse(call, followFix, "calls %s, which nano gen repo cannot resolve", w.c.source(call.Fun))
+		w.refuse(call, followFix, "calls %s, which nanostack gen repo cannot resolve", w.c.source(call.Fun))
 	}
 	w.walk(call.Args...)
 }
@@ -180,7 +180,7 @@ func (w *readWalk) function(call *ast.CallExpr, obj types.Object) {
 		return
 	}
 	if obj == nil || obj.Pkg() == nil || obj.Parent() != obj.Pkg().Scope() {
-		w.refuse(call, followFix, "calls %s, which nano gen repo cannot resolve", w.c.source(call.Fun))
+		w.refuse(call, followFix, "calls %s, which nanostack gen repo cannot resolve", w.c.source(call.Fun))
 		return
 	}
 	sig, _ := obj.Type().Underlying().(*types.Signature)
@@ -191,7 +191,7 @@ func (w *readWalk) function(call *ast.CallExpr, obj types.Object) {
 	case inDB(obj.Pkg()) && sig != nil:
 		w.dbFunction(call, obj.Name(), sig)
 	default:
-		w.refuse(call, followFix, "calls %s, which nano gen repo cannot follow", w.c.source(call.Fun))
+		w.refuse(call, followFix, "calls %s, which nanostack gen repo cannot follow", w.c.source(call.Fun))
 	}
 }
 
@@ -203,7 +203,7 @@ func (w *readWalk) follow(call *ast.CallExpr, fn *types.Func) {
 	w.followed[fn] = true
 	decl := w.c.funcDecl(fn)
 	if decl == nil {
-		w.refuse(call, followFix, "calls %s, which nano gen repo cannot follow", fn.Name())
+		w.refuse(call, followFix, "calls %s, which nanostack gen repo cannot follow", fn.Name())
 		return
 	}
 	w.body(decl)
@@ -258,7 +258,7 @@ func (w *readWalk) method(call *ast.CallExpr, f *ast.SelectorExpr, sel *types.Se
 	fn, _ := sel.Obj().(*types.Func)
 	switch {
 	case fn == nil:
-		w.refuse(call, followFix, "calls %s, which nano gen repo cannot resolve", w.c.source(call.Fun))
+		w.refuse(call, followFix, "calls %s, which nanostack gen repo cannot resolve", w.c.source(call.Fun))
 	case w.c.isTableType(sel.Recv()) && !inDB(fn.Pkg()):
 		w.tableMethod(call, f, fn.Name())
 		return
@@ -267,7 +267,7 @@ func (w *readWalk) method(call *ast.CallExpr, f *ast.SelectorExpr, sel *types.Se
 			return
 		}
 	default:
-		w.refuse(call, followFix, "calls the method %s, which nano gen repo cannot follow", w.c.source(call.Fun))
+		w.refuse(call, followFix, "calls the method %s, which nanostack gen repo cannot follow", w.c.source(call.Fun))
 	}
 	w.walk(f.X)
 	w.walk(call.Args...)
@@ -277,8 +277,8 @@ func (w *readWalk) method(call *ast.CallExpr, f *ast.SelectorExpr, sel *types.Se
 // constant alias.
 func (w *readWalk) tableMethod(call *ast.CallExpr, f *ast.SelectorExpr, name string) {
 	if name != "AS" {
-		w.refuse(call, "read the table as nano gen db generated it: "+w.c.source(f.X),
-			"calls %s: it reads another table than the one whose facts nano gen db wrote", w.c.source(call.Fun))
+		w.refuse(call, "read the table as nanostack gen db generated it: "+w.c.source(f.X),
+			"calls %s: it reads another table than the one whose facts nanostack gen db wrote", w.c.source(call.Fun))
 		w.walk(f.X)
 		return
 	}
@@ -366,7 +366,7 @@ func (w *readWalk) selector(x *ast.SelectorExpr) bool {
 		return true
 	}
 	if sel.Kind() != types.FieldVal {
-		w.refuse(x, followFix, "uses the method value %s, which nano gen repo cannot follow", w.c.source(x))
+		w.refuse(x, followFix, "uses the method value %s, which nanostack gen repo cannot follow", w.c.source(x))
 		return false
 	}
 	base := ast.Unparen(x.X)
@@ -384,7 +384,7 @@ func (w *readWalk) selector(x *ast.SelectorExpr) bool {
 	}
 	if w.c.isTableType(info.TypeOf(base)) {
 		w.refuse(x, w.c.columnFix(base, x.Sel.Name),
-			"reads %s through %s: nano gen repo reads the columns of table variables and of AS", x.Sel.Name,
+			"reads %s through %s: nanostack gen repo reads the columns of table variables and of AS", x.Sel.Name,
 			w.c.source(base))
 		return false
 	}
@@ -403,7 +403,7 @@ func (w *readWalk) qualified(x *ast.SelectorExpr, obj types.Object) {
 	case *types.Var:
 		w.packageVar(x, v)
 	case *types.Func:
-		w.refuse(x, followFix, "passes %s as a value, which nano gen repo cannot follow", w.c.source(x))
+		w.refuse(x, followFix, "passes %s as a value, which nanostack gen repo cannot follow", w.c.source(x))
 	}
 }
 
@@ -415,7 +415,7 @@ func (w *readWalk) ident(id *ast.Ident) {
 			w.packageVar(id, v)
 		}
 	case *types.Func:
-		w.refuse(id, followFix, "passes %s as a value, which nano gen repo cannot follow", id.Name)
+		w.refuse(id, followFix, "passes %s as a value, which nanostack gen repo cannot follow", id.Name)
 	}
 }
 
@@ -429,20 +429,20 @@ func (w *readWalk) packageVar(n ast.Expr, v *types.Var) {
 	case w.c.tableVariable(v):
 		w.use(n, "", n)
 	case inDB(v.Pkg()) && isFunc:
-		w.refuse(n, followFix, "passes %s as a value, which nano gen repo cannot follow", w.c.source(n))
+		w.refuse(n, followFix, "passes %s as a value, which nanostack gen repo cannot follow", w.c.source(n))
 	case inDB(v.Pkg()):
 	case w.c.carriesSQL(v.Type()):
-		fix := "write the value in the function, so that nano gen repo follows it"
+		fix := "write the value in the function, so that nanostack gen repo follows it"
 		if value := w.c.varValue(v); value != nil {
 			fix = "write " + w.c.source(value) + " in the function in place of " + v.Name()
 		}
-		w.refuse(n, fix, "reads the package variable %s: nano gen repo reads functions, not prebuilt values",
+		w.refuse(n, fix, "reads the package variable %s: nanostack gen repo reads functions, not prebuilt values",
 			w.c.source(n))
 	}
 }
 
 // use records the instance of a table expression: a table variable, with
-// alias. Another expression of a table type is refused: nano gen repo would
+// alias. Another expression of a table type is refused: nanostack gen repo would
 // not know the table it reads.
 func (w *readWalk) use(table ast.Expr, alias string, at ast.Node) {
 	before := len(w.c.problems)
@@ -450,7 +450,7 @@ func (w *readWalk) use(table ast.Expr, alias string, at ast.Node) {
 	if t == nil {
 		if w.walk(table); len(w.c.problems) == before {
 			w.refuse(at, "write the table variable of the generated table package, such as table.Items, in place",
-				"reads %s, which is not a table variable that nano gen db generated", w.c.source(table))
+				"reads %s, which is not a table variable that nanostack gen db generated", w.c.source(table))
 		}
 		return
 	}

@@ -1,14 +1,14 @@
-// Command nano is the Nanostack command line. Today it runs code generators:
+// Command nanostack is the Nanostack command line. Today it runs code generators:
 //
-//	nano gen [flags]               # every step of the module, in order (package gen/pipeline)
-//	nano gen <generator> [flags]   # one generator
+//	nanostack gen [flags]               # every step of the module, in order (package gen/pipeline)
+//	nanostack gen <generator> [flags]   # one generator
 //
-// `nano gen` with no generator name runs the pipeline: it reads
+// `nanostack gen` with no generator name runs the pipeline: it reads
 // nanogen/project.go, discovers the rest, and runs db, api, validate,
 // errors, repo, config and wire in that order; -check writes nothing and lists every stale,
-// missing or orphaned file (nano gen -h lists the flags). Each generator
+// missing or orphaned file (nanostack gen -h lists the flags). Each generator
 // follows the contract of package gen and documents its flags
-// (nano gen <generator> -h); every generator takes -check, which writes
+// (nanostack gen <generator> -h); every generator takes -check, which writes
 // nothing and exits 1 when its output is stale. Exit codes: 0 success, 1 a
 // source error or stale output, 2 bad usage, 3 an environment failure (the
 // go command cannot load packages, a file cannot be read or written, the
@@ -36,7 +36,7 @@ import (
 	"github.com/nanostack-dev/nanostack-framework/gen/wire"
 )
 
-// generators maps `nano gen <name>` to its command.
+// generators maps `nanostack gen <name>` to its command.
 var generators = map[string]gen.Command{
 	"api":      genapi.Main,
 	"config":   genconfig.Main,
@@ -57,7 +57,7 @@ func usage() string {
 		names = append(names, name)
 	}
 	slices.Sort(names)
-	return "usage: nano gen [flags]\n       nano gen {" + strings.Join(names, ",") + "} [flags]"
+	return "usage: nanostack gen [flags]\n       nanostack gen {" + strings.Join(names, ",") + "} [flags]"
 }
 
 func run(args []string, stdout, stderr io.Writer) int {
@@ -70,7 +70,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	cmd, ok := generators[args[1]]
 	if !ok {
-		_, _ = fmt.Fprintf(stderr, "nano gen: unknown generator %q\n%s\n", args[1], usage())
+		_, _ = fmt.Fprintf(stderr, "nanostack gen: unknown generator %q\n%s\n", args[1], usage())
 		return 2
 	}
 	return cmd(args[2:], stdout, stderr)

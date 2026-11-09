@@ -79,7 +79,7 @@ func loadPackage(opts Options) (*loaded, error) {
 	}
 	if len(fatal) > 0 {
 		return nil, errors.Join(gopkg.Problems(fatal, l.relPath,
-			"make the package compile; nano gen errors replaces "+opts.Out+" with an empty file")...)
+			"make the package compile; nanostack gen errors replaces "+opts.Out+" with an empty file")...)
 	}
 	return l, nil
 }
@@ -201,7 +201,7 @@ func (l *loaded) verify(c *catalogue, src []byte) error {
 				}
 			}
 			problems = append(problems, at.errorf(
-				"rename the declaration to work around it, and report this gap in the nano gen errors checks",
+				"rename the declaration to work around it, and report this gap in the nanostack gen errors checks",
 				"%s: generated code does not compile: %s (%s:%d)", name, e.Msg, out, line))
 		}
 		return errors.Join(problems...)

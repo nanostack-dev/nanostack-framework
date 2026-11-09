@@ -1,4 +1,4 @@
-nano gen repo: generated files are stale: <dir>/repository_repo.gen.go
-  fix: run nano gen repo
+nanostack gen repo: generated files are stale: <dir>/repository_repo.gen.go
+  fix: run nanostack gen repo
 gone_repo.gen.go: orphan: no declaration of the package produces it any more
-  fix: run nano gen repo, which deletes it, and commit the result
+  fix: run nanostack gen repo, which deletes it, and commit the result

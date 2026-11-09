@@ -17,7 +17,7 @@
 //	)
 //
 // replaces postgres.Module and transactor.Module. When every module is
-// nano-shaped, the service replaces fx.New with a manifest and nano gen wire.
+// nano-shaped, the service replaces fx.New with a manifest and nanostack gen wire.
 //
 // The package is part of the legacy tree: it imports fx and is deleted with
 // it.

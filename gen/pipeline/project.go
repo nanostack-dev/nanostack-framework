@@ -101,7 +101,7 @@ func projectLiteral(pkg *packages.Package) (ast.Expr, error) {
 }
 
 // onlyDeclared reports each use of var Project outside its declaration,
-// such as an assignment in init: nano reads only the literal, so the value
+// such as an assignment in init: nanostack reads only the literal, so the value
 // set there would be ignored.
 func onlyDeclared(fset *token.FileSet, pkg *packages.Package) error {
 	obj := pkg.Types.Scope().Lookup(projectVar)
@@ -110,7 +110,7 @@ func onlyDeclared(fset *token.FileSet, pkg *packages.Package) error {
 		if used == obj {
 			errs = append(errs, gen.Errorf(projectFile, fset.Position(id.Pos()).Line,
 				"set every value in the var Project literal, and do not refer to Project elsewhere",
-				"nano gen reads only the literal of var Project; this use of Project is ignored"))
+				"nanostack gen reads only the literal of var Project; this use of Project is ignored"))
 		}
 	}
 	slices.SortFunc(errs, func(a, b error) int {
@@ -206,7 +206,7 @@ func (d *decoder) decode(expr ast.Expr, v reflect.Value, path string) {
 		}
 		v.SetBool(constant.BoolVal(c))
 	default:
-		panic("nano gen: project field kind " + v.Kind().String() + " has no decoder")
+		panic("nanostack gen: project field kind " + v.Kind().String() + " has no decoder")
 	}
 }
 
@@ -252,7 +252,7 @@ func (d *decoder) notLiteral(expr ast.Expr, path, want string) {
 }
 
 // checkProject reports the declared paths that do not exist, and the
-// outputs that would leave the directory nano gen runs on.
+// outputs that would leave the directory nanostack gen runs on.
 func checkProject(root string, p project.Project, d *decoder) error {
 	c := &projectCheck{root: root, d: d}
 	if p.API != nil {
@@ -290,14 +290,14 @@ func (c *projectCheck) add(line int, fix, format string, args ...any) {
 
 func (c *projectCheck) relative(field, path string) bool {
 	if filepath.IsAbs(path) {
-		c.add(c.at(field), "write the path relative to the directory nano gen runs on", "%s %s is absolute",
+		c.add(c.at(field), "write the path relative to the directory nanostack gen runs on", "%s %s is absolute",
 			field, path)
 		return false
 	}
 	return true
 }
 
-// inside reports an output directory outside the directory nano gen runs
+// inside reports an output directory outside the directory nanostack gen runs
 // on (design P10). An input, such as the spec, may sit outside it.
 func (c *projectCheck) inside(field, path string) bool {
 	return c.insideAt(field, path, "API.Clients")
@@ -307,9 +307,9 @@ func (c *projectCheck) inside(field, path string) bool {
 // not set field.
 func (c *projectCheck) insideAt(field, path, fallback string) bool {
 	if outside(path) {
-		c.add(c.at(field, fallback),
-			"generate under the directory nano gen runs on; a module beside it declares its own nanogen/project.go",
-			"%s %s is outside the directory nano gen runs on", field, path)
+		c.add(c.at(field, fallback), "generate under the directory nanostack gen runs on; "+
+			"a module beside it declares its own nanogen/project.go",
+			"%s %s is outside the directory nanostack gen runs on", field, path)
 		return false
 	}
 	if mod := moduleRoot(filepath.Join(c.root, path)); mod != moduleRoot(c.root) {
@@ -318,8 +318,8 @@ func (c *projectCheck) insideAt(field, path, fallback string) bool {
 			rel = mod
 		}
 		c.add(c.at(field, fallback),
-			"declare the output in "+filepath.ToSlash(filepath.Join(rel, projectFile))+" and run nano gen there",
-			"%s %s is in the nested module %s, which runs its own nano gen", field, path, filepath.ToSlash(rel))
+			"declare the output in "+filepath.ToSlash(filepath.Join(rel, projectFile))+" and run nanostack gen there",
+			"%s %s is in the nested module %s, which runs its own nanostack gen", field, path, filepath.ToSlash(rel))
 		return false
 	}
 	return true
@@ -361,10 +361,10 @@ func (c *projectCheck) api(api *project.OpenAPI) {
 		switch api.Server.File {
 		case validateOut:
 			c.add(c.at("API.Server.File", "API.Server"), "set API.Server.File to another name, such as api.gen.go",
-				"API.Server.File %s is the file nano gen validate writes", validateOut)
+				"API.Server.File %s is the file nanostack gen validate writes", validateOut)
 		case genapi.HandlersFile:
 			c.add(c.at("API.Server.File", "API.Server"), "set API.Server.File to another name, such as api.gen.go",
-				"API.Server.File %s is the file of the tag split, which nano gen api writes next to the server",
+				"API.Server.File %s is the file of the tag split, which nanostack gen api writes next to the server",
 				genapi.HandlersFile)
 		}
 	}
@@ -443,7 +443,7 @@ func outside(path string) bool {
 func specFix(root string) string {
 	specs := findSpecs(root)
 	if len(specs) == 0 {
-		return "write the path of the OpenAPI document, relative to the directory nano gen runs on"
+		return "write the path of the OpenAPI document, relative to the directory nanostack gen runs on"
 	}
 	return "the module has " + strings.Join(specs, ", ")
 }

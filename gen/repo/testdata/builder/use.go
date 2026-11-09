@@ -10,7 +10,7 @@ import (
 )
 
 // recentItems builds a search as a handler does: the forward stub must
-// declare every name it uses before nano gen repo runs.
+// declare every name it uses before nanostack gen repo runs.
 func recentItems(tenant uuid.UUID, since time.Time) ItemSearch {
 	q := NewItemSearch(tenant)
 	q = q.Status().In(model.ItemStatus_Active).CreatedAt().Since(since).Sku().In("a-1", sku("b-2"))

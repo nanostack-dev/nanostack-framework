@@ -1,5 +1,5 @@
 // Package scope holds hand-written queries with and without the tenant
-// column; nano gen repo warns on each query of items without tenant_id.
+// column; nanostack gen repo warns on each query of items without tenant_id.
 package scope
 
 import (

@@ -1,5 +1,5 @@
-# The configuration of nano gen api's server, for oapi-codegen's command.
-# api.gen.go is its output, the golden that nano gen api must match byte for
+# The configuration of nanostack gen api's server, for oapi-codegen's command.
+# api.gen.go is its output, the golden that nanostack gen api must match byte for
 # byte after its own header. Regenerate it from this directory with:
 #
 #   go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.8.2 -config oapi-codegen.yaml openapi.yaml

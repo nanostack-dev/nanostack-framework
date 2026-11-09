@@ -1,2 +1,2 @@
-nano gen repo: package none has no nanorepo declaration
+nanostack gen repo: package none has no nanorepo declaration
   fix: declare a repository with nanorepo.Implement or nanorepo.Base inside func _() { ... }, in a file without a build tag

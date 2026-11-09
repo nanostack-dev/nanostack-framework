@@ -14,7 +14,7 @@ import (
 )
 
 // A method promoted from a newly embedded field wins over the derived copy
-// a stale output still declares (design D10): nano gen repo never reads a
+// a stale output still declares (design D10): nanostack gen repo never reads a
 // method it generated.
 func TestStaleOutputNeverHidesAPromotedMethod(t *testing.T) {
 	t.Parallel()
@@ -122,7 +122,13 @@ func TestCheckAndOrphans(t *testing.T) {
 	if code := Main(args, &stdout, &stderr); code != 0 {
 		t.Fatalf("run: exit %d, stderr:\n%s", code, stderr.String())
 	}
-	want := "nano gen repo: wrote " + mustAbs(t, derived) + "\nnano gen repo: deleted " + mustAbs(t, orphan) + "\n"
+	want := "nanostack gen repo: wrote " + mustAbs(
+		t,
+		derived,
+	) + "\nnanostack gen repo: deleted " + mustAbs(
+		t,
+		orphan,
+	) + "\n"
 	if stdout.String() != want {
 		t.Fatalf("stdout:\n%s\nwant:\n%s", stdout.String(), want)
 	}
@@ -162,7 +168,7 @@ func TestMainExplain(t *testing.T) {
 
 // The forward stub of a derived file declares every method of the bound
 // interface that has no hand-written method, the one the interface just
-// gained included, so the package type-checks before nano gen repo runs
+// gained included, so the package type-checks before nanostack gen repo runs
 // again (design D27).
 func TestForwardStub(t *testing.T) {
 	t.Parallel()

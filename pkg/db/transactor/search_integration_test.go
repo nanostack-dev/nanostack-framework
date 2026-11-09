@@ -22,7 +22,7 @@ import (
 // refuses a row lock there, and composes with the On* translations.
 
 // ksSearch is the builder of a search of it_keyset scoped on its tenant, as
-// nano gen repo writes one.
+// nanostack gen repo writes one.
 type ksSearch struct {
 	searchexec.Query[ksRow, ksSearch, ksField, string]
 }

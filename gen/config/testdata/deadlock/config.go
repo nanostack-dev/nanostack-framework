@@ -1,5 +1,5 @@
-// Package deadlock is the state that used to deadlock nano gen config and
-// nano gen wire: Config.Postgres was renamed to Config.Database, and the
+// Package deadlock is the state that used to deadlock nanostack gen config and
+// nanostack gen wire: Config.Postgres was renamed to Config.Database, and the
 // committed wire.gen.go still reads the old field. config loads with
 // -tags=nanogen, which drops wire.gen.go and run.go, so it regenerates.
 package deadlock

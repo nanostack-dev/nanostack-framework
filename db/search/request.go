@@ -8,8 +8,8 @@ const (
 )
 
 // Request is the request of a search that has no SQL builder: a remote call,
-// data in memory, or a query that nano gen repo cannot declare. A search that
-// nano gen repo generates takes its own builder, not a Request.
+// data in memory, or a query that nanostack gen repo cannot declare. A search that
+// nanostack gen repo generates takes its own builder, not a Request.
 //
 // F is the filter type of the search and S its sort field type. The validate
 // tags stay, so a hand-written search can validate the request struct.

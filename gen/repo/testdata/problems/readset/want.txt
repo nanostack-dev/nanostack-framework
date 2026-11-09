@@ -22,29 +22,29 @@ readset.go:167: FullTextExpr castByName calls postgres.CAST(table.Items.Sku).AS 
   fix: pass the type as a string constant, such as CAST(x).AS("text"), or use a typed cast, such as AS_TEXT()
 readset.go:172: SortExpr Day dayInZone calls postgres.DATE_TRUNC with the time zone zone, which is not a constant
   fix: pass the time zone as a string constant, such as "UTC"
-readset.go:176: From itemsWithParent reads the package variable parent: nano gen repo reads functions, not prebuilt values
+readset.go:176: From itemsWithParent reads the package variable parent: nanostack gen repo reads functions, not prebuilt values
   fix: write table.Tenants.AS("parent") in the function in place of parent
-readset.go:179: Condition prebuilt reads the package variable expensiveCondition: nano gen repo reads functions, not prebuilt values
+readset.go:179: Condition prebuilt reads the package variable expensiveCondition: nanostack gen repo reads functions, not prebuilt values
   fix: write table.Items.Price.GT(postgres.Float(100)) in the function in place of expensiveCondition
-readset.go:182: From itemsInOtherSchema calls table.Tenants.FromSchema: it reads another table than the one whose facts nano gen db wrote
-  fix: read the table as nano gen db generated it: table.Tenants
-readset.go:186: Condition prefixed reads Active through table.Items.WithPrefix("old_"): nano gen repo reads the columns of table variables and of AS
+readset.go:182: From itemsInOtherSchema calls table.Tenants.FromSchema: it reads another table than the one whose facts nanostack gen db wrote
+  fix: read the table as nanostack gen db generated it: table.Tenants
+readset.go:186: Condition prefixed reads Active through table.Items.WithPrefix("old_"): nanostack gen repo reads the columns of table variables and of AS
   fix: read the column of the table variable of the generated table package, such as table.Items.Active
 readset.go:190: Condition enumValue calls postgres.NewEnumValue: it writes SQL that the tenant check cannot read
   fix: build the expression with Nanostack DB constructors (columns, EQ, AND, postgres.LOWER, ...), inside a function
 readset.go:193: SortExpr Named columnByName calls postgres.StringColumn: it takes a string that becomes SQL text
   fix: build the expression with Nanostack DB constructors (columns, EQ, AND, postgres.LOWER, ...), inside a function
-readset.go:196: Condition otherPackage calls strings.ToLower, which nano gen repo cannot follow
+readset.go:196: Condition otherPackage calls strings.ToLower, which nanostack gen repo cannot follow
   fix: call a function of this package, or a Nanostack DB constructor, directly
 readset.go:200: SortExpr First orderedSubquery uses LIMIT in a subquery: a subquery of a search reads with SELECT, FROM and WHERE only
   fix: write the subquery with SELECT, FROM and WHERE only, or the search by hand on db/searchexec
-readset.go:205: Condition closure declares a function literal, which nano gen repo cannot follow
+readset.go:205: Condition closure declares a function literal, which nanostack gen repo cannot follow
   fix: call a function of this package, or a Nanostack DB constructor, directly
-readset.go:206: Condition closure calls active, which nano gen repo cannot resolve
+readset.go:206: Condition closure calls active, which nanostack gen repo cannot resolve
   fix: call a function of this package, or a Nanostack DB constructor, directly
 readset.go:210: Flag HasItems tableSelect calls table.Items.SELECT: a table of a search is read with INNER_JOIN, LEFT_JOIN or a subquery's FROM
   fix: write a subquery as postgres.SELECT(...).FROM(table).WHERE(...)
-readset.go:63: search FuncLiteral: Flag Active takes a function literal; nano gen repo reads a function of package readset by its name
+readset.go:63: search FuncLiteral: Flag Active takes a function literal; nanostack gen repo reads a function of package readset by its name
   fix: declare the function in this package, and pass its name
 readset.go:214: From itemsCrossTenants uses CROSS_JOIN: it brings rows that no tenant link reaches
   fix: INNER_JOIN(table.Tenants, table.Items.TenantID.EQ(table.Tenants.ID))
@@ -62,15 +62,15 @@ readset.go:75: search OrJoin: itemsOrTenants joins tenants ON table.Tenants.ID.E
   fix: join to one row: equate every column of a key that orders every row (its keys are tenants_pkey (id), tenants_name_key (name)), or filter on the child rows with nanorepo.FilterExists(...)
 readset.go:76: search HalfKey: tenantsAndOneSku joins items ON table.Items.TenantID.EQ(table.Tenants.ID).AND(table.Items.Sku.NOT_EQ(table.Tenants.Name)), which equates no unique key of items: a row of tenants can repeat
   fix: join to one row: equate every column of a key that orders every row (its keys are items_pkey (id), items_tenant_sku_key (tenant_id, sku)), or filter on the child rows with nanorepo.FilterExists(...)
-readset.go:249: search HelperTwoSteps: From viaHelperInTwoSteps calls twoSteps, which is not one return statement: nano gen repo reads the tables of the join from it
+readset.go:249: search HelperTwoSteps: From viaHelperInTwoSteps calls twoSteps, which is not one return statement: nanostack gen repo reads the tables of the join from it
   fix: declare the function in this package with one statement, return table.X.INNER_JOIN(table.Y, <condition>) (or LEFT_JOIN), and pass its name to nanorepo.From
-readset.go:266: Condition structVar reads the package variable cfg: nano gen repo reads functions, not prebuilt values
+readset.go:266: Condition structVar reads the package variable cfg: nanostack gen repo reads functions, not prebuilt values
   fix: write struct{C postgres.BoolExpression}{…} in the function in place of cfg
-readset.go:268: Condition anyVar reads the package variable anyCond: nano gen repo reads functions, not prebuilt values
+readset.go:268: Condition anyVar reads the package variable anyCond: nanostack gen repo reads functions, not prebuilt values
   fix: write postgres.Bool(true) in the function in place of anyCond
-readset.go:270: Condition mapVar reads the package variable byName: nano gen repo reads functions, not prebuilt values
+readset.go:270: Condition mapVar reads the package variable byName: nanostack gen repo reads functions, not prebuilt values
   fix: write map[string]any{…} in the function in place of byName
-readset.go:272: Condition namedVar reads the package variable named: nano gen repo reads functions, not prebuilt values
+readset.go:272: Condition namedVar reads the package variable named: nanostack gen repo reads functions, not prebuilt values
   fix: write postgres.Bool(true) in the function in place of named
 readset.go:87: search ScopeWithCondition: From itemsWithExtra takes extraScope, which can hold a Nanostack DB value: the caller could put any condition in the join
   fix: take the scope value, a struct of plain values such as strings and UUIDs
@@ -84,9 +84,9 @@ readset.go:301: Flag Some subqueryConversion reads postgres.ReadableTable(table.
   fix: pass a table variable of the generated table package, or its AS, to FROM, such as table.Items or table.Items.AS("i")
 readset.go:304: From itemsCrossHelper uses CROSS_JOIN: it brings rows that no tenant link reaches
   fix: join with INNER_JOIN or LEFT_JOIN on the columns of a declared foreign key
-readset.go:307: Condition methodValue uses the method value table.Items.Active.IS_TRUE, which nano gen repo cannot follow
+readset.go:307: Condition methodValue uses the method value table.Items.Active.IS_TRUE, which nanostack gen repo cannot follow
   fix: call a function of this package, or a Nanostack DB constructor, directly
-readset.go:308: Condition methodValue calls f, which nano gen repo cannot resolve
+readset.go:308: Condition methodValue calls f, which nanostack gen repo cannot resolve
   fix: call a function of this package, or a Nanostack DB constructor, directly
 readset.go:312: Condition statement calls postgres.UNION, which builds a statement: a subquery of a search reads with SELECT, FROM and WHERE only
   fix: write the subquery as postgres.SELECT(...).FROM(table).WHERE(...), or the search by hand on db/searchexec

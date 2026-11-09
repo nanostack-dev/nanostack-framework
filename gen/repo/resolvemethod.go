@@ -22,8 +22,8 @@ func (r *resolver) resolveMethod(d *declarations, fn *types.Func, hand map[strin
 	case s != nil && len(r.promoted(fn.Name())) > 0:
 		h := r.promoted(fn.Name())[0]
 		r.fail(fn.Pos(), fn, fmt.Sprintf("write %s on *%s by hand on searchexec.Resolve, or remove it from %s "+
-			"so nano gen repo generates it", fn.Name(), r.b.impl.Obj().Name(), h.field.Name()),
-			"%s takes a %sSearch and is promoted from the embedded %s: nano gen repo cannot check that it "+
+			"so nanostack gen repo generates it", fn.Name(), r.b.impl.Obj().Name(), h.field.Name()),
+			"%s takes a %sSearch and is promoted from the embedded %s: nanostack gen repo cannot check that it "+
 				"runs the declared scope", fn.Name(), s.name, h.field.Name())
 		r.line(fn, "ERROR: a promoted method takes a search", "")
 	case s != nil:

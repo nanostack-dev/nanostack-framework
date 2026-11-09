@@ -104,7 +104,7 @@ func load(opts Options) (*model, error) {
 	}
 	if len(pkg.Errors) > 0 {
 		return nil, errors.Join(gopkg.CompileErrors(pkg, func(f string) string { return relPath(absDir, f) },
-			"make the package compile under -tags="+buildTag+"; nano gen config replaces "+out+" with a stub")...)
+			"make the package compile under -tags="+buildTag+"; nanostack gen config replaces "+out+" with a stub")...)
 	}
 	st, ok := obj.Type().Underlying().(*types.Struct)
 	if !ok {
@@ -155,10 +155,10 @@ import (
 	nanoconf "` + runtimePath + `"
 )
 
-func ` + bind + `(context.Context, *nanoconf.Sources) (` + typeName + `, error) { panic("nano gen config stub") }
-func (` + typeName + `) LogValue() slog.Value { panic("nano gen config stub") }
-func (` + typeName + `) String() string { panic("nano gen config stub") }
-func (` + typeName + `) GoString() string { panic("nano gen config stub") }
+func ` + bind + `(context.Context, *nanoconf.Sources) (` + typeName + `, error) { panic("nanostack gen config stub") }
+func (` + typeName + `) LogValue() slog.Value { panic("nanostack gen config stub") }
+func (` + typeName + `) String() string { panic("nanostack gen config stub") }
+func (` + typeName + `) GoString() string { panic("nanostack gen config stub") }
 `)
 }
 

@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// TestAppConfigTags pins the config tags that nano gen config binds: the
+// TestAppConfigTags pins the config tags that nanostack gen config binds: the
 // names give APP_START_TIMEOUT, APP_STOP_TIMEOUT and APP_HEALTH_TIMEOUT under
 // an app section, and each default equals the default withDefaults applies,
 // so a bound AppConfig and a zero one behave the same.

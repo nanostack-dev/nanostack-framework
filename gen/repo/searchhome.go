@@ -84,7 +84,7 @@ func (l *loaded) apiHome(s *searchDecl, body *types.Named) (*apiHome, error) {
 	}
 	if file, line, found := l.declaredIn(home.dir, mapperName(s)); found {
 		return nil, gen.Errorf(l.relDir(file), line, "rename it, or rename the search",
-			"%s is declared here, and nano gen repo declares it for search %s", mapperName(s), s.name)
+			"%s is declared here, and nanostack gen repo declares it for search %s", mapperName(s), s.name)
 	}
 	return home, nil
 }

@@ -69,7 +69,7 @@ type webhookDomain struct{ ID string }
 // requestStatusValue is an enum over the status column.
 type requestStatusValue string
 
-// requestScope is the scope type that nano gen repo generates for a search.
+// requestScope is the scope type that nanostack gen repo generates for a search.
 type requestScope struct{ OrganizationID string }
 
 // searchBody is a request body type of the api step.
@@ -123,7 +123,7 @@ func requestCount() postgres.IntegerExpression {
 }
 
 // Every option of a search declaration compiles in func _(), the place
-// nano gen repo reads declarations from.
+// nanostack gen repo reads declarations from.
 func _() {
 	nanorepo.Search[webhookRequest](
 		"WebhookRequest",
@@ -185,7 +185,7 @@ func _() {
 }
 
 // The declarations are dialect-neutral: tables, columns and conditions of
-// MySQL and SQLite compile as PostgreSQL's do. In this release, nano gen repo
+// MySQL and SQLite compile as PostgreSQL's do. In this release, nanostack gen repo
 // refuses these two searches (E16).
 func _() {
 	mysqlID := mysql.StringColumn("id")

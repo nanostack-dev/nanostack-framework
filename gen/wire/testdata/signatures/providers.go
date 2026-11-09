@@ -1,4 +1,4 @@
-// Package signatures exercises every provider shape nano gen wire accepts.
+// Package signatures exercises every provider shape nanostack gen wire accepts.
 package signatures
 
 import (

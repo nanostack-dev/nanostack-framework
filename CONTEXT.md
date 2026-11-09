@@ -16,7 +16,7 @@ The framework owns reusable service infrastructure shared by Nanostack applicati
 
 **Nanostack DB:** The `db` module: the framework's fork of go-jet with native `functional.Option` support. Say "Nanostack DB", not "go-jet", for the code in `db/`; [db/UPSTREAM.md](db/UPSTREAM.md) records what differs.
 
-**Released module:** One of the four Go modules that this repository tags: the root module, `db`, `pkg/functional` and `gen` (the generators and the `nano` CLI). Each has its own version and its own tag prefix ([RELEASING.md](RELEASING.md)).
+**Released module:** One of the four Go modules that this repository tags: the root module, `db`, `pkg/functional` and `gen` (the generators and the `nanostack` CLI). Each has its own version and its own tag prefix ([RELEASING.md](RELEASING.md)).
 
 **Leaves first:** The release order of the released modules: a module is tagged only after every module of this repository that it requires: `pkg/functional`, then `db`, then the root, then `gen`.
 
@@ -42,11 +42,11 @@ The framework owns reusable service infrastructure shared by Nanostack applicati
 
 **Redacted:** The one marker, `[REDACTED]` (`secret.Redacted`), that every redacting path writes in place of a credential: a `Secret`, a credential-named log attribute, a URL password or query parameter, or a credential in a rejected config value.
 
-**Repository declaration:** A `nanorepo.Implement[Iface, Impl](table, toDomain)` or `nanorepo.Base[Row](table)` call inside `func _() { … }` that binds a repository to a go-jet table for `nano gen repo`.
+**Repository declaration:** A `nanorepo.Implement[Iface, Impl](table, toDomain)` or `nanorepo.Base[Row](table)` call inside `func _() { … }` that binds a repository to a go-jet table for `nanostack gen repo`.
 
 **Generated base:** The struct per table in `repo_base.gen.go` (`<table>Base`) that a repository implementation embeds: the table (`t`), the typed predicates (`where`), the condition helpers and the transactor functions as methods. Do not call it a DAO or a generic repository.
 
-**Derived method:** A method of a bound repository interface that the implementation does not have and whose name follows the grammar (`FindByTenantIDAndSku`), so `nano gen repo` generates it into `<file>_repo.gen.go`. A hand-written method of the same name wins. Do not call it a query method or a magic finder.
+**Derived method:** A method of a bound repository interface that the implementation does not have and whose name follows the grammar (`FindByTenantIDAndSku`), so `nanostack gen repo` generates it into `<file>_repo.gen.go`. A hand-written method of the same name wins. Do not call it a query method or a magic finder.
 
 **Scope column:** A tenant column named in `Postgres.Scopes`, once per project, by column name. For derived and hand-written methods, a table with one as a `NOT NULL` column is scoped, and a query on it without that column may read another tenant's rows. A search must cover every scope column it reads, nullable or not.
 

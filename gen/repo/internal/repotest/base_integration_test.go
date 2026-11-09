@@ -45,8 +45,8 @@ func TestMain(m *testing.M) {
 func TestSchemaIsCurrent(t *testing.T) {
 	err := gendb.Run(gendb.Options{Dir: ".", Postgres: shop, Fresh: true, Check: true, Database: server().Open})
 	if err != nil {
-		t.Fatalf("%v\nregenerate with: go run ./cmd/nano gen db -dir repo/internal/repotest -name shop -out db "+
-			"(from gen/), then go run ./cmd/nano gen repo -dir repo/internal/repotest -scopes tenant_id,workspace_id "+
+		t.Fatalf("%v\nregenerate with: go run ./cmd/nanostack gen db -dir repo/internal/repotest -name shop -out db "+
+			"(from gen/), then go run ./cmd/nanostack gen repo -dir repo/internal/repotest -scopes tenant_id,workspace_id "+
 			"-context-scopes workspace_id=github.com/nanostack-dev/nanostack-framework/gen/repo/internal/repotest/workspacescope.Filter", err)
 	}
 }
@@ -86,7 +86,8 @@ func newFixture(t *testing.T) *fixture {
 	ctx := context.Background()
 	tenants := newTenantsBase(db)
 	for i, id := range []uuid.UUID{f.tenant, f.other} {
-		stmt := tenants.t.INSERT(tenants.t.AllColumns).MODEL(model.Tenants{ID: id, Name: "tenant " + string(rune('a'+i))}).
+		stmt := tenants.t.INSERT(tenants.t.AllColumns).
+			MODEL(model.Tenants{ID: id, Name: "tenant " + string(rune('a'+i))}).
 			RETURNING(tenants.t.AllColumns)
 		if _, err := tenants.queryRow(ctx, stmt).Value(); err != nil {
 			t.Fatalf("insert tenant: %v", err)

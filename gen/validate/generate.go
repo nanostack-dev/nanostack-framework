@@ -1,4 +1,4 @@
-// Package genvalidate implements nano gen validate: it reads an OpenAPI 3.0 or
+// Package genvalidate implements nanostack gen validate: it reads an OpenAPI 3.0 or
 // 3.1 document and the package oapi-codegen generated from it, and writes a
 // Validate(validate.Path) validate.Errors method for every request body
 // type, plus a validateParams method for every operation with parameters.

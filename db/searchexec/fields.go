@@ -421,7 +421,7 @@ type Exists[Q, V any] struct {
 //
 // correlation ties the child row to the row of the search: the link column of child equals
 // the key that it references, and each tenant column of child equals a covered tenant
-// column or a scope value. nano gen repo writes it from the declared foreign key and checks
+// column or a scope value. nanostack gen repo writes it from the declared foreign key and checks
 // the tenant columns. child must be a table of db/postgres, db/mysql or db/sqlite, of the
 // dialect of the search: any other child records keyset.ErrDialect, and Resolve refuses a
 // child of another dialect than the source with keyset.ErrDialect.

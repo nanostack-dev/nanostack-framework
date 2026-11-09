@@ -55,7 +55,7 @@ func TestMain(m *testing.M) {
 func open(ctx context.Context) (*sql.DB, func(), error) { return server().Open(ctx) }
 
 // The committed golden output is what the migrations produce, byte for
-// byte, nanogen.sum included, and no other nano gen db file is there.
+// byte, nanogen.sum included, and no other nanostack gen db file is there.
 func TestGolden(t *testing.T) {
 	opts := Options{Dir: keysDir, Postgres: keys, Fresh: true, Database: open, Check: os.Getenv("UPDATE_GOLDEN") == ""}
 	written, err := run(opts)
@@ -138,7 +138,7 @@ WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p') AND ix.indisunique`)
 }
 
 // parseUniqueKeys reads the UniqueKeys method of a table file with
-// go/parser, as nano gen repo does: the table name, the keys and the names
+// go/parser, as nanostack gen repo does: the table name, the keys and the names
 // on the "Not a key" lines.
 func parseUniqueKeys(t *testing.T, file string) (table string, keys map[string][]string, notKeys []string, ok bool) {
 	t.Helper()

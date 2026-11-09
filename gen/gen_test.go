@@ -25,7 +25,7 @@ func TestSync(t *testing.T) {
 	_, err := gen.Sync("demo", files, true)
 	stale, ok := errors.AsType[*gen.StaleError](err)
 	if !ok || !errors.Is(err, gen.ErrStale) || !slices.Equal(stale.Files, []string{fresh}) ||
-		stale.Name != "demo" || !strings.Contains(err.Error(), "run nano gen demo") {
+		stale.Name != "demo" || !strings.Contains(err.Error(), "run nanostack gen demo") {
 		t.Fatalf("check = %v, want a *StaleError naming only %s", err, fresh)
 	}
 	if _, statErr := os.Stat(fresh); !errors.Is(statErr, os.ErrNotExist) {
@@ -47,7 +47,7 @@ func TestSyncFileErrorIsTheEnvironment(t *testing.T) {
 	if err == nil || errors.Is(err, gen.ErrStale) || !errors.Is(err, gen.ErrEnvironment) {
 		t.Fatalf("Sync on a directory = %v, want a read error that wraps ErrEnvironment", err)
 	}
-	if msg := err.Error(); strings.Count(msg, dir) != 1 || strings.Contains(msg, "nano gen") ||
+	if msg := err.Error(); strings.Count(msg, dir) != 1 || strings.Contains(msg, "nanostack gen") ||
 		!strings.Contains(msg, "\n  fix: ") {
 		t.Fatalf("Sync error = %q, want the path once, a fix and no generator prefix", msg)
 	}
@@ -83,18 +83,22 @@ func TestReport(t *testing.T) {
 		"located and unlocated": {
 			errors.Join(gen.Errorf("a.go", 3, "fix a", "bad a"), gen.Errorf("", 0, "fix b", "bad b")),
 			1,
-			"a.go:3: bad a\n  fix: fix a\nnano gen demo: bad b\n  fix: fix b\n",
+			"a.go:3: bad a\n  fix: fix a\nnanostack gen demo: bad b\n  fix: fix b\n",
 		},
-		"stale": {stale, 1, "nano gen demo: generated files are stale: a.gen.go, b.gen.go\n  fix: run nano gen demo\n"},
+		"stale": {
+			stale,
+			1,
+			"nanostack gen demo: generated files are stale: a.gen.go, b.gen.go\n  fix: run nanostack gen demo\n",
+		},
 		"environment wins": {
 			errors.Join(gen.Errorf("a.go", 3, "fix a", "bad a"), gen.EnvErrorf("start it", "no daemon")),
 			3,
-			"a.go:3: bad a\n  fix: fix a\nnano gen demo: no daemon\n  fix: start it\n",
+			"a.go:3: bad a\n  fix: fix a\nnanostack gen demo: no daemon\n  fix: start it\n",
 		},
 		"an error without a fix is a bug": {
 			errors.New("plain"),
 			1,
-			"nano gen demo: plain\n  fix: none known; an error without a fix is a nano gen bug, report it\n",
+			"nanostack gen demo: plain\n  fix: none known; an error without a fix is a nanostack gen bug, report it\n",
 		},
 	}
 	for name, tc := range cases {

@@ -271,7 +271,7 @@ jobs:
             gen/v*)
               module="$repo/gen"
               imports=("$repo/gen" "$repo/gen/wire" "$repo/gen/config")
-              tools=("$repo/gen/cmd/nano")
+              tools=("$repo/gen/cmd/nanostack")
               ;;
             db/v*)
               module="$repo/db"

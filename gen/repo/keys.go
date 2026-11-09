@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// uniqueKey is one key of a table, as nano gen db lists it in the UniqueKeys
+// uniqueKey is one key of a table, as nanostack gen db lists it in the UniqueKeys
 // method of the table type: the primary key, or a unique index that matches
 // at most one row (design D24).
 type uniqueKey struct {
@@ -27,7 +27,7 @@ func (k uniqueKey) String() string {
 
 // readUniqueKeys reads each func (XTable) UniqueKeys() map[string][]string
 // of f: its keys, and the predicate a trailing "// WHERE (...)" comment
-// gives a partial key. nano gen repo reads the keys from source and needs no
+// gives a partial key. nanostack gen repo reads the keys from source and needs no
 // database.
 func readUniqueKeys(fset *token.FileSet, f *ast.File, src *tableFiles) {
 	for _, decl := range f.Decls {

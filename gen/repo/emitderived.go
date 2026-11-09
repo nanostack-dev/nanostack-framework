@@ -10,7 +10,7 @@ import (
 	"github.com/nanostack-dev/nanostack-framework/gen/internal/importset"
 )
 
-// derivedSuffix ends the name of the file nano gen repo writes next to a
+// derivedSuffix ends the name of the file nanostack gen repo writes next to a
 // declaring file: product_user_repository.go gets
 // product_user_repository_repo.gen.go.
 const derivedSuffix = "_repo.gen.go"
@@ -61,7 +61,7 @@ func (l *loaded) renderDerived(res []*resolution, searches []*searchDecl) ([]gen
 	return files, out, nil
 }
 
-// emitSearches writes the builder of each search that nano gen repo can write,
+// emitSearches writes the builder of each search that nanostack gen repo can write,
 // and its API mapper when the mapper goes in the declaring file.
 func (e *emitter) emitSearches(searches []*searchDecl) {
 	for _, s := range searches {
@@ -85,7 +85,7 @@ func (e *emitter) file(pkg, name string) ([]byte, error) {
 	out.WriteString(e.b.String())
 	src, err := format.Source([]byte(out.String()))
 	if err != nil {
-		return nil, gen.Errorf("", 0, "report this nano gen repo bug with the declaration that caused it",
+		return nil, gen.Errorf("", 0, "report this nanostack gen repo bug with the declaration that caused it",
 			"the generated %s does not parse: %v", name, err)
 	}
 	return src, nil
@@ -100,13 +100,13 @@ func (e *emitter) binding(r *resolution) {
 		methods = "derived method"
 	}
 	e.p("// %s on *%s: %d %s on table %s; the other methods are\n", iface, impl, len(r.derived), methods, t.sqlName)
-	e.p("// hand-written (nano gen repo -explain lists each one).\n")
+	e.p("// hand-written (nanostack gen repo -explain lists each one).\n")
 	if len(r.overrides) > 0 {
 		e.p("//\n// Hand-written although the name derives (deleting the method switches it\n")
 		e.p("// to the derived query): %s.\n", strings.Join(r.overrides, ", "))
 	}
 	e.p("//\n// A compile error on the next line means %s gained or lost a method since\n", iface)
-	e.p("// the last run: run nano gen repo.\n")
+	e.p("// the last run: run nanostack gen repo.\n")
 	e.p("var _ %s = (*%s)(nil)\n\n", iface, impl)
 
 	recv := "r " + impl

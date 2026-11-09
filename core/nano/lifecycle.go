@@ -1,7 +1,7 @@
 // Package nano is the runtime core of a Nanostack service: lifecycle
 // interfaces, the App that starts and stops components in dependency order,
 // the admin health handlers, Main, and the manifest declarations that
-// nano gen wire reads.
+// nanostack gen wire reads.
 //
 // The package uses no reflection. A component opts into lifecycle by
 // implementing Starter, Stopper, Runner or HealthChecker; the generated Build

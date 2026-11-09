@@ -1,4 +1,4 @@
-// Package builder declares searches that nano gen repo writes in full: the
+// Package builder declares searches that nanostack gen repo writes in full: the
 // builder goldens, the build and vet check, and the line count check read
 // it. use.go names the generated builders, as a handler and a service do.
 package builder

@@ -1,4 +1,4 @@
-// Package billing is the golden fixture of nano gen errors.
+// Package billing is the golden fixture of nanostack gen errors.
 package billing
 
 import (
@@ -7,7 +7,7 @@ import (
 	ids "github.com/google/uuid"
 )
 
-// declarations is the billing error catalogue. `nano gen errors` reads it and
+// declarations is the billing error catalogue. `nanostack gen errors` reads it and
 // writes errors.gen.go and ERRORS.md.
 //
 //nano:errors namespace=billing

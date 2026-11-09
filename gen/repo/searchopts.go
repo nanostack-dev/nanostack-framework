@@ -11,7 +11,7 @@ import (
 	"github.com/nanostack-dev/nanostack-framework/db/search"
 )
 
-// optionFix is the fix of an argument of nanorepo.Search that nano gen repo
+// optionFix is the fix of an argument of nanorepo.Search that nanostack gen repo
 // cannot read.
 const optionFix = "write each option as a call of a nanorepo function in the nanorepo.Search call, " +
 	"such as nanorepo.Filter(table.Items.Name, nanorepo.Eq)"
@@ -49,7 +49,7 @@ func (c *collector) searchOption(s *searchDecl, arg ast.Expr, goOnly bool) {
 	}
 	if fn == nil {
 		c.errorf(arg, optionFix, "search %s: the argument %s is not a call of a nanorepo option; "+
-			"nano gen repo reads each option from source", s.name, c.source(arg))
+			"nanostack gen repo reads each option from source", s.name, c.source(arg))
 		return
 	}
 	name := fn.Name()
@@ -69,7 +69,7 @@ func (c *collector) searchOption(s *searchDecl, arg ast.Expr, goOnly bool) {
 		s.given[onceGroup(name)], s.givenAs[onceGroup(name)] = at{file, line}, name
 	}
 	if call.Ellipsis.IsValid() {
-		c.errorf(call, optionFix, "search %s: %s spreads a slice; nano gen repo reads each argument from source",
+		c.errorf(call, optionFix, "search %s: %s spreads a slice; nanostack gen repo reads each argument from source",
 			s.name, c.source(call))
 		return
 	}

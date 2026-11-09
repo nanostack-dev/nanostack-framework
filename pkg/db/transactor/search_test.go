@@ -12,7 +12,7 @@ import (
 	"github.com/nanostack-dev/nanostack-framework/pkg/db/transactor"
 )
 
-// A small search, written by hand as nano gen repo writes one. The unit tests
+// A small search, written by hand as nanostack gen repo writes one. The unit tests
 // below never reach a database: every case fails before a statement runs.
 
 type srRow struct {

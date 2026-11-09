@@ -20,7 +20,7 @@ New code lives in layered trees. A package imports only its own layer and the la
 0. `pkg/functional`: the leaf layer, its own module with no framework dependency. Every layer may import it.
 1. `core/`: the runtime: `nano` (lifecycle, Main), `config`, `log`, `logging`, `fault`, `validate`, `secret`.
 2. Integrations: `http/` (`problem`, `nanohttp`, `nanoserver`, `nanoapisec`, `nanopprof`), `pg/` (`nanopg`, `nanomigrate`, `nanolock`), `redis/nanocache` and `otel/nanotrace`. The nano modules are listed in [docs/modules.md](docs/modules.md).
-3. Tooling: the nested `gen` module: the generators behind `nano gen` (`wire`, `config`, `errors`, `validate`) and the CLI, `gen/cmd/nano`. Services pin it with a `tool` directive ([docs/generation.md](docs/generation.md#checking-generated-files)).
+3. Tooling: the nested `gen` module: the generators behind `nanostack gen` (`wire`, `config`, `errors`, `validate`) and the CLI, `gen/cmd/nanostack`. Services pin it with a `tool` directive ([docs/generation.md](docs/generation.md#checking-generated-files)).
 
 `db/` is Nanostack DB, the go-jet fork, in its own module ([db/UPSTREAM.md](db/UPSTREAM.md)). `pkg/`, `modules/` and `app/` hold the legacy Fx stack until the services migrate; the layered trees do not import them, except the primitives listed in `internal/layers.AllowedLegacy`. [docs/technical/architecture.md](docs/technical/architecture.md) describes the architecture.
 

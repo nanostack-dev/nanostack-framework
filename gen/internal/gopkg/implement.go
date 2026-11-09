@@ -15,7 +15,7 @@ import (
 	"github.com/nanostack-dev/nanostack-framework/gen"
 )
 
-// Names of the tag split that nano gen api writes into the server package
+// Names of the tag split that nanostack gen api writes into the server package
 // (ADR 0024). A tag interface is declared in HandlersFile, next to
 // NewHandlers.
 const (
@@ -36,7 +36,7 @@ var implementPattern = regexp.MustCompile(
 //nolint:gochecknoglobals // compiled once.
 var listErrorLine = regexp.MustCompile(`^(.+?\.go):(\d+)(?::\d+)?: (.*)$`)
 
-// IsTagServer reports whether obj is an interface that nano gen api wrote
+// IsTagServer reports whether obj is an interface that nanostack gen api wrote
 // for an OpenAPI tag: it sits in handlers.gen.go, next to NewHandlers.
 func IsTagServer(fset *token.FileSet, obj types.Object) bool {
 	if obj == nil || obj.Pkg() == nil || !types.IsInterface(obj.Type()) {

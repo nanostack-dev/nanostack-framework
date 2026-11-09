@@ -1,6 +1,6 @@
 # Publish and adopt a framework version
 
-The framework ships as four Go modules: `pkg/functional`, `db`, the root module and `gen` (the generators and the `nano` CLI). Production deployment happens in consuming applications.
+The framework ships as four Go modules: `pkg/functional`, `db`, the root module and `gen` (the generators and the `nanostack` CLI). Production deployment happens in consuming applications.
 
 [RELEASING.md](../../RELEASING.md) is the runbook for versions and tags: the `go.mod` rules, the leaves-first tag order, the exact commands, the verification and the rollback. `.github/workflows/release.yml` checks the `go.mod` files on every pull request and builds a scratch consumer for each pushed tag. This page keeps the compatibility check and the adoption steps around a release.
 
@@ -16,14 +16,14 @@ The framework ships as four Go modules: `pkg/functional`, `db`, the root module 
    go mod tidy && go build ./... && go vet ./...
    ```
 
-   A consumer that runs `nano` also needs the `gen` module. Pin it at the placeholder and replace it, then run its `//go:generate` lines with `go tool nano`:
+   A consumer that runs `nanostack` also needs the `gen` module. Pin it at the placeholder and replace it, then run its `//go:generate` lines with `go tool nanostack`:
 
    ```sh
    go mod edit \
      -require github.com/nanostack-dev/nanostack-framework/gen@v0.0.0 \
      -replace github.com/nanostack-dev/nanostack-framework/gen=$F/gen \
-     -tool github.com/nanostack-dev/nanostack-framework/gen/cmd/nano
-   go mod tidy && go tool nano gen wire -h
+     -tool github.com/nanostack-dev/nanostack-framework/gen/cmd/nanostack
+   go mod tidy && go tool nanostack gen wire -h
    ```
 
    A replace of the root module alone resolves `db` and `pkg/functional` from tags or from the local module cache, so it can fail with an unknown revision or test the wrong code. A compile error is a breaking change; record it under breaking changes below. Revert the consumer's `go.mod` and `go.sum` afterwards.

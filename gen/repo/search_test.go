@@ -9,7 +9,7 @@ import (
 )
 
 // The searches of testdata/search read without a problem, and -explain
-// shows what nano gen repo found. The shapes that nano gen repo reads and
+// shows what nanostack gen repo found. The shapes that nanostack gen repo reads and
 // does not write yet (a sort on a joined column, SortExpr) are the only
 // problems of the run, in want.txt. -explain shows: the instances of each From function, with
 // the columns of a LEFT JOIN marked nullable, an alias, and the unique key
@@ -58,7 +58,7 @@ func TestMainExplainSearch(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	args := []string{"-dir", "testdata/search", "-explain", "ItemOptionalTenant"}
 	if code := Main(args, &stdout, &stderr); code != 1 || !strings.Contains(stderr.String(), "SortExpr") {
-		t.Fatalf("exit %d, want 1 with the shapes nano gen repo does not write yet: %s", code, stderr.String())
+		t.Fatalf("exit %d, want 1 with the shapes nanostack gen repo does not write yet: %s", code, stderr.String())
 	}
 	if out := stdout.String(); !strings.HasPrefix(out, "search ItemOptionalTenant on items (rows model.Items)\n") ||
 		strings.Contains(out, "ItemBySku") {
@@ -83,7 +83,7 @@ func TestTextType(t *testing.T) {
 	}
 }
 
-// The pipeline runs nano gen repo on a file that declares only a search, so
+// The pipeline runs nanostack gen repo on a file that declares only a search, so
 // the declaration is never ignored.
 func TestDeclaresSearch(t *testing.T) {
 	t.Parallel()
@@ -104,7 +104,7 @@ func TestDeclaresSearch(t *testing.T) {
 	}
 }
 
-// ColumnTypes and ForeignKeys are read from the table file that nano gen db
+// ColumnTypes and ForeignKeys are read from the table file that nanostack gen db
 // writes, with no database.
 func TestReadCatalogue(t *testing.T) {
 	t.Parallel()

@@ -17,7 +17,7 @@ import (
 	"github.com/nanostack-dev/nanostack-framework/gen/internal/gopkg"
 )
 
-// Planned returns the files nano gen repo writes for the package in dir,
+// Planned returns the files nanostack gen repo writes for the package in dir,
 // whose declaring files are files: repo_base.gen.go, and one
 // <file>_repo.gen.go per file that calls nanorepo.Implement or
 // nanorepo.Search. It reads the files by parsing alone, as the pipeline
@@ -35,10 +35,10 @@ func Planned(dir string, files []string) []string {
 }
 
 // ForwardStubs returns, for the package in dir, a stub of each
-// <file>_repo.gen.go that nano gen repo would write, by absolute path, for
+// <file>_repo.gen.go that nanostack gen repo would write, by absolute path, for
 // the pipeline steps that run before repo (design D27). A stub declares a
 // method that panics for each method of each bound interface that the
-// implementation has no method of that name for, in a file nano gen repo
+// implementation has no method of that name for, in a file nanostack gen repo
 // did not write, and no var _ line. So a step before repo still type-checks
 // a package whose interface just gained a method, or whose implementation
 // just got a hand-written method that the last run derived: the
@@ -55,7 +55,7 @@ func Planned(dir string, files []string) []string {
 // scope type first, then the builder, its sort enum, its spec and its
 // accessors, as a run writes them. They come from the declarations and the
 // types of the packages they import; the hand-written code that uses the
-// builders need not type-check. A search that nano gen repo cannot write
+// builders need not type-check. A search that nanostack gen repo cannot write
 // gets its scope type only, so a From function that takes it still
 // type-checks. When the declarations have a problem, the stub has no
 // builder, and the repo step reports the problem.
@@ -90,12 +90,12 @@ type parsedPackage struct {
 	name       string
 	fset       *token.FileSet
 	ifaces     map[string]ifaceDecl       // interface type name -> declaration
-	methods    map[string]map[string]bool // receiver type -> method names, outside nano gen repo files
+	methods    map[string]map[string]bool // receiver type -> method names, outside nanostack gen repo files
 	ptr, val   map[string]bool            // receiver type -> its methods use a pointer, a value receiver
 	declaring  []parsedFile               // files with nanorepo.Implement or nanorepo.Search calls
 	searching  map[string]bool            // declaring file -> it calls nanorepo.Search
 	implements map[string][][2]string     // declaring file -> (interface, implementation) names; "" for an interface of another package
-	own        map[string]*ast.File       // path -> a file nano gen repo wrote
+	own        map[string]*ast.File       // path -> a file nanostack gen repo wrote
 }
 
 // ifaceDecl is an interface type and the file it is declared in.
@@ -184,7 +184,7 @@ func (p *parsedPackage) readMethod(d *ast.FuncDecl) {
 	p.ptr[recv], p.val[recv] = p.ptr[recv] || star, p.val[recv] || !star
 }
 
-// ownRepo reports whether f starts with the header of nano gen repo.
+// ownRepo reports whether f starts with the header of nanostack gen repo.
 func ownRepo(f *ast.File) bool {
 	return len(f.Comments) > 0 && f.Comments[0].Pos() < f.Package &&
 		strings.HasPrefix(f.Comments[0].List[0].Text, strings.TrimSpace(strings.SplitN(header, "\n", 2)[0]))
@@ -308,7 +308,7 @@ func (p *parsedPackage) stub(file parsedFile, last *ast.File, typed *stubSearche
 			if !ok {
 				continue
 			}
-			body.WriteString("func (" + recv + ") " + m.name + sig + " { panic(\"nano gen stub\") }\n\n")
+			body.WriteString("func (" + recv + ") " + m.name + sig + " { panic(\"nanostack gen stub\") }\n\n")
 		}
 	}
 	if searches := typed.of(file.path); len(searches) > 0 {

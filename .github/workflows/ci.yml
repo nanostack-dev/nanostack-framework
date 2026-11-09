@@ -65,13 +65,13 @@ jobs:
       # internal/nanoexample wires every nano module, as a service does. A module
       # change that breaks the graph or the config binding fails here. The pipeline
       # reads internal/nanoexample/nanogen/project.go and runs every step it finds,
-      # as `go tool nano gen -check` does in a service. nano is in the gen module,
+      # as `go tool nanostack gen -check` does in a service. nanostack is in the gen module,
       # which requires the root, so it runs from gen/ (go -C).
-      - name: Generated code of internal/nanoexample is current (nano gen -check)
-        run: go -C gen run ./cmd/nano gen -check -dir ../internal/nanoexample
+      - name: Generated code of internal/nanoexample is current (nanostack gen -check)
+        run: go -C gen run ./cmd/nanostack gen -check -dir ../internal/nanoexample
       # The api step writes the example's std-http server with the nano templates.
-      - name: Generated code of http/nanohttp/internal/example is current (nano gen -check)
-        run: go -C gen run ./cmd/nano gen -check -dir ../http/nanohttp/internal/example
+      - name: Generated code of http/nanohttp/internal/example is current (nanostack gen -check)
+        run: go -C gen run ./cmd/nanostack gen -check -dir ../http/nanohttp/internal/example
 
   # The container tests behind the integration tag, which the test job does not
   # build. No -race: golang-migrate's GracefulStop races under -race (see
@@ -157,7 +157,7 @@ jobs:
           (cd ../.. && go work init . ./pkg/functional)
           golangci-lint run ./...
 
-  # gen holds the generators and the nano CLI (gen/cmd/nano). It is its own module, so
+  # gen holds the generators and the nanostack CLI (gen/cmd/nanostack). It is its own module, so
   # that golang.org/x/tools and the other generator dependencies stay out of the root
   # module's graph; the root `go test ./...` and lint do not reach it.
   gen:
