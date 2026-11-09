@@ -44,9 +44,10 @@
 // Postgres.Scopes in nanogen/project.go names the tenant columns. A table is
 // scoped when it has one of them and its model field is not a pointer (NOT
 // NULL). A hand-written function that touches a scoped table through its
-// base (a predicate, a helper, or a SELECT, UPDATE or DELETE built on b.t)
-// without a predicate or a reference on a scope column gets a warning,
-// unless its name ends in Internal. Warnings do not fail the run.
+// base (a predicate, a helper, a SELECT, UPDATE or DELETE built on b.t, or
+// a SELECT that reads FROM b.t or a join on it) without a predicate or a
+// reference on a scope column gets a warning, unless its name ends in
+// Internal. Warnings do not fail the run.
 //
 // Generation loads the package with repo_base.gen.go replaced by an empty
 // file, so a stale base never blocks a run, then type-checks the package

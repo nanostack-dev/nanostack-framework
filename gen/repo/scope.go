@@ -15,9 +15,17 @@ import (
 // base's own table. The transactor methods (query, exec, page, ...) are left
 // out: they take a whole statement, which may be an INSERT or read another
 // table. A statement is judged by what it is built from instead: a where
-// predicate, or a SELECT, UPDATE or DELETE on b.t.
+// predicate, a SELECT, UPDATE or DELETE on b.t, or a SELECT that reads FROM
+// b.t or a join on it.
 var conditionHelpers = []string{ //nolint:gochecknoglobals // read-only table.
 	"findOne", "first", "findAll", "exists", "count", "deleteWhere", "updateWhere",
+}
+
+// statementsOnTable are the methods of a table that start a statement
+// reading or changing its rows: b.t.SELECT(...), and a join, which a
+// SELECT reads FROM. INSERT is left out: a new row has no condition.
+var statementsOnTable = []string{ //nolint:gochecknoglobals // read-only table.
+	"SELECT", "UPDATE", "DELETE", "INNER_JOIN", "LEFT_JOIN", "RIGHT_JOIN", "FULL_JOIN", "CROSS_JOIN",
 }
 
 // scoped is a scoped table and the Go fields of its scope columns.
@@ -74,13 +82,18 @@ func (l *loaded) scopeOf(pkg *packages.Package, fd *ast.FuncDecl, tables []scope
 	touched := make([]bool, len(tables))
 	filtered := make([]bool, len(tables))
 	ast.Inspect(fd.Body, func(n ast.Node) bool {
-		if sel, ok := n.(*ast.SelectorExpr); ok {
-			if s := pkg.TypesInfo.Selections[sel]; s != nil {
+		switch x := n.(type) {
+		case *ast.SelectorExpr:
+			if s := pkg.TypesInfo.Selections[x]; s != nil {
 				for i, st := range tables {
-					t, f := st.uses(pkg, sel, s)
+					t, f := st.uses(pkg, x, s)
 					touched[i] = touched[i] || t
 					filtered[i] = filtered[i] || f
 				}
+			}
+		case *ast.CallExpr:
+			for i, st := range tables {
+				touched[i] = touched[i] || readsFrom(pkg, x, st.t)
 			}
 		}
 		return true
@@ -107,12 +120,21 @@ func (st scoped) uses(pkg *packages.Package, sel *ast.SelectorExpr, s *types.Sel
 	case s.Kind() == types.MethodVal && slices.Contains(conditionHelpers, sel.Sel.Name) &&
 		embeds(recv, st.t.baseName(), pkg, 0):
 		return true, false
-	case slices.Contains([]string{"SELECT", "UPDATE", "DELETE"}, sel.Sel.Name) && onBaseTable(pkg, sel.X, st.t):
+	case slices.Contains(statementsOnTable, sel.Sel.Name) && onBaseTable(pkg, sel.X, st.t):
 		return true, false
 	case sameNamed(recv, deref(st.t.tableType)) && slices.Contains(st.fields, sel.Sel.Name):
 		return false, true // a reference to the scope column, such as b.t.ProductID
 	}
 	return false, false
+}
+
+// readsFrom reports whether call is FROM(b.t), as in
+// postgres.SELECT(...).FROM(r.t): a statement that reads the table of t.
+func readsFrom(pkg *packages.Package, call *ast.CallExpr, t *tableBase) bool {
+	fun, ok := call.Fun.(*ast.SelectorExpr)
+	return ok && fun.Sel.Name == "FROM" && slices.ContainsFunc(call.Args, func(arg ast.Expr) bool {
+		return onBaseTable(pkg, arg, t)
+	})
 }
 
 // unscoped is the warning of a function that touches the table of st

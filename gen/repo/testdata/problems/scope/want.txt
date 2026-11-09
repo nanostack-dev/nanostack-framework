@@ -6,3 +6,9 @@ warning: scope.go:50: Purge: condition on items has no tenant_id; this query can
   fix: add r.where.TenantID(…) to the condition, or name it PurgeInternal for a trusted system path
 warning: scope.go:63: countAll: condition on items has no tenant_id; this query can read or change another tenant's rows
   fix: add r.where.TenantID(…) to the condition, or name it countAllInternal for a trusted system path
+warning: scope.go:82: ListAll: condition on items has no tenant_id; this query can read or change another tenant's rows
+  fix: add r.where.TenantID(…) to the condition, or name it ListAllInternal for a trusted system path
+warning: scope.go:87: FromTable: condition on items has no tenant_id; this query can read or change another tenant's rows
+  fix: add r.where.TenantID(…) to the condition, or name it FromTableInternal for a trusted system path
+warning: scope.go:92: Audited: condition on items has no tenant_id; this query can read or change another tenant's rows
+  fix: add r.where.TenantID(…) to the condition, or name it AuditedInternal for a trusted system path

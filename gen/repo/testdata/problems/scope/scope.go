@@ -77,3 +77,25 @@ func (a audit) All(ctx context.Context) ([]model.AuditEvents, error) {
 }
 
 var _ = countAll
+
+// Unscoped: a SELECT on r.t through a transactor method.
+func (r items) ListAll(ctx context.Context) ([]model.Items, error) {
+	return r.queryRows(ctx, r.t.SELECT(r.t.AllColumns)).Value()
+}
+
+// Unscoped: a SELECT that reads FROM r.t.
+func (r items) FromTable(ctx context.Context) ([]model.Items, error) {
+	return r.queryRows(ctx, postgres.SELECT(r.t.AllColumns).FROM(r.t)).Value()
+}
+
+// Unscoped: a SELECT that reads FROM a join on r.t.
+func (r items) Audited(ctx context.Context) ([]model.Items, error) {
+	stmt := postgres.SELECT(r.t.AllColumns).
+		FROM(r.t.INNER_JOIN(table.AuditEvents, table.AuditEvents.ItemID.EQ(r.t.ID)))
+	return r.queryRows(ctx, stmt).Value()
+}
+
+// Scoped: FROM r.t with a predicate on tenant_id.
+func (r items) FromTenant(ctx context.Context, tenantID uuid.UUID) ([]model.Items, error) {
+	return r.queryRows(ctx, postgres.SELECT(r.t.AllColumns).FROM(r.t).WHERE(r.where.TenantID(tenantID))).Value()
+}

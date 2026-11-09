@@ -253,7 +253,7 @@ A nil `cond` on a read means every row. Every helper runs through `pkg/db/transa
 Postgres: &project.Postgres{Name: "anchor", Scopes: []string{"tenant_id"}},
 ```
 
-A table is scoped when it has one of them as a `NOT NULL` column. A hand-written function that touches a scoped table through its base (a predicate, a helper that takes a condition, or a `SELECT`, `UPDATE` or `DELETE` on `b.t`) without a predicate or a reference on a scope column gets a warning, unless its name ends in `Internal`:
+A table is scoped when it has one of them as a `NOT NULL` column. A hand-written function that touches a scoped table through its base (a predicate, a helper that takes a condition, a `SELECT`, `UPDATE` or `DELETE` on `b.t`, or a `SELECT` that reads `FROM` `b.t` or a join on it) without a predicate or a reference on a scope column gets a warning, unless its name ends in `Internal`:
 
 ```text
 warning: internal/repository/users.go:31: ByEmail: condition on users has no tenant_id; this query can read or change another tenant's rows
@@ -262,7 +262,7 @@ warning: internal/repository/users.go:31: ByEmail: condition on users has no ten
 
 A warning keeps exit 0. The check is a guard against a forgotten filter, not a proof: a function that builds its condition elsewhere is judged by what it calls.
 
-**All or nothing.** The generator loads the package with `repo_base.gen.go` replaced by an empty file, so a stale base never blocks a run, then type-checks the package with the new base. A compile error that remains is reported at its line, and nothing is written. Every declaration problem is reported in one run, each at its line with a fix: a declaration that is not an interface and a struct of this package, a mapper with state, a table of another dialect, a hand-written name that clashes with a generated one.
+**All or nothing.** The generator loads the package with `repo_base.gen.go` replaced by an empty file, so a stale base never blocks a run, then type-checks the package with the new base. A compile error that remains is reported at its line, and nothing is written. An import of the base that the module cannot load, such as `pkg/db/transactor` in a module that has never imported it, is reported at the declaration with the `go get` that adds it. Every declaration problem is reported in one run, each at its line with a fix: a declaration that is not an interface and a struct of this package, a mapper with state, a table of another dialect, a hand-written name that clashes with a generated one.
 
 `nano gen repo [-dir d] [-scopes tenant_id,org_id] [-check]` is the single run on one package. The pipeline runs the step on each package that declares a repository, with the `Postgres.Scopes` of the declaration; it reads the table code from Go source, never a database.
 

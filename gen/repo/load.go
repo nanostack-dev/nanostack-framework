@@ -16,7 +16,7 @@ import (
 )
 
 const loadMode = packages.NeedName | packages.NeedTypes | packages.NeedSyntax | packages.NeedTypesInfo |
-	packages.NeedFiles
+	packages.NeedFiles | packages.NeedImports
 
 // compileFix is the fix of a compile error in the declaring package.
 const compileFix = "fix the compile error here; nano gen repo needs the package to type-check, " +
@@ -125,9 +125,33 @@ func own(f *ast.File) bool {
 	return false
 }
 
+// failedImport returns the import path of a "could not import" error of
+// pkg, and the reason as ": reason": the go command's error on the imported
+// package when there is one, such as "no required module provides
+// package", else the type checker's.
+func failedImport(pkg *packages.Package, msg string) (path, reason string, ok bool) {
+	rest, found := strings.CutPrefix(msg, "could not import ")
+	if !found {
+		return "", "", false
+	}
+	path, reason, _ = strings.Cut(rest, " ")
+	reason = strings.TrimSuffix(strings.TrimPrefix(strings.TrimSpace(reason), "("), ")")
+	if imp := pkg.Imports[path]; imp != nil && len(imp.Errors) > 0 {
+		reason, _, _ = strings.Cut(imp.Errors[0].Msg, "\n")
+		reason, _, _ = strings.Cut(reason, "; to add it") // the fix says it
+	}
+	if reason != "" {
+		reason = ": " + reason
+	}
+	return path, reason, path != ""
+}
+
 // verify type-checks the package with src as repo_base.gen.go and returns
-// it. A type error in the new base is a gap in the checks of this package,
-// reported at the declaration of its table. Any other type error is the
+// it. An import of the new base that the module cannot load is a missing
+// requirement in go.mod, such as pkg/db/transactor in a module that never
+// imported it. Any other type error in the new base is a gap in the checks
+// of this package. Both are reported at the declaration of the table whose
+// base holds the line. Any other type error is the
 // package's own, reported at its line: nano gen repo writes nothing while
 // the package does not compile with the base it would write.
 func (l *loaded) verify(decls *declarations, src []byte) (*packages.Package, error) {
@@ -136,15 +160,27 @@ func (l *loaded) verify(decls *declarations, src []byte) (*packages.Package, err
 		return nil, err
 	}
 	var inBase, other []packages.Error
+	var imports []error
 	for _, e := range pkg.Errors {
 		if gopkg.IsCompileReport(pkg, e) {
 			continue
 		}
-		if file, _ := gopkg.SplitPos(e.Pos); file == l.outPath {
-			inBase = append(inBase, e)
+		file, line := gopkg.SplitPos(e.Pos)
+		if file != l.outPath {
+			other = append(other, e)
 			continue
 		}
-		other = append(other, e)
+		if path, reason, ok := failedImport(pkg, e.Msg); ok {
+			t := decls.tableAtLine(src, line)
+			imports = append(imports, gen.Errorf(t.file, t.line,
+				"add its module to go.mod: go get "+path+", then rerun nano gen repo",
+				"the generated base imports %s, which the module cannot load%s", path, reason))
+			continue
+		}
+		inBase = append(inBase, e)
+	}
+	if len(imports) > 0 {
+		return nil, errors.Join(imports...)
 	}
 	if len(inBase) > 0 {
 		problems := make([]error, 0, len(inBase))
