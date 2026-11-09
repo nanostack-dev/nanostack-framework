@@ -308,3 +308,60 @@ func TestRepoLegacyHeaderIsOwn(t *testing.T) {
 	stdout, stderr, code := runDBFixture(t, dir, Options{Check: true}, noDatabase(t))
 	wantRun(t, "nanostack gen -check", code, 0, stdout, "", stderr, "")
 }
+
+// Postgres.ScopeNames reaches the step: a derived name reads the short name
+// of tenant_id, and a short name that is another column's Go field is
+// refused where the table is bound.
+func TestRepoScopeNames(t *testing.T) {
+	t.Parallel()
+	const users = `package repository
+
+import (
+	"context"
+
+	"github.com/nanostack-dev/nanostack-framework/db/nanorepo"
+	"github.com/nanostack-dev/nanostack-framework/db/qrm"
+
+	"example.com/dbapp/internal/db/gen/app/public/model"
+	"example.com/dbapp/internal/db/gen/app/public/table"
+)
+
+// UserCounts counts users.
+type UserCounts interface {
+	CountByTenantAndEmail(ctx context.Context, tenantID, email string) (int64, error)
+}
+
+func _() {
+	nanorepo.Implement[UserCounts, userCounts](table.Users, nanorepo.NoMapper[model.Users])
+}
+
+type userCounts struct{ usersBase }
+
+// NewUserCounts returns the counts on db.
+func NewUserCounts(db qrm.DB) UserCounts { return &userCounts{usersBase: newUsersBase(db)} }
+`
+	for _, tc := range []struct {
+		names    string
+		wantCode int
+		want     string
+	}{
+		{`map[string]string{"tenant_id": "Tenant"}`, 0, ""},
+		{`map[string]string{"tenant_id": "Email"}`, 1, `ScopeNames names tenant_id "Email", which is the Go field of column email`},
+		{`nil`, 1, `CountByTenantAndEmail: not implemented`},
+	} {
+		dir := copyFixtureOf(t, dbFixture)
+		write(t, dir, "internal/repository/users.go", users)
+		edit(t, dir, "nanogen/project.go", `Postgres: &project.Postgres{Name: "app"}`,
+			`Postgres: &project.Postgres{Name: "app", Scopes: []string{"tenant_id"}, ScopeNames: `+tc.names+`}`)
+		_, stderr, code := runDBFixture(t, dir, Options{Skip: []string{"db"}}, noDatabase(t))
+		if code != tc.wantCode || !strings.Contains(stderr, tc.want) {
+			t.Errorf("ScopeNames %s: exit %d, want %d, stderr:\n%s\nwant it to contain %q", tc.names, code,
+				tc.wantCode, stderr, tc.want)
+		}
+		if tc.wantCode == 0 {
+			if _, err := os.Stat(filepath.Join(dir, "internal/repository/users_repo.gen.go")); err != nil {
+				t.Errorf("no derived file: %v", err)
+			}
+		}
+	}
+}

@@ -1391,7 +1391,7 @@ func (r *itemRepositoryImpl) ListActive(ctx context.Context, tenantID uuid.UUID)
 }
 ```
 
-The grammar: `FindBy`, `GetBy`, `ExistsBy`, `CountBy`, `DeleteBy`, `FindAll`, `Count`; columns by their Go field name joined by `And`, equality only; `ctx` first, then one parameter per column in name order. A single-row find derives only when its columns cover a key in `UniqueKeys()`. On a scoped table the name starts with a scope column, or ends in `Internal` on a read.
+The grammar: `FindBy`, `GetBy`, `ExistsBy`, `CountBy`, `DeleteBy`, `FindAll`, `Count`; columns by their Go field name joined by `And`, equality only; `ctx` first, then one parameter per column in name order. A single-row find derives only when its columns cover a key in `UniqueKeys()`. On a scoped table the name starts with a scope column, or ends in `Internal` on a read. A scope column may use the short name of `Postgres.ScopeNames`, and a context scope must be named: see [Tenant scopes](#tenant-scopes) and [Derived names](#derived-names-and-tenant-scopes).
 
 ### What is generated
 
@@ -1494,7 +1494,7 @@ Before `nanostack gen` runs again, the compiler shows two messages:
 
 1. Add `Scopes` to the `Postgres` declaration and run `go tool nanostack gen`. Read every scope warning: each is a finder that may cross tenants, or a trusted path to rename `…Internal`.
 2. Declare one repository, embed its base, set it in the constructor, and run `go tool nanostack gen repo -explain`: it says which methods would derive. Delete the hand-written body of each one that does, one file at a time.
-3. Rename the finders whose names hide a filter: a derived name says every column it filters on (`FindByExternalID` becomes `FindByProductIDAndExternalID`, `TenantID` becomes the column's field, `PlatformTenantID`). A team that wants the short name keeps a one-line hand-written body.
+3. Rename the finders whose names hide a filter: a derived name says every column it filters on (`FindByExternalID` becomes `FindByProductIDAndExternalID`, `TenantID` becomes the column's field, `PlatformTenantID`). A team that wants the short name declares it in `Postgres.ScopeNames` (`platform_tenant_id` becomes `Tenant`, so `FindByTenantAndProductAndExternalID`) instead of a hand-written body. Name every context scope too, by its short name, which binds no parameter.
 4. Every hand-written `LIMIT 1` on columns that are not unique becomes `first` with an order that ends on a unique column. `findOne` and the derived single-row finds return `transactor.ErrMoreThanOneRow` instead of an arbitrary row; handle it with `errors.Is` where the caller can see duplicates. A derived `GetBy…` returning `(D, error)` returns `sql.ErrNoRows` on no row.
 5. Keep inserts, upserts and statements the helpers do not cover hand-written on `r.t` with `r.queryRow` or `r.exec`, which keep `OnUnique` and the transaction.
 
@@ -1556,8 +1556,11 @@ Postgres: &project.Postgres{
 	ContextScopes: []project.ContextScope{
 		{Column: "workspace_id", Func: "echopoint/internal/db/workspacescope.Filter"},
 	},
+	ScopeNames: map[string]string{"organization_id": "Org", "workspace_id": "Workspace"},
 },
 ```
+
+`ScopeNames` gives a column the short Go name that a derived method uses (below); searches ignore it.
 
 - A column of `Scopes` that is not in `ContextScopes` is a **hard scope** (`organization_id`). The caller passes its value: it is a parameter of `New<Search>Search(...)`, or a field of the scope struct. No function can supply it.
 - A column of `ContextScopes` is a **context scope** (`workspace_id`). The function registered for it reads the value from the request context: `func(context.Context, C) B`. The function may return TRUE, which means a read across the column, such as an organization-wide read when no workspace is selected. A project registers one function per column, so every search filters that column the same way.
@@ -1568,9 +1571,32 @@ Postgres: &project.Postgres{
 | Code | Which columns count | Effect |
 |---|---|---|
 | A search (`nanorepo.Search`) | Every column of `Scopes` on every table instance the search reads, **nullable or not** | Each one must be covered, or `nanostack gen` fails (E9, E10). |
-| Derived methods and hand-written queries on the base | Only **NOT NULL** columns of `Scopes` | A derived method must filter on the scope column first, or end in `Internal` on a read. A hand-written query that does not filter on it is a warning, not an error. |
+| Derived methods on the base | A **NOT NULL** column of `Scopes` must come first; a **context** column of `ContextScopes`, nullable or not, must be named | A derived read or delete names the hard scope first and every context scope, or a read ends in `Internal`. A delete has no `Internal`. |
+| Hand-written queries on the base | Only **NOT NULL** columns of `Scopes` | A query that does not filter on the column is a warning, not an error. |
 
-So a nullable `workspace_id` changes nothing for derived methods and hand-written finders. Only searches must cover it.
+A nullable `workspace_id` changes nothing for hand-written finders. A derived method must name it, because the registered function returns TRUE when the request carries no workspace, so it is safe on a nullable column.
+
+#### Derived names and tenant scopes
+
+With `ScopeNames` above, a derived name reads `FindByOrgAndWorkspaceAndID(ctx, orgID, id)`:
+
+- A word of a derived name is the Go field of a column (`OrganizationID`, which keeps working) or the short name of a scope column (`Org`). The longest word wins: the field `ProductID` beats a short name `Product`.
+- The short name of a **hard** scope binds a parameter like its field: `Org` is `orgID`, plain equality.
+- The short name of a **context** scope (`Workspace`) binds **no parameter**. The generated condition ANDs the registered function: `workspacescope.Filter(ctx, r.t.WorkspaceID)`. The other words bind parameters by position. Its Go field (`WorkspaceID`) keeps an explicit parameter and plain equality.
+- A table with a context scope column needs every derived read and delete to name it, in either form. The refusal suggests the short-name rename; for a read it also offers `Internal`, which skips the context scope and marks the method `UNSCOPED`. A derived delete without it is refused: a scope-free write is hand-written.
+- The first word still names a scope column. A context scope satisfies that rule only when it is the table's one scope.
+- A short name that is the Go field of a *different* column of a table is refused where the table is bound.
+
+From the fixture ([`project.go`](../gen/repo/internal/repotest/project.go), tenant a hard scope, workspace a nullable context scope):
+
+```go
+// FindByTenantAndWorkspaceAndID is derived from its name:
+//
+//	SELECT * FROM projects WHERE tenant_id = $1 AND workspacescope.Filter(ctx, workspace_id) AND id = $2 LIMIT 2 -- at most one row: projects_pkey (id); a second row is ErrMoreThanOneRow
+func (r *projectRepositoryImpl) FindByTenantAndWorkspaceAndID(ctx context.Context, tenantID uuid.UUID, id string) (functional.Option[Project], error) {
+	return r.findOne(ctx, r.where.TenantID(tenantID).AND(workspacescope.Filter(ctx, r.t.WorkspaceID)).AND(r.where.ID(id)))
+}
+```
 
 **How each column is covered.**
 

@@ -181,16 +181,9 @@ func (d *decoder) decode(expr ast.Expr, v reflect.Value, path string) {
 		}
 		d.decodeStruct(lit, v, path)
 	case reflect.Slice:
-		lit, ok := expr.(*ast.CompositeLit)
-		if !ok {
-			d.notLiteral(expr, path, "slice literal")
-			return
-		}
-		s := reflect.MakeSlice(v.Type(), len(lit.Elts), len(lit.Elts))
-		for i, e := range lit.Elts {
-			d.decode(e, s.Index(i), fmt.Sprintf("%s[%d]", path, i))
-		}
-		v.Set(s)
+		d.decodeSlice(expr, v, path)
+	case reflect.Map:
+		d.decodeMap(expr, v, path)
 	case reflect.String:
 		c := d.constant(expr)
 		if c == nil || c.Kind() != constant.String {
@@ -402,6 +395,7 @@ func (c *projectCheck) postgres(p project.Postgres) {
 	}
 	c.scopes(p.Scopes)
 	c.contextScopes(p.Scopes, p.ContextScopes)
+	c.scopeNames(p.Scopes, p.ScopeNames)
 }
 
 // client checks one client; outputs holds the outputs of the server and the

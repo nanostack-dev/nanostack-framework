@@ -2,6 +2,18 @@
 
 One section per module and version, newest first. Each section uses Added, Changed, Deprecated, Removed and Fixed. [RELEASING.md](RELEASING.md) gives the release steps and the upgrade notes.
 
+## Unreleased
+
+Changes `gen` and `core/nano/project`. Nothing else changes.
+
+### Added
+- `Postgres.ScopeNames` in `core/nano/project`, and `-scope-names column=Name,...` on `nanostack gen repo`: a short Go name for a tenant column, such as `{"organization_id": "Org", "workspace_id": "Workspace"}`. A derived method name may use it beside the Go field, so `FindByOrgAndWorkspaceAndID(ctx, orgID, id)` derives. The Go field names keep deriving, and the longest word wins (`ProductID` beats `Product`). `nanostack gen` checks that each key is in `Postgres.Scopes`, each value is an exported identifier and no two columns share a name; `nanostack gen repo` refuses a short name that is the Go field of another column of the table.
+- A derived method applies `Postgres.ContextScopes`. A context scope named by its short name (`Workspace`) binds no parameter: the generated condition ANDs the registered function, `workspacescope.Filter(ctx, r.t.WorkspaceID)`. Naming it by its Go field (`WorkspaceID`) keeps an explicit parameter and plain equality.
+
+### Changed
+- **Breaking, in generation:** a derived read or delete on a table that has a context scope column, nullable or not, must name that column, by either form. The run refuses the method and suggests the short-name rename. A read may instead end in `Internal`, which skips the context scope and is marked `UNSCOPED`; a delete has no such escape, so a scope-free delete stays hand-written. A service with a context scope renames or hand-writes the derived methods of those tables before it upgrades `gen`.
+- The refusal messages, `-explain` output and rename hints of derived methods use the short names when `Postgres.ScopeNames` is set.
+
 ## v0.23.0-beta.5
 
 The root module drops `pkg/search` and `transactor.Keys`. It requires `db/v0.23.0-beta.4` and `pkg/functional/v0.23.0-beta.1`, which do not change. `gen/v0.23.0-beta.8` works with it unchanged. Upgrade with [RELEASING.md](RELEASING.md#upgrade-from-v0230-beta4).

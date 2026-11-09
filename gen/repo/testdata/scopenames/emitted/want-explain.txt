@@ -1,0 +1,12 @@
+Projects on *projectsImpl (table projects, scope tenant_id (Tenant))
+  FindByTenantAndWorkspaceAndID      derived: SELECT * FROM projects WHERE tenant_id = $1 AND workspacescope.Filter(ctx, workspace_id) AND id = $2 LIMIT 2 -- at most one row: projects_pkey (id); a second row is ErrMoreThanOneRow
+  FindByTenantAndWorkspace           derived: SELECT * FROM projects WHERE tenant_id = $1 AND workspacescope.Filter(ctx, workspace_id)
+  CountByTenantAndWorkspaceAndName   derived: SELECT COUNT(*) FROM projects WHERE tenant_id = $1 AND workspacescope.Filter(ctx, workspace_id) AND name = $2
+  DeleteByTenantAndWorkspaceAndID    derived: DELETE FROM projects WHERE tenant_id = $1 AND workspacescope.Filter(ctx, workspace_id) AND id = $2
+  FindByTenantIDAndWorkspaceAndName  derived: SELECT * FROM projects WHERE tenant_id = $1 AND workspacescope.Filter(ctx, workspace_id) AND name = $2
+  FindByTenantAndWorkspaceIDAndName  derived: SELECT * FROM projects WHERE tenant_id = $1 AND workspace_id = $2 AND name = $3
+  FindByTenantAndIDInternal          derived, UNSCOPED (Internal): SELECT * FROM projects WHERE tenant_id = $1 AND id = $2 LIMIT 2 -- at most one row: projects_pkey (id); a second row is ErrMoreThanOneRow
+Boards on *boardsImpl (table boards, scope workspace_id (Workspace))
+  FindByWorkspaceAndID    derived: SELECT * FROM boards WHERE workspacescope.Filter(ctx, workspace_id) AND id = $1 LIMIT 2 -- at most one row: boards_pkey (id); a second row is ErrMoreThanOneRow
+  FindByWorkspaceIDAndID  derived: SELECT * FROM boards WHERE workspace_id = $1 AND id = $2 LIMIT 2 -- at most one row: boards_pkey (id); a second row is ErrMoreThanOneRow
+  CountByWorkspace        derived: SELECT COUNT(*) FROM boards WHERE workspacescope.Filter(ctx, workspace_id)

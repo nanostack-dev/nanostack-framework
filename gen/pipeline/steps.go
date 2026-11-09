@@ -205,7 +205,7 @@ func runErrors(_ *runner, u *unit, overlay map[string][]byte) (output, error) {
 func runRepo(r *runner, u *unit, overlay map[string][]byte) (output, error) {
 	opts := genrepo.Options{Dir: u.dir, Overlay: overlay}
 	if p := r.proj.Postgres; p != nil {
-		opts.Scopes = p.Scopes
+		opts.Scopes, opts.ScopeNames = p.Scopes, p.ScopeNames
 		for _, cs := range p.ContextScopes {
 			if opts.ContextScopes == nil {
 				opts.ContextScopes = map[string]string{}

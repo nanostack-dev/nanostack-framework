@@ -42,7 +42,7 @@ func golden(t *testing.T, path string, got []byte) {
 // warning, and its exemption file is testdata/exemptions.golden.
 func TestFixtureBaseIsCurrent(t *testing.T) {
 	t.Parallel()
-	res, err := Generate(Options{Dir: fixture, Scopes: repotest.Scopes, ContextScopes: repotest.ContextScopes})
+	res, err := Generate(fixtureOptions(fixture))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +79,7 @@ func mustAbs(t *testing.T, path string) string {
 // Contains predicates call searchexec.Contains.
 func TestContainsOnTextColumnsOnly(t *testing.T) {
 	t.Parallel()
-	res, err := Generate(Options{Dir: fixture, Scopes: repotest.Scopes, ContextScopes: repotest.ContextScopes})
+	res, err := Generate(fixtureOptions(fixture))
 	if err != nil {
 		t.Fatal(err)
 	}

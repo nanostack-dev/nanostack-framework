@@ -90,6 +90,17 @@ type Postgres struct {
 	// across the column, and must not return nil. Empty: every tenant column
 	// is a hard scope.
 	ContextScopes []ContextScope
+	// ScopeNames maps a tenant column of Scopes to the short Go name that a
+	// derived repository method uses for it: {"organization_id": "Org",
+	// "workspace_id": "Workspace"} makes FindByOrgAndWorkspaceAndID derive.
+	// The Go field name of the column (OrganizationID) keeps working. Each
+	// key is a column of Scopes, each value an exported Go identifier, and no
+	// two columns share a name; a name that is the Go field of another
+	// column of a table is refused where that table is bound. The short name
+	// of a context column binds no parameter: the derived method applies the
+	// function of ContextScopes (ADR 0026). Empty: derived names use the Go
+	// field names only.
+	ScopeNames map[string]string
 }
 
 // ContextScope registers the function that scopes one context tenant

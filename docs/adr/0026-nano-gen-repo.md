@@ -57,3 +57,19 @@ The design ships in three PRs: the db step with `UniqueKeys()` (PR 6, [decision 
 - String predicates compare as text (`$1::text`). On a column of another type that the model reads as a string, such as `json`, `inet` or `tsvector`, the predicate fails at run time; such a column is compared on `b.t`. Enum columns cast to their type, so their index applies.
 - The single run takes the scope columns from `-scopes`; services run `go tool nano gen`, which passes `Postgres.Scopes`, and its `-check` catches a derived name the scope rule refuses.
 - Parsing cannot list the methods of an interface of another package, or embedded from one: the forward stub takes them from the last output on disk, minus those the implementation now has, so until repo runs an earlier step sees them as the last run left them.
+
+## Amendment, 2026-11-09: short scope names and context scopes in derived names
+
+Derived names read badly on a table with several tenant columns: `FindByID(ctx, organizationID, id)` was hand-written because `FindByOrganizationIDAndWorkspaceIDAndID` does not read, and a derived read ignored `Postgres.ContextScopes`, which only searches applied (ADR 0027). This amendment changes D25's rule for derived methods only.
+
+- **`Postgres.ScopeNames`** maps a scope column to a short Go name (`organization_id` to `Org`). In a derived name a short name is a word that resolves to that column, beside the Go fields, which keep deriving. Words match longest first, so the field `ProductID` beats the short name `Product`. The project check requires each key in `Scopes`, each value an exported identifier and no name on two columns; the run refuses a short name that is the Go field of a different column of a table.
+- **A context scope named by its short name binds no parameter.** The method ANDs the registered function: `workspacescope.Filter(ctx, r.t.WorkspaceID)`. Its Go field keeps an explicit parameter and plain equality.
+- **A derived read or delete on a table with a context scope column must name it**, in either form, nullable or not. The registered function returns TRUE when the request carries no workspace, so it is safe on a nullable column. A read may end in `Internal` instead, which skips the context scope and is marked `UNSCOPED`. A delete has no escape, as before. The first word must still be a scope column; a context scope satisfies that only when it is the table's one scope.
+
+Alternatives rejected:
+
+- **Apply the context scope to every derived method silently.** The name would hide a filter, which D25 and the derived grammar forbid: a derived name says every column it filters on.
+- **Make the short name bind a parameter and ignore the function.** The caller would pass the workspace by hand, which a request-context scope exists to prevent.
+- **Allow a delete with `Internal`.** A scope-free write stays hand-written, where review sees it.
+
+Consequence: a service that declares a context scope must rename or hand-write each derived method on the table that does not name it; the refusal gives the rename. See [Derived names and tenant scopes](../generated-code.md#derived-names-and-tenant-scopes).

@@ -1,6 +1,7 @@
 package genrepo
 
 import (
+	"cmp"
 	"fmt"
 	"go/types"
 	"slices"
@@ -61,8 +62,9 @@ type derivedMethod struct {
 	internal bool       // the name ends in Internal
 	unscoped bool       // Internal skipped the tenant scope (a read)
 	skipped  []string   // the scope fields an unscoped method does not filter on
-	preds    []string   // Go fields of the properties, in name order
-	params   []param    // one per property
+	preds    []string   // Go fields of the properties that bind a parameter, in name order
+	terms    []term     // every property, in name order: preds and the context scopes named by short name
+	params   []param    // one per entry of preds
 	key      *uniqueKey // the key that proves a single-row result
 }
 
@@ -122,20 +124,45 @@ func (r *resolver) parseName(fn *types.Func) (*derivedMethod, *refusal) {
 		return nil, r.orderByRefusal(fn, before, after)
 	}
 	if rest != "" {
-		preds, ok := splitPreds(rest, r.t.fields())
+		toks, ok := splitTerms(rest, r.words())
 		if !ok {
 			return nil, r.badName(fn, rest)
 		}
-		m.preds = preds
-	}
-	if len(r.scope) > 0 && (len(m.preds) == 0 || !slices.Contains(r.scope, m.preds[0])) {
-		if m.internal && m.op != opDelete {
-			m.unscoped, m.skipped = true, r.scope
-			return m, nil
+		m.terms = r.termsOf(toks)
+		for _, t := range m.terms {
+			if t.ctx == nil {
+				m.preds = append(m.preds, t.field)
+			}
 		}
-		return nil, r.scopeRefusal(fn, m, base)
+	}
+	if fail := r.scopeRules(fn, m, base); fail != nil {
+		return nil, fail
 	}
 	return m, nil
+}
+
+// scopeRules applies the scope rules to the terms of m: the name starts with
+// a scope column, and names every context scope. Internal skips both on a
+// read, which marks m unscoped; it returns the refusal otherwise.
+func (r *resolver) scopeRules(fn *types.Func, m *derivedMethod, base string) *refusal {
+	hardFail := len(r.scope) > 0 && (len(m.terms) == 0 || !r.isHardScope(m.terms[0]))
+	missing := r.missingCtx(m.terms)
+	if !hardFail && len(missing) == 0 {
+		return nil
+	}
+	if m.internal && m.op != opDelete {
+		m.unscoped = true
+		if hardFail {
+			m.skipped = slices.Clone(r.scope)
+		}
+		for _, c := range missing {
+			if !slices.Contains(m.skipped, c.field) {
+				m.skipped = append(m.skipped, c.field)
+			}
+		}
+		return nil
+	}
+	return r.scopeRefusal(fn, m, base, hardFail, missing)
 }
 
 // endsInColumn reports whether the properties of name split into columns
@@ -146,7 +173,7 @@ func (r *resolver) endsInColumn(name string) bool {
 	if !known || rest == "" {
 		return false
 	}
-	_, ok := splitPreds(rest, r.t.fields())
+	_, ok := splitTerms(rest, r.words())
 	return ok
 }
 
@@ -200,69 +227,131 @@ func (r *resolver) orderByRefusal(fn *types.Func, before, after string) *refusal
 }
 
 // scopeRefusal is the refusal of a name on a scoped table that does not
-// filter on a scope column first (design D25). Internal skips the scope on
-// reads only: a scope-free write is hand-written, where review sees it.
-func (r *resolver) scopeRefusal(fn *types.Func, m *derivedMethod, base string) *refusal {
-	scope := r.scope[0]
-	for _, p := range m.preds {
-		if slices.Contains(r.scope, p) {
-			scope = p
-			break
+// filter on a scope column first (design D25), or does not name a context
+// scope column (ADR 0026). Internal skips the scope on reads only: a
+// scope-free write is hand-written, where review sees it.
+func (r *resolver) scopeRefusal(fn *types.Func, m *derivedMethod, base string, hardFail bool,
+	missing []ctxScope) *refusal {
+	names := r.scopeOrder(m.terms)
+	scoped := suggestNamed(base, names)
+	hard := names[0]
+	var required []string
+	if hardFail {
+		required = append(required, hard)
+	}
+	for _, c := range missing {
+		if word := cmp.Or(c.short, c.field); !slices.Contains(required, word) {
+			required = append(required, word)
 		}
 	}
-	scoped := suggestScoped(base, scope, m.preds...)
-	fix := "take " + lowerFirst(scope) + " first and rename it " + scoped
+	var fix string
+	hardWord := r.fieldOf(hard)
 	switch {
 	case r.taken(fn, scoped):
-		fix = "filter on " + scope + " first (" + scoped + " is already declared)"
-	case slices.Contains(m.preds, scope):
-		fix = "move " + scope + " to the front of the name and of the parameters: " + scoped
+		fix = "filter on " + strings.Join(required, " and ") + " first (" + scoped + " is already declared)"
+	case hardFail && r.ctxOf(hardWord) != nil:
+		fix = "rename it " + scoped
+	case hardFail && !slices.ContainsFunc(m.terms, func(t term) bool { return r.display(t.field) == hard }):
+		fix = "take " + lowerFirst(hardWord) + " first and rename it " + scoped
+	case hardFail:
+		fix = "move " + hard + " to the front of the name and of the parameters: " + scoped
+	default:
+		fix = "rename it " + scoped
 	}
-	cols := make([]string, len(r.scope))
-	for i, f := range r.scope {
-		cols[i] = r.sqlName(f)
+	for _, c := range missing {
+		switch {
+		case c.short != "":
+			fix += "; " + c.short + " binds no parameter: it applies " + funcWord(c.fn) + " to " + c.col
+		default:
+			fix += "; " + c.field + " takes a parameter, and a short name from Postgres.ScopeNames binds none"
+		}
 	}
-	what := fmt.Sprintf("table %s is scoped by %s", r.t.sqlName, strings.Join(cols, " or "))
+	var what string
+	if hardFail {
+		cols := make([]string, len(r.scope))
+		for i, f := range r.scope {
+			cols[i] = r.sqlName(f)
+		}
+		what = fmt.Sprintf("table %s is scoped by %s", r.t.sqlName, strings.Join(cols, " or "))
+	} else {
+		cols := make([]string, len(missing))
+		for i, c := range missing {
+			cols[i] = c.col
+		}
+		what = fmt.Sprintf("table %s has the context scope %s (Postgres.ContextScopes)", r.t.sqlName,
+			strings.Join(cols, " and "))
+	}
+	verb, verb2 := "filter on it first", "filter on it first"
+	if !hardFail {
+		verb, verb2 = "name it", "name it"
+	}
 	if m.op == opDelete && m.internal {
 		cond := condFor(fn, m.preds, func(_ int, seg, p string) string { return "r.where." + seg + "(" + p + ")" })
 		return &refusal{
-			msg:  what + ", and a derived delete must filter on it first: Internal skips the scope on derived reads only",
+			msg:  what + ", and a derived delete must " + verb + ": Internal skips the scope on derived reads only",
 			alt:  fix + "; a delete across tenants is written by hand, where review sees it",
 			body: bodyFor(fn, cond),
 		}
 	}
 	if m.op == opDelete {
-		return &refusal{msg: what + ", and the name does not filter on it first", alt: fix}
+		return &refusal{msg: what + ", and the name does not " + verb2, alt: fix}
 	}
-	return &refusal{msg: what + ", and the name does not filter on it first",
+	return &refusal{msg: what + ", and the name does not " + verb2,
 		alt: fix + ", or end the name in Internal for a trusted system path"}
 }
 
-// splitPreds resolves "ProductIDAndExternalID" against the Go fields of the
-// columns. It matches whole field names, longest first, so a column called
-// BrandAndModel still parses.
-func splitPreds(s string, fields []string) ([]string, bool) {
-	byLen := slices.Clone(fields)
-	slices.SortStableFunc(byLen, func(a, b string) int { return len(b) - len(a) })
-	var walk func(string) ([]string, bool)
-	walk = func(s string) ([]string, bool) {
+// fieldOf returns the Go field that a displayed column name stands for.
+func (r *resolver) fieldOf(word string) string {
+	if f, ok := r.short[word]; ok {
+		return f
+	}
+	return word
+}
+
+// splitTerms resolves "ProductIDAndExternalID" against the tokens of the
+// columns: whole Go field names and the short names of scope columns, longest
+// first, so a column called BrandAndModel still parses and ProductID beats a
+// short name Product.
+func splitTerms(s string, toks []word) ([]word, bool) {
+	byLen := slices.Clone(toks)
+	slices.SortStableFunc(byLen, func(a, b word) int { return len(b.text) - len(a.text) })
+	var walk func(string) ([]word, bool)
+	walk = func(s string) ([]word, bool) {
 		for _, c := range byLen {
-			tail, ok := strings.CutPrefix(s, c)
+			tail, ok := strings.CutPrefix(s, c.text)
 			if !ok {
 				continue
 			}
 			if tail == "" {
-				return []string{c}, true
+				return []word{c}, true
 			}
 			if next, isAnd := strings.CutPrefix(tail, "And"); isAnd {
 				if more, found := walk(next); found {
-					return append([]string{c}, more...), true
+					return append([]word{c}, more...), true
 				}
 			}
 		}
 		return nil, false
 	}
 	return walk(s)
+}
+
+// splitPreds resolves "ProductIDAndExternalID" against the Go fields of the
+// columns, longest first.
+func splitPreds(s string, fields []string) ([]string, bool) {
+	toks := make([]word, len(fields))
+	for i, f := range fields {
+		toks[i] = word{f, f}
+	}
+	got, ok := splitTerms(s, toks)
+	if !ok {
+		return nil, false
+	}
+	out := make([]string, len(got))
+	for i, t := range got {
+		out[i] = t.field
+	}
+	return out, true
 }
 
 // splitAnd splits a name's properties at each And before an upper-case

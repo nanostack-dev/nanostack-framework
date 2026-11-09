@@ -2,6 +2,7 @@ package genrepo
 
 import (
 	"go/format"
+	"path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -184,13 +185,19 @@ func (e *emitter) results(m *derivedMethod, t *tableBase) string {
 
 // body renders the one helper call of a derived method on the base.
 func (e *emitter) body(m *derivedMethod, via string) string {
-	parts := make([]string, len(m.preds))
-	for i, pred := range m.preds {
-		arg := m.params[i].name
-		if m.params[i].conv != nil {
-			arg = e.typ(m.params[i].conv) + "(" + arg + ")"
+	parts := make([]string, len(m.terms))
+	next := 0
+	for i, t := range m.terms {
+		if t.ctx != nil {
+			parts[i] = e.ctxCall(t.ctx, via)
+			continue
 		}
-		parts[i] = via + "where." + pred + "(" + arg + ")"
+		arg := m.params[next].name
+		if m.params[next].conv != nil {
+			arg = e.typ(m.params[next].conv) + "(" + arg + ")"
+		}
+		parts[i] = via + "where." + t.field + "(" + arg + ")"
+		next++
 	}
 	cond := andAll(parts)
 	call := func(helper string) string { return via + helper + "(ctx, " + cond + ")" }
@@ -214,6 +221,20 @@ func (e *emitter) body(m *derivedMethod, via string) string {
 	case shapeAffected:
 	}
 	return "\treturn " + call("deleteWhere") + "\n"
+}
+
+// ctxCall renders the condition of a context scope named by its short name:
+// the function that Postgres.ContextScopes registers, on the column.
+func (e *emitter) ctxCall(c *ctxScope, via string) string {
+	pkg, ident := c.fn, c.fn
+	if dot := strings.LastIndex(c.fn, "."); dot >= 0 {
+		pkg, ident = c.fn[:dot], c.fn[dot+1:]
+	}
+	fn := ident
+	if pkg != e.self {
+		fn = e.ref(pkg, path.Base(pkg), ident)
+	}
+	return fn + "(ctx, " + via + "t." + c.field + ")"
 }
 
 // bindingAtLine returns the binding of a derived file whose code holds

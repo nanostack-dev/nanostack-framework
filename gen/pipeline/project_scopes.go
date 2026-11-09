@@ -49,6 +49,33 @@ func (c *projectCheck) contextScopes(scopes []string, ctx []project.ContextScope
 	}
 }
 
+// scopeNames checks Postgres.ScopeNames: each key a column of Scopes, each
+// value an exported Go identifier, no name given to two columns.
+func (c *projectCheck) scopeNames(scopes []string, names map[string]string) {
+	cols := make([]string, 0, len(names))
+	for col := range names {
+		cols = append(cols, col)
+	}
+	slices.Sort(cols)
+	owner := map[string]string{}
+	for _, col := range cols {
+		name := names[col]
+		switch {
+		case !slices.Contains(scopes, col):
+			c.add(c.at("Postgres.ScopeNames"), "add "+strconv.Quote(col)+" to Postgres.Scopes, or remove its name",
+				"Postgres.ScopeNames names %q, which is not in Postgres.Scopes", col)
+		case !token.IsExported(name) || !token.IsIdentifier(name):
+			c.add(c.at("Postgres.ScopeNames"), "write an exported Go identifier, such as \"Org\"",
+				"Postgres.ScopeNames: the name of %q is %q, not an exported Go identifier", col, name)
+		case owner[name] != "":
+			c.add(c.at("Postgres.ScopeNames"), "give each column its own name",
+				"Postgres.ScopeNames: %q and %q share the name %q", owner[name], col, name)
+		default:
+			owner[name] = col
+		}
+	}
+}
+
 // funcPath reports whether s is an import path, a dot and an identifier:
 // example.com/app/scope.Filter.
 func funcPath(s string) bool {

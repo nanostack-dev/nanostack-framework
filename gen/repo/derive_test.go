@@ -88,22 +88,108 @@ func TestSuggest(t *testing.T) {
 	}
 }
 
-// The scope column moves to the front of a derived name.
-func TestSuggestScoped(t *testing.T) {
+// A suggested name puts the scope columns first, by their short names when
+// the project gives them.
+func TestSuggestNamed(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
 		name  string
-		preds []string
+		words []string
 		want  string
 	}{
-		{"FindByEmail", nil, "FindByProductIDAndEmail"},
-		{"FindByIDAndProductID", []string{"ID", "ProductID"}, "FindByProductIDAndID"},
-		{"DeleteByEmail", []string{"Email"}, "DeleteByProductIDAndEmail"},
-		{"FindAll", nil, "FindByProductID"},
-		{"Count", nil, "CountByProductID"},
+		{"FindByEmail", []string{"ProductID", "Email"}, "FindByProductIDAndEmail"},
+		{"DeleteByEmail", []string{"ProductID", "Email"}, "DeleteByProductIDAndEmail"},
+		{"FindAll", []string{"ProductID"}, "FindByProductID"},
+		{"Count", []string{"Org", "Workspace"}, "CountByOrgAndWorkspace"},
+		{"FindByID", []string{"Org", "Workspace", "ID"}, "FindByOrgAndWorkspaceAndID"},
 	} {
-		if got := suggestScoped(tc.name, "ProductID", tc.preds...); got != tc.want {
-			t.Errorf("suggestScoped(%q) = %q, want %q", tc.name, got, tc.want)
+		if got := suggestNamed(tc.name, tc.words); got != tc.want {
+			t.Errorf("suggestNamed(%q, %v) = %q, want %q", tc.name, tc.words, got, tc.want)
+		}
+	}
+}
+
+// A short name is a word of a derived name beside the Go fields, and the
+// longest word wins: the field ProductID beats the short name Product.
+func TestSplitTerms(t *testing.T) {
+	t.Parallel()
+	toks := []word{{"ID", "ID"}, {"OrganizationID", "OrganizationID"}, {"ProductID", "ProductID"},
+		{"WorkspaceID", "WorkspaceID"}, {"Org", "OrganizationID"}, {"Product", "ProductID"},
+		{"Workspace", "WorkspaceID"}}
+	for in, want := range map[string][]string{
+		"OrgAndWorkspaceAndID":              {"OrganizationID", "WorkspaceID", "ID"},
+		"OrganizationIDAndWorkspaceIDAndID": {"OrganizationID", "WorkspaceID", "ID"},
+		"ProductIDAndID":                    {"ProductID", "ID"},
+		"ProductAndID":                      {"ProductID", "ID"},
+		"OrgAndProductIDAndWorkspace":       {"OrganizationID", "ProductID", "WorkspaceID"},
+		"OrgID":                             nil,
+		"OrgAndNope":                        nil,
+	} {
+		got, ok := splitTerms(in, toks)
+		fields := make([]string, len(got))
+		for i, g := range got {
+			fields[i] = g.field
+		}
+		if ok != (want != nil) || (ok && !slices.Equal(fields, want)) {
+			t.Errorf("splitTerms(%q) = %v, %v; want %v", in, fields, ok, want)
+		}
+	}
+	// The text of the token that matched tells a short name from a field.
+	got, _ := splitTerms("ProductIDAndProduct", toks)
+	if len(got) != 2 || got[0].text != "ProductID" || got[1].text != "Product" {
+		t.Errorf("longest first: %v", got)
+	}
+}
+
+// parseName reads short names, binds no parameter for a context scope named
+// by its short name, and applies the scope rules.
+func TestParseNameScopeNames(t *testing.T) {
+	t.Parallel()
+	tb := &tableBase{sqlName: "hooks", columns: []column{
+		{field: "ID", sqlName: "id"},
+		{field: "OrganizationID", sqlName: "organization_id"},
+		{field: "WorkspaceID", sqlName: "workspace_id", nullable: true},
+		{field: "Name", sqlName: "name"},
+	}}
+	l := &loaded{
+		scopes:        []string{"organization_id", "workspace_id"},
+		contextScopes: map[string]string{"workspace_id": "example.com/app/workspacescope.Filter"},
+		scopeNames:    map[string]string{"organization_id": "Org", "workspace_id": "Workspace"},
+	}
+	r := &resolver{l: l, t: tb, scope: tb.scopeFields(l.scopes)}
+	r.setupScopes(l.scopes)
+	sig := types.NewSignatureType(nil, nil, nil, nil, nil, false)
+	for _, tc := range []struct {
+		name     string
+		preds    []string
+		ctx      []bool // per term: bound to the context function
+		unscoped bool
+		skipped  []string
+	}{
+		{"FindByOrgAndWorkspaceAndID", []string{"OrganizationID", "ID"}, []bool{false, true, false}, false, nil},
+		{"FindByOrganizationIDAndWorkspaceIDAndID", []string{"OrganizationID", "WorkspaceID", "ID"},
+			[]bool{false, false, false}, false, nil},
+		{"FindByOrgAndWorkspaceIDAndName", []string{"OrganizationID", "WorkspaceID", "Name"},
+			[]bool{false, false, false}, false, nil},
+		{"FindByOrgAndIDInternal", []string{"OrganizationID", "ID"}, []bool{false, false}, true,
+			[]string{"WorkspaceID"}},
+		{"FindByIDInternal", []string{"ID"}, []bool{false}, true, []string{"OrganizationID", "WorkspaceID"}},
+		{"FindAllInternal", nil, nil, true, []string{"OrganizationID", "WorkspaceID"}},
+		{"CountByOrgAndWorkspace", []string{"OrganizationID"}, []bool{false, true}, false, nil},
+	} {
+		m, fail := r.parseName(types.NewFunc(token.NoPos, nil, tc.name, sig))
+		if fail != nil {
+			t.Errorf("%s: %s", tc.name, fail.msg)
+			continue
+		}
+		var ctx []bool
+		for _, tm := range m.terms {
+			ctx = append(ctx, tm.ctx != nil)
+		}
+		if !slices.Equal(m.preds, tc.preds) || !slices.Equal(ctx, tc.ctx) || m.unscoped != tc.unscoped ||
+			!slices.Equal(m.skipped, tc.skipped) {
+			t.Errorf("%s: preds %v, ctx %v, unscoped %v %v; want %v, %v, %v %v", tc.name, m.preds, ctx,
+				m.unscoped, m.skipped, tc.preds, tc.ctx, tc.unscoped, tc.skipped)
 		}
 	}
 }

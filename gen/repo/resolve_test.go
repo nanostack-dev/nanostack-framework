@@ -18,7 +18,7 @@ import (
 // method it generated.
 func TestStaleOutputNeverHidesAPromotedMethod(t *testing.T) {
 	t.Parallel()
-	res, err := Generate(Options{Dir: "testdata/stale", Scopes: repotest.Scopes, ContextScopes: repotest.ContextScopes})
+	res, err := Generate(fixtureOptions("testdata/stale"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +65,7 @@ func TestBackstop(t *testing.T) {
 		!strings.Contains(strings.Join(build, "\n"), "(missing method ListActive)") {
 		t.Fatalf("the build does not stop at the var _ line: %v", build)
 	}
-	_, err = Generate(Options{Dir: dir, Scopes: repotest.Scopes, ContextScopes: repotest.ContextScopes})
+	_, err = Generate(fixtureOptions(dir))
 	want := "ItemRepository.ListActive: not implemented: no hand-written method on *itemRepositoryImpl, and the " +
 		"name does not derive: it does not start with FindBy"
 	if err == nil || !strings.Contains(err.Error(), want) ||
@@ -78,15 +78,21 @@ func TestBackstop(t *testing.T) {
 }
 
 // fixtureScopeFlags are the -scopes and -context-scopes flags that declare
-// the tenant columns of the fixture, repotest.Scopes and
-// repotest.ContextScopes.
+// the tenant columns of the fixture, repotest.Scopes, repotest.ContextScopes
+// and repotest.ScopeNames.
 func fixtureScopeFlags() []string {
 	ctx := make([]string, 0, len(repotest.ContextScopes))
 	for col, fn := range repotest.ContextScopes {
 		ctx = append(ctx, col+"="+fn)
 	}
 	slices.Sort(ctx)
-	return []string{"-scopes", strings.Join(repotest.Scopes, ","), "-context-scopes", strings.Join(ctx, ",")}
+	names := make([]string, 0, len(repotest.ScopeNames))
+	for col, name := range repotest.ScopeNames {
+		names = append(names, col+"="+name)
+	}
+	slices.Sort(names)
+	return []string{"-scopes", strings.Join(repotest.Scopes, ","), "-context-scopes", strings.Join(ctx, ","),
+		"-scope-names", strings.Join(names, ",")}
 }
 
 // -check names a stale derived file and an orphan; a run rewrites the one
@@ -190,8 +196,10 @@ func TestForwardStub(t *testing.T) {
 	_, search := stubs[mustAbs(t, filepath.Join(dir, "search"+derivedSuffix))]
 	_, row := stubs[mustAbs(t, filepath.Join(dir, "row"+derivedSuffix))]
 	_, tenant := stubs[mustAbs(t, filepath.Join(dir, "tenant"+derivedSuffix))]
-	if len(stubs) != 4 || !ok || !search || !row || !tenant {
-		t.Fatalf("stubs for %d files, want %s and the stubs of search.go, row.go and tenant.go", len(stubs), derived)
+	_, project := stubs[mustAbs(t, filepath.Join(dir, "project"+derivedSuffix))]
+	if len(stubs) != 5 || !ok || !search || !row || !tenant || !project {
+		t.Fatalf("stubs for %d files, want %s and the stubs of search.go, row.go, tenant.go and project.go",
+			len(stubs), derived)
 	}
 	for _, want := range []string{"func (r *itemRepositoryImpl) FindByTenantIDAndName(", "FindAllInternal(",
 		`import uuid "github.com/google/uuid"`} {
