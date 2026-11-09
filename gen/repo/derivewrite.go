@@ -27,6 +27,82 @@ type ctxStamp struct {
 	fn    string // import path, a dot and the function name
 }
 
+// writeScopeRule is the scope rule of a write, stricter than the one of a
+// read: no scope column may come from the value. In a project that declares
+// Postgres.Scopes, the table has a NOT NULL hard scope column, no nullable
+// scope column, and the name names every scope column of the table: a hard
+// scope binds a parameter, a context scope is its short name (stamped on an
+// insert, filtered on an update). A table without a hard scope (no scope
+// column, or a context scope only) would let a write reach every tenant.
+func (r *resolver) writeScopeRule(m *derivedMethod, base string) *refusal {
+	if !m.op.isWrite() || len(r.l.scopes) == 0 {
+		return nil
+	}
+	hard, ctxs, all, fail := r.writeScopes()
+	if fail != nil {
+		return fail
+	}
+	if len(hard) == 0 {
+		what := "has no scope column"
+		if len(all) > 0 {
+			what = "has the context scope " + strings.Join(all, " and ") + " only"
+		}
+		return &refusal{msg: fmt.Sprintf("table %s %s, and a derived write needs a NOT NULL hard scope "+
+			"(Postgres.Scopes): without one it could reach the rows of every tenant", r.t.sqlName, what)}
+	}
+	var names, missing []string
+	for _, f := range hard {
+		names = append(names, r.display(f))
+		if !slices.ContainsFunc(m.terms, func(t term) bool { return t.field == f }) {
+			missing = append(missing, r.sqlName(f))
+		}
+	}
+	for _, f := range ctxs {
+		c := r.ctxOf(f)
+		if c.short == "" {
+			return &refusal{msg: fmt.Sprintf("a derived write stamps or filters the context scope %s, and "+
+				"Postgres.ScopeNames gives it no short name", c.col),
+				alt: "name " + c.col + " in Postgres.ScopeNames (such as \"Workspace\")"}
+		}
+		names = append(names, c.short)
+		if !slices.ContainsFunc(m.terms, func(t term) bool { return t.field == f && t.ctx != nil }) {
+			missing = append(missing, c.col)
+		}
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	for _, t := range m.terms {
+		if t.fromRow {
+			names = append(names, t.field)
+		}
+	}
+	return &refusal{
+		msg: fmt.Sprintf("table %s has the scope columns %s, and the name does not name %s: a derived write "+
+			"names every scope column, a hard scope as a parameter and a context scope by its short name, so "+
+			"none comes from the value", r.t.sqlName, strings.Join(all, ", "), strings.Join(missing, " and ")),
+		alt: "rename it " + suggestNamed(base, names)}
+}
+
+// writeScopes sorts the scope columns of the table into hard and context
+// ones, with every column name; a nullable one is a refusal.
+func (r *resolver) writeScopes() (hard, ctxs, all []string, fail *refusal) {
+	for _, f := range r.allScope {
+		col, _ := r.t.column(f)
+		all = append(all, col.sqlName)
+		switch {
+		case col.nullable:
+			return nil, nil, nil, &refusal{msg: fmt.Sprintf("table %s has the nullable scope column %s: a derived "+
+				"write cannot bind a row that no tenant, or every tenant, owns", r.t.sqlName, col.sqlName)}
+		case r.ctxOf(f) != nil:
+			ctxs = append(ctxs, f)
+		default:
+			hard = append(hard, f)
+		}
+	}
+	return hard, ctxs, all, nil
+}
+
 // checkWriteParams binds the parameters of a write: ctx, one parameter per
 // scope column of the name, in name order, then the value, of the domain
 // type of the declaration.
@@ -158,10 +234,9 @@ func (r *resolver) checkWrite(m *derivedMethod) *refusal {
 }
 
 // checkWriteTerms checks the columns a write names. A Create names scope
-// columns only. A scope column that a Create or an Upsert writes from a
-// parameter is NOT NULL. A key column an update reads from its value is
-// NOT NULL and has a predicate. Each context scope a Create or an Upsert
-// names by its short name has a Stamp function.
+// columns only. A key column an update reads from its value is NOT NULL and
+// has a predicate. Each context scope a Create or an Upsert stamps has a
+// Stamp function.
 func (r *resolver) checkWriteTerms(m *derivedMethod) *refusal {
 	for _, t := range m.terms {
 		col, _ := r.t.column(t.field)
@@ -169,9 +244,6 @@ func (r *resolver) checkWriteTerms(m *derivedMethod) *refusal {
 		case m.op == opCreate && t.fromRow:
 			return &refusal{msg: fmt.Sprintf("CreateIn names scope columns only, and %s is not one", col.sqlName),
 				alt: "drop " + t.field + " from the name: a derived Create inserts every column of the value"}
-		case t.ctx != nil && m.op != opUpdate && col.nullable:
-			return &refusal{msg: fmt.Sprintf("a derived %s stamps %s from the context, and the column is nullable: "+
-				"a row without a workspace is written by hand", m.op, col.sqlName)}
 		case t.ctx != nil && m.op != opUpdate:
 			fn := r.l.contextStamps[col.sqlName]
 			if fn == "" {
@@ -182,9 +254,6 @@ func (r *resolver) checkWriteTerms(m *derivedMethod) *refusal {
 						"or write it by hand"}
 			}
 			m.write.stamps = append(m.write.stamps, ctxStamp{field: t.field, col: col.sqlName, fn: fn})
-		case t.ctx == nil && !t.fromRow && m.op != opUpdate && col.nullable:
-			return &refusal{msg: fmt.Sprintf("a derived %s sets the scope column %s from a parameter, and the "+
-				"column is nullable", m.op, col.sqlName)}
 		case t.fromRow && m.op == opUpdate && (col.nullable || col.lit == litNone):
 			return &refusal{msg: fmt.Sprintf("a derived update reads the key column %s from its value, and the "+
 				"column is nullable or has no equality predicate", col.sqlName)}
@@ -219,13 +288,13 @@ func (r *resolver) checkUpdateKey(m *derivedMethod) *refusal {
 			"AndID, or write the update by hand on r.updateWhere"}
 }
 
-// checkConflictKey checks the conflict key of an upsert: the columns of its
-// name, without the context scopes named by their short name, are exactly
-// the columns of one unique key that is not partial. The name starts with a
-// scope column (the scope rule), so the key holds the tenant: a conflict
-// never reaches the row of another tenant. Every other scope column of the
-// table guards the DO UPDATE: the existing row must already hold the new
-// value.
+// checkConflictKey picks the conflict key of an upsert: one unique key, not
+// partial, whose columns are among the columns of the name (without the
+// context scopes), that holds every key column read from the value and a
+// hard scope, so a conflict never reaches the row of another tenant. Every
+// scope column outside the key guards the DO UPDATE: the existing row must
+// hold the caller's value, which comes from a parameter or a stamp, never
+// from the value.
 func (r *resolver) checkConflictKey(m *derivedMethod) *refusal {
 	if !r.t.keysFound {
 		return &refusal{altFirst: true,
@@ -234,14 +303,32 @@ func (r *resolver) checkConflictKey(m *derivedMethod) *refusal {
 	}
 	fields := keyFields(m)
 	cols := make([]string, len(fields))
+	var rowFields []string
 	for i, f := range fields {
 		cols[i] = r.sqlName(f)
-	}
-	for _, k := range r.t.keys {
-		if slices.Contains(k.fields, "") || len(k.fields) != len(fields) ||
-			slices.ContainsFunc(k.fields, func(f string) bool { return !slices.Contains(fields, f) }) {
-			continue
+		if !slices.Contains(r.allScope, f) {
+			rowFields = append(rowFields, f)
 		}
+	}
+	// The key: its columns are among the name's, it holds every key column
+	// read from the value and a hard scope. A hard scope of the name outside
+	// the key guards the DO UPDATE with the caller's parameter.
+	var found []uniqueKey
+	for _, k := range r.t.keys {
+		if r.fitsConflict(k, fields, rowFields) {
+			found = append(found, k)
+		}
+	}
+	if len(found) > 1 {
+		names := make([]string, len(found))
+		for i, k := range found {
+			names[i] = k.String()
+		}
+		return &refusal{msg: "the name matches more than one conflict key: " + strings.Join(names, ", "),
+			alt: "write the upsert by hand"}
+	}
+	if len(found) == 1 {
+		k := found[0]
 		if k.pred != "" {
 			return &refusal{msg: fmt.Sprintf("the conflict key %s is a partial index; ON CONFLICT would need its "+
 				"predicate", k)}
@@ -256,9 +343,25 @@ func (r *resolver) checkConflictKey(m *derivedMethod) *refusal {
 		return nil
 	}
 	return &refusal{altFirst: true,
-		msg: fmt.Sprintf("a derived upsert conflicts on exactly one unique key, and (%s) is none; %s",
+		msg: fmt.Sprintf("a derived upsert conflicts on one unique key that holds a hard scope and every key "+
+			"column of the name, and no key fits (%s); %s",
 			strings.Join(cols, ", "), r.t.keyList()),
 		alt: "name the columns of one key, the scope first, or write the upsert by hand"}
+}
+
+// fitsConflict reports whether k can be the conflict key of an upsert whose
+// name has fields, rowFields of them read from the value: its columns are
+// among fields, it holds every one of rowFields, and a hard scope.
+func (r *resolver) fitsConflict(k uniqueKey, fields, rowFields []string) bool {
+	if slices.Contains(k.fields, "") {
+		return false
+	}
+	within := !slices.ContainsFunc(k.fields, func(f string) bool { return !slices.Contains(fields, f) })
+	holdsRow := !slices.ContainsFunc(rowFields, func(f string) bool { return !slices.Contains(k.fields, f) })
+	hard := slices.ContainsFunc(k.fields, func(f string) bool {
+		return slices.Contains(r.scope, f) && r.ctxOf(f) == nil
+	})
+	return within && holdsRow && hard
 }
 
 // checkDefaults checks that each database column an insert leaves out has a

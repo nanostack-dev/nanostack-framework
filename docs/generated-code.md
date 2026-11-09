@@ -1481,9 +1481,9 @@ nanorepo.Implement[NoteRepository, noteRepositoryImpl](table.Notes, noteToDomain
 The rules, each a refusal with a fix when broken:
 
 - **The tenant comes from a parameter, never from the value.** Pass it from the authenticated principal, as for a read. The value's tenant and workspace columns are overwritten on a Create and an Upsert, and never `SET` by an update.
-- **The scope rule of the reads applies:** a hard scope first, and every context scope named. `CreateIn` names scope columns only.
+- **The name names every scope column of the table**, a hard scope first: each hard scope as a parameter, each context scope by its short name. `CreateIn` names scope columns only. A table with no hard scope (no scope column, or a context scope only) or with a nullable scope column gets no derived write.
 - **An update changes one row:** its hard scopes and key columns cover the primary key or a key of `UniqueKeys()`. The context scopes do not count, because their function reads TRUE without a workspace.
-- **An upsert conflicts on exactly one key that is not partial**, without the context scopes named by their short name. The scope rule puts a hard scope in that key, so a conflict never reaches another tenant's row.
+- **An upsert conflicts on one key that is not partial and holds a hard scope**, among the columns of the name, with every key column of the value. A conflict never reaches another tenant's row, and the scope columns outside the key guard `DO UPDATE`.
 - **A request without a workspace** creates and upserts nothing: `Stamp` returns its error (`workspacescope.ErrNoWorkspace`). It updates within its whole tenant, as a read does.
 - **`OnUnique` names constraints the table file lists:** a key of `UniqueKeys()` or a "Not a key" index (an expression or partial index). It applies to every derived write of the declaration.
 - **No `Internal` on a write.** A partial update, a write of an input type, of two tables, or with an optimistic lock stays hand-written on `r.updateWhere` and the hatches.

@@ -15,5 +15,6 @@ func UseSchema(schema string) {
 	Notes = Notes.FromSchema(schema)
 	Projects = Projects.FromSchema(schema)
 	SchemaMigrations = SchemaMigrations.FromSchema(schema)
+	Shelves = Shelves.FromSchema(schema)
 	Tenants = Tenants.FromSchema(schema)
 }

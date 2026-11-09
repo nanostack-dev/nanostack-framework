@@ -273,14 +273,3 @@ a2 A w2 beta "a2 body" false
 b1 B w1 alpha "b1 body" false
 b2 B w1 beta "other tenant's beta" false`)
 }
-
-// A plain Create on a table that no tenant column scopes takes the model
-// itself (NoMapper) and reads the row back.
-func TestCreateUnscopedModel(t *testing.T) {
-	f := newFixture(t)
-	id := uuid.New()
-	got, err := NewTenantRepository(f.db).Create(context.Background(), model.Tenants{ID: id, Name: "third"})
-	if err != nil || got.ID != id || got.Name != "third" {
-		t.Fatalf("create tenant: %+v, %v", got, err)
-	}
-}

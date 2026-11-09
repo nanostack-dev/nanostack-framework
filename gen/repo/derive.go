@@ -160,6 +160,9 @@ func (r *resolver) parseName(fn *types.Func) (*derivedMethod, *refusal) {
 	if fail := r.scopeRules(fn, m, base); fail != nil {
 		return nil, fail
 	}
+	if fail := r.writeScopeRule(m, base); fail != nil {
+		return nil, fail
+	}
 	return m, nil
 }
 

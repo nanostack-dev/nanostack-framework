@@ -59,18 +59,11 @@ type NoteWriter interface {
 	UpsertByTenantAndWorkspaceAndSlug(ctx context.Context, tenantID uuid.UUID, note Note) error
 }
 
-// TenantRepository creates tenants, which no tenant column scopes: a plain
-// Create of the model itself (NoMapper).
-type TenantRepository interface {
-	Create(ctx context.Context, tenant model.Tenants) (model.Tenants, error)
-}
-
 func _() {
 	nanorepo.Implement[NoteRepository, noteRepositoryImpl](table.Notes, noteToDomain,
 		nanorepo.ToRow(noteToRow),
 		nanorepo.OnUnique(ErrNoteSlugExists, "notes_tenant_slug_key", "notes_tenant_lower_slug_idx"))
 	nanorepo.Implement[NoteWriter, noteWriterImpl](table.Notes, noteToDomain, nanorepo.ToRow(noteToRow))
-	nanorepo.Implement[TenantRepository, tenantRepositoryImpl](table.Tenants, nanorepo.NoMapper[model.Tenants])
 }
 
 type noteRepositoryImpl struct{ notesBase }
@@ -85,11 +78,4 @@ type noteWriterImpl struct{ notesBase }
 // NewNoteWriter returns the note writer on db.
 func NewNoteWriter(db qrm.DB) NoteWriter {
 	return &noteWriterImpl{notesBase: newNotesBase(db)}
-}
-
-type tenantRepositoryImpl struct{ tenantsBase }
-
-// NewTenantRepository returns the tenant repository on db.
-func NewTenantRepository(db qrm.DB) TenantRepository {
-	return &tenantRepositoryImpl{tenantsBase: newTenantsBase(db)}
 }

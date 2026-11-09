@@ -23,7 +23,7 @@ import (
 
 // Scopes are the tenant columns of the fixture, as Postgres.Scopes declares
 // them in a service.
-var Scopes = []string{"tenant_id", "workspace_id"} //nolint:gochecknoglobals // fixture
+var Scopes = []string{"tenant_id", "workspace_id", "store_id"} //nolint:gochecknoglobals // fixture
 
 // ContextScopes registers the function that scopes each context tenant
 // column of the fixture, as Postgres.ContextScopes declares it.

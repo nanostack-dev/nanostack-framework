@@ -9,7 +9,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/nanostack-dev/nanostack-framework/db/postgres"
-	"github.com/nanostack-dev/nanostack-framework/gen/repo/internal/repotest/db/shop/public/model"
 	"github.com/nanostack-dev/nanostack-framework/gen/repo/internal/repotest/workspacescope"
 	"github.com/nanostack-dev/nanostack-framework/pkg/functional"
 )
@@ -162,23 +161,4 @@ func (r *noteWriterImpl) UpsertByTenantAndWorkspaceAndSlug(ctx context.Context, 
 		err = sql.ErrNoRows
 	}
 	return err
-}
-
-// TenantRepository on *tenantRepositoryImpl: 1 derived method on table tenants; the other methods are
-// hand-written (nanostack gen repo -explain lists each one).
-//
-// A compile error on the next line means TenantRepository gained or lost a method since
-// the last run: run nanostack gen repo.
-var _ TenantRepository = (*tenantRepositoryImpl)(nil)
-
-// Create is derived from its name:
-//
-//	INSERT INTO tenants (id, name) VALUES (...) RETURNING *
-func (r *tenantRepositoryImpl) Create(ctx context.Context, tenant model.Tenants) (model.Tenants, error) {
-	row := tenant
-	stmt := r.t.INSERT(r.t.AllColumns).
-		MODEL(row).
-		RETURNING(r.t.AllColumns)
-	return r.queryRow(ctx, stmt).
-		Value()
 }

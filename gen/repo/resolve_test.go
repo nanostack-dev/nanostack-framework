@@ -204,9 +204,10 @@ func TestForwardStub(t *testing.T) {
 	_, tenant := stubs[mustAbs(t, filepath.Join(dir, "tenant"+derivedSuffix))]
 	_, project := stubs[mustAbs(t, filepath.Join(dir, "project"+derivedSuffix))]
 	_, notes := stubs[mustAbs(t, filepath.Join(dir, "notes"+derivedSuffix))]
-	if len(stubs) != 6 || !ok || !search || !row || !tenant || !project || !notes {
-		t.Fatalf("stubs for %d files, want %s and the stubs of search.go, row.go, tenant.go, project.go and "+
-			"notes.go", len(stubs), derived)
+	_, shelves := stubs[mustAbs(t, filepath.Join(dir, "shelves"+derivedSuffix))]
+	if len(stubs) != 7 || !ok || !search || !row || !tenant || !project || !notes || !shelves {
+		t.Fatalf("stubs for %d files, want %s and the stubs of search.go, row.go, tenant.go, project.go, "+
+			"notes.go and shelves.go", len(stubs), derived)
 	}
 	for _, want := range []string{"func (r *itemRepositoryImpl) FindByTenantIDAndName(", "FindAllInternal(",
 		`import uuid "github.com/google/uuid"`} {

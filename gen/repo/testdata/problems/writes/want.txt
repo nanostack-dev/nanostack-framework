@@ -30,7 +30,7 @@ writes.go:48: Items.UpsertBySku: not implemented: no hand-written method on *ite
   fix: write it by hand on *itemsImpl, in a non-generated file of package writes:
          func (r *itemsImpl) UpsertBySku(ctx context.Context, item Item) (Item, error)
        or filter on TenantID first (UpsertByTenantIDAndSku is already declared)
-writes.go:50: Items.UpsertByTenantID: not implemented: no hand-written method on *itemsImpl, and the name does not derive: a derived upsert conflicts on exactly one unique key, and (tenant_id) is none; the keys of items are items_pkey (id), items_tenant_sku_key (tenant_id, sku)
+writes.go:50: Items.UpsertByTenantID: not implemented: no hand-written method on *itemsImpl, and the name does not derive: a derived upsert conflicts on one unique key that holds a hard scope and every key column of the name, and no key fits (tenant_id); the keys of items are items_pkey (id), items_tenant_sku_key (tenant_id, sku)
   fix: name the columns of one key, the scope first, or write the upsert by hand;
        or write it by hand on *itemsImpl, in a non-generated file of package writes:
          func (r *itemsImpl) UpsertByTenantID(ctx context.Context, tenantID uuid.UUID, item Item) error
