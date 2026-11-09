@@ -1,6 +1,8 @@
 package genrepo
 
 import (
+	"go/token"
+	"go/types"
 	"slices"
 	"testing"
 )
@@ -102,6 +104,34 @@ func TestSuggestScoped(t *testing.T) {
 	} {
 		if got := suggestScoped(tc.name, "ProductID", tc.preds...); got != tc.want {
 			t.Errorf("suggestScoped(%q) = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
+// A trailing Internal is the scope rule's suffix, unless the name splits
+// into columns with it: a column such as IsInternal keeps it.
+func TestInternalSuffix(t *testing.T) {
+	t.Parallel()
+	r := &resolver{t: &tableBase{columns: []column{{field: "Name"}, {field: "IsInternal"}}}}
+	sig := types.NewSignatureType(nil, nil, nil, nil, nil, false)
+	for _, tc := range []struct {
+		name     string
+		preds    []string
+		internal bool
+	}{
+		{"FindByIsInternal", []string{"IsInternal"}, false},
+		{"FindByNameAndIsInternal", []string{"Name", "IsInternal"}, false},
+		{"FindByNameInternal", []string{"Name"}, true},
+		{"FindByIsInternalInternal", []string{"IsInternal"}, true},
+		{"FindAllInternal", nil, true},
+	} {
+		m, fail := r.parseName(types.NewFunc(token.NoPos, nil, tc.name, sig))
+		if fail != nil {
+			t.Errorf("%s: %s", tc.name, fail.msg)
+			continue
+		}
+		if !slices.Equal(m.preds, tc.preds) || m.internal != tc.internal {
+			t.Errorf("%s: properties %v, internal %v; want %v, %v", tc.name, m.preds, m.internal, tc.preds, tc.internal)
 		}
 	}
 }

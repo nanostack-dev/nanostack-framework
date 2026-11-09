@@ -40,14 +40,16 @@ func Planned(dir string, files []string) []string {
 // method that panics for each method of each bound interface that the
 // implementation has no method of that name for, in a file nano gen repo
 // did not write, and no var _ line. So a step before repo still type-checks
-// a package whose interface just gained a method, which the body-stripped
-// stub of the last output cannot do.
+// a package whose interface just gained a method, or whose implementation
+// just got a hand-written method that the last run derived: the
+// body-stripped stub of the last output can do neither. A declaring file
+// whose bindings lack no method gets a stub with no method.
 //
-// It parses the package and type-checks nothing. An interface or an
-// implementation it cannot read from the package's own files, such as an
-// interface of another package, or a method of an interface embedded from
-// another package, gets no stub method: the step then sees the package as
-// the last run left it.
+// It parses the package and type-checks nothing. The methods of an
+// interface it cannot read from the package's own files, an interface of
+// another package or one embedded from another package, are taken from the
+// last output on disk, minus those the implementation now has: the step
+// sees them as the last run left them.
 func ForwardStubs(dir string) map[string][]byte {
 	p := parsePackage(dir)
 	if p == nil {
@@ -55,9 +57,8 @@ func ForwardStubs(dir string) map[string][]byte {
 	}
 	out := map[string][]byte{}
 	for _, file := range p.declaring {
-		if src := p.stub(file); src != nil {
-			out[filepath.Join(dir, derivedFile(file.path))] = src
-		}
+		path := filepath.Join(dir, derivedFile(file.path))
+		out[path] = p.stub(file, p.own[path])
 	}
 	return out
 }
@@ -76,7 +77,8 @@ type parsedPackage struct {
 	methods    map[string]map[string]bool // receiver type -> method names, outside nano gen repo files
 	ptr, val   map[string]bool            // receiver type -> its methods use a pointer, a value receiver
 	declaring  []parsedFile               // files with nanorepo.Implement calls
-	implements map[string][][2]string     // declaring file -> (interface, implementation) names
+	implements map[string][][2]string     // declaring file -> (interface, implementation) names; "" for an interface of another package
+	own        map[string]*ast.File       // path -> a file nano gen repo wrote
 }
 
 // ifaceDecl is an interface type and the file it is declared in.
@@ -94,7 +96,7 @@ func parsePackage(dir string) *parsedPackage {
 	}
 	p := &parsedPackage{fset: token.NewFileSet(), ifaces: map[string]ifaceDecl{},
 		methods: map[string]map[string]bool{}, ptr: map[string]bool{}, val: map[string]bool{},
-		implements: map[string][][2]string{}}
+		implements: map[string][][2]string{}, own: map[string]*ast.File{}}
 	for _, e := range entries {
 		name := e.Name()
 		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
@@ -120,6 +122,7 @@ func parsePackage(dir string) *parsedPackage {
 // read records the interfaces, methods and bindings of one file.
 func (p *parsedPackage) read(path string, f *ast.File) {
 	if ownRepo(f) {
+		p.own[path] = f
 		return
 	}
 	for _, decl := range f.Decls {
@@ -186,8 +189,10 @@ func callsImplement(f *ast.File) bool {
 }
 
 // implementCalls returns the (interface, implementation) type names of the
-// nanorepo.Implement[I, Impl](...) calls of f whose type arguments are
-// names of the package, as parsing alone reads them.
+// nanorepo.Implement[I, Impl](...) calls of f whose implementation is a
+// name of the package, as parsing alone reads them. The interface is ""
+// when it is not a name of the package, such as pkg.Repository or
+// Repository[Item].
 func implementCalls(f *ast.File) [][2]string {
 	name := nanorepoName(f)
 	if name == "" {
@@ -207,9 +212,12 @@ func implementCalls(f *ast.File) [][2]string {
 		if !ok || sel.Sel.Name != "Implement" || identOf(sel.X) == nil || identOf(sel.X).Name != name {
 			return true
 		}
-		iface, impl := identOf(ix.Indices[0]), identOf(ix.Indices[1])
-		if iface != nil && impl != nil {
-			out = append(out, [2]string{iface.Name, impl.Name})
+		if impl := identOf(ix.Indices[1]); impl != nil {
+			iface := ""
+			if id := identOf(ix.Indices[0]); id != nil {
+				iface = id.Name
+			}
+			out = append(out, [2]string{iface, impl.Name})
 		}
 		return true
 	})
@@ -240,9 +248,10 @@ type stubMethod struct {
 	file *ast.File // where the interface declares it, for its imports
 }
 
-// stub renders the forward stub of one declaring file, or nil when no
-// binding of it lacks a method.
-func (p *parsedPackage) stub(file parsedFile) []byte {
+// stub renders the forward stub of one declaring file. last is the derived
+// file on disk, nil when there is none: the methods of an interface the
+// package does not declare are taken from it.
+func (p *parsedPackage) stub(file parsedFile, last *ast.File) []byte {
 	var body bytes.Buffer
 	imports := map[string]string{} // name -> path
 	for _, pair := range p.implements[file.path] {
@@ -250,8 +259,12 @@ func (p *parsedPackage) stub(file parsedFile) []byte {
 		if p.ptr[pair[1]] || !p.val[pair[1]] {
 			recv = "r *" + pair[1]
 		}
+		methods, complete := p.interfaceMethods(pair[0], map[string]bool{})
+		if !complete {
+			methods = append(methods, lastMethods(last, pair[1])...)
+		}
 		done := map[string]bool{}
-		for _, m := range p.interfaceMethods(pair[0], map[string]bool{}) {
+		for _, m := range methods {
 			if p.methods[pair[1]][m.name] || done[m.name] {
 				continue
 			}
@@ -262,9 +275,6 @@ func (p *parsedPackage) stub(file parsedFile) []byte {
 			}
 			body.WriteString("func (" + recv + ") " + m.name + sig + " { panic(\"nano gen stub\") }\n\n")
 		}
-	}
-	if body.Len() == 0 {
-		return nil
 	}
 	var out bytes.Buffer
 	out.WriteString(header + "package " + p.name + "\n\n")
@@ -282,21 +292,47 @@ func (p *parsedPackage) stub(file parsedFile) []byte {
 }
 
 // interfaceMethods returns the methods of the interface name, with those of
-// the interfaces of the package it embeds, each name once.
-func (p *parsedPackage) interfaceMethods(name string, seen map[string]bool) []stubMethod {
+// the interfaces of the package it embeds. complete is false when the
+// package does not declare name or an interface it embeds.
+func (p *parsedPackage) interfaceMethods(name string, seen map[string]bool) (out []stubMethod, complete bool) {
+	if seen[name] {
+		return nil, true
+	}
 	decl, ok := p.ifaces[name]
-	if !ok || seen[name] {
-		return nil
+	if !ok {
+		return nil, false
 	}
 	seen[name] = true
-	var out []stubMethod
+	complete = true
 	for _, field := range decl.t.Methods.List {
 		ft, isFunc := field.Type.(*ast.FuncType)
 		switch {
 		case isFunc && len(field.Names) == 1:
 			out = append(out, stubMethod{name: field.Names[0].Name, ft: ft, file: decl.file})
 		case len(field.Names) == 0 && identOf(field.Type) != nil:
-			out = append(out, p.interfaceMethods(identOf(field.Type).Name, seen)...)
+			more, all := p.interfaceMethods(identOf(field.Type).Name, seen)
+			out, complete = append(out, more...), complete && all
+		default:
+			complete = false // embedded from another package, or a type union
+		}
+	}
+	return out, complete
+}
+
+// lastMethods returns the methods on impl of last, the derived file the
+// last run wrote, nil when there is none.
+func lastMethods(last *ast.File, impl string) []stubMethod {
+	if last == nil {
+		return nil
+	}
+	var out []stubMethod
+	for _, decl := range last.Decls {
+		fd, ok := decl.(*ast.FuncDecl)
+		if !ok || fd.Recv == nil || len(fd.Recv.List) != 1 {
+			continue
+		}
+		if recv, _ := recvType(fd.Recv.List[0].Type); recv == impl {
+			out = append(out, stubMethod{name: fd.Name.Name, ft: fd.Type, file: last})
 		}
 	}
 	return out

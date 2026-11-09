@@ -107,7 +107,7 @@ func (r *resolver) derive(fn *types.Func) (*derivedMethod, *refusal) {
 func (r *resolver) parseName(fn *types.Func) (*derivedMethod, *refusal) {
 	m := &derivedMethod{fn: fn}
 	base := fn.Name()
-	if trimmed, ok := strings.CutSuffix(base, "Internal"); ok && trimmed != "" {
+	if trimmed, ok := strings.CutSuffix(base, "Internal"); ok && trimmed != "" && !r.endsInColumn(base) {
 		m.internal, base = true, trimmed
 	}
 	rest, known := parsePrefix(base, m)
@@ -136,6 +136,18 @@ func (r *resolver) parseName(fn *types.Func) (*derivedMethod, *refusal) {
 		return nil, r.scopeRefusal(fn, m, base)
 	}
 	return m, nil
+}
+
+// endsInColumn reports whether the properties of name split into columns
+// as they are: its last column ends in Internal, such as IsInternal, so the
+// suffix names the column, not the scope rule.
+func (r *resolver) endsInColumn(name string) bool {
+	rest, known := parsePrefix(name, &derivedMethod{})
+	if !known || rest == "" {
+		return false
+	}
+	_, ok := splitPreds(rest, r.t.fields())
+	return ok
 }
 
 // parsePrefix sets the operation of m from the prefix of base, and returns

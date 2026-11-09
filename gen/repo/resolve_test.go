@@ -191,6 +191,58 @@ func TestForwardStub(t *testing.T) {
 	}
 }
 
+// A method the last run derived that is now hand-written leaves the
+// forward stub, which replaces the last output: the body-stripped stub of
+// that output would declare the method twice. A method of an interface
+// embedded from another package, which parsing cannot list, is taken from
+// the last output.
+func TestForwardStubReplacesTheLastOutput(t *testing.T) {
+	t.Parallel()
+	dir := copyPackage(t, fixture)
+	path := filepath.Join(dir, "repository.go")
+	src, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	src = bytes.Replace(src, []byte("type ItemRepository interface {\n"),
+		[]byte("type ItemRepository interface {\n\tdriver.Pinger\n"), 1)
+	src = bytes.Replace(src, []byte("import (\n"), []byte("import (\n\t\"database/sql/driver\"\n"), 1)
+	if err = os.WriteFile(path, src, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	derived := filepath.Join(dir, "repository"+derivedSuffix)
+	last, err := os.ReadFile(derived)
+	if err != nil {
+		t.Fatal(err)
+	}
+	last = append(last, []byte("\nfunc (r *itemRepositoryImpl) Ping(ctx context.Context) error { return nil }\n")...)
+	if err = os.WriteFile(derived, last, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	hand := "package repotest\n\nimport (\n\t\"context\"\n\n\t\"github.com/google/uuid\"\n)\n\n" +
+		"func (r *itemRepositoryImpl) DeleteByTenantIDAndID(ctx context.Context, tenantID uuid.UUID, id string) error {\n" +
+		"\t_, err := r.deleteWhere(ctx, r.where.TenantID(tenantID).AND(r.where.ID(id)))\n\treturn err\n}\n"
+	if err = os.WriteFile(filepath.Join(dir, "hand.go"), []byte(hand), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stubs := ForwardStubs(mustAbs(t, dir))
+	stub := stubs[mustAbs(t, derived)]
+	if !bytes.Contains(stub, []byte(") Ping(ctx context.Context) error")) {
+		t.Errorf("the stub has no Ping of the last output:\n%s", stub)
+	}
+	if bytes.Contains(stub, []byte(") DeleteByTenantIDAndID(")) {
+		t.Errorf("the stub declares the hand-written DeleteByTenantIDAndID:\n%s", stub)
+	}
+	pkgs, err := packages.Load(&packages.Config{Mode: packages.NeedTypes | packages.NeedName, Dir: dir,
+		Overlay: stubs}, ".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range pkgs[0].Errors {
+		t.Errorf("with the stub: %v", e)
+	}
+}
+
 // The pipeline plans a derived file for every file that calls
 // nanorepo.Implement, whatever its type arguments: an interface of another
 // package binds as one of the declaring package does. A file with only

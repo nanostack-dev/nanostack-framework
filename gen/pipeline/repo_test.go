@@ -160,6 +160,21 @@ type accountsImpl struct{ usersBase }
 func NewAccounts(db qrm.DB) Accounts { return &accountsImpl{usersBase: newUsersBase(db)} }
 `
 
+// accountErrors is an error catalogue in the repository package: the
+// errors step, before repo, loads the package.
+const accountErrors = `package repository
+
+// declarations is the error catalogue of the repository package.
+//
+//nano:errors namespace=accounts
+type declarations interface {
+	// No account has the email.
+	//
+	//nano:error code=account_not_found status=404 title="Account not found"
+	AccountNotFound()
+}
+`
+
 // A declaring file with a nanorepo.Implement gets its derived file: -list
 // plans it, a run writes it, and -check passes after.
 func TestRepoDerivedFile(t *testing.T) {
@@ -191,23 +206,45 @@ func TestRepoForwardStub(t *testing.T) {
 	t.Parallel()
 	dir := copyFixtureOf(t, dbFixture)
 	write(t, dir, accountsFile, accounts)
-	write(t, dir, "internal/repository/errors.go", `package repository
-
-// declarations is the error catalogue of the repository package.
-//
-//nano:errors namespace=accounts
-type declarations interface {
-	// No account has the email.
-	//
-	//nano:error code=account_not_found status=404 title="Account not found"
-	AccountNotFound()
-}
-`)
+	write(t, dir, "internal/repository/errors.go", accountErrors)
 	if _, stderr, code := runDBFixture(t, dir, Options{}, noDatabase(t)); code != 0 {
 		t.Fatalf("nano gen: exit %d, stderr:\n%s", code, stderr)
 	}
 	edit(t, dir, accountsFile, "type Accounts interface {\n", "type Accounts interface {\n"+
 		"\tExistsByTenantIDAndEmail(ctx context.Context, tenantID, email string) (bool, error)\n")
+	stdout, stderr, code := runDBFixture(t, dir, Options{Check: true}, noDatabase(t))
+	wantRun(t, "nano gen -check", code, 1, stdout, "", stderr,
+		"stale "+accountsDerived+"\n  fix: run nano gen without -check, then commit the result\n")
+	stdout, stderr, code = runDBFixture(t, dir, Options{}, noDatabase(t))
+	wantRun(t, "nano gen", code, 0, stdout, "wrote "+accountsDerived+"\n", stderr, "")
+}
+
+// A method the last run derived, now written by hand, breaks no step before
+// repo: the forward stub of the derived file leaves it out, where the
+// body-stripped stub of the file on disk would declare it twice.
+func TestRepoForwardStubHandWritten(t *testing.T) {
+	t.Parallel()
+	dir := copyFixtureOf(t, dbFixture)
+	write(t, dir, accountsFile, accounts)
+	write(t, dir, "internal/repository/errors.go", accountErrors)
+	if _, stderr, code := runDBFixture(t, dir, Options{}, noDatabase(t)); code != 0 {
+		t.Fatalf("nano gen: exit %d, stderr:\n%s", code, stderr)
+	}
+	write(t, dir, "internal/repository/accounts_custom.go", `package repository
+
+import (
+	"context"
+
+	"github.com/nanostack-dev/nanostack-framework/pkg/functional"
+
+	"example.com/dbapp/internal/db/gen/app/public/model"
+)
+
+// FindByTenantIDAndEmail is written by hand: it now runs in its own way.
+func (r *accountsImpl) FindByTenantIDAndEmail(ctx context.Context, tenantID, email string) (functional.Option[model.Users], error) {
+	return r.findOne(ctx, r.where.TenantID(tenantID).AND(r.where.Email(email)))
+}
+`)
 	stdout, stderr, code := runDBFixture(t, dir, Options{Check: true}, noDatabase(t))
 	wantRun(t, "nano gen -check", code, 1, stdout, "", stderr,
 		"stale "+accountsDerived+"\n  fix: run nano gen without -check, then commit the result\n")
