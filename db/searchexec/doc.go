@@ -116,4 +116,28 @@
 //
 // A term that is not valid UTF-8, or that holds a NUL character, matches no row on every
 // dialect.
+//
+// # API helpers
+//
+// The generated <Name>SearchFromAPI turns an API request body into a builder with Some,
+// Opt, OrZero, APISort, APIDirection and APIPage. They apply the rules of the API
+// contract: a property that is not sent, and an empty list, filter nothing.
+//
+//	q, b := NewWebhookRequestSearch(scope), searchexec.OrZero(body)
+//	if f := b.Filter; f != nil {
+//		q = searchexec.Some(q, q.Method().In, f.Methods)
+//		q = searchexec.Opt(q, q.ReceivedAt().Since, f.Since)
+//	}
+//	q = searchexec.Opt(q, q.FullText, b.FullTextSearch)
+//	q = searchexec.APISort(q, q.SortBy, b.SortBy, b.SortDirection,
+//		WebhookRequestSortReceivedAt, search.SortDescending)
+//	return searchexec.APIPage(q.Query, b.Pagination)
+//
+// APISort sorts a sort_by sent alone in the direction its last argument gives, because each
+// API contract states its own, and applies a sort_direction alone to the default sort.
+// APIDirection does the same for a body that has sort_direction and no sort_by. APIPage
+// keeps the spec's default limit when the request sends no limit (zero). The helpers do no
+// checks of their own: Resolve, Run and RunPage refuse an unknown sort, a sort direction
+// other than ASC or DESC, a page outside the limits and too many values, as they do for a
+// Go caller.
 package searchexec

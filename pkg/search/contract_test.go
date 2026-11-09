@@ -44,6 +44,7 @@ func TestIsClientErrorAgreesWithTheContract(t *testing.T) {
 		dbsearch.ErrInvalidOffset,
 		dbsearch.ErrTooManyValues,
 		dbsearch.ErrTermTooLong,
+		dbsearch.ErrInvalidSortDirection,
 		dbsearch.ErrUnscoped,
 		errors.Join(dbsearch.ErrTooManyValues, dbsearch.ErrUnscoped),
 		errors.New("connection refused"),

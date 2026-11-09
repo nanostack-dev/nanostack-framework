@@ -24,7 +24,8 @@ const (
 	// CodeInvalidCursor is the code of a pagination cursor that cannot continue
 	// the search: malformed, issued for another sort, or sent with an offset.
 	CodeInvalidCursor = "INVALID_CURSOR"
-	// CodeInvalidSort is the code of a sort field the search cannot order by.
+	// CodeInvalidSort is the code of a sort field the search cannot order by,
+	// and of a sort direction other than ASC or DESC.
 	CodeInvalidSort = "INVALID_SORT"
 	// CodePayloadTooLarge is the code of a body over the size limit (413).
 	CodePayloadTooLarge = "PAYLOAD_TOO_LARGE"
@@ -131,6 +132,7 @@ type Response struct {
 //   - a search client error of db/search (pkg/search shares the values):
 //     ErrInvalidCursor or ErrCursorWithOffset is 400 INVALID_CURSOR (field
 //     pagination.cursor); ErrUnknownSort is 400 INVALID_SORT (field sort_by);
+//     ErrInvalidSortDirection is 400 INVALID_SORT (field sort_direction);
 //     ErrInvalidLimit or ErrInvalidOffset is 400 BAD_REQUEST (field
 //     pagination.limit or pagination.offset); ErrTooManyValues or
 //     ErrTermTooLong is 400 BAD_REQUEST with no field. db/search.ErrUnscoped
@@ -240,6 +242,9 @@ func searchFault(err error) (*fault.Error, bool) {
 	case errors.Is(err, search.ErrUnknownSort):
 		code, field = CodeInvalidSort, "sort_by"
 		message = "The search cannot sort by this field."
+	case errors.Is(err, search.ErrInvalidSortDirection):
+		code, field = CodeInvalidSort, "sort_direction"
+		message = "The sort direction must be ASC or DESC."
 	case errors.Is(err, search.ErrInvalidLimit):
 		code, field = CodeBadRequest, "pagination.limit"
 		message = fmt.Sprintf("The page size must be between 1 and %d.", search.MaxLimit)
