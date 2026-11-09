@@ -273,3 +273,21 @@ a2 A w2 beta "a2 body" false
 b1 B w1 alpha "b1 body" false
 b2 B w1 beta "other tenant's beta" false`)
 }
+
+// A declaration whose only derived write is a create (notecreator.go)
+// compiles without database/sql, and its create takes the caller's tenant
+// and workspace, never the ones of the value.
+func TestCreateOnlyDeclaration(t *testing.T) {
+	f := newNoteFixture(t)
+	got, err := NewNoteCreator(f.db).CreateInTenantAndWorkspace(f.w2, f.tenant,
+		Note{ID: "a3", TenantID: f.other, WorkspaceID: "w1", Slug: "gamma", Body: "forged scope"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.TenantID != f.tenant || got.WorkspaceID != "w2" {
+		t.Fatalf("created %+v, want the tenant and w2", got)
+	}
+	f.wantRows(t, seeded[:len(seeded)-len(`b1 B w1 alpha "b1 body" false`)]+
+		`a3 A w2 gamma "forged scope" false
+b1 B w1 alpha "b1 body" false`)
+}
