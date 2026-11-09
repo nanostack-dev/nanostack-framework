@@ -134,8 +134,10 @@ jobs:
 
   # One job per database. The testenv harness in db/tests starts the containers, loads
   # the pinned jet-test-data and runs the suite; Docker is preinstalled on the runner.
+  # CockroachDB is the slowest suite, so its two runs (statement cache off and on) are two
+  # jobs that run in parallel. The other databases run both in one job.
   integration:
-    name: integration (${{ matrix.dialect }})
+    name: integration (${{ matrix.dialect }}${{ matrix.stmt_cache && format(', statement cache {0}', matrix.stmt_cache) || '' }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -144,7 +146,8 @@ jobs:
         include:
           - { dialect: postgres14, package: ./postgres }
           - { dialect: postgres18, package: ./postgres }
-          - { dialect: cockroach, package: ./postgres }
+          - { dialect: cockroach, package: ./postgres, stmt_cache: "off" }
+          - { dialect: cockroach, package: ./postgres, stmt_cache: "on" }
           - { dialect: mysql, package: ./mysql }
           - { dialect: mariadb, package: ./mysql }
           - { dialect: sqlite, package: ./sqlite }
@@ -165,8 +168,10 @@ jobs:
       # -tags postgres compiles the PostgreSQL-only range tests, as upstream CI did. The
       # CockroachDB run is compiled again against CockroachDB's own models, without the tag.
       - name: Test
+        if: matrix.stmt_cache != 'on'
         run: go test -race -count=1 -tags postgres -v ${{ matrix.package }}
       - name: Test with statement caching
+        if: matrix.stmt_cache != 'off'
         run: go test -count=1 -tags postgres ${{ matrix.package }}
         env:
           NANODB_STMT_CACHE: "true"
