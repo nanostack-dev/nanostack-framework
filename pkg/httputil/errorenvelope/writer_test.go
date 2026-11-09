@@ -15,6 +15,7 @@ import (
 
 	"github.com/nanostack-dev/nanostack-framework/core/log"
 	"github.com/nanostack-dev/nanostack-framework/core/validate"
+	dbsearch "github.com/nanostack-dev/nanostack-framework/db/search"
 	"github.com/nanostack-dev/nanostack-framework/http/nanohttp"
 	"github.com/nanostack-dev/nanostack-framework/http/problem"
 	"github.com/nanostack-dev/nanostack-framework/pkg/fault"
@@ -106,6 +107,10 @@ func TestWriterLogLevels(t *testing.T) {
 		{"modelled server error", httptest.NewRequest(http.MethodGet, "/", nil), fault.Internal("DB", "db"), "ERROR"},
 		{"abandoned request", httptest.NewRequest(http.MethodGet, "/", nil).WithContext(ctx),
 			errors.New("driver: bad connection"), "WARN"},
+		{"search page out of range", httptest.NewRequest(http.MethodPost, "/", nil),
+			fmt.Errorf("search: %w", dbsearch.ErrInvalidLimit), "DEBUG"},
+		{"search with no tenant scope", httptest.NewRequest(http.MethodPost, "/", nil),
+			fmt.Errorf("search: %w", dbsearch.ErrUnscoped), "ERROR"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -1,63 +1,48 @@
 package search
 
 import (
-	"encoding/base64"
 	"encoding/json"
-	"errors"
-	"fmt"
-	"log/slog"
+
+	dbsearch "github.com/nanostack-dev/nanostack-framework/db/search"
 )
 
-// MaxCursorLength bounds the opaque cursor a client may send back. A cursor
-// carries one value per ordering column, so a few hundred bytes is typical.
-// The bound leaves room for several text sort values of 1,000 characters each,
-// which is why a sortable text column must be bounded (VARCHAR(255) or a
-// validated length): a longer value would issue a cursor the decoder refuses.
-const MaxCursorLength = 8192
+// MaxCursorLength bounds the opaque cursor a client may send back. It is
+// db/search.MaxCursorLength.
+const MaxCursorLength = dbsearch.MaxCursorLength
 
-const cursorVersion = 1
-
-// The client errors of a search. Each has a Level method that returns
-// slog.LevelDebug, so core/log's LevelFor logs them at Debug through any
-// wrapping: the API refusing a bad request is not the service failing.
+// The client errors of a search. They are the values of db/search, so
+// errors.Is, IsClientError, the error envelope and core/log's LevelFor give one
+// answer whichever package a search returns from. Each logs at Debug through
+// any wrapping: the API refusing a bad request is not the service failing.
 var (
 	// ErrInvalidCursor reports a cursor that cannot continue this search: it
 	// is malformed, too long, or was issued for a different ordering. Callers
 	// map it to a client error (HTTP 400).
-	ErrInvalidCursor error = &clientError{"search: invalid cursor"}
+	ErrInvalidCursor = dbsearch.ErrInvalidCursor
 
 	// ErrCursorWithOffset reports a request that sets both a cursor and a
 	// non-zero offset. A cursor already says where the page starts, so the two
 	// cannot be combined. Callers map it to a client error (HTTP 400).
-	ErrCursorWithOffset error = &clientError{"search: cursor cannot be combined with offset"}
+	ErrCursorWithOffset = dbsearch.ErrCursorWithOffset
 
 	// ErrUnknownSort reports a sort field the search cannot order by. A
 	// silent fallback to the default order would answer a different question
 	// than the client asked, so callers map it to a client error (HTTP 400).
-	ErrUnknownSort error = &clientError{"search: unknown sort field"}
+	ErrUnknownSort = dbsearch.ErrUnknownSort
 )
 
-// clientError is a search error the caller caused. It carries no HTTP status:
-// the transport maps each one to its own 400 code.
-type clientError struct{ msg string }
-
-func (e *clientError) Error() string { return e.msg }
-
-// Level returns slog.LevelDebug, the level of a request the API refuses.
-func (e *clientError) Level() slog.Level { return slog.LevelDebug }
-
-// IsClientError reports whether err is a search error the caller caused: an
-// invalid cursor, a cursor combined with an offset, or an unknown sort field.
+// IsClientError reports whether err is a search error the caller caused. It
+// is db/search.IsClientError: an invalid cursor, a cursor combined with an
+// offset, an unknown sort field, and the page and filter limits of db/search.
 // Each answers HTTP 400, so it is the API refusing a bad request, not the
-// service failing.
+// service failing. db/search.ErrUnscoped is not one.
 func IsClientError(err error) bool {
-	return errors.Is(err, ErrInvalidCursor) ||
-		errors.Is(err, ErrCursorWithOffset) ||
-		errors.Is(err, ErrUnknownSort)
+	return dbsearch.IsClientError(err)
 }
 
 // Cursor is the decoded form of an opaque pagination token: the ordering it
-// was issued for and the last row's value for each ordering column.
+// was issued for and the last row's value for each ordering column. It has
+// the fields of db/search.Cursor.
 //
 // A cursor is position, not authority. It is neither signed nor encrypted:
 // tenant scope and filters always come from the request, so an edited cursor
@@ -72,69 +57,22 @@ type Cursor struct {
 	Values []json.RawMessage
 }
 
-type cursorWire struct {
-	Version int               `json:"v"`
-	Order   string            `json:"o"`
-	Values  []json.RawMessage `json:"k"`
-}
-
 // EncodeCursor builds the opaque token for the row whose ordering values are
-// given. Values must be JSON-encodable; nil encodes a SQL NULL.
+// given. It is db/search.EncodeCursor: the tokens are byte for byte the same.
 func EncodeCursor(order string, values []any) (string, error) {
-	raw := make([]json.RawMessage, len(values))
-	for i, value := range values {
-		encoded, err := json.Marshal(value)
-		if err != nil {
-			return "", fmt.Errorf("search: encode cursor value %d: %w", i, err)
-		}
-		raw[i] = encoded
-	}
-	payload, err := json.Marshal(cursorWire{Version: cursorVersion, Order: order, Values: raw})
-	if err != nil {
-		return "", fmt.Errorf("search: encode cursor: %w", err)
-	}
-	token := base64.RawURLEncoding.EncodeToString(payload)
-	if len(token) > MaxCursorLength {
-		// Issuing it would strand the client: DecodeCursor refuses it. The
-		// fix is a bounded sort column, so fail where the cause is visible.
-		return "", fmt.Errorf("search: cursor for %q is %d bytes, over the %d limit; sort only on bounded columns",
-			order, len(token), MaxCursorLength)
-	}
-	return token, nil
+	return dbsearch.EncodeCursor(order, values)
 }
 
-// DecodeCursor parses a token produced by EncodeCursor. Every failure wraps
-// ErrInvalidCursor, so a caller translates them with one errors.Is.
+// DecodeCursor parses a token produced by EncodeCursor. It is
+// db/search.DecodeCursor: every failure wraps ErrInvalidCursor.
 func DecodeCursor(token string) (Cursor, error) {
-	if token == "" || len(token) > MaxCursorLength {
-		return Cursor{}, ErrInvalidCursor
-	}
-	payload, err := base64.RawURLEncoding.DecodeString(token)
-	if err != nil {
-		return Cursor{}, fmt.Errorf("%w: not base64url", ErrInvalidCursor)
-	}
-	var wire cursorWire
-	if err := json.Unmarshal(payload, &wire); err != nil {
-		return Cursor{}, fmt.Errorf("%w: not a cursor payload", ErrInvalidCursor)
-	}
-	if wire.Version != cursorVersion || wire.Order == "" || len(wire.Values) == 0 {
-		return Cursor{}, fmt.Errorf("%w: unsupported cursor", ErrInvalidCursor)
-	}
-	return Cursor{Order: wire.Order, Values: wire.Values}, nil
+	cursor, err := dbsearch.DecodeCursor(token)
+	return Cursor(cursor), err
 }
 
 // Validate reports whether the pagination can run: a cursor must fit
 // MaxCursorLength and cannot be combined with a non-zero offset. The limit and
-// offset bounds stay with the struct tags.
+// offset bounds stay with the struct tags. It is db/search.Pagination.Validate.
 func (p Pagination) Validate() error {
-	if p.Cursor == "" {
-		return nil
-	}
-	if p.Offset > 0 {
-		return ErrCursorWithOffset
-	}
-	if len(p.Cursor) > MaxCursorLength {
-		return fmt.Errorf("%w: longer than %d bytes", ErrInvalidCursor, MaxCursorLength)
-	}
-	return nil
+	return dbsearch.Pagination(p).Validate()
 }

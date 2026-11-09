@@ -20,7 +20,10 @@ router := nanohttp.NewRouter(mux, nanohttp.RouterOptions{
 | Error | Status | Envelope |
 | --- | --- | --- |
 | `*pkg/fault.Error`, or what `Options.Adapter` returns | its status | its errors, byte-identical to `fault.WriteJSON` |
-| `search.ErrInvalidCursor`, `ErrCursorWithOffset`, `ErrUnknownSort` | 400 | `INVALID_CURSOR` (field `pagination.cursor`) or `INVALID_SORT` (field `sort_by`) |
+| `db/search.ErrInvalidCursor`, `ErrCursorWithOffset`, `ErrUnknownSort` (`pkg/search` shares the values) | 400 | `INVALID_CURSOR` (field `pagination.cursor`) or `INVALID_SORT` (field `sort_by`) |
+| `db/search.ErrInvalidLimit`, `ErrInvalidOffset` | 400 | `BAD_REQUEST` (field `pagination.limit` or `pagination.offset`) |
+| `db/search.ErrTooManyValues`, `ErrTermTooLong` | 400 | `BAD_REQUEST`, no field |
+| `db/search.ErrUnscoped` (a search with no tenant scope: a programming error) | 500 | `UNEXPECTED_ERROR`, logged at Error |
 | `core/fault.Described` (generated catalogue error) | its status | `code` = `ProblemCode()` in upper case, `message` = the detail, or the title |
 | `http/problem` boundary error (malformed JSON, missing body, invalid parameter, validation) | 400 (a 422 becomes 400) | one detail per field error: `code` = `Options.BoundaryCode` (`BAD_REQUEST`), `message` = `<location>: <detail>`, `metadata` = `{field, rule}` |
 | body too large, unsupported media type | 413, 415 | `PAYLOAD_TOO_LARGE`, `UNSUPPORTED_MEDIA_TYPE` |

@@ -71,6 +71,18 @@ stmt := SELECT(Invoice.AllColumns).FROM(Invoice).WHERE(filter.All(
 invoices, err := query.All[model.Invoice](ctx, db, stmt)
 ```
 
+**Search contract** (`db/search`): the types that every layer of a search shares (`Result`,
+`Pagination`, `Sort`, `Cursor`), the page rule `CheckPage`, the limits, the errors and `All`.
+It imports the standard library only, so an API or domain package can import it with no SQL
+dialect. A client error (`IsClientError`) answers HTTP 400; `ErrUnscoped`, a search with no
+tenant scope, is a programming error and answers 500.
+
+```go
+if err := search.CheckPage(page); err != nil { // ErrInvalidLimit, ErrInvalidOffset, ErrInvalidCursor...
+	return search.Result[Invoice]{}, err
+}
+```
+
 The complete list of changes, the upstream commit we started from, and how we merge upstream
 releases are in [UPSTREAM.md](UPSTREAM.md). The go-jet README, which documents the statement
 builder in depth, is kept in [docs/upstream/README.md](docs/upstream/README.md); go-jet's

@@ -11,14 +11,15 @@ import (
 
 	corefault "github.com/nanostack-dev/nanostack-framework/core/fault"
 	"github.com/nanostack-dev/nanostack-framework/core/log"
+	"github.com/nanostack-dev/nanostack-framework/db/search"
 	"github.com/nanostack-dev/nanostack-framework/http/problem"
 	"github.com/nanostack-dev/nanostack-framework/pkg/fault"
-	"github.com/nanostack-dev/nanostack-framework/pkg/search"
 )
 
 // Codes of the envelope that this package writes.
 const (
-	// CodeBadRequest is the default code of a boundary error (Options.BoundaryCode).
+	// CodeBadRequest is the default code of a boundary error (Options.BoundaryCode),
+	// and the code of a search page or filter over a limit of db/search.
 	CodeBadRequest = "BAD_REQUEST"
 	// CodeInvalidCursor is the code of a pagination cursor that cannot continue
 	// the search: malformed, issued for another sort, or sent with an offset.
@@ -127,8 +128,13 @@ type Response struct {
 //     the framework sets no deadline, so it is a timeout of the service.
 //   - a *pkg/fault.Error, or what Options.Adapter returns: its status and its
 //     errors, byte-identical to fault.WriteJSON.
-//   - pkg/search.ErrInvalidCursor, ErrCursorWithOffset or ErrUnknownSort: 400
-//     INVALID_CURSOR (field pagination.cursor) or INVALID_SORT (field sort_by).
+//   - a search client error of db/search (pkg/search shares the values):
+//     ErrInvalidCursor or ErrCursorWithOffset is 400 INVALID_CURSOR (field
+//     pagination.cursor); ErrUnknownSort is 400 INVALID_SORT (field sort_by);
+//     ErrInvalidLimit or ErrInvalidOffset is 400 BAD_REQUEST (field
+//     pagination.limit or pagination.offset); ErrTooManyValues or
+//     ErrTermTooLong is 400 BAD_REQUEST with no field. db/search.ErrUnscoped
+//     is a programming error: it is not mapped, so it is the 500 below.
 //   - an http/problem boundary error: as ResolveRequest.
 //   - a core/fault.Described, such as a generated catalogue error: its status,
 //     code ProblemCode() in upper case (invoice_not_found becomes
@@ -208,7 +214,7 @@ func faultFrom(err error, opts Options) (*fault.Error, bool) {
 	if apiErr, ok := fault.As(err); ok {
 		return apiErr, true
 	}
-	if apiErr, ok := cursorFault(err); ok {
+	if apiErr, ok := searchFault(err); ok {
 		return apiErr, true
 	}
 	if opts.Adapter != nil {
@@ -219,15 +225,28 @@ func faultFrom(err error, opts Options) (*fault.Error, bool) {
 	return nil, false
 }
 
-// cursorFault maps the search package's cursor and sort errors to a 400, so
-// every search endpoint answers a bad cursor the same way.
-func cursorFault(err error) (*fault.Error, bool) {
+// searchFault maps the client errors of a search to a 400, so every search
+// endpoint answers a bad page, sort or filter the same way. The checks run
+// from the most specific error to the most general one.
+func searchFault(err error) (*fault.Error, bool) {
 	var message string
 	code, field := CodeInvalidCursor, "pagination.cursor"
 	switch {
 	case errors.Is(err, search.ErrUnknownSort):
 		code, field = CodeInvalidSort, "sort_by"
 		message = "The search cannot sort by this field."
+	case errors.Is(err, search.ErrInvalidLimit):
+		code, field = CodeBadRequest, "pagination.limit"
+		message = fmt.Sprintf("The page size must be between 1 and %d.", search.MaxLimit)
+	case errors.Is(err, search.ErrInvalidOffset):
+		code, field = CodeBadRequest, "pagination.offset"
+		message = "The offset cannot be negative."
+	case errors.Is(err, search.ErrTooManyValues):
+		code, field = CodeBadRequest, ""
+		message = fmt.Sprintf("A filter has more than %d values.", search.MaxInValues)
+	case errors.Is(err, search.ErrTermTooLong):
+		code, field = CodeBadRequest, ""
+		message = fmt.Sprintf("A search term is longer than %d characters.", search.MaxTermLength)
 	case errors.Is(err, search.ErrCursorWithOffset):
 		message = "A cursor cannot be combined with an offset."
 	case errors.Is(err, search.ErrInvalidCursor):

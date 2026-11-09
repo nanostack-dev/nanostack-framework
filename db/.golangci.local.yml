@@ -96,6 +96,7 @@ linters:
       - ^(mysql|postgres|sqlite)/statement_option_test\.go$
       - ^qrm/option(_test)?\.go$
       - ^query/
+      - ^search/
       - ^tools/upstreamfmt/
       - ^tools/upstreamsync/
       - ^tests/dbconfig/nanostack\.go$
