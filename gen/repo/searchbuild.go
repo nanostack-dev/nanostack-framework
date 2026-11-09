@@ -30,6 +30,7 @@ type builder struct {
 	ctx      []contextScope
 	fullText []fullTextPart
 	dflt     *sortConst // the default sort, nil without DefaultSort
+	row      *rowPlan   // what the Row selects, and the field of each column
 }
 
 // scopeField is one field of the scope value: one Scope or ScopeOrNull,
@@ -52,7 +53,7 @@ type sortConst struct {
 type sortKey struct {
 	ctor     string // the db/keyset constructor
 	col      *colRef
-	field    string     // the Row field
+	field    string     // the Row field, as a selector after r: Name, Items.Name
 	value    types.Type // what the accessor returns
 	conv     string     // "": return the field; else the conversion of a NOT NULL field, such as int64
 	ptrConv  string     // the conversion of the value of a nullable field, such as int64
@@ -155,19 +156,6 @@ func (c *collector) builderTenant(b *builder) {
 // scopeType is the scope value of the search: struct{} with no field, the
 // field's type with one, else the generated <Name>Scope.
 func (b *builder) scopeName() string { return b.s.name + "Scope" }
-
-// builderRow checks that the Row is the model of the searched table, whose
-// columns the builder selects (a Row of its own is the next step of nano gen
-// repo, design S9.1).
-func (c *collector) builderRow(b *builder) {
-	s := b.s
-	if model := s.root.table.model; model == nil || !types.Identical(s.row, model) {
-		c.errorf(s.tableNode, "search "+c.qualified(typeOrNil(model))+", the model of "+s.root.table.sqlName+
-			", until nano gen repo selects the columns of a Row of its own",
-			"search %s: the Row is %s, not the model of %s, and nano gen repo selects only the columns of "+
-				"the model yet", s.name, c.qualified(s.row), s.root.table.sqlName)
-	}
-}
 
 // builderFrom checks that a From function that takes a value takes the
 // scope value of the search.

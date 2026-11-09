@@ -365,7 +365,7 @@ it writes:
 - `ItemSearch`, an immutable query of `db/searchexec`. Each method returns a copy.
 - The scope value. With one `Scope`, it is the Go type of the column: `NewItemSearch(tenantID uuid.UUID)`, and `q.Scope()` returns the UUID. With two or more `Scope` and `ScopeOrNull` options, it is the struct `ItemScope`, one field per option, named after its first column. Its first field is blank, so a caller in another package must name each field. With no field (the tenant comes from a `ScopeFunc` only), it is `struct{}`, and `NewItemSearch()` takes no argument. A `From` function that takes a value must take the scope value (`struct{}` when there is no field).
 - `ItemSort` and one constant per `sort_by` value: `ItemSortName = "name"`, `ItemSortCreatedAt = "created_at"`. `SortKey(...).API("a", "b")` makes one constant per name on one key; `SortHandWritten` makes a constant and no key.
-- `itemSearch`, the spec, built with `searchexec.DefineSpec`: the `From` function, the columns of the model, the tenant conditions, the `Condition` functions, one keyset key per sort, the tiebreak, the default sort and the default limit (20 when there is no `DefaultLimit`). `DefineSpec` checks the spec when the package starts.
+- `itemSearch`, the spec, built with `searchexec.DefineSpec`: the `From` function, the columns that the Row selects, the tenant conditions, the `Condition` functions, one keyset key per sort, the tiebreak, the default sort and the default limit (20 when there is no `DefaultLimit`). `DefineSpec` checks the spec when the package starts.
 - `NewItemSearch`, the only way to a query that runs.
 - One accessor per filter, whose field type follows its operators: `q.Status().In(model.ItemStatus_Active)`, `q.CreatedAt().Since(t)`. The field types and their methods:
   - `Eq`: `Eq(v)`. `In`: `In(v...)`. `Eq` and `In` together: `EqIn`, with both methods. On a native enum column, a value that is not a label matches no row (`searchexec.EnumLit`).
@@ -376,7 +376,31 @@ it writes:
   - `Flag`: `Is(bool)`.
 - `q.FullText(term)`, a substring match without case on every `FullText` column and `FullTextExpr` function.
 
-The run refuses a shape it cannot write yet, and `-explain` still prints the search: a Row other than the model of the table, a sort on a column of a joined table, `SortExpr` and `FilterExists`. It also refuses a search with no tenant condition (no `Scope`, `ScopeOrNull`, `ScopeNull` or `ScopeFunc`), a search with no sort that has a key (`SortHandWritten` adds none), a `sort_by` value given twice, two sorts whose constants have one name, operators of two field types on one filter, a filter that hides a method of the builder (`Limit`, `Scope`, `FullText`, ...), `Range` on a column that is not `timestamptz`, `Eq` or `In` on a column with no literal (a float, or a string column that is not text, such as `inet`), NULL placement on a NOT NULL column, a sort on a column with no keyset key, a hand-written name that the builder declares, and a hand-written method of the builder that has the name of an accessor or of `FullText`. The forward stub of the file holds the builders, so the steps before repo type-check code that uses them.
+**The Row selects its columns.** The Row is the type argument of `nanorepo.Search`. When it is the model of the table, the spec selects the `AllColumns` of the table. A Row of its own selects what its fields name, in field order:
+
+- An embedded model of a table that the search reads selects the `AllColumns` of that table. A table that the `From` function reads under an alias needs the alias as a tag on the embedded field: ``model.Tenants `alias:"owner"` ``.
+- A field tagged `alias:"table.column"` selects that one column. The tag writes the table (or its alias) and the column as SQL names them: `alias:"tenants.name"`, not `alias:"Tenants.Name"`.
+- A field with no tag selects nothing. It is allowed only when the search has a `SortHandWritten` sort: the key that the hand-written method adds selects it, and the key's name must be the field's path, such as `item_row.popularity`.
+
+```go
+// itemWithTenant is an item with the name of its tenant.
+type itemWithTenant struct {
+	model.Items
+	TenantName string `alias:"tenants.name"`
+}
+
+nanorepo.Search[itemWithTenant]("ItemWithTenant", table.Items,
+	nanorepo.From(itemsWithTenants),
+	nanorepo.Scope(table.Items.TenantID),
+	nanorepo.SortKey(table.Tenants.Name).API("tenant_name"),
+)
+```
+
+The spec selects `postgres.ProjectionList{table.Items.AllColumns, table.Tenants.Name}`, and the key of `tenant_name` reads `r.TenantName`. A key reads a field of an embedded model through the model, such as `r.Items.Name`, because two embedded models can both have the field. Every column of a sort, a `SortKey` and the tiebreak needs a Row field, of the type of the model field. A field that reads a column that can be NULL in a result row must be a pointer: a column whose model field is a pointer, and every column of a table on the nullable side of a `LEFT JOIN`, NOT NULL columns included. So a `LEFT`-joined table is read with tagged pointer fields, not an embedded model.
+
+The run refuses a key column that no Row field reads, with the field to add; a field with no tag when the search has no `SortHandWritten` sort; a tag that names no column of a table the search reads, with the right spelling when one matches; a field that is not exported; a field whose type is not the type of the model field; an embedded model of a table the search does not read, or of an aliased table without the tag; an embedded pointer to a model; a Row that selects no column; and a field that cannot hold NULL for a column that can be NULL, with an embedded model of a `LEFT`-joined table included.
+
+The run refuses a shape it cannot write yet, and `-explain` still prints the search: `SortExpr` and `FilterExists`. It also refuses a search with no tenant condition (no `Scope`, `ScopeOrNull`, `ScopeNull` or `ScopeFunc`), a search with no sort that has a key (`SortHandWritten` adds none), a `sort_by` value given twice, two sorts whose constants have one name, operators of two field types on one filter, a filter that hides a method of the builder (`Limit`, `Scope`, `FullText`, ...), `Range` on a column that is not `timestamptz`, `Eq` or `In` on a column with no literal (a float, or a string column that is not text, such as `inet`), NULL placement on a NOT NULL column, a sort on a column with no keyset key, a hand-written name that the builder declares, and a hand-written method of the builder that has the name of an accessor or of `FullText`. The forward stub of the file holds the builders, so the steps before repo type-check code that uses them.
 
 The single run takes the scope columns from `-scopes`; the pipeline passes the `Postgres.Scopes` of the declaration, so `go tool nano gen -only repo` is the run to use in a service. The pipeline runs the step on each package that declares a repository, and reads the table code from Go source, never a database. The steps before repo load the package with a forward stub of each `<file>_repo.gen.go`: a method that panics for each interface method without a hand-written one, built by parsing alone, and the builders of the file's searches, from a typed load of the package (compile errors outside the declarations are allowed; a declaration problem leaves the builders out, and a search that cannot be written yet keeps only its scope type). So the errors step still compiles a package whose interface just gained a method, or whose implementation just got a hand-written method that the last run derived. The methods of an interface of another package, or embedded from one, come from the last output on disk, minus those the implementation now has.
 

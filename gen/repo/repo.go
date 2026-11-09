@@ -78,12 +78,14 @@
 // scope value (the type of the one Scope field, the struct <Name>Scope for
 // two or more, struct{} for none), the sort enum <Name>Sort and one constant
 // per sort_by value, the spec variable <name>Search built with
-// searchexec.DefineSpec (From, the columns of the model, the tenant
+// searchexec.DefineSpec (From, the columns that the Row selects, the tenant
 // conditions, the conditions, a keyset key per sort and the tiebreak, the
 // default sort and limit), New<Name>Search, one accessor per filter, and
-// FullText. A shape it cannot write yet (a Row other than the model of the
-// table, a sort on a joined column, SortExpr, FilterExists) is a problem of
-// the run, and -explain still prints the search.
+// FullText. The Row selects its columns: the AllColumns of the table for its
+// model, else the AllColumns of each embedded model and the column of each
+// field tagged alias:"table.column". A shape it cannot write yet (SortExpr,
+// FilterExists) is a problem of the run, and -explain still prints the
+// search.
 //
 // Generation loads the package with every file nano gen repo wrote replaced
 // by an empty file, so a stale output never blocks a run and a method a

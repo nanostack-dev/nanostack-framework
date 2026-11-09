@@ -10,26 +10,11 @@ import (
 	"github.com/nanostack-dev/nanostack-framework/gen/repo/internal/repotest/db/shop/public/table"
 )
 
-// itemRow is a Row of its own. Its Weight is not a pointer, and the column
-// is nullable.
-type itemRow struct {
-	model.Items
-	Weight float32
-}
-
 // otherScope is not the scope value of any search.
 type otherScope struct{ TenantID string }
 
 func _() {
 	nanorepo.Base[model.Tenants](table.Tenants)
-
-	// A Row that is not the model of the table, and a sort on a nullable
-	// column whose Row field is not a pointer.
-	nanorepo.Search[itemRow]("OwnRow", table.Items,
-		nanorepo.Scope(table.Items.TenantID),
-		nanorepo.Sort(table.Items.Name),
-		nanorepo.SortKey(table.Items.Weight),
-	)
 
 	// No tenant condition: searchexec.DefineSpec refuses it. Unscoped is a
 	// record, not a condition.

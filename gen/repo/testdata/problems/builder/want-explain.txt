@@ -1,9 +1,3 @@
-search OwnRow on items (rows itemRow)
-  read      items; root; nullable weight, released_on, local_at, opens_at, deleted_at, external_id, tags; tenant tenant_id
-  scope     Scope items.tenant_id
-  sort      name: items.name
-  sort      weight: items.weight, nullable
-  tiebreak  id: the primary key items_pkey (id), by default
 search NoTenant on items (rows model.Items)
   read      items; root; nullable weight, released_on, local_at, opens_at, deleted_at, external_id, tags; tenant tenant_id
   scope     Unscoped items.tenant_id: fixture

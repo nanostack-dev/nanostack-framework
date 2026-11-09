@@ -26,15 +26,18 @@ const maxSearchLines = 80
 // scope value (the scope is its type), a scope struct, an empty scope, every
 // field type, a key of each kind of column, SortKey API names and NULL
 // placement, SortHandWritten, a From function that takes the scope value,
-// and a file that declares only a search.
+// a file that declares only a search, and Rows of their own (row.go): a
+// column subset, a joined column, a LEFT-joined instance read into pointer
+// fields, and two embedded models.
 func TestBuilderGolden(t *testing.T) {
 	t.Parallel()
 	res, err := Generate(Options{Dir: "testdata/builder", Scopes: []string{"tenant_id"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(res.Files) != 3 {
-		t.Fatalf("files: %d, want the base, builder_repo.gen.go and joined_repo.gen.go", len(res.Files))
+	if len(res.Files) != 4 {
+		t.Fatalf("files: %d, want the base, builder_repo.gen.go, joined_repo.gen.go and row_repo.gen.go",
+			len(res.Files))
 	}
 	for _, f := range res.Files {
 		golden(t, filepath.Join("testdata/builder", filepath.Base(f.Path)+".golden"), f.Data)
@@ -91,7 +94,7 @@ func writeOverlay(t *testing.T, files []gen.File) string {
 func TestBuilderLineCount(t *testing.T) {
 	t.Parallel()
 	for _, path := range []string{"testdata/builder/builder_repo.gen.go.golden",
-		"testdata/builder/joined_repo.gen.go.golden"} {
+		"testdata/builder/joined_repo.gen.go.golden", "testdata/builder/row_repo.gen.go.golden"} {
 		data, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatal(err)
