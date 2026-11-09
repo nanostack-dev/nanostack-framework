@@ -28,6 +28,7 @@ import (
 // only in microseconds.
 
 func ksKeys() map[ksField]transactor.Key[ksRow] {
+	//nolint:exhaustive // ksHandRank is a hand-written sort of the search tests
 	return map[ksField]transactor.Key[ksRow]{
 		ksName:    transactor.StringKey(ksNameC, func(r ksRow) string { return r.Name }),
 		ksCreated: transactor.TimeKey(ksCreatedC, func(r ksRow) time.Time { return r.Created }),
