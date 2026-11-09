@@ -1546,6 +1546,92 @@ type ItemRepository interface {
 
 `nano gen` also writes `nanogen/search-exemptions.txt`: one line per `Unscoped`, `ScopeOrNull`, `ScopeNull`, coverage through a referenced row, `IgnoresFullText` and `APIHandWritten`. `-check` reports it stale.
 
+#### Tenant scopes
+
+The tenant columns are declared **once per project**, in `nanogen/project.go`, by column name. They apply to every table that has a column of that name. Echopoint's declaration:
+
+```go
+Postgres: &project.Postgres{
+	Scopes: []string{"organization_id", "workspace_id"},
+	ContextScopes: []project.ContextScope{
+		{Column: "workspace_id", Func: "echopoint/internal/db/workspacescope.Filter"},
+	},
+},
+```
+
+- A column of `Scopes` that is not in `ContextScopes` is a **hard scope** (`organization_id`). The caller passes its value: it is a parameter of `New<Search>Search(...)`, or a field of the scope struct. No function can supply it.
+- A column of `ContextScopes` is a **context scope** (`workspace_id`). The function registered for it reads the value from the request context: `func(context.Context, C) B`. The function may return TRUE, which means a read across the column, such as an organization-wide read when no workspace is selected. A project registers one function per column, so every search filters that column the same way.
+- A `ContextScopes` column that is not in `Scopes`, a column listed twice, or a function that is not written as `importpath.Func` is a project error.
+
+**Where the declaration applies.**
+
+| Code | Which columns count | Effect |
+|---|---|---|
+| A search (`nanorepo.Search`) | Every column of `Scopes` on every table instance the search reads, **nullable or not** | Each one must be covered, or `nano gen` fails (E9, E10). |
+| Derived methods and hand-written queries on the base | Only **NOT NULL** columns of `Scopes` | A derived method must filter on the scope column first, or end in `Internal` on a read. A hand-written query that does not filter on it is a warning, not an error. |
+
+So a nullable `workspace_id` changes nothing for derived methods and hand-written finders. Only searches must cover it.
+
+**How each column is covered.**
+
+| Column | Covered by | Generated code |
+|---|---|---|
+| hard (`organization_id`) | `Scope(table.T.OrganizationID)` | `NewTSearch(organizationID uuid.UUID)`, and in the spec `searchexec.ScopeEq(..., table.T.OrganizationID)`: `WHERE organization_id = $1` on every page and count |
+| context (`workspace_id`) | `ScopeFunc(workspacescope.Filter, table.T.WorkspaceID)` | In the spec `Context: []searchexec.ContextScope{searchexec.ScopeFunc(workspacescope.Filter, table.T.WorkspaceID)}`: the function's condition on every page and count. The constructor takes no workspace. |
+| a joined table | an `INNER JOIN` on a declared foreign key from a covered instance, or the tenant column equated in the `ON` clause | nothing extra: `-explain` names the rule |
+| a shared row (`tenant_id IS NULL`) | `ScopeOrNull` or `ScopeNull` | `(column = $1 OR column IS NULL)` or `column IS NULL`, listed in the exemption file |
+| a deliberate exemption | `Unscoped(column, "why")`, only when another **hard** column of the same table stays covered | nothing in SQL; the exemption file lists the column and the reason |
+
+**Recipes.**
+
+```go
+// 1. A table with organization_id only (variables): one scope.
+nanorepo.Search[model.Variables]("Variable", table.Variables,
+	nanorepo.Scope(table.Variables.OrganizationID),
+)
+
+// 2. A table with both columns, read in the selected workspace, or the
+//    whole organization when the request selects none (the usual case).
+nanorepo.Search[model.Webhooks]("Webhook", table.Webhooks,
+	nanorepo.Scope(table.Webhooks.OrganizationID),
+	nanorepo.ScopeFunc(workspacescope.Filter, table.Webhooks.WorkspaceID),
+)
+
+// 3. A table with both columns, always read across the whole organization,
+//    even when a workspace is selected (an admin report).
+nanorepo.Search[model.Webhooks]("WebhookOrgWide", table.Webhooks,
+	nanorepo.Scope(table.Webhooks.OrganizationID),
+	nanorepo.Unscoped(table.Webhooks.WorkspaceID, "organization admin report across workspaces"),
+)
+```
+
+Recipes 2 and 3 are tested on PostgreSQL: see `ProjectInWorkspace` and `ProjectOrgWide` in [`gen/repo/internal/repotest/tenant.go`](../gen/repo/internal/repotest/tenant.go), on a table with a NOT NULL `tenant_id` and a nullable `workspace_id`. Recipe 2 reads one workspace when the context selects one, and the whole tenant when it selects none. Recipe 3 reads the whole tenant in both cases. Neither ever reads another tenant's rows.
+
+The call site:
+
+```go
+q := NewWebhookSearch(principal.OrganizationID). // from the authenticated principal, never from the body
+	Name().Contains(term).
+	SortBy(WebhookSortCreatedAt, search.SortDescending)
+```
+
+**What the generator refuses.** Each error is at the declaration line, with the fix:
+
+| You write | Error |
+|---|---|
+| Only `Scope(OrganizationID)` on a table that also has `workspace_id` | E9 `workspace_id is a tenant column and no rule covers it: it would read every tenant's rows`. Fix: `ScopeFunc(workspacescope.Filter, ...)`, or `Unscoped(..., "why")` (recipe 3) |
+| `ScopeFunc(fn, table.T.OrganizationID)` | E9 `organization_id is a hard tenant column: its value comes from the scope value, never from a function, which could return TRUE` |
+| `ScopeFunc(otherFn, table.T.WorkspaceID)` | E9 `otherFn is not the function that Postgres.ContextScopes registers for workspace_id` |
+| `Scope(table.T.WorkspaceID)` | `workspace_id is a context tenant column (Postgres.ContextScopes): only its registered ScopeFunc scopes it` |
+| `Unscoped(table.T.OrganizationID, ...)` with no other hard column covered | E30 `leaves T with no other covered hard tenant column`: a search is never unscoped as a whole |
+| A joined table with no tenant column and no foreign key path to a covered table | E10 |
+| A `Scope` in `WHERE` on the nullable side of a `LEFT JOIN` | E29: it would drop the rows with no match. Put the tenant in the `ON` clause instead. |
+| Two `Scope` calls that make one field name | E12: give both columns to one `Scope` |
+
+**One limit to know.** A table whose only tenant column is a context column relies entirely on the registered function. If the function returns TRUE (no workspace in the context), such a search reads every row of the table. Give such a table a hard tenant column as well.
+
+The full rules (the five coverage rules, subqueries, correlations, the exemption file) are in [the search design](design/search.md), section 6. The `db/nanorepo` package doc gives each option.
+
 **A hand-written search method** that needs more than the declaration (a computed status, a mapper with a run-time option) starts from the plan, and runs it with the transactor:
 
 ```go
@@ -1566,7 +1652,7 @@ func (r *webhookRepositoryImpl) Search(ctx context.Context, q WebhookSearch) (se
 
 **Errors an agent sees.** Each one is at the declaration line, with a fix. The most common:
 
-- An uncovered tenant column (E9) or table instance (E10): add a `Scope`, join it on a declared foreign key, or write `Unscoped(column, "why")`.
+- An uncovered tenant column (E9) or table instance (E10): add a `Scope` (hard column) or the registered `ScopeFunc` (context column), join it on a declared foreign key, or write `Unscoped(column, "why")` when another hard column of the table stays covered. See [Tenant scopes](#tenant-scopes).
 - A table with no primary key and no `Tiebreak` (E3), or a `Tiebreak` that covers no unique key (E4): add the columns of one unique key to `Tiebreak`.
 - An interface method that takes the builder with another signature (E20), or a hand-written method that does not start from `searchexec.Resolve` with its own `q` (E19).
 - A declared search that no method takes (E24).
@@ -1578,7 +1664,7 @@ func (r *webhookRepositoryImpl) Search(ctx context.Context, q WebhookSearch) (se
 
 Do one search per pull request. Each step is a check for the author and for the reviewer.
 
-1. **Framework.** Require root, `db` and `gen` at the same release. The db step must write `ColumnTypes()` and `ForeignKeys()`: run `go tool nano gen -fresh` once. Set `Postgres.Scopes`, and `Postgres.ContextScopes` for a column that a function scopes from the context.
+1. **Framework.** Require root, `db` and `gen` at the same release. The db step must write `ColumnTypes()` and `ForeignKeys()`: run `go tool nano gen -fresh` once. Set `Postgres.Scopes` to every tenant column, and `Postgres.ContextScopes` for a column that a function scopes from the context ([Tenant scopes](#tenant-scopes)). Adding a nullable column to `Scopes` affects searches only.
 2. **Bind the repository** with `nanorepo.Implement` and embed its base, if it is not bound yet. The generated search method calls the base.
 3. **Declare the search** next to `Implement`. Start with the filters, sorts and tiebreak of the hand-written query. Run `go tool nano gen repo -explain` and read the coverage of each instance.
 4. **Scope.** The handler builds the scope value from the authenticated principal, never from the body. With a scope struct, write keyed fields. In hand-written code, read the scope back with `q.Scope()`, not from a second parameter.

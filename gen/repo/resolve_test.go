@@ -77,6 +77,18 @@ func TestBackstop(t *testing.T) {
 	}
 }
 
+// fixtureScopeFlags are the -scopes and -context-scopes flags that declare
+// the tenant columns of the fixture, repotest.Scopes and
+// repotest.ContextScopes.
+func fixtureScopeFlags() []string {
+	ctx := make([]string, 0, len(repotest.ContextScopes))
+	for col, fn := range repotest.ContextScopes {
+		ctx = append(ctx, col+"="+fn)
+	}
+	slices.Sort(ctx)
+	return []string{"-scopes", strings.Join(repotest.Scopes, ","), "-context-scopes", strings.Join(ctx, ",")}
+}
+
 // -check names a stale derived file and an orphan; a run rewrites the one
 // and deletes the other.
 func TestCheckAndOrphans(t *testing.T) {
@@ -96,7 +108,7 @@ func TestCheckAndOrphans(t *testing.T) {
 		t.Fatal(err)
 	}
 	var stdout, stderr bytes.Buffer
-	args := []string{"-dir", dir, "-scopes", "tenant_id"}
+	args := append([]string{"-dir", dir}, fixtureScopeFlags()...)
 	if code := Main(append(args, "-check"), &stdout, &stderr); code != 1 {
 		t.Fatalf("-check: exit %d, stderr:\n%s", code, stderr.String())
 	}
@@ -129,8 +141,8 @@ func TestCheckAndOrphans(t *testing.T) {
 func TestMainExplain(t *testing.T) {
 	t.Parallel()
 	var stdout, stderr bytes.Buffer
-	if code := Main([]string{"-dir", fixture, "-scopes", "tenant_id", "-explain", "AuditLog"}, &stdout,
-		&stderr); code != 0 {
+	if code := Main(append(append([]string{"-dir", fixture}, fixtureScopeFlags()...), "-explain", "AuditLog"),
+		&stdout, &stderr); code != 0 {
 		t.Fatalf("exit %d, stderr:\n%s", code, stderr.String())
 	}
 	if want := "AuditLog on *auditLogImpl (table audit_events)\n  Append  hand-written repository.go:"; !strings.HasPrefix(

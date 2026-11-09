@@ -9,6 +9,7 @@ import (
 	"github.com/nanostack-dev/nanostack-framework/db/searchexec"
 	"github.com/nanostack-dev/nanostack-framework/gen/repo/internal/repotest/db/shop/public/model"
 	"github.com/nanostack-dev/nanostack-framework/gen/repo/internal/repotest/db/shop/public/table"
+	"github.com/nanostack-dev/nanostack-framework/gen/repo/internal/repotest/workspacescope"
 )
 
 // ManagedLabelSearch is an immutable search of labels. Start one with NewManagedLabelSearch.
@@ -155,4 +156,70 @@ var countedItemSearch = searchexec.DefineSpec(searchexec.SpecDef[itemWithEvents,
 // NewCountedItemSearch starts a CountedItemSearch of one tenant. Only a query built here runs: Resolve and Run compare the spec.
 func NewCountedItemSearch(tenantID uuid.UUID) CountedItemSearch {
 	return searchexec.New[CountedItemSearch](countedItemSearch, tenantID)
+}
+
+// ProjectInWorkspaceSearch is an immutable search of projects. Start one with NewProjectInWorkspaceSearch.
+type ProjectInWorkspaceSearch struct {
+	searchexec.Query[model.Projects, ProjectInWorkspaceSearch, ProjectInWorkspaceSort, uuid.UUID]
+}
+
+// ProjectInWorkspaceSort is a sort of ProjectInWorkspaceSearch.
+type ProjectInWorkspaceSort string
+
+const (
+	ProjectInWorkspaceSortName ProjectInWorkspaceSort = "name"
+)
+
+var projectInWorkspaceSearch = searchexec.DefineSpec(searchexec.SpecDef[model.Projects, ProjectInWorkspaceSort, uuid.UUID]{
+	From:    func(uuid.UUID) keyset.Source { return table.Projects },
+	Columns: table.Projects.AllColumns, // the Row is model.Projects
+	Scope: []searchexec.ScopeCol[uuid.UUID]{
+		searchexec.ScopeEq(searchexec.Value[uuid.UUID], table.Projects.TenantID),
+	},
+	Context: []searchexec.ContextScope{searchexec.ScopeFunc(workspacescope.Filter, table.Projects.WorkspaceID)},
+	Keys: map[ProjectInWorkspaceSort]keyset.Key[model.Projects]{
+		ProjectInWorkspaceSortName: keyset.StringKey(table.Projects.Name, func(r model.Projects) string { return r.Name }),
+	},
+	Tiebreak: []keyset.Key[model.Projects]{ // projects_pkey (id)
+		keyset.StringKey(table.Projects.ID, func(r model.Projects) string { return r.ID }),
+	},
+	Limit: 20,
+})
+
+// NewProjectInWorkspaceSearch starts a ProjectInWorkspaceSearch of one tenant. Only a query built here runs: Resolve and Run compare the spec.
+func NewProjectInWorkspaceSearch(tenantID uuid.UUID) ProjectInWorkspaceSearch {
+	return searchexec.New[ProjectInWorkspaceSearch](projectInWorkspaceSearch, tenantID)
+}
+
+// ProjectOrgWideSearch is an immutable search of projects. Start one with NewProjectOrgWideSearch.
+type ProjectOrgWideSearch struct {
+	searchexec.Query[model.Projects, ProjectOrgWideSearch, ProjectOrgWideSort, uuid.UUID]
+}
+
+// ProjectOrgWideSort is a sort of ProjectOrgWideSearch.
+type ProjectOrgWideSort string
+
+const (
+	ProjectOrgWideSortName ProjectOrgWideSort = "name"
+)
+
+var projectOrgWideSearch = searchexec.DefineSpec(searchexec.SpecDef[model.Projects, ProjectOrgWideSort, uuid.UUID]{
+	From:    func(uuid.UUID) keyset.Source { return table.Projects },
+	Columns: table.Projects.AllColumns, // the Row is model.Projects
+	Scope: []searchexec.ScopeCol[uuid.UUID]{
+		searchexec.ScopeEq(searchexec.Value[uuid.UUID], table.Projects.TenantID),
+	},
+	Unscoped: []string{"projects.workspace_id: an organization-wide list reads every workspace of the tenant"},
+	Keys: map[ProjectOrgWideSort]keyset.Key[model.Projects]{
+		ProjectOrgWideSortName: keyset.StringKey(table.Projects.Name, func(r model.Projects) string { return r.Name }),
+	},
+	Tiebreak: []keyset.Key[model.Projects]{ // projects_pkey (id)
+		keyset.StringKey(table.Projects.ID, func(r model.Projects) string { return r.ID }),
+	},
+	Limit: 20,
+})
+
+// NewProjectOrgWideSearch starts a ProjectOrgWideSearch of one tenant. Only a query built here runs: Resolve and Run compare the spec.
+func NewProjectOrgWideSearch(tenantID uuid.UUID) ProjectOrgWideSearch {
+	return searchexec.New[ProjectOrgWideSearch](projectOrgWideSearch, tenantID)
 }

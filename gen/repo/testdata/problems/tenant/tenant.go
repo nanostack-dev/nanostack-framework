@@ -124,6 +124,21 @@ func _() {
 		nanorepo.Sort(table.Labels.Name),
 	)
 
+	// projects has a hard tenant column and a nullable context one: the
+	// hard scope alone leaves workspace_id uncovered.
+	nanorepo.Search[model.Projects]("ProjectTenantOnly", table.Projects,
+		nanorepo.Scope(table.Projects.TenantID),
+		nanorepo.Sort(table.Projects.Name),
+	)
+
+	// The context scope does not cover a table whose hard tenant column is
+	// unscoped.
+	nanorepo.Search[model.Projects]("ProjectUnscopedTenant", table.Projects,
+		nanorepo.Unscoped(table.Projects.TenantID, "read every tenant"),
+		nanorepo.ScopeFunc(workspacescope.Filter, table.Projects.WorkspaceID),
+		nanorepo.Sort(table.Projects.Name),
+	)
+
 	// Accepted: the registered context scope.
 	nanorepo.Search[model.Boards]("Board", table.Boards,
 		nanorepo.ScopeFunc(workspacescope.Filter, table.Boards.WorkspaceID),

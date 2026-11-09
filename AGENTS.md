@@ -7,6 +7,7 @@ This repository contains reusable Go service primitives and lifecycle wiring. It
 - Domain names or ownership: read [CONTEXT.md](CONTEXT.md) and [boundaries](docs/boundaries.md).
 - Package changes or service integration: read [current architecture](docs/technical/architecture.md), then the affected package guide in [the index](docs/README.md).
 - First checkout or environment failure: read [setup](docs/development/setup.md) and [troubleshooting](docs/development/troubleshooting.md).
+- Repositories or searches (`nanorepo.Implement`, `nanorepo.Search`, `Postgres.Scopes`), in the framework or for a service: read [Repositories](docs/generated-code.md#10-repositories-nano-gen-repo) and [Tenant scopes](docs/generated-code.md#tenant-scopes) before writing a declaration.
 - Code changes: follow [testing](docs/development/testing.md); database behavior needs the documented PostgreSQL integration tests.
 - Public API changes, compatibility checks or release work: read [publishing and consumer upgrades](docs/runbooks/deployment.md), [rollback](docs/runbooks/rollback.md) and [existing decisions](docs/adr/README.md). Check compatibility with the consumer build in that runbook. `apidiff` never finishes on this module's generic methods and fills the machine's memory.
 
@@ -17,6 +18,7 @@ This repository contains reusable Go service primitives and lifecycle wiring. It
 - Use `pkg/functional` for collection transformations and optional/result values. Read its current source and [API guide](pkg/functional/README.md): absence and failure are separate states. Plain loops are appropriate for side effects, early exit or a functional form that reads worse; state the reason in review.
 - Pass `context.Context` first where needed, respect cancellation and wrap propagated errors with `%w`.
 - Database query execution uses `pkg/db/transactor`; `pkg/jetx` owns expression/filter helpers. Keep constraint names application-supplied and transport errors out of the data layer. Use generated Nanostack DB model scan destinations, or alias every column for a custom destination; enable strict scanning in affected integration suites.
+- Tenant scopes are declared once per project by column name (`Postgres.Scopes`, `Postgres.ContextScopes`). A search covers every tenant column it reads: `Scope` for a hard column (the caller passes the value, taken from the authenticated principal, never the request body), the registered `ScopeFunc` for a context column, or `Unscoped(column, "why")` only while another hard column of that table stays covered. Never silence a scope error another way; a search is never unscoped as a whole. Derived methods and hand-written queries count only NOT NULL scope columns.
 - Durable product work belongs in a database-backed queue or persisted state, with cancellation and joined shutdown for worker lifecycles. Framework code does not invent product scheduling semantics.
 - Generated functional families come from `go generate ./pkg/functional`; app OpenAPI and database generation remain owned by the consuming application.
 

@@ -90,6 +90,8 @@ type ItemRepository interface {
 	SearchManagedLabels(ctx context.Context, q ManagedLabelSearch) (search.Result[Label], error)
 	SearchLicensedItems(ctx context.Context, q LicensedItemSearch) (search.Result[itemWithLicense], error)
 	SearchCountedItems(ctx context.Context, q CountedItemSearch) (search.Result[itemWithEvents], error)
+	SearchProjectsInWorkspace(ctx context.Context, q ProjectInWorkspaceSearch) (search.Result[model.Projects], error)
+	SearchProjectsOrgWide(ctx context.Context, q ProjectOrgWideSearch) (search.Result[model.Projects], error)
 	// Hand-written: the hand-written method wins, and runs q.Query itself.
 	SearchAssignableLabels(ctx context.Context, q AssignableLabelSearch) (search.Result[Label], error)
 }
