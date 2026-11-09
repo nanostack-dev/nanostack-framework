@@ -43,3 +43,4 @@ The framework forks go-jet v2.16.1 (Apache-2.0) and makes it its `db` module. It
 - Three dialects make every `db` change pay for three CI jobs.
 - [ADR 0020](0020-framework-owned-db-migrate.md) (`db/migrate`) and the test module's template databases follow the same three dialects.
 - The decision-log entries that shape `pkg/search` (2026-05-22, "Search Contract Split") and make `pkg/db/transactor` the single query entry point (2026-07-27) stay valid; those packages move into `db` with the fork.
+- The keyset pager and the search runtime move into `db` before `db/exec` exists, as `db/search`, `db/keyset` and `db/searchexec` ([ADR 0027](0027-search-in-the-db-module.md)). They take the executor as a parameter, typed `query.Executor` (an alias of `qrm.Queryable`), and run every statement through `db/query`. The context transaction stays in `pkg/db/transactor` until stage 2. So stage 2 changes that one alias and one scan path, and the pager does not move again.
