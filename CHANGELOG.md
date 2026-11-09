@@ -2,9 +2,9 @@
 
 One section per module and version, newest first. Each section uses Added, Changed, Deprecated, Removed and Fixed. [RELEASING.md](RELEASING.md) gives the release steps and the upgrade notes.
 
-## Unreleased
+## gen/v0.23.0-beta.9 and v0.23.0-beta.6
 
-Changes `gen` and `core/nano/project`. Nothing else changes.
+Root `v0.23.0-beta.6` adds `Postgres.ScopeNames` to `core/nano/project`; `gen/v0.23.0-beta.9` requires it. `db/v0.23.0-beta.4` and `pkg/functional/v0.23.0-beta.1` do not change. Upgrade with [RELEASING.md](RELEASING.md#upgrade-from-v0230-beta5).
 
 ### Added
 - `Postgres.ScopeNames` in `core/nano/project`, and `-scope-names column=Name,...` on `nanostack gen repo`: a short Go name for a tenant column, such as `{"organization_id": "Org", "workspace_id": "Workspace"}`. A derived method name may use it beside the Go field, so `FindByOrgAndWorkspaceAndID(ctx, orgID, id)` derives. The Go field names keep deriving, and the longest word wins (`ProductID` beats `Product`). `nanostack gen` checks that each key is in `Postgres.Scopes`, each value is an exported identifier and no two columns share a name; `nanostack gen repo` refuses a short name that is the Go field of another column of the table.
