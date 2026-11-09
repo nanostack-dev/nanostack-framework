@@ -4,15 +4,17 @@
 //	nano gen <generator> [flags]   # one generator
 //
 // `nano gen` with no generator name runs the pipeline: it reads
-// nanogen/project.go, discovers the rest, and runs api, validate, errors,
-// config and wire in that order; -check writes nothing and lists every stale,
+// nanogen/project.go, discovers the rest, and runs db, api, validate,
+// errors, config and wire in that order; -check writes nothing and lists every stale,
 // missing or orphaned file (nano gen -h lists the flags). Each generator
 // follows the contract of package gen and documents its flags
 // (nano gen <generator> -h); every generator takes -check, which writes
 // nothing and exits 1 when its output is stale. Exit codes: 0 success, 1 a
 // source error or stale output, 2 bad usage, 3 an environment failure (the
-// go command cannot load packages, a file cannot be read or written, or the
-// binary links another oapi-codegen than the templates are cut from).
+// go command cannot load packages, a file cannot be read or written, the
+// binary links another oapi-codegen than the templates are cut from, or the
+// db step needs a database and neither Docker nor NANO_GEN_DATABASE_URL
+// gives one).
 // Each error prints as "file:line: message" with an indented "fix:" line.
 package main
 
@@ -26,6 +28,7 @@ import (
 	"github.com/nanostack-dev/nanostack-framework/gen"
 	genapi "github.com/nanostack-dev/nanostack-framework/gen/api"
 	genconfig "github.com/nanostack-dev/nanostack-framework/gen/config"
+	gendb "github.com/nanostack-dev/nanostack-framework/gen/db"
 	generrors "github.com/nanostack-dev/nanostack-framework/gen/errors"
 	"github.com/nanostack-dev/nanostack-framework/gen/pipeline"
 	genvalidate "github.com/nanostack-dev/nanostack-framework/gen/validate"
@@ -36,6 +39,7 @@ import (
 var generators = map[string]gen.Command{
 	"api":      genapi.Main,
 	"config":   genconfig.Main,
+	"db":       gendb.Main,
 	"errors":   generrors.Main,
 	"validate": genvalidate.Main,
 	"wire":     wire.Main,

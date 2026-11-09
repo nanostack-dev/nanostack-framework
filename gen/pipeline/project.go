@@ -20,6 +20,7 @@ import (
 	"github.com/nanostack-dev/nanostack-framework/core/nano/project"
 	"github.com/nanostack-dev/nanostack-framework/gen"
 	genapi "github.com/nanostack-dev/nanostack-framework/gen/api"
+	gendb "github.com/nanostack-dev/nanostack-framework/gen/db"
 	"github.com/nanostack-dev/nanostack-framework/gen/internal/gopkg"
 )
 
@@ -257,6 +258,9 @@ func checkProject(root string, p project.Project, d *decoder) error {
 	if p.API != nil {
 		c.api(p.API)
 	}
+	if p.Postgres != nil {
+		c.postgres(*p.Postgres)
+	}
 	if p.Env != "" {
 		c.relative("Env", p.Env)
 	}
@@ -296,8 +300,14 @@ func (c *projectCheck) relative(field, path string) bool {
 // inside reports an output directory outside the directory nano gen runs
 // on (design P10). An input, such as the spec, may sit outside it.
 func (c *projectCheck) inside(field, path string) bool {
+	return c.insideAt(field, path, "API.Clients")
+}
+
+// insideAt is inside, with the line of fallback when the declaration does
+// not set field.
+func (c *projectCheck) insideAt(field, path, fallback string) bool {
 	if outside(path) {
-		c.add(c.at(field, "API.Clients"),
+		c.add(c.at(field, fallback),
 			"generate under the directory nano gen runs on; a module beside it declares its own nanogen/project.go",
 			"%s %s is outside the directory nano gen runs on", field, path)
 		return false
@@ -307,7 +317,7 @@ func (c *projectCheck) inside(field, path string) bool {
 		if err != nil {
 			rel = mod
 		}
-		c.add(c.at(field, "API.Clients"),
+		c.add(c.at(field, fallback),
 			"declare the output in "+filepath.ToSlash(filepath.Join(rel, projectFile))+" and run nano gen there",
 			"%s %s is in the nested module %s, which runs its own nano gen", field, path, filepath.ToSlash(rel))
 		return false
@@ -360,6 +370,31 @@ func (c *projectCheck) api(api *project.OpenAPI) {
 	}
 	for i, cl := range api.Clients {
 		c.client(fmt.Sprintf("API.Clients[%d]", i), cl, outputs)
+	}
+}
+
+// postgres checks the database declaration: a name that is one directory,
+// a migrations directory that exists, and an output inside the module.
+func (c *projectCheck) postgres(p project.Postgres) {
+	switch {
+	case p.Name == "":
+		c.add(
+			c.at("Postgres"),
+			"set Postgres.Name to the directory under Postgres.Out, by convention the database name",
+			"Postgres.Name is empty",
+		)
+	case p.Name != filepath.Base(p.Name) || p.Name == "." || p.Name == "..":
+		c.add(c.at("Postgres.Name"), "set Postgres.Name to one directory name, such as the database name; "+
+			"put the parent directories in Postgres.Out", "Postgres.Name %s is not a directory name", p.Name)
+	}
+	p = gendb.WithDefaults(p)
+	if c.relative("Postgres.Migrations", p.Migrations) && !dirExists(filepath.Join(c.root, p.Migrations)) {
+		c.add(c.at("Postgres.Migrations", "Postgres"),
+			"set Postgres.Migrations to the directory of the SQL migrations",
+			"Postgres.Migrations %s is not a directory", p.Migrations)
+	}
+	if c.relative("Postgres.Out", p.Out) {
+		c.insideAt("Postgres.Out", p.Out, "Postgres")
 	}
 }
 

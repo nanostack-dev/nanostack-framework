@@ -7,6 +7,7 @@ import (
 	"github.com/nanostack-dev/nanostack-framework/gen"
 	genapi "github.com/nanostack-dev/nanostack-framework/gen/api"
 	genconfig "github.com/nanostack-dev/nanostack-framework/gen/config"
+	gendb "github.com/nanostack-dev/nanostack-framework/gen/db"
 	generrors "github.com/nanostack-dev/nanostack-framework/gen/errors"
 	genvalidate "github.com/nanostack-dev/nanostack-framework/gen/validate"
 	"github.com/nanostack-dev/nanostack-framework/gen/wire"
@@ -37,10 +38,9 @@ func (r *runner) plan(selected map[string]bool, withProject bool) []*unit {
 			r.skipped(s, projectFile)
 			continue
 		}
-		if s.project && !r.declared && (s.name == "api" || s.name == "validate") {
-			// No declaration: api and validate have nothing to run on, and
-			// they did not run, so an api.gen.go or a validate.gen.go is
-			// not an orphan.
+		if s.project && !r.declared && (s.name == "db" || s.name == "api" || s.name == "validate") {
+			// No declaration: db, api and validate have nothing to run on,
+			// and they did not run, so their files are not orphans.
 			continue
 		}
 		own := r.unitsOf(s)
@@ -65,6 +65,8 @@ func (r *runner) unitsOf(s *step) []*unit {
 	var units []*unit
 	api := r.proj.API
 	switch s.name {
+	case "db":
+		units = append(units, r.dbUnits(s)...)
 	case "api":
 		if api == nil {
 			break
@@ -110,6 +112,18 @@ func (r *runner) unitsOf(s *step) []*unit {
 	return units
 }
 
+// dbUnits returns the unit of the declared database, if any. Its outputs
+// are known once the schema is: before the run they are nanogen.sum and the
+// files it lists, after it the files the run produced (runUnit plans those).
+func (r *runner) dbUnits(s *step) []*unit {
+	if r.proj.Postgres == nil {
+		return nil
+	}
+	p := gendb.WithDefaults(*r.proj.Postgres)
+	return []*unit{{step: s, dir: r.abs(filepath.Join(p.Out, p.Name)), inputs: []string{r.abs(p.Migrations)},
+		outputs: gendb.Planned(r.root, p)}}
+}
+
 // abs returns a project path as an absolute path.
 func (r *runner) abs(path string) string {
 	return filepath.Join(r.root, filepath.FromSlash(path))
@@ -121,6 +135,19 @@ func (r *runner) envPath(dir string) string {
 		return r.abs(r.proj.Env)
 	}
 	return filepath.Join(dir, configEnvOut)
+}
+
+// runDB generates the go-jet code of the declared database. The runner
+// owns the database server for the run: it starts it on the first unit that
+// needs one, and stops it when the run ends.
+func runDB(r *runner, _ *unit, _ map[string][]byte) (output, error) {
+	files, err := gendb.Generate(gendb.Options{
+		Dir:      r.root,
+		Postgres: *r.proj.Postgres,
+		Fresh:    r.opts.Fresh,
+		Database: r.database,
+	})
+	return output{files: files}, err
 }
 
 // runAPI generates the server and the clients of the declared API. It

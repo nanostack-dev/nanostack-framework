@@ -12,7 +12,7 @@ This repository releases four Go modules. This runbook gives the rules for their
 | `github.com/nanostack-dev/nanostack-framework/gen` | `gen` | `gen/vX.Y.Z` | `gen/v0.23.0-beta.2` |
 
 - Each module has its own version ([ADR 0014](docs/adr/0014-one-repository-with-nested-modules.md)). The root `go.mod` records the nested versions that it was tested with. Do not tag a module that did not change.
-- `db` requires `pkg/functional`. The root requires `db` and `pkg/functional`. `gen` requires the root, and through it `db` and `pkg/functional`. So the tag order is always leaves first: `pkg/functional`, then `db`, then the root, then `gen`.
+- `db` requires `pkg/functional`. The root requires `db` and `pkg/functional`. `gen` requires the root and `db` (its db step links the DB generator), and through them `pkg/functional`. So the tag order is always leaves first: `pkg/functional`, then `db`, then the root, then `gen`.
 - `gen` holds the generators and the `nano` CLI (`gen/cmd/nano`). The root never requires `gen`, so `golang.org/x/tools` and the other generator dependencies stay out of the module graph of a runtime consumer. A service pins `nano` with a `tool` directive ([Consumers of nano](#consumers-of-nano)).
 - `db/tests` and `db/examples` are never tagged. They keep their local `replace` lines.
 - The module paths have no `/vN` suffix, so the major version stays 0 or 1.

@@ -3,6 +3,7 @@
 //
 //	go tool nano gen                # run every step, write what changed
 //	go tool nano gen -check         # write nothing; exit 1 on a stale, missing or orphaned file
+//	go tool nano gen -check -fresh  # CI: the db step also ignores nanogen.sum
 //	go tool nano gen -check -diff   # also print the first 20 lines of each diff
 //	go tool nano gen -only config   # these steps, still in pipeline order (-skip is the inverse)
 //	go tool nano gen -list          # print the plan: step, package, inputs, outputs
@@ -17,12 +18,19 @@
 //   - config and wire: each package with a //go:build nanogen file that calls
 //     nano.Manifest. config reads that package's Config; wire writes
 //     wire.gen.go into the package;
+//   - db: the Project's Postgres, when it declares one: the migrations run
+//     on an empty database and go-jet writes the models and the table
+//     types, each with a UniqueKeys method (package gen/db). nanogen.sum
+//     lets a run skip the database while nothing changed; -fresh ignores
+//     it. The runner starts the database server on the first unit that
+//     needs one, a container or the server NANO_GEN_DATABASE_URL names,
+//     and stops it when the run ends;
 //   - api: the Project's API, when it declares one: oapi-codegen writes the
 //     server and each client, and the step splits the server by OpenAPI tag
 //     into handlers.gen.go (package gen/api);
 //   - validate: the server of the Project's API.
 //
-// The steps run one after another in the order api, validate, errors,
+// The steps run one after another in the order db, api, validate, errors,
 // config, wire, so each loads the fresh output of the steps before it. Without
 // -check each step writes before the next loads. With -check nothing is
 // written: the fresh outputs reach later loads as a go/packages overlay. In
@@ -48,12 +56,15 @@
 // their line.
 //
 // Exit codes: 0 success, 1 a source error, a validation gap or a stale,
-// missing or orphaned file, 2 bad usage, 3 an environment failure. ADR 0023
-// records the design.
+// missing or orphaned file, 2 bad usage, 3 an environment failure, such as
+// a db step that needs a database and finds no Docker. ADR 0023 records the
+// design.
 package pipeline
 
 import (
 	"bytes"
+	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"os"
@@ -63,6 +74,7 @@ import (
 
 	"github.com/nanostack-dev/nanostack-framework/core/nano/project"
 	"github.com/nanostack-dev/nanostack-framework/gen"
+	gendb "github.com/nanostack-dev/nanostack-framework/gen/db"
 )
 
 // Options configures one run.
@@ -81,6 +93,16 @@ type Options struct {
 	// Only runs these steps, in pipeline order. Skip runs every step but
 	// these. At most one of them is set.
 	Only, Skip []string
+	// Fresh makes the db step ignore nanogen.sum and generate from a
+	// database, as CI does with -check -fresh.
+	Fresh bool
+	// DatabaseURL is the value of NANO_GEN_DATABASE_URL: the PostgreSQL
+	// server the db step creates its scratch database on. Empty starts a
+	// container of the declared image.
+	DatabaseURL string
+
+	// database replaces the run's server in tests.
+	database gendb.Opener
 }
 
 // Event levels.
@@ -137,11 +159,18 @@ type step struct {
 	run func(r *runner, u *unit, overlay map[string][]byte) (output, error)
 	// base is the directory a generator's relative error paths start from.
 	base func(r *runner, u *unit) string
+	// readsOutputs is true when the outputs depend on what the step reads,
+	// as db's depend on the schema: the unit's outputs are a guess before
+	// the run, and only the files it produces are planned after it.
+	readsOutputs bool
 }
 
-// steps is the fixed order. The db, mapper and lint steps of the design join
-// it as they land.
+// steps is the fixed order. The mapper, repo and lint steps of the design
+// join it as they land. No step needs db yet: the steps after it load the
+// models that are on disk, the last good ones when db fails.
 var steps = []step{ //nolint:gochecknoglobals // read-only table.
+	{name: "db", project: true, run: runDB, base: func(r *runner, _ *unit) string { return r.root },
+		readsOutputs: true},
 	{name: "api", project: true, run: runAPI, base: func(r *runner, _ *unit) string { return r.wd }},
 	{name: "validate", needs: []string{"api"}, project: true, run: runValidate,
 		base: func(r *runner, _ *unit) string { return r.wd }},
@@ -193,6 +222,23 @@ type runner struct {
 	files    []Event           // wrote, deleted, stale, missing, orphan
 	notes    []Event           // skipped and error
 	planned  map[string]bool   // every output of every unit, for the orphan scan
+	server   *gendb.Server     // the database server of the run, started on first use
+}
+
+// database opens an empty database on the server of the run, which it
+// starts on the first call. Run stops it.
+func (r *runner) database(ctx context.Context) (*sql.DB, func(), error) {
+	if r.opts.database != nil {
+		return r.opts.database(ctx)
+	}
+	if r.server == nil {
+		image := ""
+		if r.proj.Postgres != nil {
+			image = gendb.WithDefaults(*r.proj.Postgres).Image
+		}
+		r.server = gendb.NewServer(r.opts.DatabaseURL, image)
+	}
+	return r.server.Open(ctx)
 }
 
 // Run runs the pipeline and returns its events and exit code. It writes and
@@ -202,6 +248,11 @@ func Run(opts Options) Result {
 	if res, ok := r.setup(); !ok {
 		return res
 	}
+	defer func() {
+		if r.server != nil {
+			r.server.Close()
+		}
+	}()
 	for i, u := range r.units {
 		r.runUnit(i, u)
 	}
@@ -377,6 +428,18 @@ func (r *runner) runUnit(i int, u *unit) {
 		r.failed[name] = true
 		r.problem(name, u.step.base(r, u), err)
 		return
+	}
+	if u.step.readsOutputs {
+		// The guess goes; what the run produced is planned, so the file of
+		// a dropped table is an orphan and the committed models are not.
+		for _, o := range u.outputs {
+			delete(r.planned, o)
+		}
+		for _, f := range out.files {
+			if abs, absErr := filepath.Abs(f.Path); absErr == nil {
+				r.planned[abs] = true
+			}
+		}
 	}
 	for _, f := range out.files {
 		r.sync(name, f)

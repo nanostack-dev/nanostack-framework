@@ -72,6 +72,8 @@ type TableSQLBuilder struct {
 	TypeName     string
 	DefaultAlias string
 	Column       func(columnMetaData metadata.Column) TableSQLBuilderColumn
+	// UniqueKeys adds a UniqueKeys method to the table type (Nanostack, see unique_keys.go).
+	UniqueKeys bool
 }
 
 // ViewSQLBuilder is template for generating view SQLBuilder files

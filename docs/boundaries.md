@@ -8,7 +8,7 @@ New code lives in three layers. A package imports only its own layer and the lay
 
 - `core/` owns the runtime that services and generated code call: `core/nano` (lifecycle, `Main`, admin probes, manifest declarations; `core/nano/project` holds the project declaration that `nano gen` reads), `core/config` (configuration binding), `core/log` (slog logging and redaction), `core/fault` (the problem contract of error catalogues), `core/validate` (the runtime of request validators) and `core/secret` (the one secret type and every credential-redaction rule).
 - `http/` owns the HTTP boundary between `net/http` and generated handlers: strict decoding (`http/nanohttp`) and RFC 9457 problem responses (`http/problem`). [The HTTP boundary](http-boundary.md) is its contract.
-- `gen/` is its own module. It owns the generators behind `nano gen` (`gen/api`, which links oapi-codegen, `gen/config`, `gen/errors`, `gen/validate`, `gen/wire`), the pipeline that runs them in order (`gen/pipeline`), the generator contract (package `gen`), and go-jet's conventions (`gen/jet`).
+- `gen/` is its own module. It owns the generators behind `nano gen` (`gen/api`, which links oapi-codegen, `gen/config`, `gen/errors`, `gen/validate`, `gen/wire`), the db step (`gen/db`, which runs the migrations and the Nanostack DB generator), the pipeline that runs them in order (`gen/pipeline`), and the generator contract (package `gen`).
 - `gen/cmd/nano` owns the CLI, `nano`. Today it runs `nano gen`, the pipeline, and `nano gen <name>`, one generator.
 - `docs/` owns architecture, migration, and decision records.
 
