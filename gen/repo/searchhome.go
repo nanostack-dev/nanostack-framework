@@ -229,7 +229,8 @@ func (l *loaded) handlerDirs(root string, ops []string) map[string]string {
 			return nil
 		}
 		data, ok := l.source(p)
-		if !ok || !slices.ContainsFunc(ops, func(op string) bool { return bytes.Contains(data, []byte(op+"RequestObject")) }) {
+		names := func(op string) bool { return bytes.Contains(data, []byte(op+"RequestObject")) }
+		if !ok || !slices.ContainsFunc(ops, names) {
 			return nil
 		}
 		f, parseErr := parser.ParseFile(fset, p, data, parser.SkipObjectResolution)
