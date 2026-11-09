@@ -46,14 +46,7 @@ func (c *collector) explainSearch(s *searchDecl) SearchExplanation {
 		add("read", "%s", c.explainInstance(s, inst))
 	}
 	for _, in := range s.inner {
-		text := in.role + " reads " + in.inst.String()
-		if in.inst.join != "" {
-			text += "; " + in.inst.join + "; ON " + c.source(in.inst.on)
-		}
-		if in.where != nil {
-			text += "; WHERE " + c.source(in.where)
-		}
-		add("subquery", "%s", text)
+		add("subquery", "%s", c.explainInner(in))
 	}
 	if s.mapper != nil {
 		kind := "Map"
@@ -103,6 +96,18 @@ func (c *collector) explainSearch(s *searchDecl) SearchExplanation {
 	}
 	c.explainAPI(s, add)
 	return e
+}
+
+// explainInner renders one instance of a subquery: its join, ON and WHERE.
+func (c *collector) explainInner(in innerRead) string {
+	text := in.role + " reads " + in.inst.String()
+	if in.inst.join != "" {
+		text += "; " + in.inst.join + "; ON " + c.source(in.inst.on)
+	}
+	if in.where != nil {
+		text += "; WHERE " + c.source(in.where)
+	}
+	return text
 }
 
 // explainInstance renders one instance: its join, the nullable columns and

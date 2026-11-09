@@ -1,6 +1,7 @@
 package genrepo
 
 import (
+	"fmt"
 	"go/ast"
 	"go/types"
 	"strings"
@@ -95,6 +96,52 @@ func argText(c *collector, call *ast.CallExpr, i int) string {
 		return c.source(call.Args[i])
 	}
 	return "no name"
+}
+
+// aliasName reads the alias of table.AS(arg): a constant SQL name of at
+// most 63 bytes, which is not the name of a table of the table package. An
+// alias with the name of a table would bind a column of that table, in a
+// subquery or in a later join, to another instance than the one SQL binds.
+func (c *collector) aliasName(s *searchDecl, arg, table ast.Expr) (string, bool) {
+	alias, ok := c.constString(s, arg)
+	if !ok {
+		return "", false
+	}
+	// One alias is often written twice on a line: in the join and in its ON.
+	file, line := c.l.position(c.l.pkg.Fset, arg.Pos())
+	key := fmt.Sprint(file, ":", line, ":", alias)
+	if c.badAliases[key] {
+		return "", false
+	}
+	if !c.goodAlias(s, arg, table, alias) {
+		c.badAliases[key] = true
+		return "", false
+	}
+	return alias, true
+}
+
+// goodAlias reports the problems of an alias for aliasName.
+func (c *collector) goodAlias(s *searchDecl, arg, table ast.Expr, alias string) bool {
+	if !sqlAlias.MatchString(alias) {
+		c.errorf(arg, `pass an alias that matches `+aliasSQL+`, such as AS("owner")`,
+			"search %s: the alias %q does not match %s: SQL would read another name", s.name, alias, aliasSQL)
+		return false
+	}
+	v, _ := c.l.pkg.TypesInfo.Uses[tableIdent(table)].(*types.Var)
+	if v == nil || v.Pkg() == nil {
+		return true
+	}
+	if src, err := c.l.tableSource(v.Pkg().Path()); err == nil {
+		for _, names := range src.tables {
+			if names.table == alias {
+				c.errorf(arg, `give the instance an alias that no table has, such as AS("`+alias+`_2")`,
+					"search %s: the alias %s is the name of the table %s: a column of %s would bind to "+
+						"another instance than the one SQL binds", s.name, alias, alias, alias)
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // isTableType reports whether t is a generated table type, or a pointer to
