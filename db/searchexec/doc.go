@@ -38,8 +38,10 @@
 // ScopeFrom (a scope field that From puts in an ON clause; it adds no WHERE condition) and
 // ScopeFunc (a condition that the context carries, such as the workspace).
 //
-// The generated searches support PostgreSQL. A source of another dialect is
-// keyset.ErrDialect.
+// A search runs on PostgreSQL (and CockroachDB), MySQL (and MariaDB) and SQLite: its source
+// is a table or join of db/postgres, db/mysql or db/sqlite, and the statement's dialect
+// selects the SQL of each condition. Any other source is keyset.ErrDialect. nano gen repo
+// writes PostgreSQL searches only for now; the runtime does not wait for it.
 //
 // # Field types
 //
@@ -70,14 +72,30 @@
 // default collation. On the other dialects InFold is LOWER(expr) LIKE LOWER(?) ESCAPE '!'.
 //
 // A string value that no text column can hold (not valid UTF-8, or holding NUL) matches no
-// row in every field, as in Contains: StringLit makes it NULL and InFold drops it. A
-// TimeRange bound moves to a whole microsecond, the precision of timestamptz, in the
-// direction that keeps its meaning, so lib/pq and pgx give the same rows.
+// row in every field, as in Contains: StringLit makes it NULL and InFold drops it.
+//
+// NewTimeRange binds a TimeRange to a PostgreSQL timestamptz, and NewLocalTimeRange to a
+// timestamp without time zone: a MySQL DATETIME or TIMESTAMP, a SQLite DATETIME, or a
+// PostgreSQL timestamp. A TimeRange bound on PostgreSQL and MySQL moves to a whole
+// microsecond, the precision of timestamptz, timestamp and DATETIME(6), in the direction
+// that keeps its meaning, so lib/pq and pgx give the same rows. A PostgreSQL timestamp gets
+// the wall clock of the bound in UTC. SQLite has no time type: the bound is the time in UTC
+// in the text form of its driver, "2006-01-02 15:04:05.999999999-07:00", with every digit.
+// So a SQLite time column must hold times written through the driver in UTC, as for
+// keyset.LocalTimeKey. TimeRange.SQLiteLayout gives the text form of a column that SQL
+// fills. A bound before 0001-01-02 or after 9999-12-30T23:59:59.999999Z is
+// search.ErrInvalidTime on every dialect.
+//
+// An Exists subquery is written in the dialect of the search, so its child must be a table
+// of the dialect of the source: Resolve refuses another child with keyset.ErrDialect. A
+// list of more than 64 values (InFold, the folded Exists) or terms (ContainsAny) joins its
+// matches with OR in nested groups of 64: SQLite refuses an expression tree deeper than
+// 1000 levels, and its parser nests each operand of an OR one level deeper.
 //
 // A field does not return an error. More than search.MaxInValues values
 // (search.ErrTooManyValues), a term longer than search.MaxTermLength characters after the
-// trim (search.ErrTermTooLong), or a child table of another dialect (keyset.ErrDialect)
-// records the error on the query. Resolve returns the first recorded error after the scope
+// trim (search.ErrTermTooLong), a time bound outside the years that every dialect holds
+// (search.ErrInvalidTime), or an Exists child that is not a table (keyset.ErrDialect) records the error on the query. Resolve returns the first recorded error after the scope
 // checks, so a missing tenant scope still wins, and no statement runs.
 //
 // # Contains

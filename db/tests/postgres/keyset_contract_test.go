@@ -6,6 +6,8 @@ package postgres
 import (
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/nanostack-dev/nanostack-framework/db/keyset"
 	"github.com/nanostack-dev/nanostack-framework/db/postgres"
 	"github.com/nanostack-dev/nanostack-framework/db/tests/internal/keysetcontract"
@@ -22,5 +24,12 @@ func TestKeysetContract(t *testing.T) {
 			return postgres.NewTable(schema, name, "", columns...)
 		},
 		Text: postgres.String,
+		Subquery: func(
+			table keyset.Source, projection postgres.Projection, where postgres.BoolExpression,
+		) postgres.Expression {
+			children, ok := table.(postgres.Table)
+			require.True(t, ok)
+			return children.SELECT(projection).WHERE(where)
+		},
 	})
 }

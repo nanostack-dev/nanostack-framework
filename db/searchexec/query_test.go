@@ -11,11 +11,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/nanostack-dev/nanostack-framework/db/keyset"
-	"github.com/nanostack-dev/nanostack-framework/db/mysql"
 	"github.com/nanostack-dev/nanostack-framework/db/postgres"
 	"github.com/nanostack-dev/nanostack-framework/db/search"
 	"github.com/nanostack-dev/nanostack-framework/db/searchexec"
-	"github.com/nanostack-dev/nanostack-framework/db/sqlite"
 )
 
 // The fixture is a search of items joined to their team, written by hand as nano gen repo
@@ -379,12 +377,11 @@ func TestZeroPlanDoesNotRun(t *testing.T) {
 	assert.Empty(t, rec.queries)
 }
 
-func TestResolveRefusesASourceOfAnotherDialect(t *testing.T) {
-	sources := map[string]keyset.Source{
-		"mysql":  mysql.NewTable("db", "items", "", mysql.StringColumn("id")),
-		"sqlite": sqlite.NewTable("", "items", "", sqlite.StringColumn("id")),
-	}
-	for name, source := range sources {
+func TestResolveRefusesASourceThatIsNotATable(t *testing.T) {
+	for name, source := range map[string]keyset.Source{
+		"a name":             "items",
+		"a select statement": postgres.SELECT(itemID).FROM(items),
+	} {
 		t.Run(name, func(t *testing.T) {
 			def := itemDef()
 			def.From = func(itemScope) keyset.Source { return source }
@@ -663,8 +660,8 @@ func TestScopeFrom(t *testing.T) {
 	_, err = searchexec.Run(t.Context(), rec, spec,
 		searchexec.New[fromSearch](spec, fromScope{Org: "org-a", Team: "team-1"}).Query, identity)
 	require.ErrorIs(t, err, errStop)
-	assert.Contains(t, flat(rec.queries[0]), "WHERE $3;", "ScopeFrom adds no WHERE condition")
-	assert.Equal(t, []any{"org-a", "team-1", true}, rec.args[0], "the plan runs with TRUE")
+	assert.Contains(t, flat(rec.queries[0]), "WHERE TRUE;", "ScopeFrom adds no WHERE condition")
+	assert.Equal(t, []any{"org-a", "team-1"}, rec.args[0], "the plan runs with the literal TRUE, not an argument")
 
 	assert.Contains(
 		t,

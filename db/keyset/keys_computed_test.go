@@ -286,18 +286,35 @@ func TestComputedKeyNameMustBeAnIdentifier(t *testing.T) {
 	require.NotPanics(t, func() { keyset.IntExprKey("widget_row.request_count", count, value) })
 }
 
-func TestComputedKeyPageOnAnotherDialectIsErrDialect(t *testing.T) {
-	order := computedOrder(t, byField(sortByRequests, search.SortDescending))
-	for name, source := range map[string]keyset.Source{
+// The integer, float and text forms run on every dialect, each with its own
+// cast. The timestamptz form is PostgreSQL only, as TimeKey is.
+func TestComputedKeyPagePerDialect(t *testing.T) {
+	sources := map[string]keyset.Source{
 		"MySQL":  mysql.NewTable("db", "widgets", "", mysql.StringColumn("id")),
 		"SQLite": sqlite.NewTable("", "widgets", "", sqlite.StringColumn("id")),
-	} {
-		t.Run(name, func(t *testing.T) {
-			_, err := keyset.Page(nil, func(r computedRow) computedRow { return r }, colID).
-				From(source).Keyset(order).
-				Run(t.Context(), search.Pagination{Limit: 1})
-			require.ErrorIs(t, err, keyset.ErrDialect)
-		})
+	}
+	for _, field := range []computedField{sortByRequests, sortByBiggest, sortByTotal, sortByMean, sortByLabel, sortByMinLabel} {
+		order := computedOrder(t, byField(field, search.SortDescending))
+		for name, source := range sources {
+			t.Run(string(field)+" on "+name, func(t *testing.T) {
+				_, rows, err := keyset.Page(nil, func(r computedRow) computedRow { return r }, colID).
+					From(source).Keyset(order).
+					StatementsForTest(search.Pagination{Limit: 1})
+				require.NoError(t, err)
+				require.NotContains(t, rows.DebugSql(), "::", "no PostgreSQL cast")
+			})
+		}
+	}
+	for _, field := range []computedField{sortByLast, sortByFirst} {
+		order := computedOrder(t, byField(field, search.SortDescending))
+		for name, source := range sources {
+			t.Run(string(field)+" on "+name, func(t *testing.T) {
+				_, err := keyset.Page(nil, func(r computedRow) computedRow { return r }, colID).
+					From(source).Keyset(order).
+					Run(t.Context(), search.Pagination{Limit: 1})
+				require.ErrorIs(t, err, keyset.ErrDialect)
+			})
+		}
 	}
 }
 

@@ -4,10 +4,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	ijet "github.com/nanostack-dev/nanostack-framework/db/internal/jet"
+	"github.com/nanostack-dev/nanostack-framework/db/internal/sqlitetime"
 	jet "github.com/nanostack-dev/nanostack-framework/db/postgres"
 )
 
@@ -203,9 +203,7 @@ func (k Key[T]) SQLiteLayout(layout string) Key[T] {
 	if k.withSQLiteLayout == nil {
 		panic(fmt.Sprintf("keyset: SQLiteLayout on %s, which is not a LocalTimeKey", k.label()))
 	}
-	if !strings.HasPrefix(layout, "2006-01-02 15:04:05") && !strings.HasPrefix(layout, "2006-01-02T15:04:05") {
-		panic(fmt.Sprintf("keyset: SQLite layout %q does not sort in time order", layout))
-	}
+	sqlitetime.CheckLayout("keyset", layout)
 	k.bound = k.withSQLiteLayout(layout)
 	return k
 }
@@ -214,7 +212,7 @@ func (k Key[T]) SQLiteLayout(layout string) Key[T] {
 // which the SQLite driver writes a time.
 const (
 	mysqlTimeLayout  = "2006-01-02 15:04:05.999999"
-	sqliteTimeLayout = "2006-01-02 15:04:05.999999999-07:00"
+	sqliteTimeLayout = sqlitetime.DriverLayout
 )
 
 func localTimeKey[T any](

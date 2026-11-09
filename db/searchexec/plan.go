@@ -9,9 +9,11 @@ import (
 
 	"github.com/nanostack-dev/nanostack-framework/db/internal/jet"
 	"github.com/nanostack-dev/nanostack-framework/db/keyset"
+	"github.com/nanostack-dev/nanostack-framework/db/mysql"
 	"github.com/nanostack-dev/nanostack-framework/db/postgres"
 	"github.com/nanostack-dev/nanostack-framework/db/query"
 	"github.com/nanostack-dev/nanostack-framework/db/search"
+	"github.com/nanostack-dev/nanostack-framework/db/sqlite"
 )
 
 // errKeyConflict reports a hand-written key that has the name of a declared sort.
@@ -25,7 +27,7 @@ var errKeyConflict = errors.New("searchexec: a hand-written key has the name of 
 // search with And but never widen it. The zero Plan does not run: its methods return
 // search.ErrUnscoped.
 type Plan[T any, S ~string] struct {
-	source    postgres.ReadableTable
+	source    keyset.Source
 	columns   jet.Projection
 	condition jet.BoolExpression
 	keys      map[S]keyset.Key[T]
@@ -75,7 +77,8 @@ func (p Plan[T, S]) Page() search.Pagination {
 }
 
 // Run counts the matches and reads one page in order, mapping each row with toDomain. db is
-// the executor of both statements.//
+// the executor of both statements.
+//
 // It runs on db as given: it does not read the context transaction and does not refuse a
 // row lock. Repository code runs searches through the transactor forwarders
 // (transactor.Search, SearchPage, RunPlan and RunPlanPage, in a later release), which use
@@ -95,7 +98,8 @@ func (p Plan[T, S]) Run[R any](
 }
 
 // RunPage is Run with a mapper that maps the whole page in one call, for example to load
-// the children of the page's rows in one statement. A nil result is an empty page.//
+// the children of the page's rows in one statement. A nil result is an empty page.
+//
 // It runs on db as given: it does not read the context transaction and does not refuse a
 // row lock. Repository code runs searches through the transactor forwarders
 // (transactor.Search, SearchPage, RunPlan and RunPlanPage, in a later release), which use
@@ -129,11 +133,13 @@ var errUnresolved = fmt.Errorf("%w: the plan was not returned by Resolve", searc
 //   - a context scope that returns nil (search.ErrUnscoped);
 //   - the first error that a filter recorded: more than search.MaxInValues values
 //     (search.ErrTooManyValues), a term longer than search.MaxTermLength characters
-//     (search.ErrTermTooLong), or a child table of another dialect (keyset.ErrDialect);
+//     (search.ErrTermTooLong), a time bound outside the years that every dialect holds
+//     (search.ErrInvalidTime), or an Exists child that is not a table (keyset.ErrDialect);
 //   - a sort direction other than ASC or DESC (search.ErrInvalidSortDirection);
 //   - a page that search.CheckPage refuses (search.ErrInvalidLimit, search.ErrInvalidOffset,
 //     search.ErrInvalidCursor, search.ErrCursorWithOffset);
-//   - a source that is not a db/postgres table or join (keyset.ErrDialect).
+//   - a source that is not a table or join of db/postgres, db/mysql or db/sqlite, and an
+//     Exists child of another dialect than the source (keyset.ErrDialect).
 //
 // No statement runs before these checks pass.
 func Resolve[T any, Q Builder[T, Q, S, P], S ~string, P comparable](
@@ -176,8 +182,11 @@ func Resolve[T any, Q Builder[T, Q, S, P], S ~string, P comparable](
 	if err := search.CheckPage(q.page); err != nil {
 		return Plan[T, S]{}, err
 	}
-	source, err := pgSource(spec.from(q.scope))
+	source, err := searchSource(spec.from(q.scope))
 	if err != nil {
+		return Plan[T, S]{}, err
+	}
+	if err := checkChildren(source, q.children); err != nil {
 		return Plan[T, S]{}, err
 	}
 	conditions = append(conditions, spec.conditions...)
@@ -188,7 +197,7 @@ func Resolve[T any, Q Builder[T, Q, S, P], S ~string, P comparable](
 	}
 	// A search scoped only through From (ScopeFrom) has no WHERE condition. DefineSpec
 	// already proved its scope, so the plan runs with TRUE.
-	condition := jet.BoolExpression(jet.Bool(true))
+	condition := sqlTrue()
 	if len(conditions) > 0 {
 		condition = jet.AND(conditions...)
 	}
@@ -205,7 +214,8 @@ func Resolve[T any, Q Builder[T, Q, S, P], S ~string, P comparable](
 
 // Run resolves q, counts the matches and reads one page in order, mapping each row with
 // toDomain. It refuses what Resolve refuses, and a sort that is not a key of the spec
-// (search.ErrUnknownSort). db is the executor of both statements.//
+// (search.ErrUnknownSort). db is the executor of both statements.
+//
 // It runs on db as given: it does not read the context transaction and does not refuse a
 // row lock. Repository code runs searches through the transactor forwarders
 // (transactor.Search, SearchPage, RunPlan and RunPlanPage, in a later release), which use
@@ -248,17 +258,39 @@ func RunPage[T any, Q Builder[T, Q, S, P], S ~string, P comparable, R any](
 	return plan.RunPage(ctx, db, order, toDomain)
 }
 
-// pgSource resolves the source of a search to a PostgreSQL table or join. The search runtime
-// supports PostgreSQL only; any other source, a table of db/mysql or db/sqlite included, is
-// keyset.ErrDialect.
-func pgSource(source keyset.Source) (postgres.ReadableTable, error) {
-	switch table := source.(type) {
+// searchSource checks the source of a search: a table or join of db/postgres (which also
+// serves CockroachDB), db/mysql (which also serves MariaDB) or db/sqlite. Any other source is
+// keyset.ErrDialect, before any statement runs.
+func searchSource(source keyset.Source) (keyset.Source, error) {
+	switch source.(type) {
 	case nil:
 		return nil, keyset.ErrPageSourceMissing
-	case postgres.ReadableTable:
-		return table, nil
+	case postgres.ReadableTable, mysql.ReadableTable, sqlite.ReadableTable:
+		return source, nil
 	default:
-		return nil, fmt.Errorf("%w: the search runtime supports PostgreSQL only; %T is not a PostgreSQL table or join",
+		return nil, fmt.Errorf("%w: %T is not a table or join of db/postgres, db/mysql or db/sqlite",
 			keyset.ErrDialect, source)
 	}
+}
+
+// checkChildren refuses an Exists child of another dialect than source. A nested SELECT is
+// written in the dialect of the outer statement, so such a child would name a table of
+// another database.
+func checkChildren(source keyset.Source, children []jet.Dialect) error {
+	var dialect jet.Dialect
+	switch source.(type) {
+	case postgres.ReadableTable:
+		dialect = postgres.Dialect
+	case mysql.ReadableTable:
+		dialect = mysql.Dialect
+	case sqlite.ReadableTable:
+		dialect = sqlite.Dialect
+	}
+	for _, child := range children {
+		if child != dialect {
+			return fmt.Errorf("%w: an Exists child is a table of %s, the search is on %s",
+				keyset.ErrDialect, child.Name(), dialect.Name())
+		}
+	}
+	return nil
 }

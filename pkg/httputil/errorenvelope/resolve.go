@@ -134,8 +134,9 @@ type Response struct {
 //     pagination.cursor); ErrUnknownSort is 400 INVALID_SORT (field sort_by);
 //     ErrInvalidSortDirection is 400 INVALID_SORT (field sort_direction);
 //     ErrInvalidLimit or ErrInvalidOffset is 400 BAD_REQUEST (field
-//     pagination.limit or pagination.offset); ErrTooManyValues or
-//     ErrTermTooLong is 400 BAD_REQUEST with no field. db/search.ErrUnscoped
+//     pagination.limit or pagination.offset); ErrTooManyValues,
+//     ErrTermTooLong or ErrInvalidTime is 400 BAD_REQUEST with no field.
+//     db/search.ErrUnscoped
 //     is a programming error: it is not mapped, so it is the 500 below.
 //   - an http/problem boundary error: as ResolveRequest.
 //   - a core/fault.Described, such as a generated catalogue error: its status,
@@ -257,6 +258,9 @@ func searchFault(err error) (*fault.Error, bool) {
 	case errors.Is(err, search.ErrTermTooLong):
 		code, field = CodeBadRequest, ""
 		message = fmt.Sprintf("A search term is longer than %d characters.", search.MaxTermLength)
+	case errors.Is(err, search.ErrInvalidTime):
+		code, field = CodeBadRequest, ""
+		message = "A time filter must be from 0001-01-02 to 9999-12-30, in UTC."
 	case errors.Is(err, search.ErrCursorWithOffset):
 		message = "A cursor cannot be combined with an offset."
 	case errors.Is(err, search.ErrInvalidCursor):

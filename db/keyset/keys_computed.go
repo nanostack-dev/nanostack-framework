@@ -3,7 +3,10 @@ package keyset
 import (
 	"time"
 
+	ijet "github.com/nanostack-dev/nanostack-framework/db/internal/jet"
+	"github.com/nanostack-dev/nanostack-framework/db/mysql"
 	jet "github.com/nanostack-dev/nanostack-framework/db/postgres"
+	"github.com/nanostack-dev/nanostack-framework/db/sqlite"
 )
 
 // IntExprKey orders on an integer expression, for example a correlated COUNT
@@ -19,20 +22,33 @@ func NullableIntExprKey[T any](name string, expression jet.IntegerExpression, va
 	return intExprKey(name, expression, true, value)
 }
 
-// postgresOnly marks a computed key as PostgreSQL only: its expression is
-// PostgreSQL SQL (casts and COALESCE through db/postgres), so Page returns
-// ErrDialect on MySQL and SQLite.
-func postgresOnly[T any](key Key[T]) Key[T] {
-	key.only = dialects(dialectPostgres)
-	return key
-}
+// The casts of the integer and float forms are per dialect. The statement's
+// dialect selects the cast when it is serialized (ijet.DialectSwitch), so one
+// key serves a page of any dialect. PostgreSQL also serves CockroachDB, and
+// MySQL also serves MariaDB.
+//
+//	          integer                   float
+//	PostgreSQL CAST(e AS bigint)         CAST(e AS double precision)
+//	MySQL      CAST(e AS SIGNED)         CAST(e AS DOUBLE)
+//	SQLite     CAST(e AS INTEGER)        CAST(e AS REAL)
 
 func intExprKey[T any](name string, expression jet.IntegerExpression, nullable bool, value func(T) *int64) Key[T] {
-	cast := jet.IntExp(jet.CAST(expression).AS_BIGINT())
-	if !nullable {
-		cast = jet.IntExp(jet.COALESCE(cast, jet.Int(0)))
-	}
-	return postgresOnly(intKey(computedTarget(name, cast), nullable, value))
+	cast := ijet.IntDialectSwitch(func(d ijet.Dialect) ijet.IntegerExpression {
+		var cast ijet.IntegerExpression
+		switch d {
+		case mysql.Dialect:
+			cast = mysql.CAST(expression).AS_SIGNED()
+		case sqlite.Dialect:
+			cast = sqlite.CAST(expression).AS_INTEGER()
+		default:
+			cast = jet.CAST(expression).AS_BIGINT()
+		}
+		if nullable {
+			return cast
+		}
+		return ijet.IntExp(ijet.COALESCE(cast, ijet.Int(0)))
+	})
+	return intKey(computedTarget(name, cast), nullable, value)
 }
 
 // FloatExprKey orders on a double precision expression. It reads NULL as 0.
@@ -48,15 +64,29 @@ func NullableFloatExprKey[T any](name string, expression jet.FloatExpression, va
 }
 
 func floatExprKey[T any](name string, expression jet.FloatExpression, nullable bool, value func(T) *float64) Key[T] {
-	cast := jet.FloatExp(jet.CAST(expression).AS_DOUBLE())
-	if !nullable {
-		cast = jet.FloatExp(jet.COALESCE(cast, jet.Float(0)))
-	}
-	return postgresOnly(floatKey(computedTarget(name, cast), nullable, value))
+	cast := ijet.FloatDialectSwitch(func(d ijet.Dialect) ijet.FloatExpression {
+		var cast ijet.FloatExpression
+		switch d {
+		case mysql.Dialect:
+			cast = mysql.CAST(expression).AS_DOUBLE()
+		case sqlite.Dialect:
+			cast = sqlite.CAST(expression).AS_REAL()
+		default:
+			cast = jet.CAST(expression).AS_DOUBLE()
+		}
+		if nullable {
+			return cast
+		}
+		return ijet.FloatExp(ijet.COALESCE(cast, ijet.Float(0)))
+	})
+	return floatKey(computedTarget(name, cast), nullable, value)
 }
 
 // TimeExprKey orders on a timestamptz expression. It reads NULL as the zero
 // time.Time (0001-01-01 UTC). See IntExprKey.
+//
+// It is PostgreSQL only, as TimeKey is: MySQL and SQLite have no timestamp
+// with time zone, so Page returns ErrDialect there.
 func TimeExprKey[T any](name string, expression jet.TimestampzExpression, value func(T) time.Time) Key[T] {
 	return timeExprKey(name, expression, false, ptrOf(value))
 }
@@ -76,7 +106,7 @@ func timeExprKey[T any](
 	if !nullable {
 		cast = jet.TimestampzExp(jet.COALESCE(cast, jet.TimestampzT(time.Time{})))
 	}
-	return postgresOnly(timeKey(computedTarget(name, cast), nullable, value))
+	return timeKey(computedTarget(name, cast), nullable, value)
 }
 
 // StringExprKey orders on a text expression. It reads NULL as the empty
@@ -102,5 +132,5 @@ func stringExprKey[T any](name string, expression jet.StringExpression, nullable
 	if !nullable {
 		wrapped = jet.StringExp(jet.CustomExpression(jet.Token("COALESCE(("), expression, jet.Token("), '')")))
 	}
-	return postgresOnly(stringKey(computedTarget(name, wrapped), nullable, value))
+	return stringKey(computedTarget(name, wrapped), nullable, value)
 }

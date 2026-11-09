@@ -11,7 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/nanostack-dev/nanostack-framework/db/keyset"
-	"github.com/nanostack-dev/nanostack-framework/db/mysql"
 	"github.com/nanostack-dev/nanostack-framework/db/postgres"
 	"github.com/nanostack-dev/nanostack-framework/db/search"
 	"github.com/nanostack-dev/nanostack-framework/db/searchexec"
@@ -360,12 +359,11 @@ func TestFieldsKeepTheQueryImmutable(t *testing.T) {
 	assert.Equal(t, []any{"a", int64(1), false}, args)
 }
 
-func TestExistsRefusesAChildOfAnotherDialect(t *testing.T) {
-	child := mysql.NewTable("db", "perms", "", mysql.StringColumn("name"))
+func TestExistsRefusesAChildThatIsNotATable(t *testing.T) {
 	q := newItemSearch(fullScope())
 	f := searchexec.NewExists(
 		q.Query,
-		keyset.Source(child),
+		keyset.Source("perms"),
 		postgres.Bool(true),
 		permName,
 		searchexec.StringLit[string],
@@ -430,6 +428,10 @@ func TestFieldConstructorsPanic(t *testing.T) {
 		"TimeRange nil": {
 			func() { searchexec.NewTimeRange(q, nil) },
 			"searchexec: NewTimeRange: the expression is nil",
+		},
+		"LocalTimeRange nil": {
+			func() { searchexec.NewLocalTimeRange(q, nil) },
+			"searchexec: NewLocalTimeRange: the expression is nil",
 		},
 		"Presence nil": {
 			func() { searchexec.NewPresence(q, nil) },

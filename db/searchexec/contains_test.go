@@ -1,14 +1,18 @@
 package searchexec_test
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/nanostack-dev/nanostack-framework/db/internal/jet"
+	"github.com/nanostack-dev/nanostack-framework/db/keyset"
 	"github.com/nanostack-dev/nanostack-framework/db/mysql"
 	"github.com/nanostack-dev/nanostack-framework/db/postgres"
+	"github.com/nanostack-dev/nanostack-framework/db/search"
 	"github.com/nanostack-dev/nanostack-framework/db/searchexec"
 	"github.com/nanostack-dev/nanostack-framework/db/sqlite"
 )
@@ -188,4 +192,49 @@ func TestContainsPanicsOnANilExpression(t *testing.T) {
 	assert.PanicsWithValue(t, "searchexec: Contains expression 1 is nil", func() {
 		searchexec.Contains("ab", name, nil)
 	})
+}
+
+// longestOR returns the most OR operators that one pair of parentheses of query joins.
+func longestOR(query string) int {
+	var counts []int
+	longest := 0
+	for i := 0; i < len(query); i++ {
+		switch {
+		case query[i] == '(':
+			counts = append(counts, 0)
+		case query[i] == ')':
+			counts = counts[:len(counts)-1]
+		case strings.HasPrefix(query[i:], " OR ") && len(counts) > 0:
+			counts[len(counts)-1]++
+			longest = max(longest, counts[len(counts)-1])
+		}
+	}
+	return longest
+}
+
+// SQLite refuses an expression tree deeper than 1000 levels, and its parser nests each
+// operand of an OR one level deeper. A list of up to search.MaxInValues terms or values
+// joins its matches in nested groups of at most 64, so it runs there. The answer does not
+// change: OR is associative.
+func TestLongListsJoinTheirMatchesInGroups(t *testing.T) {
+	t.Parallel()
+
+	terms := make([]string, search.MaxInValues)
+	for i := range terms {
+		terms[i] = fmt.Sprint("t", i)
+	}
+	for _, n := range []int{2, 64, 65, 200, search.MaxInValues} {
+		anyOf := where(searchexec.ContainsAny(terms[:n], name))["sqlite"]
+		assert.Equal(t, min(n-1, 63), longestOR(anyOf.query), "ContainsAny of %d terms", n)
+		assert.Len(t, anyOf.args, n, "one pattern per term")
+
+		fold := dCount(t, func(q dSearch, _ keyset.Source) dSearch {
+			return searchexec.NewInFold[string](q.Query, dEventOrg).In(terms[:n]...)
+		})["sqlite"]
+		assert.Equal(t, min(n-1, 63), longestOR(fold.query), "InFold of %d values", n)
+		assert.Len(t, fold.args, n+1, "the scope value and one pattern per value")
+	}
+	// One group keeps today's SQL.
+	assert.Equal(t, "SELECT $1 WHERE ( (name ILIKE $2 ESCAPE '!') OR (name ILIKE $3 ESCAPE '!') );",
+		flat(where(searchexec.ContainsAny([]string{"a", "b"}, name))["postgres"].query))
 }

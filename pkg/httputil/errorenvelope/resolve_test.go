@@ -126,6 +126,9 @@ func TestResolveWritesTheBytesOfWriteJSON(t *testing.T) {
 		{"term too long", dbsearch.ErrTermTooLong, &fault.Error{Status: http.StatusBadRequest,
 			Details: []fault.Detail{{Code: "BAD_REQUEST",
 				Message: "A search term is longer than 1000 characters."}}}, false},
+		{"time out of range", fmt.Errorf("filter received_at: %w", dbsearch.ErrInvalidTime), &fault.Error{
+			Status: http.StatusBadRequest, Details: []fault.Detail{{Code: "BAD_REQUEST",
+				Message: "A time filter must be from 0001-01-02 to 9999-12-30, in UTC."}}}, false},
 		{"unscoped", fmt.Errorf("search webhooks: %w", dbsearch.ErrUnscoped), fault.ErrUnexpected, true},
 		{
 			"unscoped joined with a client error",

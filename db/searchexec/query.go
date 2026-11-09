@@ -25,6 +25,9 @@ type Query[T any, Q Builder[T, Q, S, P], S ~string, P comparable] struct {
 	where []jet.BoolExpression
 	sorts []search.Sort[S]
 	page  search.Pagination
+	// children are the dialects of the Exists children. Resolve refuses a child of
+	// another dialect than the source.
+	children []jet.Dialect
 	// err is the first error that a filter recorded, for example search.ErrTooManyValues.
 	// Resolve returns it.
 	err error
@@ -90,6 +93,13 @@ func (q Query[T, Q, S, P]) Limit(n int32) Q {
 func (q Query[T, Q, S, P]) with(condition jet.BoolExpression) Q {
 	q.where = append(slices.Clip(q.where), condition)
 	return Q{q}
+}
+
+// withChild returns the query with condition added to its filters and the dialect of an
+// Exists child recorded.
+func (q Query[T, Q, S, P]) withChild(dialect jet.Dialect, condition jet.BoolExpression) Q {
+	q.children = append(slices.Clip(q.children), dialect)
+	return q.with(condition)
 }
 
 // fail returns the query with err recorded, when no error is recorded yet. Resolve returns
