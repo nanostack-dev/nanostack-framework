@@ -7,11 +7,11 @@
 
 A Nanostack search is a POST endpoint that takes filters, a sort, a full-text term and a page, and returns `search.Result`. Each one is hand-written today: a `pkg/search.Request` in the domain, go-jet code in the repository, and the keyset pager of `pkg/db/transactor` ([ADR 0001](0001-keyset-cursor-pagination.md)). echopoint has 30 such searches and anchor has 24. Each repository writes its own tenant condition, its own substring rule and its own API mapping, and nothing checks that a search reads only one tenant's rows.
 
-Alexis approved the rework on 2026-11-09: a typed builder that `nano gen repo` generates (ADR 0026, added by [PR #85](https://github.com/nanostack-dev/nanostack-framework/pull/85)), with four additions (the search method on the repository implementation, where a hand-written method wins; every tenant column of every join scoped, with the API body and the declaration checked both ways; generic field types with a strict `In()`; the transactor's keyset pager with safe limits and `CheckPage`). The design is `reports/design-search.md` in the workspace (decisions S1 to S14, after four reviews). It lands in the repository as `docs/design/search.md` with the last generator PR (G14).
+Alexis approved the rework on 2026-11-09: a typed builder that `nano gen repo` generates ([ADR 0026](0026-nano-gen-repo.md)), with four additions (the search method on the repository implementation, where a hand-written method wins; every tenant column of every join scoped, with the API body and the declaration checked both ways; generic field types with a strict `In()`; the transactor's keyset pager with safe limits and `CheckPage`). The design is `reports/design-search.md` in the workspace (decisions S1 to S14, after four reviews). It lands in the repository as `docs/design/search.md` with the last generator PR (G14).
 
-The search must live in the db framework, not beside it. [ADR 0015](0015-fork-go-jet-as-the-db-module.md) makes the db module the only database library, on PostgreSQL, MySQL/MariaDB and SQLite. The db module requires only `pkg/functional`, so it cannot import the root module, where the context transaction lives (`transactor.WithTx`, `CurrentTx`). `db/exec`, the executor seam of ADR 0015 stage 2, does not exist yet.
+The search must live in the db framework, not beside it. [ADR 0015](0015-fork-go-jet-as-the-db-module.md) makes the db module the only database library, on PostgreSQL, MySQL/MariaDB and SQLite. The db module requires no module of this repository other than `pkg/functional`, so it cannot import the root module, where the context transaction lives (`transactor.WithTx`, `CurrentTx`). `db/exec`, the executor seam of ADR 0015 stage 2, does not exist yet.
 
-This record covers the decisions that shape the modules: S1 (packages), S3 (dialects), S6 (tenant coverage), S7 (column types) and S11 (the move from `pkg/search`). The design gives the API, the gen errors and the PR plan.
+This record covers the decisions that shape the modules: S1 (packages), S3 (dialects), S5 and S6 (tenant coverage), S7 (column types), S10 (runtime checks) and S11 (the move from `pkg/search`). The design gives the API, the gen errors and the PR plan.
 
 ## Decision
 
@@ -34,8 +34,9 @@ This record covers the decisions that shape the modules: S1 (packages), S3 (dial
    - The term is trimmed. A blank term gives the literal `TRUE`, never `nil`, because a nil expression panics when a caller composes it.
    - A term longer than `search.MaxTermLength` (1000 characters) is `search.ErrTermTooLong` (400).
    - The escape character is `!`: `!` becomes `!!`, `%` becomes `!%`, `_` becomes `!_`. The SQL text is the same in the three dialects' literal syntax and does not depend on `standard_conforming_strings`.
-   - PostgreSQL uses `expr ILIKE $1 ESCAPE '!'`, which a plain trigram index serves. MySQL, MariaDB and SQLite use `LOWER(expr) LIKE LOWER(?) ESCAPE '!'`, which does not depend on a collation or a pragma.
+   - PostgreSQL uses `expr ILIKE $1 ESCAPE '!'`, which a plain trigram index serves. MySQL, MariaDB and SQLite use `LOWER(expr) LIKE LOWER(?) ESCAPE '!'`, which does not depend on a `_bin` or `_cs` collation or on `PRAGMA case_sensitive_like`.
    - Each match is one atomic expression. Several matches are combined with `jet.OR`, so `scope AND (e1 OR e2)` never renders as `scope AND e1 OR e2`.
+   - Folding and matching still follow the dialect and the column's collation. SQLite's `LOWER` folds ASCII letters only (unless the product loads ICU), so `'é'` does not find `'É'`. MySQL and MariaDB accent-insensitive collations (`utf8mb4_0900_ai_ci`, `uca1400_ai_ci`, `general_ci`) match the term `e` with `'é'`. The R3 tests pin both differences.
 
 5. **One fork change for dialect behaviour (S3.1).** No package outside `db/internal/jet` can branch on the dialect when a statement serializes. R2 adds one constructor, `jet.DialectSwitch(func(Dialect) Expression)` and its typed forms, and makes `WriteAlias` escape the quote character. `db/UPSTREAM.md` lists both. `db/keyset` and `db/searchexec` use the switch for `ILIKE` against `LOWER() LIKE`, for the seek shape, and for literals per dialect.
 
@@ -43,25 +44,27 @@ This record covers the decisions that shape the modules: S1 (packages), S3 (dial
    - NULLs are last when ascending and first when descending, unless a key asks for `NullsFirst` or `NullsLast`. A dialect gets an explicit NULL placement only for a nullable key whose contract differs from the dialect default, so a NOT NULL `(created_at, id)` walk keeps its index.
    - MySQL gets the expanded seek (`a > ? OR (a = ? AND b > ?)`), because its optimizer does not range-scan a row-constructor inequality. PostgreSQL and SQLite keep the row value when every key is NOT NULL and has one direction.
    - Every codec refuses a cursor value that the column cannot hold with `ErrInvalidCursor` (400), never a database error. `TimeKey` and `InetKey` are PostgreSQL only; another dialect gets `keyset.ErrDialect`.
-   - The cursor signature names columns, not SQL, and has one rendering. A cursor that PostgreSQL issues today keeps its token.
+   - The cursor signature names columns, not SQL, and has one rendering. A cursor that PostgreSQL issues today on NOT NULL keys keeps its token. A nullable key, read as `""` today, changes its tokens once (see Consequences).
    - One cross-dialect contract test (S3.5) walks the same 200 rows with the same 40 searches: on binary collations it asserts one order and identical tokens; on each dialect's default collation it asserts complete walks.
 
-7. **The generator emits PostgreSQL searches only in this part (S3).** A `nanorepo.Search` on another dialect is a gen error, as for the repository base (ADR 0026, decision 7). The runtime does not wait for the generator.
+7. **The generator emits PostgreSQL searches only in this part (S3).** A `nanorepo.Search` on another dialect is a gen error, as for the repository base ([ADR 0026](0026-nano-gen-repo.md), decision 7). The runtime does not wait for the generator.
 
 8. **Tenant coverage is structural and instance-based (S5, S6).** The generator computes the read set of a search as a set of table instances (a table plus its alias), with each instance's join kind and `ON` clause. It then proves that each instance is covered. The tenant columns come from `Postgres.Scopes` in `nanogen/project.go`. Coverage is a fixpoint over five rules, which read only top-level `AND` conjuncts:
    1. **Direct.** `Scope`, `ScopeOrNull`, `ScopeNull` or the registered `ScopeFunc` names the column. A direct scope is a `WHERE` condition, so it is refused on the nullable side of a `LEFT JOIN`.
-   2. **Equated.** The `ON` clause, or a correlated `WHERE`, equates the column with a covered tenant column, a field of the scope value, or the referenced column of a declared foreign key on a covered instance.
-   3. **Referenced row.** A covered instance references this instance's key by a declared foreign key.
-   4. **No tenant column.** The instance has no tenant column, and a declared foreign key links it to a covered instance.
+   2. **Equated.** A conjunct of the instance's `ON` clause (or correlated `WHERE`) equates the column with a covered tenant column, a field of the scope value, or, on a covered instance, the column that this column's own declared foreign key references (`configs.product_id = products.id`, with the key `configs.product_id → products.id`).
+   3. **Referenced row.** A conjunct of the instance's `ON` clause matches a declared foreign key from a covered instance to this instance's key (`product_roles.id = memberships.role_id`). Then every tenant column of the instance is covered.
+   4. **No tenant column.** The instance has no tenant column, and a conjunct of its `ON` clause (or correlated `WHERE`) matches a declared foreign key, in either direction, between it and a covered instance.
    5. **Root.** The searched table is covered directly, or through rules 2 to 4 over `INNER JOIN`s only.
+
+   A conjunct under an `OR` counts for nothing. A wrong `ON` clause (`INNER_JOIN(webhooks, Bool(true))`, `webhooks.ID.EQ(webhook_requests.ID)`) matches no declared key, so it covers nothing. A search is accepted only when every instance is covered and every tenant column of every instance is covered or exempted (decision 11). Else the gen error (E9, E10) names the first uncovered column and its instance.
 
    `CROSS`, `FULL` and `RIGHT` joins are refused. A `From` or expression function may call only the go-jet constructors on an allowlist; raw SQL, `CustomExpression` and a package variable of a table type are refused, and a call the check cannot resolve fails closed.
 
-9. **Hard scopes and context scopes (S6.1).** A column of `Scopes` is a hard scope: its value comes only from the typed scope value that the caller passes, and `Resolve` refuses a zero field with `search.ErrUnscoped`. G6 adds `ContextScopes` to `core/nano/project`: a column there is scoped only by the function that the project registers for it. That function may return `TRUE`; a `nil` result is `ErrUnscoped`.
+9. **Hard scopes and context scopes (S6.1).** A column of `Scopes` that is not in `ContextScopes` is a hard scope: its value comes only from the typed scope value that the caller passes, `Resolve` refuses a zero field with `search.ErrUnscoped`, and a `ScopeFunc` on it is a gen error (E9). G6 adds `ContextScopes` to `core/nano/project`; each of its columns must also be in `Scopes`, else it is a project error. A context-scope column is scoped only by the function that the project registers for it. That function may return `TRUE`; a `nil` result is `ErrUnscoped`. So a context scope bounds the rows only when the context carries a value. On an instance that also has a hard tenant column, that column bounds them in every case.
 
 10. **The runtime does not trust a query (S10).** `Resolve`, `Run`, `RunPage` and `transactor.Search` take the generated spec and compare pointers. `Spec` has unexported fields, behind a validating `DefineSpec`. In search mode, `keyset.Page` refuses a nil `Where`, so an empty scope list never runs as "select every row". A hand-written method gets an opaque `Plan`, which can narrow the condition and never widen it.
 
-11. **Every exemption is visible (S6.6).** `nanorepo.Unscoped(column, "reason")` exempts one tenant column, and only when another hard tenant column of the same instance is covered. So no search is unscoped as a whole. `nano gen repo` writes `nanogen/search-exemptions.txt` with every `Unscoped`, `ScopeOrNull`, `ScopeNull`, rule-3 coverage, `IgnoresFullText` and `APIHandWritten`, and `nano gen -check` fails when the committed file is stale.
+11. **Every exemption is visible (S6.6).** `nanorepo.Unscoped(column, "reason")` exempts one tenant column, and only when another hard tenant column of the same instance is covered (E30). So an `Unscoped` exemption never leaves an instance with no covered hard tenant column. `nano gen repo` writes `nanogen/search-exemptions.txt` with every `Unscoped`, `ScopeOrNull`, `ScopeNull`, rule-3 coverage, `IgnoresFullText` and `APIHandWritten`, and `nano gen -check` fails when the committed file is stale.
 
 12. **Column types and foreign keys come from `nano gen db` (S7).** G1 adds two methods to each generated table type, next to `UniqueKeys()`: `ColumnTypes()`, the catalogue type name of each column, and `ForeignKeys()`, the declared foreign keys. `nano gen repo` reads both from Go source, so the repo step still needs no database. G1 waits for PR 8 of ADR 0026; the `nano gen db` of today writes neither method.
     - A column of an instance on the nullable side of a `LEFT JOIN` is nullable in the result, so a sort on it gets the nullable key form.
@@ -96,10 +99,10 @@ This record covers the decisions that shape the modules: S1 (packages), S3 (dial
 
 ## Consequences
 
-- The runtime lane (R1 to R12) touches only the db module and the root module's `pkg/`. The generator lane (G1 to G14) touches `gen/` and starts after PR 8 of ADR 0026 merges.
+- The runtime lane (R1 to R12) touches only the db module and the root module's `pkg/`. The generator lane (G1 to G14) starts after PR 8 of ADR 0026 merges. It touches `gen/`, plus `db/generator` (G1), `core/nano/project` (G6), and `pkg/search` and the docs (G14).
 - `pkg/db/transactor` keeps the context transaction and the row-lock rules. `transactor.Page(...).Run` and every search refuse a requested row lock with `ErrRowLockSearch`.
 - Behaviour changes on every endpoint that adopts a generated search:
-  - `full_text_search` ignores case, matches `%`, `_` and `\` literally, trims the term, and ignores a blank term.
+  - `full_text_search` ignores case (ASCII letters only on SQLite), matches `%`, `_` and `\` literally, trims the term, and ignores a blank term.
   - More than 1000 values in one list filter (`search.MaxInValues`), or a term longer than 1000 characters, is 400.
   - A nullable sort key puts NULLs last when ascending, so the cursor tokens of such a sort change once.
   - `In()` with no values from Go matches no row; the API mapper still treats an empty list as no filter.
