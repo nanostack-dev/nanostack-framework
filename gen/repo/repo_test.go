@@ -66,6 +66,40 @@ func mustAbs(t *testing.T, path string) string {
 	return abs
 }
 
+// The base gives Contains and EqualsIgnoreCase to the columns whose
+// catalogue type is text (text, varchar here), never to a column that the
+// model reads as a string but that is not text (inet, jsonb), and the
+// Contains predicates call searchexec.Contains.
+func TestContainsOnTextColumnsOnly(t *testing.T) {
+	t.Parallel()
+	res, err := Generate(Options{Dir: fixture, Scopes: repotest.Scopes})
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(res.Files[0].Data)
+	for _, want := range []string{
+		"func (auditEventsWhere) ActionContains(term string) postgres.BoolExpression {\n" +
+			"\treturn searchexec.Contains(term, table.AuditEvents.Action)\n}",
+		"func (auditEventsWhere) NoteContains(term string) postgres.BoolExpression {\n" +
+			"\treturn searchexec.Contains(term, table.AuditEvents.Note)\n}",
+		"func (auditEventsWhere) NoteEqualsIgnoreCase(",
+		"func (auditEventsWhere) Client(v string)",
+		"func (auditEventsWhere) Payload(v string)",
+	} {
+		if !strings.Contains(src, want) {
+			t.Errorf("the base has no %q", want)
+		}
+	}
+	for _, unwanted := range []string{
+		"ClientContains", "ClientEqualsIgnoreCase", "PayloadContains", "PayloadEqualsIgnoreCase",
+		"ItemIDContains", ".LIKE(", "nanoContainsPattern",
+	} {
+		if strings.Contains(src, unwanted) {
+			t.Errorf("the base has %q", unwanted)
+		}
+	}
+}
+
 // Two declarations on one table share its base, a method value on a type
 // without fields is a mapper, and a mapper of another package is imported.
 func TestSharedBase(t *testing.T) {

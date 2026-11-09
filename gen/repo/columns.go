@@ -4,6 +4,7 @@ import (
 	"go/ast"
 	"go/types"
 	"reflect"
+	"strings"
 )
 
 // columns checks the row type of a declaration against the table and sets
@@ -47,6 +48,9 @@ func (c *collector) columns(call *ast.CallExpr, t *tableBase) bool {
 			}
 		}
 	}
+	if !c.catalogTypes(call, t) {
+		return false
+	}
 	seen := map[string]string{}
 	for _, col := range t.columns {
 		for _, p := range predicateNames(col) {
@@ -59,6 +63,35 @@ func (c *collector) columns(call *ast.CallExpr, t *tableBase) bool {
 		}
 	}
 	return true
+}
+
+// catalogTypes sets the catalogue type of each column from the ColumnTypes
+// method of the table type. Whether a string column gets Contains and
+// EqualsIgnoreCase depends on its type, so such a column without a type is
+// an error.
+func (c *collector) catalogTypes(call *ast.CallExpr, t *tableBase) bool {
+	var missing []string
+	for i := range t.columns {
+		col := &t.columns[i]
+		col.dbType = t.catalog[col.sqlName]
+		if col.candidate() && col.dbType == "" {
+			missing = append(missing, col.sqlName)
+		}
+	}
+	switch {
+	case len(missing) == 0:
+		return true
+	case !t.catalogOK:
+		c.errorf(call, "run nano gen db, which writes ColumnTypes into the table package, then rerun nano gen repo",
+			"the table package has no ColumnTypes for %s, so nano gen repo cannot tell if %s is text or "+
+				"another type that the model reads as a string, such as inet or jsonb",
+			t.sqlName, strings.Join(missing, ", "))
+	default:
+		c.errorf(call, "run nano gen db, which writes ColumnTypes again from the migrations, then rerun nano gen repo",
+			"ColumnTypes of %s gives no type for %s: the table package is older than the table",
+			t.sqlName, strings.Join(missing, ", "))
+	}
+	return false
 }
 
 // optional strips a pointer or a functional.Option from a model field type.

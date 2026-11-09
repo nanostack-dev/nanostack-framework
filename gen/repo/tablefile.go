@@ -24,8 +24,9 @@ type tableNames struct {
 
 // tableFiles is what the files of one table package declare.
 type tableFiles struct {
-	tables map[string]tableNames  // table variable -> names
-	keys   map[string][]uniqueKey // table type, such as ItemsTable -> its UniqueKeys
+	tables map[string]tableNames        // table variable -> names
+	keys   map[string][]uniqueKey       // table type, such as ItemsTable -> its UniqueKeys
+	types  map[string]map[string]string // table type -> its ColumnTypes: column name -> catalogue type
 }
 
 // tableSource reads what the table package at path declares.
@@ -34,10 +35,12 @@ func (l *loaded) tableSource(path string) (*tableFiles, error) {
 	if err != nil {
 		return nil, err
 	}
-	src := &tableFiles{tables: map[string]tableNames{}, keys: map[string][]uniqueKey{}}
+	src := &tableFiles{tables: map[string]tableNames{}, keys: map[string][]uniqueKey{},
+		types: map[string]map[string]string{}}
 	for _, f := range files {
 		readTableFile(f, src)
 		readUniqueKeys(l.fset, f, src)
+		readColumnTypes(f, src)
 	}
 	return src, nil
 }
@@ -141,6 +144,36 @@ func readTableFile(f *ast.File, src *tableFiles) {
 		if variable, known := constructors[strings.TrimSuffix(fd.Name.Name, "Impl")]; known {
 			readColumns(fd.Body, src.tables[variable].columns)
 		}
+	}
+}
+
+// readColumnTypes reads each func (XTable) ColumnTypes() map[string]string
+// of f: the catalogue type of each column, by column name, from the
+// "column": "type" entries of the returned literal.
+func readColumnTypes(f *ast.File, src *tableFiles) {
+	for _, decl := range f.Decls {
+		fd, ok := decl.(*ast.FuncDecl)
+		if !ok || fd.Name.Name != "ColumnTypes" || fd.Recv == nil || len(fd.Recv.List) != 1 || fd.Body == nil {
+			continue
+		}
+		recv := identOf(fd.Recv.List[0].Type)
+		if recv == nil {
+			continue
+		}
+		types := map[string]string{}
+		ast.Inspect(fd.Body, func(n ast.Node) bool {
+			kv, isKV := n.(*ast.KeyValueExpr)
+			if !isKV {
+				return true
+			}
+			col, isCol := stringLit(kv.Key)
+			typ, isType := stringLit(kv.Value)
+			if isCol && isType {
+				types[col] = typ
+			}
+			return false
+		})
+		src.types[recv.Name] = types
 	}
 }
 

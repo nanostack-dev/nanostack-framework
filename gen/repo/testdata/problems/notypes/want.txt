@@ -1,0 +1,4 @@
+notypes.go:13: the table package has no ColumnTypes for audit_events, so nano gen repo cannot tell if action is text or another type that the model reads as a string, such as inet or jsonb
+  fix: run nano gen db, which writes ColumnTypes into the table package, then rerun nano gen repo
+notypes.go:14: ColumnTypes of notes gives no type for body: the table package is older than the table
+  fix: run nano gen db, which writes ColumnTypes again from the migrations, then rerun nano gen repo

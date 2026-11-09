@@ -271,7 +271,7 @@ func (r *itemRepositoryImpl) ListActive(ctx context.Context, tenantID uuid.UUID)
 | Member | What it is |
 | --- | --- |
 | `t` | the go-jet table, for any statement the helpers do not cover |
-| `where` | a typed predicate per column: `X(v)` and `XIn(vs...)` on every column that has an equality; `XAfter`/`XBefore` on numbers and times; `XIsNull` on nullable columns; `XContains` and `XEqualsIgnoreCase` on text columns that are not keys or IDs |
+| `where` | a typed predicate per column: `X(v)` and `XIn(vs...)` on every column that has an equality; `XAfter`/`XBefore` on numbers and times; `XIsNull` on nullable columns; `XContains` and `XEqualsIgnoreCase` on text columns that are not keys or IDs: a column whose type in `ColumnTypes()` is `text`, `varchar`, `char` or `citext` |
 | `findOne(ctx, cond)` | the one row matching `cond`, absent when none does; reads `LIMIT 2` and returns `transactor.ErrMoreThanOneRow`, wrapped with the table name, when two rows match |
 | `first(ctx, cond, order, more...)` | the first row in an order; end it with a unique column so the row is stable |
 | `findAll`, `exists`, `count` | every matching row, whether one matches, how many match |
@@ -279,7 +279,7 @@ func (r *itemRepositoryImpl) ListActive(ctx context.Context, tenantID uuid.UUID)
 | `query[T]`, `queryOptional[T]`, `queryMap`, `queryOptionalMap`, `queryMapSlice`, `queryCount`, `exec`, `execAffected`, `page` | the `pkg/db/transactor` functions as methods, with the base's database |
 | `queryRow`, `queryRowOptional`, `queryRows` | the same for statements that return the table's rows, mapped with the declaration's mapper |
 
-A nil `cond` on a read means every row. Every helper runs through `pkg/db/transactor`, so it joins the context transaction and keeps the row-lock rules: `findOne`, `first` and `findAll` honour `transactor.ForUpdate`, PostgreSQL refuses the lock on `exists` and `count`, and the two writes refuse it as `Exec` does. Predicate values are typed: `uuid` columns compare as `uuid`, enum columns cast to their type, so their index applies. Other string columns compare as text; a column of another type that the model reads as a string (`json`, `inet`, `tsvector`) needs a statement on `b.t`.
+A nil `cond` on a read means every row. Every helper runs through `pkg/db/transactor`, so it joins the context transaction and keeps the row-lock rules: `findOne`, `first` and `findAll` honour `transactor.ForUpdate`, PostgreSQL refuses the lock on `exists` and `count`, and the two writes refuse it as `Exec` does. Predicate values are typed: `uuid` columns compare as `uuid`, enum columns cast to their type, so their index applies. Other string columns compare as text; a column of another type that the model reads as a string (`json`, `inet`, `tsvector`) needs a statement on `b.t`. `XContains(term)` calls `searchexec.Contains`, the substring rule of every search: it trims the term and matches without case (`ILIKE ... ESCAPE '!'`), `%`, `_` and `!` in the term match themselves, and a blank term matches every row, also a row where the column is NULL. An index on `lower(col)` does not serve it; a trigram index on `col` does. A column that the model reads as a string but whose type is not text (`inet`, `jsonb`, `uuid`) gets no `XContains` and no `XEqualsIgnoreCase`, and a table package without `ColumnTypes()` is an error: run `nano gen db`.
 
 **Derived methods.** A method of the interface without a hand-written body derives from its name:
 

@@ -168,6 +168,69 @@ func TestPredicatesSelectTheirRows(t *testing.T) {
 	}
 }
 
+// Contains is searchexec.Contains on PostgreSQL: % _ ! and \ in the term
+// match themselves, case does not count, the term is trimmed, and a blank
+// term matches every row, also a row where the column is NULL. A blank
+// Contains composes with AND and keeps the other condition.
+func TestContainsMatchesLiterally(t *testing.T) {
+	ctx := context.Background()
+	b := newAuditEventsBase(openShop(t))
+	note := func(s string) *string { return &s }
+	item := func(s string) *string { return &s }
+	var all []int64
+	for _, ev := range []model.AuditEvents{
+		{ItemID: item("i1"), Action: "100% off"},
+		{ItemID: item("i1"), Action: "a_b", Note: note("Late NOTE")},
+		{ItemID: item("i2"), Action: "x!y", Note: note("on time")},
+		{ItemID: item("i2"), Action: `c:\tmp`},
+		{ItemID: item("i3"), Action: "AbC"},
+	} {
+		stmt := b.t.INSERT(b.t.ItemID, b.t.Action, b.t.Note).MODEL(ev).RETURNING(b.t.AllColumns)
+		row, err := b.queryRow(ctx, stmt).Value()
+		if err != nil {
+			t.Fatalf("insert %q: %v", ev.Action, err)
+		}
+		all = append(all, row.ID)
+	}
+	w := b.where
+	for name, test := range map[string]struct {
+		cond postgres.BoolExpression
+		want []int64
+	}{
+		"percent":             {w.ActionContains("%"), all[0:1]},
+		"underscore":          {w.ActionContains("_"), all[1:2]},
+		"escape character":    {w.ActionContains("!"), all[2:3]},
+		"escape and a letter": {w.ActionContains("!y"), all[2:3]},
+		"doubled escape":      {w.ActionContains("!!"), nil},
+		"backslash":           {w.ActionContains(`\`), all[3:4]},
+		"backslash and a t":   {w.ActionContains(`\t`), all[3:4]},
+		"any case":            {w.ActionContains("aBc"), all[4:5]},
+		"trimmed":             {w.ActionContains("  abc\t"), all[4:5]},
+		"blank":               {w.ActionContains(""), all},
+		"white space":         {w.ActionContains(" \t "), all},
+		"blank on NULLs":      {w.NoteContains(""), all},
+		"varchar, any case":   {w.NoteContains("note"), all[1:2]},
+		"blank after AND":     {w.ItemID("i1").AND(w.ActionContains("")), all[0:2]},
+		"blank before AND":    {w.ActionContains("").AND(w.ItemID("i2")), all[2:4]},
+		"blank in OR":         {w.ItemID("i3").OR(w.NoteContains("")), all},
+		"not valid UTF-8":     {w.ActionContains("\xff"), nil},
+	} {
+		t.Run(name, func(t *testing.T) {
+			got, err := b.findAll(ctx, test.cond, b.t.ID.ASC())
+			if err != nil {
+				t.Fatalf("findAll: %v", err)
+			}
+			gotIDs := make([]int64, len(got))
+			for i, ev := range got {
+				gotIDs[i] = ev.ID
+			}
+			if !slices.Equal(gotIDs, test.want) && !(len(gotIDs) == 0 && len(test.want) == 0) {
+				t.Fatalf("got %v, want %v", gotIDs, test.want)
+			}
+		})
+	}
+}
+
 // findOne reads LIMIT 2: no row is absent, one row is mapped, and two rows
 // are ErrMoreThanOneRow, never a silent first row.
 func TestFindOne(t *testing.T) {
