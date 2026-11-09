@@ -1,48 +1,34 @@
-// This file is Nanostack-only (not in go-jet): the db/searchexec core on SQLite. See
-// db/UPSTREAM.md.
+// This file is Nanostack-only (not in go-jet): the db/searchexec suite on SQLite. See
+// db/UPSTREAM.md and db/tests/internal/searchexeccontract.
 
 package sqlite
 
 import (
+	"database/sql"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/nanostack-dev/nanostack-framework/db/keyset"
-	"github.com/nanostack-dev/nanostack-framework/db/search"
-	"github.com/nanostack-dev/nanostack-framework/db/searchexec"
-	. "github.com/nanostack-dev/nanostack-framework/db/sqlite"
+	"github.com/nanostack-dev/nanostack-framework/db/postgres"
+	"github.com/nanostack-dev/nanostack-framework/db/sqlite"
+	"github.com/nanostack-dev/nanostack-framework/db/tests/internal/searchexeccontract"
 )
 
-type seRow struct {
-	ID  string `alias:"items.id"`
-	Org string `alias:"items.org"`
-}
-
-type seSearch struct {
-	searchexec.Query[seRow, seSearch, string, string]
-}
-
-// TestSearchexecRefusesThisDialect pins that the search runtime refuses a source of this
-// dialect with keyset.ErrDialect, before any statement runs: it supports PostgreSQL only
-// until the PR that adds MySQL, MariaDB and SQLite (R10) replaces this test with the
-// PostgreSQL suite.
-func TestSearchexecRefusesThisDialect(t *testing.T) {
-	id, org := StringColumn("id"), StringColumn("org")
-	items := NewTable("", "items", "", id, org)
-	spec := searchexec.DefineSpec(searchexec.SpecDef[seRow, string, string]{
-		From:     func(string) keyset.Source { return items },
-		Columns:  ProjectionList{id, org},
-		Scope:    []searchexec.ScopeCol[string]{searchexec.ScopeEq(searchexec.Value[string], org)},
-		Keys:     map[string]keyset.Key[seRow]{"org": keyset.StringKey(org, func(r seRow) string { return r.Org })},
-		Tiebreak: []keyset.Key[seRow]{keyset.StringKey(id, func(r seRow) string { return r.ID })},
-		Limit:    10,
+func TestSearchexecContract(t *testing.T) {
+	// A database of its own, so the suite never writes to the shared test databases.
+	conn, err := sql.Open("sqlite3", "file:"+filepath.Join(t.TempDir(), "searchexec.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = conn.Close() })
+	searchexeccontract.Run(t, searchexeccontract.Config{
+		Flavor: searchexeccontract.SQLite,
+		DB:     conn,
+		NewTable: func(schema, name string, columns ...postgres.Column) keyset.Source {
+			return sqlite.NewTable(schema, name, "", columns...)
+		},
+		InnerJoin: func(left, right keyset.Source, on postgres.BoolExpression) keyset.Source {
+			return left.(sqlite.Table).INNER_JOIN(right.(sqlite.Table), on)
+		},
 	})
-	q := searchexec.New[seSearch](spec, "org-a")
-
-	_, err := searchexec.Resolve(t.Context(), spec, q.Query)
-	require.ErrorIs(t, err, keyset.ErrDialect)
-	_, err = searchexec.Run(t.Context(), db, spec, q.Query, func(r seRow) seRow { return r })
-	require.ErrorIs(t, err, keyset.ErrDialect)
-	require.False(t, search.IsClientError(err))
 }

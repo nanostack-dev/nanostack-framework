@@ -65,7 +65,27 @@ func Contains(term string, exprs ...jet.StringExpression) jet.BoolExpression {
 		matches[i] = likeFold(expr, pattern)
 	}
 
-	return jet.OR(matches...)
+	return orAll(matches)
+}
+
+// orGroup is the most matches that one OR joins. SQLite refuses an expression tree deeper
+// than 1000 levels (SQLITE_MAX_EXPR_DEPTH), and its parser nests a OR b OR c one level per
+// operand. So search.MaxInValues matches under one OR fail there with an SQL error. orAll
+// joins a longer list in groups of orGroup matches, so the tree stays a few hundred levels
+// deep at most. A list of orGroup matches or fewer keeps one OR.
+const orGroup = 64
+
+// orAll joins matches with OR in parentheses, in nested groups of at most orGroup matches.
+// The groups do not change the answer: OR is associative.
+func orAll(matches []jet.BoolExpression) jet.BoolExpression {
+	if len(matches) <= orGroup {
+		return jet.OR(matches...)
+	}
+	groups := make([]jet.BoolExpression, 0, (len(matches)+orGroup-1)/orGroup)
+	for start := 0; start < len(matches); start += orGroup {
+		groups = append(groups, jet.OR(matches[start:min(start+orGroup, len(matches))]...))
+	}
+	return orAll(groups)
 }
 
 // likeFold matches expr against an escaped pattern without case. Each call binds the
@@ -118,5 +138,5 @@ func ContainsAny(terms []string, exprs ...jet.StringExpression) jet.BoolExpressi
 	for i, term := range terms {
 		matches[i] = Contains(term, exprs...)
 	}
-	return jet.OR(matches...)
+	return orAll(matches)
 }

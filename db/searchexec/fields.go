@@ -508,7 +508,7 @@ func inFold[V ~string](expr jet.StringExpression, vs []V) jet.BoolExpression {
 	case 1:
 		return matches[0]
 	}
-	return jet.OR(matches...)
+	return orAll(matches)
 }
 
 // storableText reports whether a text column can hold s: s is valid UTF-8 and holds no NUL
