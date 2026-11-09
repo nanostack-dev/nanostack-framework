@@ -66,8 +66,12 @@ func (r *resolver) checkParam(v *types.Var, i int, pred string, preds []string) 
 			alt: "reorder the parameters to follow the name, or rename the method to follow the parameters"}
 	}
 	if col.lit == litNone {
-		return param{}, &refusal{msg: fmt.Sprintf("column %s.%s has no equality predicate on the base: its "+
-			"model type is %s", r.t.sqlName, col.sqlName, r.qualified(col.value))}
+		why := "its model type is " + r.qualified(col.value)
+		if col.notText {
+			why = "its catalogue type is " + col.dbType + ", which does not compare with a text value"
+		}
+		return param{}, &refusal{msg: fmt.Sprintf("column %s.%s has no equality predicate on the base: %s",
+			r.t.sqlName, col.sqlName, why)}
 	}
 	conv, ok := convertible(v.Type(), col.value)
 	if !ok {

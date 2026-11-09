@@ -72,3 +72,17 @@ type itemsImpl struct{ itemsBase }
 
 // NewItems returns the items on db.
 func NewItems(db qrm.DB) Items { return &itemsImpl{itemsBase: newItemsBase(db)} }
+
+// AuditLog derives on an inet column, which the model reads as a string.
+type AuditLog interface {
+	CountByClient(ctx context.Context, client string) (int64, error)
+}
+
+func _() {
+	nanorepo.Implement[AuditLog, auditLogImpl](table.AuditEvents, nanorepo.NoMapper[model.AuditEvents])
+}
+
+type auditLogImpl struct{ auditEventsBase }
+
+// NewAuditLog returns the audit log on db.
+func NewAuditLog(db qrm.DB) AuditLog { return &auditLogImpl{auditEventsBase: newAuditEventsBase(db)} }

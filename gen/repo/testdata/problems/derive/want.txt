@@ -119,6 +119,9 @@ derive.go:64: Items.DeleteBySkuInternal: not implemented: no hand-written method
              return r.deleteWhere(ctx, r.where.Sku(sku))
          }
        or take tenantID first and rename it DeleteByTenantIDAndSku; a delete across tenants is written by hand, where review sees it
+derive.go:78: AuditLog.CountByClient: not implemented: no hand-written method on *auditLogImpl, and the name does not derive: column audit_events.client has no equality predicate on the base: its catalogue type is inet, which does not compare with a text value
+  fix: write it by hand on *auditLogImpl, in a non-generated file of package derive:
+         func (r *auditLogImpl) CountByClient(ctx context.Context, client string) (int64, error)
 derive_mocks.gen.go:10: Items.Ping: not implemented: no hand-written method on *itemsImpl, and the name does not derive: it does not start with FindBy, GetBy, ExistsBy, CountBy, DeleteBy, FindAll or Count
   fix: write it by hand on *itemsImpl, in a non-generated file of package derive:
          func (r *itemsImpl) Ping(ctx context.Context) error

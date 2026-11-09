@@ -191,6 +191,8 @@ func (b auditEventsBase) queryRows(ctx context.Context, stmt postgres.Statement)
 // compares as text. Contains is searchexec.Contains: it trims the term,
 // matches a substring without case, and % _ ! in the term match
 // themselves. A blank term matches every row.
+//
+// No equality predicate on client, payload: compare on b.t.
 type auditEventsWhere struct{}
 
 // ID is id = v.
@@ -326,43 +328,9 @@ func (auditEventsWhere) NoteEqualsIgnoreCase(v string) postgres.BoolExpression {
 // NoteIsNull is note IS NULL.
 func (auditEventsWhere) NoteIsNull() postgres.BoolExpression { return table.AuditEvents.Note.IS_NULL() }
 
-// Client is client = v.
-func (auditEventsWhere) Client(v string) postgres.BoolExpression {
-	return table.AuditEvents.Client.EQ(postgres.String(v))
-}
-
-// ClientIn is client IN (vs...); no value matches no row.
-func (auditEventsWhere) ClientIn(vs ...string) postgres.BoolExpression {
-	if len(vs) == 0 {
-		return postgres.Bool(false)
-	}
-	exprs := make([]postgres.Expression, len(vs))
-	for i, v := range vs {
-		exprs[i] = postgres.String(v)
-	}
-	return table.AuditEvents.Client.IN(exprs...)
-}
-
 // ClientIsNull is client IS NULL.
 func (auditEventsWhere) ClientIsNull() postgres.BoolExpression {
 	return table.AuditEvents.Client.IS_NULL()
-}
-
-// Payload is payload = v.
-func (auditEventsWhere) Payload(v string) postgres.BoolExpression {
-	return table.AuditEvents.Payload.EQ(postgres.String(v))
-}
-
-// PayloadIn is payload IN (vs...); no value matches no row.
-func (auditEventsWhere) PayloadIn(vs ...string) postgres.BoolExpression {
-	if len(vs) == 0 {
-		return postgres.Bool(false)
-	}
-	exprs := make([]postgres.Expression, len(vs))
-	for i, v := range vs {
-		exprs[i] = postgres.String(v)
-	}
-	return table.AuditEvents.Payload.IN(exprs...)
 }
 
 // PayloadIsNull is payload IS NULL.

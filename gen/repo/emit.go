@@ -292,6 +292,11 @@ func (e *emitter) where(t *tableBase) {
 	if len(skipped) > 0 {
 		e.p("//\n// No equality predicate on %s: compare on b.t.\n", strings.Join(skipped, ", "))
 	}
+	if untyped := t.untypedText(); len(untyped) > 0 {
+		e.p("//\n// %s is a view, and nano gen db writes no ColumnTypes on a view yet:\n", t.sqlName)
+		e.p("// no Contains or EqualsIgnoreCase on %s. Call searchexec.Contains on b.t.\n",
+			strings.Join(untyped, ", "))
+	}
 	e.p("type %s struct{}\n\n", where)
 	for _, c := range t.columns {
 		col := tbl + "." + c.field

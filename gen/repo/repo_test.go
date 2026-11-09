@@ -83,8 +83,7 @@ func TestContainsOnTextColumnsOnly(t *testing.T) {
 		"func (auditEventsWhere) NoteContains(term string) postgres.BoolExpression {\n" +
 			"\treturn searchexec.Contains(term, table.AuditEvents.Note)\n}",
 		"func (auditEventsWhere) NoteEqualsIgnoreCase(",
-		"func (auditEventsWhere) Client(v string)",
-		"func (auditEventsWhere) Payload(v string)",
+		"// No equality predicate on client, payload: compare on b.t.",
 	} {
 		if !strings.Contains(src, want) {
 			t.Errorf("the base has no %q", want)
@@ -92,11 +91,38 @@ func TestContainsOnTextColumnsOnly(t *testing.T) {
 	}
 	for _, unwanted := range []string{
 		"ClientContains", "ClientEqualsIgnoreCase", "PayloadContains", "PayloadEqualsIgnoreCase",
+		"func (auditEventsWhere) Client(", "func (auditEventsWhere) ClientIn(",
+		"func (auditEventsWhere) Payload(", "func (auditEventsWhere) PayloadIn(",
 		"ItemIDContains", ".LIKE(", "nanoContainsPattern",
 	} {
 		if strings.Contains(src, unwanted) {
 			t.Errorf("the base has %q", unwanted)
 		}
+	}
+}
+
+// A base on a view without ColumnTypes generates: its string columns keep
+// the equality predicates, get no Contains or EqualsIgnoreCase, and the doc
+// comment names them.
+func TestViewBaseWithoutColumnTypes(t *testing.T) {
+	t.Parallel()
+	res, err := Generate(Options{Dir: "testdata/viewbase"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden(t, "testdata/viewbase/repo_base.gen.go.golden", res.Files[0].Data)
+	src := string(res.Files[0].Data)
+	for _, want := range []string{
+		"func (auditEventsWhere) Action(v string)",
+		"// audit_events is a view, and nano gen db writes no ColumnTypes on a view yet:\n" +
+			"// no Contains or EqualsIgnoreCase on action. Call searchexec.Contains on b.t.",
+	} {
+		if !strings.Contains(src, want) {
+			t.Errorf("the base has no %q", want)
+		}
+	}
+	if strings.Contains(src, "ActionContains") || strings.Contains(src, "ActionEqualsIgnoreCase") {
+		t.Error("the base of a view without ColumnTypes has a Contains or EqualsIgnoreCase predicate")
 	}
 }
 

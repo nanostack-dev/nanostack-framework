@@ -22,6 +22,7 @@ type tableBase struct {
 	keysFound bool              // the table type has a UniqueKeys method
 	catalog   map[string]string // column name -> catalogue type, from the ColumnTypes method
 	catalogOK bool              // the table type has a ColumnTypes method
+	view      bool              // the table variable is in a view package of nano gen db
 
 	row    types.Type // the generated model, E
 	domain types.Type // what the row helpers return, D
@@ -41,6 +42,7 @@ type column struct {
 	lit      literal    // how a value of this column is passed; litNone: no equality predicate
 	enum     string     // the quoted, schema-qualified enum type of a litEnum column
 	dbType   string     // the catalogue type that ColumnTypes gives, such as text or inet; "" when not known
+	notText  bool       // the model reads a string, but dbType is not text: no equality predicate
 }
 
 // literal is the Nanostack DB constructor a predicate passes its value
@@ -86,6 +88,21 @@ func (t *tableBase) declaredNames() []string {
 // neither.
 func (c column) textual() bool {
 	return c.candidate() && textType(c.dbType)
+}
+
+// untypedText returns the string columns of a view without ColumnTypes
+// that would get Contains and EqualsIgnoreCase if their type were known.
+func (t *tableBase) untypedText() []string {
+	if !t.view || t.catalogOK {
+		return nil
+	}
+	var out []string
+	for _, c := range t.columns {
+		if c.candidate() {
+			out = append(out, c.sqlName)
+		}
+	}
+	return out
 }
 
 // candidate reports whether the catalogue type of c decides if it is
@@ -175,7 +192,7 @@ func (c *collector) table(arg ast.Expr) (*tableBase, bool) {
 		return nil, false
 	}
 	t := &tableBase{varObj: v, pkgPath: v.Pkg().Path(), pkgName: v.Pkg().Name(), tableType: v.Type(),
-		goName: v.Name()}
+		goName: v.Name(), view: v.Pkg().Name() == "view"}
 	src, err := c.l.tableSource(v.Pkg().Path())
 	if err != nil {
 		c.problems = append(c.problems, err)

@@ -68,14 +68,23 @@ func (c *collector) columns(call *ast.CallExpr, t *tableBase) bool {
 // catalogTypes sets the catalogue type of each column from the ColumnTypes
 // method of the table type. Whether a string column gets Contains and
 // EqualsIgnoreCase depends on its type, so such a column without a type is
-// an error.
+// an error. A view is the exception: nano gen db does not write ColumnTypes
+// on a view yet, so no column of a view without it gets the two predicates.
+// A string column whose type is not text, such as inet or jsonb, gets no
+// equality predicate either: a text value does not compare with it.
 func (c *collector) catalogTypes(call *ast.CallExpr, t *tableBase) bool {
+	if t.view && !t.catalogOK {
+		return true
+	}
 	var missing []string
 	for i := range t.columns {
 		col := &t.columns[i]
 		col.dbType = t.catalog[col.sqlName]
-		if col.candidate() && col.dbType == "" {
+		switch {
+		case col.candidate() && col.dbType == "":
 			missing = append(missing, col.sqlName)
+		case col.lit == litString && col.dbType != "" && !textType(col.dbType):
+			col.lit, col.notText = litNone, true
 		}
 	}
 	switch {
