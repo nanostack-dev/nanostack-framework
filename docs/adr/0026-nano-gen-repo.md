@@ -41,6 +41,6 @@ The design ships in three PRs: the db step with `UniqueKeys()` (PR 6, [decision 
 ## Consequences
 
 - A service declares `Postgres.Scopes`, embeds a base per table and moves its finders onto `r.findOne`, `r.first` and `r.where`, one repository file at a time, after PR 8. Every hand-written `LIMIT 1` on columns that are not unique moves to `first` with an order.
-- The base needs Go 1.27 for its generic methods. A service adopts it with Go 1.27.4 or later and golangci-lint v2.15.0 or later (golang/go#81188).
+- The base needs Go 1.27 for its generic methods. Go 1.27.0 to 1.27.3 lose the order of generic methods in export data (golang/go#81188), so a service that adopts the base keeps the framework's `TEMP(golang/go#81188)` lint exceptions until Go 1.27.4 ([decision log](../decision-log.md)).
 - String predicates compare as text (`$1::text`). On a column of another type that the model reads as a string, such as `json`, `inet` or `tsvector`, the predicate fails at run time; such a column is compared on `b.t`. Enum columns cast to their type, so their index applies.
 - Until PR 8, every method of the bound interface is hand-written on the base; the interface itself is checked only for being an interface.

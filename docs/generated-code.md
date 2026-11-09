@@ -1413,14 +1413,14 @@ func (itemsWhere) TenantID(v uuid.UUID) postgres.BoolExpression {
 
 ### Errors an agent sees
 
-Each at its line, all in one run (from [`gen/repo/testdata/problems`](../gen/repo/testdata/problems)):
+Each at its line, all in one run. The scope warning, from the pipeline fixture `gen/pipeline/testdata/dbapp`:
 
 ```text
 internal/repository/users.go:31: ByEmail: condition on users has no tenant_id; this query can read or change another tenant's rows
   fix: add u.where.TenantID(…) to the condition, or name it ByEmailInternal for a trusted system path
 ```
 
-The first line is a `warning`: it keeps exit 0. The other problems are errors: a type argument that is not an interface or a struct of the package, a mapper with state, a table of MySQL or SQLite, a hand-written name that a generated one would clash with, and a compile error left once the new base is in place.
+The first line is a `warning`: it keeps exit 0. The other problems are errors, one golden per rule in [`gen/repo/testdata/problems`](../gen/repo/testdata/problems): a type argument that is not an interface or a struct of the package, a mapper with state, a table of MySQL or SQLite, a hand-written name that a generated one would clash with, and a compile error left once the new base is in place.
 
 ### Adopting it in a service
 
