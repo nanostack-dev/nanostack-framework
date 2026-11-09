@@ -200,4 +200,4 @@ linters:
       - {linters: [unparam], path: ^pkg/tracing/http_test\.go$} # serve always gets GET
 nanostack:
   # One per linter in each rule above; lintconfig fails when they differ.
-  exclusion-budget: 70
+  exclusion-budget: 69
