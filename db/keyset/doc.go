@@ -1,7 +1,9 @@
 // Package keyset is the keyset pager of Nanostack DB (ADR 0001, ADR 0027).
 //
 // A Key reads one ordering column from a scanned row and compares that column
-// with a cursor value. An Order is a total ordering: the requested sort keys,
+// with a cursor value. A computed key (IntExprKey and the other Expr forms)
+// orders on an expression, such as a correlated count, and the page selects
+// it with the alias that the row field maps to. An Order is a total ordering: the requested sort keys,
 // then a unique tiebreak. Order.Seek turns a cursor into the predicate for the
 // rows after it, Order.Trim cuts a page fetched with LIMIT limit+1 and gives
 // the next cursor, and Page runs the count and the page through db/query.

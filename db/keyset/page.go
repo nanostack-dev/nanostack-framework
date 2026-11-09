@@ -3,6 +3,7 @@ package keyset
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	jet "github.com/nanostack-dev/nanostack-framework/db/postgres"
 	"github.com/nanostack-dev/nanostack-framework/db/query"
@@ -106,6 +107,11 @@ func (b *PageBuilder[T, R]) OrderBy(clauses ...jet.OrderByClause) *PageBuilder[T
 // (a model with a nested slice of joined children), or a join that repeats a
 // parent, would cut pages short and end the walk early. Page the parent rows
 // flat, then load the children of the page in a second statement (PageOf).
+//
+// The page selects the computed keys of the ordering (Order.Projections)
+// after the columns of Page, so the scan fills the row fields that the next
+// cursor reads. Do not list them in the columns. The count does not select
+// them.
 func (b *PageBuilder[T, R]) Keyset(order Order[T]) *PageBuilder[T, R] {
 	b.keyset = &order
 	return b
@@ -245,7 +251,13 @@ func (b *PageBuilder[T, R]) pageStatement(table jet.ReadableTable, page search.P
 func (b *PageBuilder[T, R]) keysetStatement(
 	table jet.ReadableTable, page search.Pagination, seek jet.BoolExpression,
 ) jet.Statement {
-	stmt := table.SELECT(b.columns[0], b.columns[1:]...)
+	// The computed keys are selected AS their names, so the scan fills the
+	// row fields that the next cursor reads.
+	columns := b.columns
+	if computed := b.keyset.Projections(); len(computed) > 0 {
+		columns = slices.Concat(columns, []jet.Projection{computed})
+	}
+	stmt := table.SELECT(columns[0], columns[1:]...)
 	if where := and(b.where, seek); where != nil {
 		stmt = stmt.WHERE(where)
 	}

@@ -10,12 +10,12 @@ import (
 
 // TimeKey orders on a NOT NULL timestamptz column.
 func TimeKey[T any](column jet.ColumnTimestampz, value func(T) time.Time) Key[T] {
-	return timeKey(column, false, ptrOf(value))
+	return timeKey(columnTarget(column), column, false, ptrOf(value))
 }
 
 // NullableTimeKey orders on a nullable timestamptz column.
 func NullableTimeKey[T any](column jet.ColumnTimestampz, value func(T) *time.Time) Key[T] {
-	return timeKey(column, true, value)
+	return timeKey(columnTarget(column), column, true, value)
 }
 
 // PostgreSQL stores timestamps from 4714-11-24 BC to 294276-12-31 AD at
@@ -56,8 +56,10 @@ func microsCodec() keyCodec[time.Time] {
 	}
 }
 
-func timeKey[T any](column jet.ColumnTimestampz, nullable bool, value func(T) *time.Time) Key[T] {
-	return newCodecKey(column, nullable, value, microsCodec(),
+func timeKey[T any](
+	target keyTarget, column jet.TimestampzExpression, nullable bool, value func(T) *time.Time,
+) Key[T] {
+	return newTargetKey(target, nullable, value, microsCodec(),
 		func(v time.Time) jet.Expression { return jet.TimestampzT(v) },
 		func(v time.Time) (jet.BoolExpression, jet.BoolExpression, jet.BoolExpression) {
 			return column.GT(jet.TimestampzT(v)), column.LT(jet.TimestampzT(v)), column.EQ(jet.TimestampzT(v))

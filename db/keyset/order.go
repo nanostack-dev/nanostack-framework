@@ -61,7 +61,7 @@ func OrderOf[S ~string, T any](
 	direction := search.SortAscending
 	for _, sort := range sorts {
 		key := keys[sort.Field]
-		name := qualifiedName(key.column)
+		name := key.name()
 		if seen[name] {
 			continue
 		}
@@ -70,7 +70,7 @@ func OrderOf[S ~string, T any](
 		order.keys = append(order.keys, orderedKey[T]{key: key, direction: direction})
 	}
 	for _, key := range append([]Key[T]{tiebreak}, more...) {
-		name := qualifiedName(key.column)
+		name := key.name()
 		if seen[name] {
 			continue
 		}
@@ -87,7 +87,7 @@ func OrderOf[S ~string, T any](
 func signatureOf[T any](keys []orderedKey[T]) string {
 	parts := make([]string, len(keys))
 	for i, k := range keys {
-		parts[i] = qualifiedName(k.key.column) + ":" + string(k.direction)
+		parts[i] = k.key.name() + ":" + string(k.direction)
 		switch k.key.nulls {
 		case nullsFirst:
 			parts[i] += ":NULLS_FIRST"
@@ -138,9 +138,9 @@ func (o Order[T]) Signature() string {
 func (o Order[T]) OrderBy() []jet.OrderByClause {
 	clauses := make([]jet.OrderByClause, len(o.keys))
 	for i, k := range o.keys {
-		clause := k.key.column.ASC()
+		clause := k.key.expression.ASC()
 		if k.direction == search.SortDescending {
-			clause = k.key.column.DESC()
+			clause = k.key.expression.DESC()
 		}
 		switch k.key.nulls {
 		case nullsFirst:
@@ -152,4 +152,19 @@ func (o Order[T]) OrderBy() []jet.OrderByClause {
 		clauses[i] = clause
 	}
 	return clauses
+}
+
+// Projections returns the computed keys of the ordering, each selected AS its
+// name, so the scan fills the row field that the cursor reads. It is empty
+// when every key is a column. PageBuilder adds them to the page itself. A
+// hand-written query that orders or seeks with this ordering adds them to its
+// select list.
+func (o Order[T]) Projections() jet.ProjectionList {
+	var projections jet.ProjectionList
+	for _, k := range o.keys {
+		if k.key.computed != "" {
+			projections = append(projections, k.key.expression.AS(k.key.computed))
+		}
+	}
+	return projections
 }

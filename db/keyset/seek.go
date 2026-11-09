@@ -48,7 +48,7 @@ func (o Order[T]) rowSeek(bounds []keyBound) jet.BoolExpression {
 		if k.key.nullable || k.direction != direction {
 			return nil
 		}
-		columns[i] = k.key.column
+		columns[i] = k.key.expression
 		literals[i] = bounds[i].literal
 	}
 	if direction == search.SortDescending {
@@ -83,7 +83,7 @@ func (o Order[T]) expandedSeek(bounds []keyBound) jet.BoolExpression {
 }
 
 func afterBound[T any](k orderedKey[T], bound keyBound) jet.BoolExpression {
-	column := k.key.column
+	column := k.key.expression
 	nullsAfter := k.key.nullsAfter(k.direction)
 	if bound.isNull {
 		if nullsAfter {
