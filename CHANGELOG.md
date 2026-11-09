@@ -2,6 +2,11 @@
 
 One section per module and version, newest first. Each section uses Added, Changed, Deprecated, Removed and Fixed. [RELEASING.md](RELEASING.md) gives the release steps and the upgrade notes.
 
+## gen/v0.23.0-beta.4
+
+### Fixed
+- `nano gen repo` no longer imports the model package into a base where every table has a mapper and no column has a type of the model package. Go refused that base with `imported and not used`, and the run stopped with "the base of table ... does not compile". Run `go tool nano gen repo`: a base that generated before does not change.
+
 ## gen/v0.23.0-beta.3
 
 Codegen part 1: the db step and the repo step of `nano gen`. It requires root `v0.23.0-beta.3` and `db/v0.23.0-beta.3`. Pin the CLI with `go get -tool github.com/nanostack-dev/nanostack-framework/gen/cmd/nano@v0.23.0-beta.3`. [RELEASING.md](RELEASING.md#upgrade-from-v0230-beta2) gives the upgrade steps.

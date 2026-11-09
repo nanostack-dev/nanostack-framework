@@ -174,7 +174,7 @@ func (e *emitter) hatches(t *tableBase) {
 	result := e.ref(transactorPath, "transactor", "Result")
 	tx := e.imp.Add(transactorPath, "transactor")
 	opt := e.ref(functionalPath, "functional", "Option")
-	dom, row := e.typ(t.domain), e.typ(t.row)
+	dom := e.typ(t.domain)
 
 	e.p("// query runs stmt and scans its rows into T: a model row, a slice, or a struct\n")
 	e.p("// of aliased columns. Chain OnUnique, OnForeignKey or OnNoRows before Value.\n")
@@ -209,6 +209,9 @@ func (e *emitter) hatches(t *tableBase) {
 	e.p("\treturn %s.Page(b.db, mapFunc, columns...)\n}\n\n", tx)
 
 	if t.mapper == nil {
+		// Only this branch names the row type: e.typ imports its package, which a
+		// base where every table has a mapper must not import.
+		row := e.typ(t.row)
 		e.p("// queryRow runs stmt, which returns one %s row, such as an INSERT or\n", t.sqlName)
 		e.p("// UPDATE ... RETURNING(b.t.AllColumns), and returns the row.\n")
 		e.p("func (b %s) queryRow(ctx %s, stmt %s) %s[%s] {\n\treturn b.query[%s](ctx, stmt)\n}\n\n",

@@ -80,6 +80,22 @@ func TestSharedBase(t *testing.T) {
 	}
 }
 
+// A base where every table has a mapper does not name the row type, so it
+// must not import the model package: an unused import does not compile.
+func TestBaseWithOnlyMappedTables(t *testing.T) {
+	t.Parallel()
+	res, err := Generate(Options{Dir: "testdata/allmapped"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Files) == 0 {
+		t.Fatal("no file generated")
+	}
+	if src := string(res.Files[0].Data); strings.Contains(src, "/public/model\"") {
+		t.Error("the base imports the model package, which it does not use")
+	}
+}
+
 // report renders a run as Main prints it: the warnings, then the errors.
 func report(warnings []*gen.Error, err error) []byte {
 	var b bytes.Buffer
