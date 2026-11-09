@@ -28,18 +28,24 @@ search ItemWithTenant on items (rows model.Items)
   filter     TenantName: Eq on tenantName()
   fulltext   items.name (text)
   fulltext   tenants.name (text)
-  fulltext   tenantName()
+  fulltext   tenantName(), Go only
   sort       tenant_name, tenant: tenants.name, NullsLast
   sort       total: field Total = total()
   sort       popularity: hand-written
   default    Total ASC
   tiebreak   id: the primary key items_pkey (id), by default
-search TenantItem on tenants (rows model.Tenants)
-  from       tenantsAndTheirItems
-  read       tenants; root
-  read       items; LEFT JOIN; ON table.Items.TenantID.EQ(table.Tenants.ID); every column nullable; tenant tenant_id
-  filter     Name: Present on items.name (text, string)
-  sort       created_at: items.created_at, nullable
-  sort       name: tenants.name
-  default    tenants.name ASC
-  tiebreak   id: the primary key tenants_pkey (id), by default
+search ItemOptionalTenant on items (rows model.Items)
+  from       itemsAndTheirTenant
+  read       items; root; nullable weight, released_on, local_at, opens_at, deleted_at, external_id, tags; tenant tenant_id
+  read       tenants; LEFT JOIN; ON table.Tenants.ID.EQ(table.Items.TenantID); every column nullable
+  filter     Name: Present on tenants.name (text, string)
+  sort       name: tenants.name, nullable
+  sort       created_at: items.created_at
+  default    items.created_at ASC
+  tiebreak   id: the primary key items_pkey (id), by default
+search ItemAliasedTenant on items (rows model.Items)
+  from       itemsWithAnAliasedTenant
+  read       items; root; nullable weight, released_on, local_at, opens_at, deleted_at, external_id, tags; tenant tenant_id
+  read       tenants AS owner; INNER JOIN; ON table.Tenants.AS("owner").ID.EQ(table.Items.TenantID)
+  sort       name: items.name
+  tiebreak   id: the primary key items_pkey (id), by default

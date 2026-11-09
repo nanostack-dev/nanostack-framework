@@ -64,7 +64,7 @@ func _() {
 		nanorepo.ScopeFunc(tenantFilter, table.Tenants.Name),
 		nanorepo.Filter(table.Items.Name, nanorepo.Contains),
 		nanorepo.FullText(table.Items.Name, table.Tenants.Name),
-		nanorepo.FullTextExpr(tenantName),
+		nanorepo.GoOnly(nanorepo.FullTextExpr(tenantName)),
 		nanorepo.Flag("Expensive", expensive),
 		nanorepo.FilterExpr("TenantName", tenantName, nanorepo.Eq),
 		nanorepo.Condition(expensive),
@@ -74,12 +74,20 @@ func _() {
 		nanorepo.DefaultSortExpr("Total", nanorepo.Asc),
 	)
 
-	// A LEFT JOIN: every column of items can be NULL in a result row.
-	nanorepo.Search[model.Tenants]("TenantItem", table.Tenants,
-		nanorepo.From(tenantsAndTheirItems),
-		nanorepo.Filter(table.Items.Name, nanorepo.Present),
-		nanorepo.Sort(table.Items.CreatedAt, table.Tenants.Name),
-		nanorepo.DefaultSort(table.Tenants.Name, nanorepo.Asc),
+	// A LEFT JOIN to one row: every column of tenants can be NULL in a
+	// result row. The join keys on the primary key of tenants, so it adds
+	// no row, and the primary key of items orders every row.
+	nanorepo.Search[model.Items]("ItemOptionalTenant", table.Items,
+		nanorepo.From(itemsAndTheirTenant),
+		nanorepo.Filter(table.Tenants.Name, nanorepo.Present),
+		nanorepo.Sort(table.Tenants.Name, table.Items.CreatedAt),
+		nanorepo.DefaultSort(table.Items.CreatedAt, nanorepo.Asc),
+	)
+
+	// A joined table with an alias.
+	nanorepo.Search[model.Items]("ItemAliasedTenant", table.Items,
+		nanorepo.From(itemsWithAnAliasedTenant),
+		nanorepo.Sort(table.Items.Name),
 	)
 }
 
@@ -87,8 +95,12 @@ func itemsWithTheirTenant() postgres.ReadableTable {
 	return table.Items.INNER_JOIN(table.Tenants, table.Tenants.ID.EQ(table.Items.TenantID))
 }
 
-func tenantsAndTheirItems() postgres.ReadableTable {
-	return table.Tenants.LEFT_JOIN(table.Items, table.Items.TenantID.EQ(table.Tenants.ID))
+func itemsAndTheirTenant() postgres.ReadableTable {
+	return table.Items.LEFT_JOIN(table.Tenants, table.Tenants.ID.EQ(table.Items.TenantID))
+}
+
+func itemsWithAnAliasedTenant() postgres.ReadableTable {
+	return table.Items.INNER_JOIN(table.Tenants.AS("owner"), table.Tenants.AS("owner").ID.EQ(table.Items.TenantID))
 }
 
 func tenantName() postgres.StringExpression { return table.Tenants.Name }

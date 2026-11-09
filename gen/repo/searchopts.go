@@ -4,7 +4,11 @@ import (
 	"go/ast"
 	"go/constant"
 	"go/types"
+	"slices"
 	"strings"
+	"unicode"
+
+	"github.com/nanostack-dev/nanostack-framework/db/search"
 )
 
 // optionFix is the fix of an argument of nanorepo.Search that nano gen repo
@@ -16,6 +20,11 @@ const optionFix = "write each option as a call of a nanorepo function in the nan
 var onceOptions = map[string]bool{ //nolint:gochecknoglobals // read-only table.
 	"Map": true, "MapPage": true, "From": true, "Tiebreak": true, "DefaultSort": true, "DefaultSortExpr": true,
 	"DefaultLimit": true, "API": true, "IgnoresFullText": true,
+}
+
+// goOnlyOptions are the options that GoOnly wraps: a filter, or FullText.
+var goOnlyOptions = []string{ //nolint:gochecknoglobals // read-only table.
+	"Filter", "FilterAs", "FilterExpr", "FilterExists", "Flag", "FullText", "FullTextExpr",
 }
 
 // onceGroup names the group of a once-option: Map and MapPage exclude each
@@ -50,11 +59,14 @@ func (c *collector) searchOption(s *searchDecl, arg ast.Expr, goOnly bool) {
 	if onceOptions[name] {
 		file, line := c.l.position(c.l.pkg.Fset, call.Pos())
 		if first, dup := s.given[onceGroup(name)]; dup {
-			c.errorf(call, "keep one of the two", "search %s: %s is given twice: %s and %s", s.name, name, first,
-				at{file, line})
+			what := name + " is given twice"
+			if other := s.givenAs[onceGroup(name)]; other != name {
+				what = other + " and " + name + " exclude each other"
+			}
+			c.errorf(call, "keep one of the two", "search %s: %s: %s and %s", s.name, what, first, at{file, line})
 			return
 		}
-		s.given[onceGroup(name)] = at{file, line}
+		s.given[onceGroup(name)], s.givenAs[onceGroup(name)] = at{file, line}, name
 	}
 	if call.Ellipsis.IsValid() {
 		c.errorf(call, optionFix, "search %s: %s spreads a slice; nano gen repo reads each argument from source",
@@ -66,6 +78,11 @@ func (c *collector) searchOption(s *searchDecl, arg ast.Expr, goOnly bool) {
 
 // option dispatches one option call by its function name.
 func (c *collector) option(s *searchDecl, name string, call *ast.CallExpr, goOnly bool) {
+	if goOnly && !slices.Contains(goOnlyOptions, name) {
+		c.errorf(call, "wrap only a filter or FullText in nanorepo.GoOnly",
+			"search %s: GoOnly(%s) marks no filter and no full text", s.name, c.source(call))
+		return
+	}
 	switch name {
 	case "GoOnly":
 		c.searchOption(s, call.Args[0], true)
@@ -81,17 +98,16 @@ func (c *collector) option(s *searchDecl, name string, call *ast.CallExpr, goOnl
 		}
 	case "Unscoped":
 		if col := c.columnRef(s, call.Args[0]); col != nil {
-			why, _ := c.constString(s, call.Args[1])
-			s.unscoped = append(s.unscoped, unscopedDecl{col: col, why: why})
+			if why, ok := c.reason(s, name, call.Args[1]); ok {
+				s.unscoped = append(s.unscoped, unscopedDecl{col: col, why: why})
+			}
 		}
 	case "Condition":
 		s.conditions = append(s.conditions, call.Args[0])
 	case "Filter", "FilterAs", "FilterExpr", "FilterExists", "Flag":
 		c.filter(s, name, call, goOnly)
-	case "FullText":
-		s.fullText = append(s.fullText, c.columnRefs(s, call.Args)...)
-	case "FullTextExpr":
-		s.fullTextExprs = append(s.fullTextExprs, call.Args...)
+	case "FullText", "FullTextExpr":
+		c.fullText(s, name, call, goOnly)
 	case "Sort":
 		for _, col := range c.columnRefs(s, call.Args) {
 			s.sorts = append(s.sorts, &searchSort{kind: name, col: col, api: []string{col.col.sqlName}})
@@ -114,18 +130,37 @@ func (c *collector) option(s *searchDecl, name string, call *ast.CallExpr, goOnl
 	}
 }
 
+// fullText reads FullText and FullTextExpr, with the Go-only mark of each
+// entry.
+func (c *collector) fullText(s *searchDecl, name string, call *ast.CallExpr, goOnly bool) {
+	if name == "FullTextExpr" {
+		for _, fn := range call.Args {
+			s.fullTextGoOnly[fn] = goOnly
+		}
+		s.fullTextExprs = append(s.fullTextExprs, call.Args...)
+		return
+	}
+	cols := c.columnRefs(s, call.Args)
+	for _, col := range cols {
+		s.fullTextGoOnly[col.expr] = goOnly
+	}
+	s.fullText = append(s.fullText, cols...)
+}
+
 // limitsAndAPI reads the order, page and API options.
 func (c *collector) limitsAndAPI(s *searchDecl, name string, call *ast.CallExpr) {
 	switch name {
 	case "Tiebreak":
-		s.tiebreak = c.columnRefs(s, call.Args)
+		s.tiebreak, s.tiebreakNode = c.columnRefs(s, call.Args), call
 	case "DefaultSort":
-		if col := c.columnRef(s, call.Args[0]); col != nil {
-			s.defaultSort = &defaultSort{col: col, desc: c.descending(call.Args[1]), node: call}
+		col := c.columnRef(s, call.Args[0])
+		if desc, ok := c.descending(s, call.Args[1]); ok && col != nil {
+			s.defaultSort = &defaultSort{col: col, desc: desc, node: call}
 		}
 	case "DefaultSortExpr":
-		if field, ok := c.constString(s, call.Args[0]); ok {
-			s.defaultSort = &defaultSort{field: field, desc: c.descending(call.Args[1]), node: call}
+		field, ok := c.constString(s, call.Args[0])
+		if desc, isDir := c.descending(s, call.Args[1]); ok && isDir {
+			s.defaultSort = &defaultSort{field: field, desc: desc, node: call}
 		}
 	case "DefaultLimit":
 		tv := c.l.pkg.TypesInfo.Types[call.Args[0]]
@@ -133,18 +168,20 @@ func (c *collector) limitsAndAPI(s *searchDecl, name string, call *ast.CallExpr)
 		if tv.Value != nil {
 			n, exact = constant.Int64Val(constant.ToInt(tv.Value))
 		}
-		if !exact || n < 1 {
-			c.errorf(call, "pass a positive constant, such as nanorepo.DefaultLimit(20)",
-				"search %s: DefaultLimit(%s) is not a positive constant", s.name, c.source(call.Args[0]))
+		if !exact || n < 1 || n > search.MaxLimit {
+			c.errorf(call, "pass a constant between 1 and 1000 (search.MaxLimit), such as nanorepo.DefaultLimit(20)",
+				"search %s: DefaultLimit(%s) is not a constant between 1 and %d: search.CheckPage refuses "+
+					"any other page size, so every request that gives no limit would fail", s.name,
+				c.source(call.Args[0]), search.MaxLimit)
 			return
 		}
-		s.defaultLimit = int32(min(n, 1<<31-1))
+		s.defaultLimit = int32(n) // 1 to search.MaxLimit
 	case "API":
 		if inst, ok := c.l.pkg.TypesInfo.Instances[c.funcIdent(call)]; ok && inst.TypeArgs.Len() == 1 {
 			s.api = inst.TypeArgs.At(0)
 		}
 	case "IgnoresFullText":
-		s.ignoresFullText, _ = c.constString(s, call.Args[0])
+		s.ignoresFullText, _ = c.reason(s, name, call.Args[0])
 	case "APIHandWritten":
 		for _, a := range call.Args {
 			if prop, ok := c.constString(s, a); ok {
@@ -154,14 +191,33 @@ func (c *collector) limitsAndAPI(s *searchDecl, name string, call *ast.CallExpr)
 	}
 }
 
-// descending reads nanorepo.Asc or nanorepo.Desc.
-func (c *collector) descending(arg ast.Expr) bool {
+// descending reads nanorepo.Asc or nanorepo.Desc. A direction that is not
+// a constant is a problem: read as ascending, it would change the order.
+func (c *collector) descending(s *searchDecl, arg ast.Expr) (desc, ok bool) {
 	tv := c.l.pkg.TypesInfo.Types[arg]
-	if tv.Value == nil {
-		return false
+	if tv.Value == nil || tv.Value.Kind() != constant.Int {
+		c.errorf(arg, "pass nanorepo.Asc or nanorepo.Desc",
+			"search %s: %s is not a constant direction", s.name, c.source(arg))
+		return false, false
 	}
 	n, _ := constant.Int64Val(tv.Value)
-	return n == 1
+	return n == 1, true
+}
+
+// reason reads the reason of Unscoped or IgnoresFullText: a constant string
+// that is not blank, because a reviewer reads it in -explain and in the
+// exemption file.
+func (c *collector) reason(s *searchDecl, option string, arg ast.Expr) (string, bool) {
+	why, ok := c.constString(s, arg)
+	if !ok {
+		return "", false
+	}
+	if strings.TrimSpace(why) == "" {
+		c.errorf(arg, "pass the reason a reviewer reads",
+			"search %s: %s has a blank reason", s.name, option)
+		return "", false
+	}
+	return why, true
 }
 
 // nanorepoFunc returns the nanorepo function or method that call calls, or
@@ -188,14 +244,22 @@ func (c *collector) funcIdent(call *ast.CallExpr) *ast.Ident {
 	return sel.Sel
 }
 
-// constString reads a constant string argument.
+// constString reads a constant string argument. A string with a control
+// character is refused: -explain and the exemption file print each string
+// on one line, and a newline could forge a line.
 func (c *collector) constString(s *searchDecl, arg ast.Expr) (string, bool) {
 	tv := c.l.pkg.TypesInfo.Types[arg]
 	if tv.Value == nil || tv.Value.Kind() != constant.String {
 		c.errorf(arg, "pass a string literal", "search %s: %s is not a constant string", s.name, c.source(arg))
 		return "", false
 	}
-	return constant.StringVal(tv.Value), true
+	str := constant.StringVal(tv.Value)
+	if strings.ContainsFunc(str, unicode.IsControl) {
+		c.errorf(arg, "remove the control characters",
+			"search %s: %s holds a control character, such as a newline", s.name, c.source(arg))
+		return "", false
+	}
+	return str, true
 }
 
 // columnRefs reads column arguments.
@@ -267,7 +331,7 @@ func (c *collector) filter(s *searchDecl, name string, call *ast.CallExpr, goOnl
 		f.expr, ops = call.Args[1], call.Args[2:]
 	}
 	for _, a := range ops {
-		op, ok := c.op(a)
+		op, ok := c.op(s, a)
 		if !ok {
 			c.errorf(a, "pass nanorepo.Eq, In, InFold, Contains, ContainsAny, Present or Range(...), "+
 				"optionally with .API(\"property\")",
@@ -281,7 +345,7 @@ func (c *collector) filter(s *searchDecl, name string, call *ast.CallExpr, goOnl
 
 // op reads an operator: nanorepo.In, nanorepo.In.API("ids"),
 // nanorepo.Range("since", "until").HalfOpen().
-func (c *collector) op(arg ast.Expr) (searchOp, bool) {
+func (c *collector) op(s *searchDecl, arg ast.Expr) (searchOp, bool) {
 	info := c.l.pkg.TypesInfo
 	switch x := ast.Unparen(arg).(type) {
 	case *ast.SelectorExpr, *ast.Ident:
@@ -299,16 +363,16 @@ func (c *collector) op(arg ast.Expr) (searchOp, bool) {
 			return searchOp{}, false
 		}
 		if fn.Name() == "Range" {
-			return searchOp{name: "Range", api: c.strings(x.Args), node: arg}, true
+			return searchOp{name: "Range", api: c.strings(s, x.Args), node: arg}, true
 		}
 		sel, isSel := ast.Unparen(x.Fun).(*ast.SelectorExpr)
 		if !isSel {
 			return searchOp{}, false
 		}
-		op, ok := c.op(sel.X)
+		op, ok := c.op(s, sel.X)
 		switch fn.Name() {
 		case "API":
-			op.api = c.strings(x.Args)
+			op.api = c.strings(s, x.Args)
 		case "HalfOpen", "Exclusive":
 			op.bounds = fn.Name()
 		default:
@@ -320,13 +384,15 @@ func (c *collector) op(arg ast.Expr) (searchOp, bool) {
 	return searchOp{}, false
 }
 
-// strings reads the constant strings of args; a non-constant one is left
-// out, and the type check of the API names reports it (G12).
-func (c *collector) strings(args []ast.Expr) []string {
+// strings reads the constant strings of args, the API names of an
+// operator or a sort. A name that is not a constant string is a problem:
+// left out, it would change what the API binds (Range("since", until)
+// would bind the lower bound only).
+func (c *collector) strings(s *searchDecl, args []ast.Expr) []string {
 	var out []string
 	for _, a := range args {
-		if tv := c.l.pkg.TypesInfo.Types[a]; tv.Value != nil && tv.Value.Kind() == constant.String {
-			out = append(out, constant.StringVal(tv.Value))
+		if str, ok := c.constString(s, a); ok {
+			out = append(out, str)
 		}
 	}
 	return out
@@ -355,13 +421,12 @@ func (c *collector) sortKey(s *searchDecl, call *ast.CallExpr) *searchSort {
 	}
 	switch fn.Name() {
 	case "API":
-		names := c.strings(call.Args)
-		if len(names) == 0 {
+		if len(call.Args) == 0 {
 			c.errorf(call, `name the sort_by values, such as .API("name")`,
-				"search %s: %s gives no constant sort_by value", s.name, strings.TrimSpace(c.source(call)))
+				"search %s: %s gives no sort_by value", s.name, strings.TrimSpace(c.source(call)))
 			return nil
 		}
-		sort.api = names
+		sort.api = c.strings(s, call.Args)
 	case "NullsFirst", "NullsLast":
 		sort.nulls = fn.Name()
 	}

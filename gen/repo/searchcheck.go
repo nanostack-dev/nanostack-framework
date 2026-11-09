@@ -29,9 +29,11 @@ func (c *collector) checkSearch(s *searchDecl) {
 }
 
 // checkFilter checks the text operators and the value type of one filter.
-// InFold and ContainsAny get the same check with their field types (G11).
+// The operators of FilterExists apply to its child column, so they get the
+// same check. InFold and ContainsAny get the same check with their field
+// types (G11).
 func (c *collector) checkFilter(f *searchFilter) {
-	if f.col == nil || f.kind == "FilterExists" {
+	if f.col == nil {
 		return
 	}
 	if f.as != nil && !types.Identical(f.as.Underlying(), f.col.col.value.Underlying()) {
@@ -76,7 +78,14 @@ func (c *collector) checkDefaultSort(s *searchDecl) {
 	}
 	var names []string
 	for _, sort := range s.sorts {
-		names = append(names, sort.api...)
+		switch {
+		case sort.col != nil:
+			names = append(names, c.qualifiedColumn(s, sort.col))
+		case sort.kind == "SortExpr":
+			names = append(names, "SortExpr "+sort.field)
+		default:
+			names = append(names, sort.api...)
+		}
 	}
 	list := "it has none"
 	if len(names) > 0 {
@@ -84,7 +93,7 @@ func (c *collector) checkDefaultSort(s *searchDecl) {
 	}
 	if d.col != nil {
 		c.errorf(d.node, "add nanorepo.Sort("+d.col.String()+"), or sort by default on one of the sorts",
-			"search %s: DefaultSort(%s) is not one of its sorts (%s)", s.name, d.col.col.sqlName, list)
+			"search %s: DefaultSort(%s) is not one of its sorts (%s)", s.name, c.qualifiedColumn(s, d.col), list)
 		return
 	}
 	c.errorf(d.node, `add nanorepo.SortExpr("`+d.field+`", fn), where fn returns the expression, `+
@@ -97,10 +106,17 @@ func (c *collector) checkDefaultSort(s *searchDecl) {
 // index order (E3). A key covers when the list holds every one of its
 // columns, in any place, among other columns or not (design S7). Only a key
 // that orders every row counts: a partial key, or a key with a column that
-// can be NULL, lets rows repeat.
+// can be NULL, lets rows repeat. For the same reason, the table of the
+// search must not be on the nullable side of a LEFT JOIN.
 func (c *collector) order(s *searchDecl) {
 	t := s.root.table
-	if len(s.tiebreak) == 0 {
+	if s.root.nullable {
+		c.errorf(s.from.arg, "search the table the join starts from, or join "+t.sqlName+" with INNER_JOIN",
+			"search %s: %s is on the nullable side of a LEFT JOIN in %s, so no key of it orders every row",
+			s.name, t.sqlName, s.from.name)
+		return
+	}
+	if _, given := s.given["Tiebreak"]; !given {
 		pk, ok := c.primaryKey(s, t)
 		if !ok {
 			return
@@ -108,8 +124,19 @@ func (c *collector) order(s *searchDecl) {
 		s.order, s.orderKey, s.orderDefault = keyColumns(t, pk), pk, true
 		return
 	}
+	if len(s.tiebreak) == 0 {
+		c.errorf(s.tiebreakNode, c.tiebreakFix(s, nil),
+			"search %s: Tiebreak() names no column, so it covers no unique key of %s; %s", s.name, t.sqlName,
+			keysOf(t))
+		return
+	}
 	var fields []string
 	for _, col := range s.tiebreak {
+		if slices.Contains(fields, col.col.field) && col.table == t {
+			c.errorf(col.expr, "name each column once",
+				"search %s: Tiebreak names %s twice", s.name, col)
+			return
+		}
 		if col.table != t {
 			c.errorf(col.expr, "name columns of "+t.sqlName+" that cover one of its unique keys, "+
 				"or remove Tiebreak to use the primary key",

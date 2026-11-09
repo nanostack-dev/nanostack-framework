@@ -68,7 +68,7 @@ This record covers the decisions that shape the modules: S1 (packages), S3 (dial
 
 12. **Column types and foreign keys come from `nano gen db` (S7).** G1 adds two methods to each generated table type, next to `UniqueKeys()`: `ColumnTypes()`, the catalogue type name of each column, and `ForeignKeys()`, the declared foreign keys. `nano gen repo` reads both from Go source, so the repo step still needs no database. G1 waits for PR 8 of ADR 0026; the `nano gen db` of today writes neither method.
     - A column of an instance on the nullable side of a `LEFT JOIN` is nullable in the result, so a sort on it gets the nullable key form.
-    - The tiebreak defaults to the primary key, in index order. An explicit `Tiebreak` must contain every column of one key of `UniqueKeys()`.
+    - The tiebreak defaults to the primary key, in index order. An explicit `Tiebreak` must contain every column of one key of `UniqueKeys()` that orders every row: the key is not partial, and every column of it is NOT NULL, because rows with NULL repeat.
 
 13. **`db/search` replaces `pkg/search` in steps (S11).**
     1. R1: `db/search` is new. `pkg/search` keeps its types and shares only the error sentinels, and forwards `IsClientError`, `EncodeCursor` and `DecodeCursor`. So `errors.Is` and the error envelope agree across both packages.
@@ -110,5 +110,5 @@ This record covers the decisions that shape the modules: S1 (packages), S3 (dial
 - Each product PR follows the gate steps of the cross-repo rollout rules: export the product's gate flows, grep every property the PR changes (`full_text_search`, the range bounds, the sort cursors, the new limits), update each flow that asserts the old result, and publish it where a published version exists.
 - Each product commits `nanogen/search-exemptions.txt`, and reviews each exemption in the diff.
 - The CHANGELOG says: "The db module now holds the search contract and the keyset pager." It names no other library.
-- Two decisions wait for Alexis's confirmation, and the design picks the option shown until then: the tightened `Unscoped` rule of decision 11 (approved answer 7), and rule 3 of decision 8, which trusts referential data. If rule 3 is dropped, a join that it covers needs `Unscoped` or a tenant equality in the `ON` clause.
+- Three decisions wait for Alexis's confirmation, and the design picks the option shown until then: the tightened `Unscoped` rule of decision 11 (approved answer 7), rule 3 of decision 8, which trusts referential data, and the tightened cover rule of decision 12 (a partial key, or a key with a column that can be NULL, does not cover). If rule 3 is dropped, a join that it covers needs `Unscoped` or a tenant equality in the `ON` clause.
 - One question is open for Alexis and G6: whether a search may rely on a context scope alone. The design accepts it (`DefineSpec` takes a spec whose only scope is a context scope), but on an instance whose only tenant column is a context scope, the search reads every tenant's rows when the context carries no value. No echopoint table has that shape today.

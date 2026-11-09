@@ -2,6 +2,7 @@ package genrepo
 
 import (
 	"fmt"
+	"go/ast"
 	"io"
 	"slices"
 	"strings"
@@ -55,11 +56,18 @@ func (c *collector) explainSearch(s *searchDecl) SearchExplanation {
 	for _, f := range s.filters {
 		add("filter", "%s", c.explainFilter(s, f))
 	}
+	goOnly := func(e ast.Expr) string {
+		if s.fullTextGoOnly[e] {
+			return ", Go only"
+		}
+		return ""
+	}
 	for _, col := range s.fullText {
-		add("fulltext", "%s (%s)", c.qualifiedColumn(s, col), col.table.catalog[col.col.sqlName])
+		add("fulltext", "%s (%s)%s", c.qualifiedColumn(s, col), col.table.catalog[col.col.sqlName],
+			goOnly(col.expr))
 	}
 	for _, fn := range s.fullTextExprs {
-		add("fulltext", "%s()", c.source(fn))
+		add("fulltext", "%s()%s", c.source(fn), goOnly(fn))
 	}
 	for _, sort := range s.sorts {
 		add("sort", "%s", c.explainSort(s, sort))
@@ -91,10 +99,10 @@ func (c *collector) explainSearch(s *searchDecl) SearchExplanation {
 // the tenant columns of Postgres.Scopes.
 func (c *collector) explainInstance(s *searchDecl, inst *instance) string {
 	parts := []string{inst.String()}
-	switch {
-	case inst == s.root:
+	if inst == s.root {
 		parts = append(parts, "root")
-	case inst.join != "":
+	}
+	if inst.join != "" {
 		parts = append(parts, inst.join)
 	}
 	if inst.on != nil {

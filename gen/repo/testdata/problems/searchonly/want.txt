@@ -1,2 +1,2 @@
 searchonly.go:12: search Item is declared, and package searchonly binds no repository: a search runs on a method of the repository implementation
-  fix: bind the repository that serves the search: nanorepo.Implement[YourRepository, yourRepositoryImpl](table.Items, rowToDomain), in the same func _()
+  fix: bind the repository that serves the search: nanorepo.Implement[YourRepository, yourRepositoryImpl](table.Items, rowToDomain), or nanorepo.Base[YourRow](table.Items), in the same func _()

@@ -33,8 +33,10 @@ type searchDecl struct {
 	filters         []*searchFilter
 	fullText        []*colRef
 	fullTextExprs   []ast.Expr
+	fullTextGoOnly  map[ast.Expr]bool // the FullText columns and FullTextExpr functions wrapped in GoOnly
 	sorts           []*searchSort
 	tiebreak        []*colRef // as declared; empty for the default
+	tiebreakNode    ast.Node  // the Tiebreak call, nil when absent
 	order           []column  // the tiebreak columns: Tiebreak, or the primary key in index order
 	orderKey        uniqueKey // the key that order covers
 	orderDefault    bool      // order is the primary key because Tiebreak is absent
@@ -44,8 +46,9 @@ type searchDecl struct {
 	ignoresFullText string
 	apiHandWritten  []string
 
-	given map[string]at       // options that a search takes once -> where
-	stale map[*tableBase]bool // tables whose missing facts are reported (E17)
+	given   map[string]at       // options that a search takes once, by group -> where
+	givenAs map[string]string   // the group of a once-option -> the option given, such as MapPage
+	stale   map[*tableBase]bool // tables whose missing facts are reported (E17)
 }
 
 // instance is one table instance that a search reads: a table and its alias
@@ -157,11 +160,19 @@ func (c *collector) searchCall(call *ast.CallExpr, inst types.Instance, typed bo
 	}
 	file, line := c.l.position(c.l.pkg.Fset, call.Pos())
 	s := &searchDecl{at: at{file, line}, row: inst.TypeArgs.At(0), given: map[string]at{},
-		stale: map[*tableBase]bool{}}
+		givenAs: map[string]string{}, stale: map[*tableBase]bool{}, fullTextGoOnly: map[ast.Expr]bool{}}
 	before := len(c.problems)
 	if !c.searchName(s, call.Args[0]) {
 		return
 	}
+	// The name is registered before the options are read, so a second
+	// search of the name is reported also when the first has a problem.
+	if first, dup := c.searchNames[s.name]; dup {
+		c.errorf(call, "rename one of the two searches",
+			"search %s is declared twice: %s and %s", s.name, first, s.at)
+		return
+	}
+	c.searchNames[s.name] = s.at
 	s.tableText, s.tableNode = c.source(call.Args[1]), call.Args[1]
 	root := c.searchTable(s, call.Args[1])
 	if root == nil {
@@ -181,12 +192,6 @@ func (c *collector) searchCall(call *ast.CallExpr, inst types.Instance, typed bo
 	if len(c.problems) > before {
 		return
 	}
-	if first, dup := c.searchNames[s.name]; dup {
-		c.errorf(call, "rename one of the two searches",
-			"search %s is declared twice: %s and %s", s.name, first, s.at)
-		return
-	}
-	c.searchNames[s.name] = s.at
 	c.d.searches = append(c.d.searches, s)
 }
 
@@ -315,7 +320,7 @@ func typeOrNil(t types.Type) types.Type {
 func (l *loaded) searchWithoutRepository(s *searchDecl) error {
 	return gen.Errorf(s.at.file, s.at.line,
 		"bind the repository that serves the search: nanorepo.Implement[YourRepository, yourRepositoryImpl]("+
-			s.tableText+", rowToDomain), in the same func _()",
+			s.tableText+", rowToDomain), or nanorepo.Base[YourRow]("+s.tableText+"), in the same func _()",
 		"search %s is declared, and package %s binds no repository: a search runs on a method of the "+
 			"repository implementation", s.name, l.pkg.Name)
 }

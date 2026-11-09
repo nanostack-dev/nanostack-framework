@@ -10,7 +10,7 @@ import (
 
 // The searches of testdata/search read without a problem, and -explain
 // shows what nano gen repo found: the instances of each From function, with
-// the columns of a LEFT JOIN marked nullable; a Tiebreak that covers the
+// the columns of a LEFT JOIN marked nullable and an alias; a Tiebreak that covers the
 // primary key (shaped like echopoint B10); the primary key as the default
 // tiebreak; and every option.
 func TestSearchExplain(t *testing.T) {
@@ -25,10 +25,11 @@ func TestSearchExplain(t *testing.T) {
 	explain := b.String()
 	for _, want := range []string{
 		"tiebreak   sku, id: covers items_pkey (id)\n",
-		"read       items; LEFT JOIN; ON table.Items.TenantID.EQ(table.Tenants.ID); every column nullable; " +
-			"tenant tenant_id\n",
+		"read       tenants; LEFT JOIN; ON table.Tenants.ID.EQ(table.Items.TenantID); every column nullable\n",
 		"tiebreak   id: the primary key items_pkey (id), by default\n",
-		"sort       created_at: items.created_at, nullable\n",
+		"sort       name: tenants.name, nullable\n",
+		"read       tenants AS owner; INNER JOIN; ",
+		"fulltext   tenantName(), Go only\n",
 	} {
 		if !strings.Contains(explain, want) {
 			t.Errorf("-explain lacks %q:\n%s", want, explain)
@@ -40,23 +41,26 @@ func TestSearchExplain(t *testing.T) {
 func TestMainExplainSearch(t *testing.T) {
 	t.Parallel()
 	var stdout, stderr bytes.Buffer
-	if code := Main([]string{"-dir", "testdata/search", "-explain", "TenantItem"}, &stdout, &stderr); code != 0 {
+	args := []string{"-dir", "testdata/search", "-explain", "ItemOptionalTenant"}
+	if code := Main(args, &stdout, &stderr); code != 0 {
 		t.Fatalf("exit %d: %s", code, stderr.String())
 	}
-	if out := stdout.String(); !strings.HasPrefix(out, "search TenantItem on tenants (rows model.Tenants)\n") ||
+	if out := stdout.String(); !strings.HasPrefix(out, "search ItemOptionalTenant on items (rows model.Items)\n") ||
 		strings.Contains(out, "ItemBySku") {
 		t.Errorf("stdout:\n%s", out)
 	}
 }
 
-// A ColumnTypes value of another schema keeps its schema; the text check
-// reads the type name.
-func TestIsTextType(t *testing.T) {
+// A ColumnTypes value of another schema keeps its schema. A qualified name
+// is text only for citext: "public.text" is a user type with the name of a
+// pg_catalog type.
+func TestTextType(t *testing.T) {
 	t.Parallel()
 	for typ, want := range map[string]bool{
 		"text": true, "varchar": true, "bpchar": true, "citext": true, "ext.citext": true,
 		"uuid": false, "inet": false, "jsonb": false, "_text": false, "timestamptz": false, "item_status": false,
-		"ledger.text_status": false,
+		"ledger.text_status": false, "public.text": false, "ledger.varchar": false, "public.bpchar": false,
+		"public.citext": true,
 	} {
 		if got := textType(typ); got != want {
 			t.Errorf("textType(%q) = %v, want %v", typ, got, want)
