@@ -51,7 +51,7 @@ func (l *loaded) renderDerived(res []*resolution, searches []*searchDecl) ([]gen
 		for _, r := range out.byFile[name] {
 			e.binding(r)
 		}
-		e.searches(out.searches[name])
+		e.emitSearches(out.searches[name])
 		src, err := e.file(l.pkg.Name, name)
 		if err != nil {
 			return nil, nil, err
@@ -61,9 +61,9 @@ func (l *loaded) renderDerived(res []*resolution, searches []*searchDecl) ([]gen
 	return files, out, nil
 }
 
-// searches writes the builder of each search that nano gen repo can write,
+// emitSearches writes the builder of each search that nano gen repo can write,
 // and its API mapper when the mapper goes in the declaring file.
-func (e *emitter) searches(searches []*searchDecl) {
+func (e *emitter) emitSearches(searches []*searchDecl) {
 	for _, s := range searches {
 		if s.builder == nil || len(s.unbuilt) > 0 {
 			continue
