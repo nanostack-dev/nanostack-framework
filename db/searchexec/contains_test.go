@@ -94,6 +94,22 @@ func TestContainsBlankTermIsTrue(t *testing.T) {
 	}
 }
 
+// A term that is not valid UTF-8, or that holds NUL, cannot match a text column. Without
+// the rule PostgreSQL refuses the statement and MySQL can match every row.
+func TestContainsInvalidTermIsFalse(t *testing.T) {
+	t.Parallel()
+
+	for _, term := range []string{"a\x00b", "\x00", " \x00 ", "\xff", "caf\xc3"} {
+		cond := searchexec.Contains(term, name, note)
+		require.NotNil(t, cond)
+
+		got := where(cond)
+		assert.Equal(t, statementSQL{"\nSELECT $1\nWHERE FALSE;\n", []any{}}, got["postgres"], "%q", term)
+		assert.Equal(t, statementSQL{"\nSELECT ?\nWHERE FALSE;\n", []any{}}, got["mysql"], "%q", term)
+		assert.Equal(t, statementSQL{"\nSELECT ?\nWHERE FALSE;\n", []any{}}, got["sqlite"], "%q", term)
+	}
+}
+
 // A blank term composes like any other condition: it must not be nil, which panics in AND.
 func TestContainsBlankTermComposes(t *testing.T) {
 	t.Parallel()

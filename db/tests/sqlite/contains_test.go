@@ -176,4 +176,14 @@ func TestContains(t *testing.T) {
 		require.Equal(t, []int{9}, c.ids(t, searchexec.Contains("xyz", c.name, c.note).AND(scope)))
 		require.Equal(t, []int{9}, c.ids(t, AND(scope, searchexec.Contains("xyz", c.name, c.note))))
 	})
+
+	// A text column cannot hold invalid UTF-8, and PostgreSQL text cannot hold NUL, so
+	// Contains gives FALSE: no row and no error on every dialect.
+	t.Run("a term that is not valid UTF-8 or holds NUL matches no row", func(t *testing.T) {
+		for _, term := range []string{"a\x00b", "\x00", "\xff", "caf\xc3"} {
+			require.Equal(t, []int{}, contains(term, c.name, c.note), "%q", term)
+		}
+		scope := c.tenant.EQ(String("a"))
+		require.Equal(t, []int{}, c.ids(t, scope.AND(searchexec.Contains("\xff", c.name, c.note))))
+	})
 }

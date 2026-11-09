@@ -3,6 +3,7 @@ package searchexec
 import (
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/nanostack-dev/nanostack-framework/db/internal/jet"
 	"github.com/nanostack-dev/nanostack-framework/db/postgres"
@@ -24,6 +25,12 @@ var escapeLike = strings.NewReplacer("!", "!!", "%", "!%", "_", "!_")
 // expressions are combined with OR in parentheses, so scope.AND(Contains(term, a, b)) keeps
 // the scope on every row.
 //
+// A term that is not valid UTF-8, or that holds a NUL character, returns the literal
+// FALSE. A UTF-8 text column cannot hold such a value, and PostgreSQL text cannot hold NUL,
+// so no row can match. Without this rule PostgreSQL refuses the statement (SQLSTATE 22021)
+// and MySQL can match every row, so the answer is the same on every dialect. The search
+// field types refuse such a term as a client error before they call Contains.
+//
 // Contains does not limit the length of term. The search field types refuse a term longer
 // than search.MaxTermLength before they call it.
 //
@@ -43,6 +50,10 @@ func Contains(term string, exprs ...jet.StringExpression) jet.BoolExpression {
 	trimmed := strings.TrimSpace(term)
 	if trimmed == "" {
 		return sqlTrue()
+	}
+
+	if !utf8.ValidString(trimmed) || strings.IndexByte(trimmed, 0) >= 0 {
+		return sqlFalse()
 	}
 
 	pattern := "%" + escapeLike.Replace(trimmed) + "%"
@@ -78,4 +89,9 @@ func likeFold(expr jet.StringExpression, pattern string) jet.BoolExpression {
 // sqlTrue is the literal TRUE, with no bound argument.
 func sqlTrue() jet.BoolExpression {
 	return jet.BoolExp(jet.AtomicCustomExpression(jet.Token("TRUE")))
+}
+
+// sqlFalse is the literal FALSE, with no bound argument.
+func sqlFalse() jet.BoolExpression {
+	return jet.BoolExp(jet.AtomicCustomExpression(jet.Token("FALSE")))
 }
