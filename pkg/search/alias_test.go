@@ -24,14 +24,14 @@ type webhookSort string
 func TestProductBodyIsTheContract(t *testing.T) {
 	t.Parallel()
 	body := searchWebhooksBody{Pagination: search.Pagination{Limit: 5, Cursor: "abc"}}
-	var page dbsearch.Pagination = body.Pagination
+	page := func(p dbsearch.Pagination) dbsearch.Pagination { return p }(body.Pagination)
 	if page.Limit != 5 || page.Cursor != "abc" {
 		t.Fatalf("page = %+v", page)
 	}
-	var req dbsearch.Request[struct{}, webhookSort] = search.NewRequest[struct{}, webhookSort]().
-		WithPagination(&body.Pagination).
-		WithSort(nil, body.SortDirection)
-	var res search.Result[int] = dbsearch.Result[int]{Items: []int{1}, Count: 1}
+	req := func(r dbsearch.Request[struct{}, webhookSort]) dbsearch.Request[struct{}, webhookSort] { return r }(
+		search.NewRequest[struct{}, webhookSort]().WithPagination(&body.Pagination).WithSort(nil, body.SortDirection),
+	)
+	res := func(r search.Result[int]) search.Result[int] { return r }(dbsearch.Result[int]{Items: []int{1}, Count: 1})
 	if req.Pagination.Limit != 5 || req.Sort[0].Direction != dbsearch.SortAscending || res.HasMore() {
 		t.Fatalf("req = %+v, res = %+v", req, res)
 	}
