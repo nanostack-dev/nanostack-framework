@@ -17,7 +17,7 @@
 // same resolution and keeps its zerolog logging.
 //
 // The package lives in pkg because it renders pkg/fault.Error, the type the
-// services' specs pin with x-go-type, and the pkg/search errors. It is a
+// services' specs pin with x-go-type, and the db/search errors. It is a
 // bridge: it goes away with pkg/fault, when the services answer
 // application/problem+json (http/problem).
 package errorenvelope

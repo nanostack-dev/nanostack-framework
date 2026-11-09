@@ -195,7 +195,6 @@ linters:
       - {linters: [govet], path: ^pkg/db/transactor/keyset\.go$} # shadow: ok
       - {linters: [govet], path: ^pkg/db/transactor/keyset_test\.go$} # shadow x6
       - {linters: [govet], path: ^pkg/db/transactor/page\.go$} # shadow: err
-      - {linters: [govet], path: ^pkg/search/cursor\.go$} # shadow: err
       - {linters: [govet], path: ^pkg/search/cursor_test\.go$} # shadow: err
       - {linters: [govet], path: ^pkg/search/search_test\.go$} # shadow: err
       - {linters: [govet], path: ^pkg/secrets/versioned_cipher\.go$} # shadow: err
@@ -210,4 +209,4 @@ linters:
       - {linters: [unparam], path: ^pkg/tracing/http_test\.go$} # serve always gets GET
 nanostack:
   # One per linter in each rule above; lintconfig fails when they differ.
-  exclusion-budget: 78
+  exclusion-budget: 77

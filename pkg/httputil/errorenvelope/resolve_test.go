@@ -12,6 +12,7 @@ import (
 
 	corefault "github.com/nanostack-dev/nanostack-framework/core/fault"
 	"github.com/nanostack-dev/nanostack-framework/core/validate"
+	dbsearch "github.com/nanostack-dev/nanostack-framework/db/search"
 	"github.com/nanostack-dev/nanostack-framework/http/nanohttp"
 	"github.com/nanostack-dev/nanostack-framework/http/problem"
 	"github.com/nanostack-dev/nanostack-framework/pkg/fault"
@@ -105,6 +106,30 @@ func TestResolveWritesTheBytesOfWriteJSON(t *testing.T) {
 		{"unknown sort", search.ErrUnknownSort, &fault.Error{Status: http.StatusBadRequest,
 			Details: []fault.Detail{{Code: "INVALID_SORT", Field: "sort_by",
 				Message: "The search cannot sort by this field."}}}, false},
+		{"db/search invalid cursor", dbsearch.ErrInvalidCursor, cursor, false},
+		{
+			"invalid limit",
+			fmt.Errorf("page: %w", fmt.Errorf("%w: 0 is not between 1 and 1000", dbsearch.ErrInvalidLimit)),
+			&fault.Error{Status: http.StatusBadRequest, Details: []fault.Detail{{Code: "BAD_REQUEST",
+				Field: "pagination.limit", Message: "The page size must be between 1 and 1000."}}},
+			false,
+		},
+		{"invalid offset", dbsearch.ErrInvalidOffset, &fault.Error{Status: http.StatusBadRequest,
+			Details: []fault.Detail{{Code: "BAD_REQUEST", Field: "pagination.offset",
+				Message: "The offset cannot be negative."}}}, false},
+		{"too many values", fmt.Errorf("filter ids: %w", dbsearch.ErrTooManyValues), &fault.Error{
+			Status: http.StatusBadRequest, Details: []fault.Detail{{Code: "BAD_REQUEST",
+				Message: "A filter has more than 1000 values."}}}, false},
+		{"term too long", dbsearch.ErrTermTooLong, &fault.Error{Status: http.StatusBadRequest,
+			Details: []fault.Detail{{Code: "BAD_REQUEST",
+				Message: "A search term is longer than 1000 characters."}}}, false},
+		{"unscoped", fmt.Errorf("search webhooks: %w", dbsearch.ErrUnscoped), fault.ErrUnexpected, true},
+		{
+			"unscoped joined with a client error",
+			errors.Join(dbsearch.ErrTooManyValues, dbsearch.ErrUnscoped),
+			fault.ErrUnexpected,
+			true,
+		},
 		{"catalogue error with detail", fmt.Errorf("get: %w", webhookNotFound{detail: "No webhook has id wh_2."}),
 			fault.NotFound("WEBHOOK_NOT_FOUND", "No webhook has id wh_2."), false},
 		{"catalogue error without detail", webhookNotFound{},
