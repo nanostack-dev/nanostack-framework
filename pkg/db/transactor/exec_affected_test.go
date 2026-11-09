@@ -31,9 +31,13 @@ func (d *countingDB) ExecContext(context.Context, string, ...any) (sql.Result, e
 	return driver.RowsAffected(d.affected), nil
 }
 
-func (d *countingDB) Query(string, ...any) (*sql.Rows, error) { return nil, errors.New("not a query") }
+func (d *countingDB) Query(string, ...any) (*sql.Rows, error) {
+	d.ran = true
+	return nil, errors.New("not a query")
+}
 
 func (d *countingDB) QueryContext(context.Context, string, ...any) (*sql.Rows, error) {
+	d.ran = true
 	return nil, errors.New("not a query")
 }
 

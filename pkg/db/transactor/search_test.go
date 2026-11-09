@@ -208,3 +208,26 @@ func TestSearchReturnsTheChecksOfSearchexec(t *testing.T) {
 		})
 	}
 }
+
+// RunPlan and RunPlanPage refuse the zero Order: it has no key, so the page
+// would read in no order and give no cursor.
+func TestRunPlanRefusesTheZeroOrder(t *testing.T) {
+	spec := srSpec()
+	plan, _, err := srPlan(spec, searchexec.New[srSearch](spec, "t1"))
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	for name, run := range map[string]func(*countingDB) error{
+		"RunPlan": func(db *countingDB) error {
+			return transactor.RunPlan(t.Context(), db, plan, keyset.Order[srRow]{}, srIdentity).Err()
+		},
+		"RunPlanPage": func(db *countingDB) error {
+			return transactor.RunPlanPage(t.Context(), db, plan, keyset.Order[srRow]{}, srIdentityPage).Err()
+		},
+	} {
+		db := &countingDB{}
+		if runErr := run(db); runErr == nil || db.ran {
+			t.Fatalf("%s with the zero Order = %v (ran %v), want an error before any statement", name, runErr, db.ran)
+		}
+	}
+}

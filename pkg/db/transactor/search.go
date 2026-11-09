@@ -2,6 +2,7 @@ package transactor
 
 import (
 	"context"
+	"errors"
 
 	"github.com/nanostack-dev/nanostack-framework/db/keyset"
 	"github.com/nanostack-dev/nanostack-framework/db/qrm"
@@ -64,7 +65,8 @@ func SearchPage[T any, Q searchexec.Builder[T, Q, S, P], S ~string, P comparable
 // RunPlan runs a plan that a hand-written repository method got from
 // searchexec.Resolve, in order (from plan.Order), mapping each row with
 // toDomain. It is plan.Run in the context transaction, with the row-lock
-// refusal of Search. The zero Plan is search.ErrUnscoped.
+// refusal of Search. The zero Plan is search.ErrUnscoped. An order with no key
+// (the zero Order) is an error, and no statement runs.
 //
 //	plan, err := searchexec.Resolve(ctx, webhookSearchSpec, q.Query)
 //	if err != nil {
@@ -87,6 +89,9 @@ func RunPlan[T any, S ~string, R any](
 	if rowLockRequested(ctx) {
 		return newResult(dbsearch.Result[R]{}, ErrRowLockSearch)
 	}
+	if len(order.OrderBy()) == 0 {
+		return newResult(dbsearch.Result[R]{}, errNoPlanOrder)
+	}
 	result, err := plan.Run(ctx, Executor(ctx, db), order, toDomain)
 	return newResult(result, err)
 }
@@ -104,6 +109,13 @@ func RunPlanPage[T any, S ~string, R any](
 	if rowLockRequested(ctx) {
 		return newResult(dbsearch.Result[R]{}, ErrRowLockSearch)
 	}
+	if len(order.OrderBy()) == 0 {
+		return newResult(dbsearch.Result[R]{}, errNoPlanOrder)
+	}
 	result, err := plan.RunPage(ctx, Executor(ctx, db), order, toDomain)
 	return newResult(result, err)
 }
+
+// errNoPlanOrder reports an order that plan.Order did not return: the zero
+// Order has no key, so the page would read in no order and give no cursor.
+var errNoPlanOrder = errors.New("transactor: RunPlan and RunPlanPage need the order that plan.Order returns")

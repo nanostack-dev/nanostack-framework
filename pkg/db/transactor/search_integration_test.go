@@ -30,11 +30,14 @@ type ksSearch struct {
 // ksSearchSpec is the tenant search of from, sorted by name by default.
 func ksSearchSpec(from jet.ReadableTable) *searchexec.Spec[ksRow, ksField, string] {
 	return searchexec.DefineSpec(searchexec.SpecDef[ksRow, ksField, string]{
-		From:     func(string) keyset.Source { return from },
-		Columns:  jet.ProjectionList(ksAll),
-		Scope:    []searchexec.ScopeCol[string]{searchexec.ScopeEq(searchexec.Value[string], ksTenantC)},
-		Keys:     ksKeys(),
-		Tiebreak: []keyset.Key[ksRow]{ksTiebreak()},
+		From:    func(string) keyset.Source { return from },
+		Columns: jet.ProjectionList(ksAll),
+		Scope:   []searchexec.ScopeCol[string]{searchexec.ScopeEq(searchexec.Value[string], ksTenantC)},
+		//nolint:exhaustive // the search sorts only by name; a test adds other keys with plan.Order
+		Keys: map[ksField]keyset.Key[ksRow]{
+			ksName: keyset.StringKey(ksNameC, func(r ksRow) string { return r.Name }),
+		},
+		Tiebreak: []keyset.Key[ksRow]{keyset.StringKey(ksID, func(r ksRow) string { return r.ID })},
 		Default:  searchexec.Asc(ksName),
 		Limit:    10,
 	})
@@ -198,22 +201,33 @@ func TestIntegrationSearchRefusesARowLockInTx(t *testing.T) {
 // Value: the driver's error reaches them through searchexec and db/query.
 func TestIntegrationSearchValueComposes(t *testing.T) {
 	db := openDB(t)
-	missing := jet.NewTable("public", "it_search_missing", "",
-		ksID, ksTenantC, ksNameC, ksCreatedC, ksNoteC, ksStatusC, ksRankC, ksScoreC, ksSeenC, ksRefC, ksIPC)
-	spec := ksSearchSpec(missing)
+	setupKeysetSchema(t, db)
+	spec := ksSearchSpec(ksTable)
+	tx := transactor.New(db)
 	errTarget := errors.New("the search table is missing")
 
 	for name, run := range ksRuns() {
 		t.Run(name, func(t *testing.T) {
-			_, err := run(t.Context(), db, spec, "t_search").Value()
-			if !pgerr.Is(err, undefinedTable) {
-				t.Fatalf("%s on a missing table = %v, want SQLSTATE %s", name, err, undefinedTable)
-			}
-			_, err = run(t.Context(), db, spec, "t_search").
-				OnSQLState(undefinedTable, errTarget).
-				Value()
-			if !errors.Is(err, errTarget) {
-				t.Fatalf("%s.OnSQLState(...).Value() = %v, want the translated error", name, err)
+			for _, translate := range []bool{false, true} {
+				// The table is dropped in a transaction that rolls back, so the
+				// shared it_keyset columns keep their table.
+				err := tx.InTx(t.Context(), func(txCtx context.Context) error {
+					if _, err := transactor.CurrentTx(txCtx).ExecContext(txCtx, `DROP TABLE it_keyset`); err != nil {
+						t.Fatalf("drop: %v", err)
+					}
+					result := run(txCtx, db, spec, "t_search")
+					if translate {
+						if _, err := result.OnSQLState(undefinedTable, errTarget).Value(); !errors.Is(err, errTarget) {
+							t.Fatalf("%s.OnSQLState(...).Value() = %v, want the translated error", name, err)
+						}
+					} else if _, err := result.Value(); !pgerr.Is(err, undefinedTable) {
+						t.Fatalf("%s on a missing table = %v, want SQLSTATE %s", name, err, undefinedTable)
+					}
+					return errSearchRollback
+				})
+				if !errors.Is(err, errSearchRollback) {
+					t.Fatalf("InTx = %v, want the rollback sentinel", err)
+				}
 			}
 		})
 	}
@@ -242,5 +256,55 @@ func TestIntegrationSearchRefusesAForeignSpec(t *testing.T) {
 		dbsearch.ErrUnscoped,
 	) {
 		t.Fatalf("SearchPage with a foreign spec = %v, want search.ErrUnscoped", err)
+	}
+}
+
+// ksHandRank is a sort that the spec does not declare: a hand-written method
+// adds its key with plan.Order(extra), as EP2 does for request_count.
+const ksHandRank ksField = "HAND_RANK"
+
+// RunPlan and RunPlanPage read in the order the caller passes, so a sort on a
+// hand-written key works.
+func TestIntegrationRunPlanUsesTheCallersOrder(t *testing.T) {
+	db := openDB(t)
+	setupKeysetSchema(t, db)
+	for _, r := range []struct {
+		id, name string
+		rank     int
+	}{{"low", "a", 1}, {"high", "b", 3}, {"mid", "c", 2}} {
+		if _, err := db.ExecContext(t.Context(), `INSERT INTO it_keyset
+			(id, tenant, name, created, status, rank, ref)
+			VALUES ($1, 't_search', $2, now(), 'active', $3, gen_random_uuid())`, r.id, r.name, r.rank); err != nil {
+			t.Fatalf("insert %s: %v", r.id, err)
+		}
+	}
+	spec := ksSearchSpec(ksTable)
+	q := searchexec.New[ksSearch](spec, "t_search").SortBy(ksHandRank, dbsearch.SortDescending)
+	plan, err := searchexec.Resolve(t.Context(), spec, q.Query)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	//nolint:exhaustive // the hand-written method adds only its own key
+	order, err := plan.Order(map[ksField]keyset.Key[ksRow]{
+		ksHandRank: keyset.IntKey(ksRankC, func(r ksRow) int64 { return r.Rank }),
+	})
+	if err != nil {
+		t.Fatalf("Order: %v", err)
+	}
+	want := []string{"high", "mid", "low"}
+	for name, run := range map[string]func(context.Context) (dbsearch.Result[string], error){
+		"RunPlan": func(ctx context.Context) (dbsearch.Result[string], error) {
+			return transactor.RunPlan(ctx, db, plan, order, ksRowID).Value()
+		},
+		"RunPlanPage": func(ctx context.Context) (dbsearch.Result[string], error) {
+			return transactor.RunPlanPage(ctx, db, plan, order, ksRowIDs).Value()
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			result, runErr := run(t.Context())
+			if runErr != nil || !slices.Equal(result.Items, want) {
+				t.Fatalf("%s by the hand-written key = %+v, %v; want %v", name, result, runErr, want)
+			}
+		})
 	}
 }

@@ -130,7 +130,7 @@ A search that `nano gen repo` generates is a `db/searchexec` spec and builder. R
 
 - `Search(ctx, db, spec, q, toDomain)` runs the search: it is `searchexec.Run` in the context transaction. It refuses what `searchexec.Run` refuses, also a query built from another spec (`search.ErrUnscoped`).
 - `SearchPage` is `Search` with a mapper that maps the whole page in one call.
-- `RunPlan(ctx, db, plan, order, toDomain)` runs a plan that a hand-written method got from `searchexec.Resolve`, after `plan.And` and `plan.Order`: it is `plan.Run` in the context transaction.
+- `RunPlan(ctx, db, plan, order, toDomain)` runs a plan that a hand-written method got from `searchexec.Resolve`, after `plan.And` and `plan.Order`: it is `plan.Run` in the context transaction. Pass the order that `plan.Order` returns: the zero `keyset.Order` is an error, and no statement runs.
 - `RunPlanPage` is `RunPlan` with a mapper that maps the whole page.
 
 ```go
