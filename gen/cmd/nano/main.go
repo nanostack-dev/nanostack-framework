@@ -5,7 +5,7 @@
 //
 // `nano gen` with no generator name runs the pipeline: it reads
 // nanogen/project.go, discovers the rest, and runs db, api, validate,
-// errors, config and wire in that order; -check writes nothing and lists every stale,
+// errors, repo, config and wire in that order; -check writes nothing and lists every stale,
 // missing or orphaned file (nano gen -h lists the flags). Each generator
 // follows the contract of package gen and documents its flags
 // (nano gen <generator> -h); every generator takes -check, which writes
@@ -31,6 +31,7 @@ import (
 	gendb "github.com/nanostack-dev/nanostack-framework/gen/db"
 	generrors "github.com/nanostack-dev/nanostack-framework/gen/errors"
 	"github.com/nanostack-dev/nanostack-framework/gen/pipeline"
+	genrepo "github.com/nanostack-dev/nanostack-framework/gen/repo"
 	genvalidate "github.com/nanostack-dev/nanostack-framework/gen/validate"
 	"github.com/nanostack-dev/nanostack-framework/gen/wire"
 )
@@ -41,6 +42,7 @@ var generators = map[string]gen.Command{
 	"config":   genconfig.Main,
 	"db":       gendb.Main,
 	"errors":   generrors.Main,
+	"repo":     genrepo.Main,
 	"validate": genvalidate.Main,
 	"wire":     wire.Main,
 }

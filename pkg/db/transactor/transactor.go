@@ -12,6 +12,13 @@ import (
 
 type txContextKey struct{}
 
+// ErrMoreThanOneRow is returned when a statement that should match at most
+// one row matched two. The generated repository base returns it from
+// findOne, which reads LIMIT 2 so that a key that stopped being unique is an
+// error rather than a silent first row. Wrapped errors name the table; match
+// with errors.Is.
+var ErrMoreThanOneRow = errors.New("transactor: more than one row matches")
+
 // Transactor runs work inside a SQL transaction and propagates that transaction
 // via context.
 type Transactor interface {
@@ -194,6 +201,23 @@ func Exec(ctx context.Context, db qrm.DB, stmt jet.Statement) Result[struct{}] {
 	}
 	_, err = stmt.ExecContext(ctx, Executor(ctx, db))
 	return newResult(struct{}{}, err)
+}
+
+// ExecAffected executes a statement and returns the number of rows it
+// changed, as the driver reports it: the rows an UPDATE or DELETE matched, or
+// an INSERT wrote. It runs like Exec, so a locked context returns
+// ErrRowLockOutsideTx or ErrRowLockNotSelect without running the statement.
+func ExecAffected(ctx context.Context, db qrm.DB, stmt jet.Statement) Result[int64] {
+	stmt, err := withRequestedRowLock(ctx, stmt)
+	if err != nil {
+		return newResult[int64](0, err)
+	}
+	res, err := stmt.ExecContext(ctx, Executor(ctx, db))
+	if err != nil {
+		return newResult[int64](0, err)
+	}
+	n, err := res.RowsAffected()
+	return newResult(n, err)
 }
 
 // QueryCount executes a query count statement.

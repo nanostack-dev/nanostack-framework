@@ -9,6 +9,7 @@ import (
 	genconfig "github.com/nanostack-dev/nanostack-framework/gen/config"
 	gendb "github.com/nanostack-dev/nanostack-framework/gen/db"
 	generrors "github.com/nanostack-dev/nanostack-framework/gen/errors"
+	genrepo "github.com/nanostack-dev/nanostack-framework/gen/repo"
 	genvalidate "github.com/nanostack-dev/nanostack-framework/gen/validate"
 	"github.com/nanostack-dev/nanostack-framework/gen/wire"
 )
@@ -97,6 +98,8 @@ func (r *runner) unitsOf(s *step) []*unit {
 			units = append(units, &unit{step: s, dir: c.dir, inputs: c.files,
 				outputs: []string{filepath.Join(c.dir, errorsOut), filepath.Join(c.dir, errorsDoc)}})
 		}
+	case "repo":
+		units = append(units, r.repoUnits(s)...)
 	case "config":
 		for _, m := range r.found.manifests {
 			units = append(units, &unit{step: s, dir: m.dir, inputs: m.files, outputs: []string{
@@ -122,6 +125,16 @@ func (r *runner) dbUnits(s *step) []*unit {
 	p := gendb.WithDefaults(*r.proj.Postgres)
 	return []*unit{{step: s, dir: r.abs(filepath.Join(p.Out, p.Name)), inputs: []string{r.abs(p.Migrations)},
 		outputs: gendb.Planned(r.root, p)}}
+}
+
+// repoUnits returns one unit per package with a nanorepo declaration.
+func (r *runner) repoUnits(s *step) []*unit {
+	units := make([]*unit, 0, len(r.found.repos))
+	for _, p := range r.found.repos {
+		units = append(units, &unit{step: s, dir: p.dir, inputs: p.files,
+			outputs: []string{filepath.Join(p.dir, genrepo.FileName)}})
+	}
+	return units
 }
 
 // abs returns a project path as an absolute path.
@@ -177,6 +190,20 @@ func runValidate(_ *runner, u *unit, overlay map[string][]byte) (output, error) 
 func runErrors(_ *runner, u *unit, overlay map[string][]byte) (output, error) {
 	files, err := generrors.Generate(generrors.Options{Dir: u.dir, Overlay: overlay})
 	return output{files: files}, err
+}
+
+// runRepo writes the repository bases of one package. The scope columns
+// come from the Postgres declaration; without one, no table is scoped.
+func runRepo(r *runner, u *unit, overlay map[string][]byte) (output, error) {
+	var scopes []string
+	if r.proj.Postgres != nil {
+		scopes = r.proj.Postgres.Scopes
+	}
+	res, err := genrepo.Generate(genrepo.Options{Dir: u.dir, Scopes: scopes, Overlay: overlay})
+	if err != nil {
+		return output{}, err
+	}
+	return output{files: []gen.File{res.File}, warnings: res.Warnings}, nil
 }
 
 func runConfig(r *runner, u *unit, overlay map[string][]byte) (output, error) {

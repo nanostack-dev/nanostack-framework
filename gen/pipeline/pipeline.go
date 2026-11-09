@@ -28,10 +28,14 @@
 //   - api: the Project's API, when it declares one: oapi-codegen writes the
 //     server and each client, and the step splits the server by OpenAPI tag
 //     into handlers.gen.go (package gen/api);
-//   - validate: the server of the Project's API.
+//   - validate: the server of the Project's API;
+//   - repo: each package that calls nanorepo.Implement or nanorepo.Base:
+//     repo_base.gen.go holds a base per table (package gen/repo), and a
+//     hand-written query without a column of the Project's Postgres.Scopes
+//     is a warning, which keeps exit 0.
 //
 // The steps run one after another in the order db, api, validate, errors,
-// config, wire, so each loads the fresh output of the steps before it. Without
+// repo, config, wire, so each loads the fresh output of the steps before it. Without
 // -check each step writes before the next loads. With -check nothing is
 // written: the fresh outputs reach later loads as a go/packages overlay. In
 // both modes an existing output of a later step is replaced, in every load,
@@ -39,7 +43,8 @@
 // break an earlier step.
 //
 // A failed step skips the steps that need it, and the other steps still
-// run, so one run reports every problem. api, validate and config read
+// run, so one run reports every problem. repo needs db, and config needs
+// validate, errors and repo. db, api, validate, repo and config read
 // nanogen/project.go: a declaration with an error skips them, and wire. A
 // validation gap fails the run but skips nothing: its file is still written.
 //
@@ -114,6 +119,7 @@ const (
 	LevelOrphan  = "orphan"  // -check: a generated file that no step produces
 	LevelSkipped = "skipped" // a step did not run because a step it needs failed
 	LevelError   = "error"   // a problem, with its fix
+	LevelWarning = "warning" // a problem that does not fail the run, with its fix
 	LevelPlan    = "plan"    // -list: one unit of the plan
 )
 
@@ -165,9 +171,10 @@ type step struct {
 	readsOutputs bool
 }
 
-// steps is the fixed order. The mapper, repo and lint steps of the design
-// join it as they land. No step needs db yet: the steps after it load the
-// models that are on disk, the last good ones when db fails.
+// steps is the fixed order. The mapper and lint steps of the design join it
+// as they land. repo needs db: it reads the table code that db writes. The
+// steps that do not need db load the models that are on disk, the last good
+// ones when db fails.
 var steps = []step{ //nolint:gochecknoglobals // read-only table.
 	{name: "db", project: true, run: runDB, base: func(r *runner, _ *unit) string { return r.root },
 		readsOutputs: true},
@@ -175,7 +182,8 @@ var steps = []step{ //nolint:gochecknoglobals // read-only table.
 	{name: "validate", needs: []string{"api"}, project: true, run: runValidate,
 		base: func(r *runner, _ *unit) string { return r.wd }},
 	{name: "errors", run: runErrors, base: unitBase},
-	{name: "config", needs: []string{"validate", "errors"}, project: true, run: runConfig, base: unitBase},
+	{name: "repo", needs: []string{"db"}, project: true, run: runRepo, base: unitBase},
+	{name: "config", needs: []string{"validate", "errors", "repo"}, project: true, run: runConfig, base: unitBase},
 	{name: "wire", needs: []string{"config"}, run: runWire, base: func(r *runner, _ *unit) string { return r.root }},
 }
 
@@ -196,6 +204,9 @@ type output struct {
 	// gaps are problems that fail the run but leave files that later
 	// steps can use, such as a validation gap.
 	gaps error
+	// warnings are problems that do not fail the run, such as a
+	// hand-written query without the tenant column.
+	warnings []*gen.Error
 }
 
 // unit is one run of one step on one package.
@@ -445,6 +456,7 @@ func (r *runner) runUnit(i int, u *unit) {
 		r.sync(name, f)
 	}
 	r.problem(name, u.step.base(r, u), out.gaps)
+	r.warn(name, u.step.base(r, u), out.warnings)
 }
 
 // overlay returns the files that replace the disk in unit i's package

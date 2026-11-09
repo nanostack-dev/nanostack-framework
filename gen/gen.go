@@ -6,8 +6,9 @@
 //     instead of writing) and an Overlay field (file contents that replace
 //     the disk in every go/packages load, keyed by absolute path).
 //   - Generate(Options) ([]gen.File, error): render in memory, touch nothing.
-//     gen/validate is the one variation: its Generate returns a *Result
-//     that holds the gen.File and the schema features it does not enforce.
+//     gen/validate and gen/repo vary: their Generate returns a *Result
+//     that holds the gen.File and, for validate, the schema features it
+//     does not enforce, or, for repo, the scope warnings.
 //   - Run(Options) error: write the files that changed with Sync; with Check,
 //     write nothing and return an error wrapping ErrStale.
 //   - Main(args []string, stdout, stderr io.Writer) int, a Command: parse

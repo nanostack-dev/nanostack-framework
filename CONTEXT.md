@@ -42,6 +42,14 @@ The framework owns reusable service infrastructure shared by Nanostack applicati
 
 **Redacted:** The one marker, `[REDACTED]` (`secret.Redacted`), that every redacting path writes in place of a credential: a `Secret`, a credential-named log attribute, a URL password or query parameter, or a credential in a rejected config value.
 
+**Repository declaration:** A `nanorepo.Implement[Iface, Impl](table, toDomain)` or `nanorepo.Base[Row](table)` call inside `func _() { … }` that binds a repository to a go-jet table for `nano gen repo`.
+
+**Generated base:** The struct per table in `repo_base.gen.go` (`<table>Base`) that a repository implementation embeds: the table (`t`), the typed predicates (`where`), the condition helpers and the transactor functions as methods. Do not call it a DAO or a generic repository.
+
+**Scope column:** A tenant column named in `Postgres.Scopes`. A table with one as a `NOT NULL` column is scoped, and a query on it without that column may read another tenant's rows.
+
+**Hand-written method:** A repository method a person writes on the implementation, usually on the generated base. The scope check warns on one that touches a scoped table without its scope column, unless its name ends in `Internal`.
+
 **Adoption slice:** A bounded consumer migration to a framework capability, validated against the affected application.
 
 Historical vocabulary decisions remain in the [decision log](docs/decision-log.md).

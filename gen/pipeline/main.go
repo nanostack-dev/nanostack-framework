@@ -116,6 +116,9 @@ func writeText(stdout, stderr io.Writer, events []Event) {
 			_, _ = fmt.Fprintf(stderr, "nano gen %s: %s\n", e.Step, e.Msg)
 		case LevelError:
 			writeProblem(stderr, e)
+		case LevelWarning:
+			_, _ = fmt.Fprint(stderr, "warning: ")
+			writeProblem(stderr, e)
 		}
 	}
 }

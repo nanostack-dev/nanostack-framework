@@ -1,0 +1,4 @@
+compile.go:20: compile error: r.where.Nmae undefined (type tenantsWhere has no field or method Nmae)
+  fix: fix the compile error here; nano gen repo needs the package to type-check, apart from the names it generates
+compile.go:23: compile error: undefined: undefinedHelper
+  fix: fix the compile error here; nano gen repo needs the package to type-check, apart from the names it generates

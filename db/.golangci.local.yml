@@ -91,6 +91,7 @@ linters:
       - ^internal/jet/optional_arg(_test)?\.go$
       - ^internal/optional/
       - ^internal/testutils/option_parity\.go$
+      - ^nanorepo/
       - ^(mysql|postgres|sqlite)/literal_option(_test)?\.go$
       - ^(mysql|postgres|sqlite)/statement_option_test\.go$
       - ^qrm/option(_test)?\.go$

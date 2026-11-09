@@ -37,6 +37,14 @@ err := transactor.Exec(ctx, db, stmt).Err()
 
 Type arguments are inferred from `mapFunc` — spelling them out is unnecessary.
 
+`ExecAffected` runs a statement like `Exec` and returns the number of rows it changed, as the driver reports it:
+
+```go
+deleted, err := transactor.ExecAffected(ctx, db, stmt).Value()
+```
+
+`ErrMoreThanOneRow` is the error of a read that should match at most one row and matched two. The repository base that `nano gen repo` writes returns it from `findOne`, which reads `LIMIT 2`, so a key that stopped being unique fails instead of returning whichever row the database read first ([generation](../../../docs/generation.md#repository-bases-nano-gen-repo)). Match it with `errors.Is`: the wrapped error names the table.
+
 ## Queries that may find nothing
 
 `QueryOptional`/`QueryOptionalMap` return `Optional[T]` for a SELECT that may legitimately match zero rows, or an `UPDATE`/`DELETE ... RETURNING` whose `WHERE` clause matches nothing. `IsPresent`/`Err`/`Value` answer "was there a row" and "did anything go wrong" as two separate questions, instead of folding both into a nilable pointer:
@@ -76,6 +84,7 @@ template, err := templates.Find(transactor.ForShare(txCtx), templateID)
 - `ForKeyShare` is the lock a foreign key takes: it keeps the rows alive, refusing a delete or a key change, and lets updates of other columns through.
 - `WithRowLock` takes any Nanostack DB clause, such as `postgres.UPDATE().NOWAIT()`.
 - Pass the locked context inline, to one call. Every query run with it is locked, so assigning it to `txCtx` locks every later read in the transaction.
+- `Exec` and `ExecAffected` refuse a locked context like every other helper: they never run the statement.
 - A locked query outside a transaction returns `ErrRowLockOutsideTx`: the lock would end with the statement. A locked context on a statement that is not a SELECT returns `ErrRowLockNotSelect`.
 - Postgres refuses a lock on an aggregate, `GROUP BY` or `DISTINCT` query, so a locked `PageBuilder` count fails.
 

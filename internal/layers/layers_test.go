@@ -14,7 +14,8 @@ import (
 func TestLayer(t *testing.T) {
 	for rel, want := range map[string]int{
 		"core/nano": 1, "core": 1, "http/problem": 2, "pg/nanopg": 2, "redis/nanocache": 2, "otel/nanotrace": 2,
-		"gen": 3, "gen/wire": 3, "gen/cmd/nano": 3,
+		"gen": 3, "gen/wire": 3, "gen/cmd/nano": 3, "gen/repo": 3,
+		"gen/repo/internal/repotest": 0, "gen/repo/internal/repotest/db/shop/public/table": 0,
 		"cmd/nano": 0, "pkg/log": 0, "modules/cache": 0, "internal/layers": 0, "coreutil": 0, "pgx": 0, "pkg/functional": 0,
 	} {
 		if got := layers.Layer(rel); got != want {
@@ -60,6 +61,8 @@ func TestMayImport(t *testing.T) {
 		{"gen/cmd/nano", "pkg/functional", true},
 		{"gen/cmd/nano", "core/nano", true},
 		{"gen/cmd/nano", "pkg/db/transactor", false},
+		{"gen/repo", "pkg/db/transactor", false},
+		{"gen/repo/internal/repotest", "pkg/db/transactor", true},
 		{"core/nano", "pkg/functionalx", false},
 		{"core/log", "pg/nanopg", false},
 		{"core/log", "otel/nanotrace", false},

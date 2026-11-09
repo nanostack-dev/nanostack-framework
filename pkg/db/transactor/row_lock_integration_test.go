@@ -10,6 +10,7 @@ import (
 
 	"github.com/lib/pq"
 
+	"github.com/nanostack-dev/nanostack-framework/db/postgres"
 	"github.com/nanostack-dev/nanostack-framework/pkg/db/transactor"
 )
 
@@ -146,5 +147,31 @@ func TestIntegrationALockedQueryOutsideATransactionFails(t *testing.T) {
 	_, err := transactor.Query[lockedRow](transactor.ForShare(context.Background()), db, selectLockedRow()).Value()
 	if !errors.Is(err, transactor.ErrRowLockOutsideTx) {
 		t.Fatalf("err = %v, want ErrRowLockOutsideTx", err)
+	}
+}
+
+// ExecAffected counts the rows a statement changed on a real server, through
+// the context transaction, and nothing when no row matches.
+func TestIntegrationExecAffectedCountsTheChangedRows(t *testing.T) {
+	db := openDB(t)
+	setupLockedSchema(t, db)
+
+	ctx := context.Background()
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatalf("begin: %v", err)
+	}
+	t.Cleanup(func() { _ = tx.Rollback() })
+	txCtx := transactor.WithTx(ctx, tx)
+	if n, execErr := transactor.ExecAffected(txCtx, db, deleteLockedRow()).Value(); execErr != nil || n != 1 {
+		t.Fatalf("delete: got %d, %v; want 1, nil", n, execErr)
+	}
+	if n, execErr := transactor.ExecAffected(txCtx, db, deleteLockedRow()).Value(); execErr != nil || n != 0 {
+		t.Fatalf("second delete: got %d, %v; want 0, nil", n, execErr)
+	}
+	// The delete ran in the transaction: outside it, the row is still there.
+	if n, countErr := transactor.QueryCount(ctx, db,
+		lockedTable.SELECT(postgres.COUNT(postgres.STAR))).Value(); countErr != nil || n != 1 {
+		t.Fatalf("rows outside the transaction: got %d, %v; want 1, nil", n, countErr)
 	}
 }

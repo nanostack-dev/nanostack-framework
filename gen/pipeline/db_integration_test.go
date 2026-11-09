@@ -84,3 +84,31 @@ stale internal/db/gen/app/nanogen.sum
   fix: run nano gen without -check, then commit the result
 `)
 }
+
+// A migration that adds a column to a table with a base: under -check the
+// repo step loads the fresh table code from the overlay, so the base is
+// stale with it; a run writes both, and the base gains the column's
+// predicates.
+func TestDBNewColumnMakesTheRepoBaseStale(t *testing.T) {
+	t.Parallel()
+	dir := copyFixtureOf(t, dbFixture)
+	write(t, dir, "migrations/000002_name.up.sql", "ALTER TABLE users ADD COLUMN name text;\n")
+	stdout, stderr, code := runReal(t, dir, Options{Check: true, Fresh: true})
+	wantRun(t, "nano gen -check -fresh after a new column", code, 1, stdout, "", stderr,
+		`stale internal/db/gen/app/public/model/users.go
+stale internal/db/gen/app/public/table/users.go
+stale internal/db/gen/app/nanogen.sum
+stale internal/repository/repo_base.gen.go
+  fix: run nano gen without -check, then commit the result
+`)
+	stdout, stderr, code = runReal(t, dir, Options{})
+	wantRun(t, "nano gen after a new column", code, 0, stdout, `wrote internal/db/gen/app/public/model/users.go
+wrote internal/db/gen/app/public/table/users.go
+wrote internal/db/gen/app/nanogen.sum
+wrote internal/repository/repo_base.gen.go
+`, stderr, "")
+	base, err := os.ReadFile(filepath.Join(dir, "internal/repository/repo_base.gen.go"))
+	if err != nil || !strings.Contains(string(base), "func (usersWhere) NameContains(term string)") {
+		t.Fatalf("the base has no predicate on name (err %v)", err)
+	}
+}
