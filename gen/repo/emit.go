@@ -169,7 +169,7 @@ func (e *emitter) hatches(t *tableBase) {
 	result := e.ref(transactorPath, "transactor", "Result")
 	tx := e.imp.Add(transactorPath, "transactor")
 	opt := e.ref(functionalPath, "functional", "Option")
-	dom, row := e.typ(t.domain), e.typ(t.row)
+	dom := e.typ(t.domain)
 
 	e.p("// query runs stmt and scans its rows into T: a model row, a slice, or a struct\n")
 	e.p("// of aliased columns. Chain OnUnique, OnForeignKey or OnNoRows before Value.\n")
@@ -204,16 +204,7 @@ func (e *emitter) hatches(t *tableBase) {
 	e.p("\treturn %s.Page(b.db, mapFunc, columns...)\n}\n\n", tx)
 
 	if t.mapper == nil {
-		e.p("// queryRow runs stmt, which returns one %s row, such as an INSERT or\n", t.sqlName)
-		e.p("// UPDATE ... RETURNING(b.t.AllColumns), and returns the row.\n")
-		e.p("func (b %s) queryRow(ctx %s, stmt %s) %s[%s] {\n\treturn b.query[%s](ctx, stmt)\n}\n\n",
-			base, ctx, stmt, result, row, row)
-		e.p("// queryRowOptional is queryRow for a statement that may return no row.\n")
-		e.p("func (b %s) queryRowOptional(ctx %s, stmt %s) (%s[%s], error) {\n", base, ctx, stmt, opt, row)
-		e.p("\treturn b.queryOptional[%s](ctx, stmt)\n}\n\n", row)
-		e.p("// queryRows is queryRow for every row stmt returns; no row is an empty slice.\n")
-		e.p("func (b %s) queryRows(ctx %s, stmt %s) %s[[]%s] {\n", base, ctx, stmt, result, row)
-		e.p("\treturn b.queryMapSlice(ctx, stmt, func(row %s) %s { return row })\n}\n\n", row, row)
+		e.rowHatches(t, base, ctx, stmt, result, opt)
 		return
 	}
 	m := e.mapperName(t)
@@ -227,6 +218,23 @@ func (e *emitter) hatches(t *tableBase) {
 	e.p("// queryRows is queryRow for every row stmt returns; no row is an empty slice.\n")
 	e.p("func (b %s) queryRows(ctx %s, stmt %s) %s[[]%s] {\n\treturn b.queryMapSlice(ctx, stmt, %s)\n}\n\n",
 		base, ctx, stmt, result, dom, m)
+}
+
+// rowHatches writes the row helpers of a table without a mapper: they return
+// the model row. Only they name the row type, so only they import its package;
+// a base where every table has a mapper must not import it.
+func (e *emitter) rowHatches(t *tableBase, base, ctx, stmt, result, opt string) {
+	row := e.typ(t.row)
+	e.p("// queryRow runs stmt, which returns one %s row, such as an INSERT or\n", t.sqlName)
+	e.p("// UPDATE ... RETURNING(b.t.AllColumns), and returns the row.\n")
+	e.p("func (b %s) queryRow(ctx %s, stmt %s) %s[%s] {\n\treturn b.query[%s](ctx, stmt)\n}\n\n",
+		base, ctx, stmt, result, row, row)
+	e.p("// queryRowOptional is queryRow for a statement that may return no row.\n")
+	e.p("func (b %s) queryRowOptional(ctx %s, stmt %s) (%s[%s], error) {\n", base, ctx, stmt, opt, row)
+	e.p("\treturn b.queryOptional[%s](ctx, stmt)\n}\n\n", row)
+	e.p("// queryRows is queryRow for every row stmt returns; no row is an empty slice.\n")
+	e.p("func (b %s) queryRows(ctx %s, stmt %s) %s[[]%s] {\n", base, ctx, stmt, result, row)
+	e.p("\treturn b.queryMapSlice(ctx, stmt, func(row %s) %s { return row })\n}\n\n", row, row)
 }
 
 // litExpr renders the Nanostack DB literal of the value v for a column.
