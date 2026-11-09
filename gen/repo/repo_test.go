@@ -214,7 +214,8 @@ func TestProblems(t *testing.T) {
 	for _, dir := range dirs {
 		t.Run(filepath.Base(dir), func(t *testing.T) {
 			t.Parallel()
-			opts := Options{Dir: dir, Scopes: repotest.Scopes, ContextScopes: repotest.ContextScopes}
+			opts := Options{Dir: dir, Scopes: repotest.Scopes, ContextScopes: repotest.ContextScopes,
+				ContextStamps: repotest.ContextStamps, DatabaseColumns: repotest.DatabaseColumns}
 			if _, statErr := os.Stat(filepath.Join(dir, "openapi.yaml")); statErr == nil {
 				opts = apiOptions(dir)
 			}

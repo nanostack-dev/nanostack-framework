@@ -396,6 +396,7 @@ func (c *projectCheck) postgres(p project.Postgres) {
 	c.scopes(p.Scopes)
 	c.contextScopes(p.Scopes, p.ContextScopes)
 	c.scopeNames(p.Scopes, p.ScopeNames)
+	c.databaseColumns(p.Scopes, p.DatabaseColumns)
 }
 
 // client checks one client; outputs holds the outputs of the server and the

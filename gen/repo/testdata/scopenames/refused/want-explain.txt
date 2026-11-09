@@ -4,7 +4,7 @@ Projects on *projectsImpl (table projects, scope tenant_id (Tenant))
   FindByTenantIDAndName          ERROR: not implemented
                                  note: table projects has the context scope workspace_id (Postgres.ContextScopes), and the name does not name it
   ListByName                     ERROR: not implemented
-                                 note: it does not start with FindBy, GetBy, ExistsBy, CountBy, DeleteBy, FindAll or Count
+                                 note: it does not start with FindBy, GetBy, ExistsBy, CountBy, DeleteBy, CreateIn, UpdateBy, UpsertBy, FindAll, Count or Create
   DeleteByTenantAndID            ERROR: not implemented
                                  note: table projects has the context scope workspace_id (Postgres.ContextScopes), and the name does not name it
   DeleteByTenantAndIDInternal    ERROR: not implemented
@@ -13,7 +13,32 @@ Projects on *projectsImpl (table projects, scope tenant_id (Tenant))
                                  note: table projects is scoped by tenant_id, and the name does not filter on it first
   FindByIDAndTenantAndWorkspace  ERROR: not implemented
                                  note: table projects is scoped by tenant_id, and the name does not filter on it first
+  CreateInTenantAndWorkspace     ERROR: not implemented
+                                 note: table projects has the nullable scope column workspace_id: a derived write cannot bind a row that no tenant, or every tenant, owns
+  UpsertByTenantAndID            ERROR: not implemented
+                                 note: table projects has the context scope workspace_id (Postgres.ContextScopes), and the name does not name it
 Boards on *boardsImpl (table boards, scope workspace_id (Workspace))
   FindByID          ERROR: not implemented
                     note: table boards is scoped by workspace_id, and the name does not filter on it first
   FindByIDInternal  derived, UNSCOPED (Internal): SELECT * FROM boards WHERE id = $1 LIMIT 2 -- at most one row: boards_pkey (id); a second row is ErrMoreThanOneRow
+NoteWrites on *noteWritesImpl (table notes, scope tenant_id (Tenant), workspace_id (Workspace))
+  CreateInTenantAndWorkspaceID  ERROR: not implemented
+                                note: table notes has the scope columns tenant_id, workspace_id, and the name does not name workspace_id: a derived write names every scope column, a hard scope as a parameter and a context scope by its short name, so none comes from the value
+  UpdateByWorkspaceIDAndID      ERROR: not implemented
+                                note: table notes has the scope columns tenant_id, workspace_id, and the name does not name tenant_id and workspace_id: a derived write names every scope column, a hard scope as a parameter and a context scope by its short name, so none comes from the value
+ShelfWrites on *shelfWritesImpl (table shelves, scope tenant_id (Tenant), store_id, workspace_id (Workspace))
+  CreateInTenantAndWorkspace         ERROR: not implemented
+                                     note: table shelves has the scope columns tenant_id, store_id, workspace_id, and the name does not name store_id: a derived write names every scope column, a hard scope as a parameter and a context scope by its short name, so none comes from the value
+  UpsertByTenantAndWorkspaceAndName  ERROR: not implemented
+                                     note: table shelves has the scope columns tenant_id, store_id, workspace_id, and the name does not name store_id: a derived write names every scope column, a hard scope as a parameter and a context scope by its short name, so none comes from the value
+LabelWrites on *labelWritesImpl (table labels)
+  Create      ERROR: not implemented
+              note: table labels has the nullable scope column tenant_id: a derived write cannot bind a row that no tenant, or every tenant, owns
+  UpdateByID  ERROR: not implemented
+              note: table labels has the nullable scope column tenant_id: a derived write cannot bind a row that no tenant, or every tenant, owns
+BoardWrites on *boardWritesImpl (table boards, scope workspace_id (Workspace))
+  UpdateByWorkspaceAndID  ERROR: not implemented
+                          note: table boards has the context scope workspace_id only, and a derived write needs a NOT NULL hard scope (Postgres.Scopes): without one it could reach the rows of every tenant
+LabelUseWrites on *labelUseWritesImpl (table label_uses)
+  Create  ERROR: not implemented
+          note: table label_uses has no scope column, and a derived write needs a NOT NULL hard scope (Postgres.Scopes): without one it could reach the rows of every tenant

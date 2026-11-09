@@ -44,8 +44,33 @@ func (c *projectCheck) contextScopes(scopes []string, ctx []project.ContextScope
 		case !funcPath(cs.Func):
 			c.add(c.at("Postgres.ContextScopes"), fix, "Postgres.ContextScopes: the function of %q is %q, not "+
 				"an import path, a dot and a function name", cs.Column, cs.Func)
+		case cs.Stamp != "" && !funcPath(cs.Stamp):
+			c.add(c.at("Postgres.ContextScopes"),
+				`write the stamp function as "example.com/app/internal/db/workspacescope.Stamp"`,
+				"Postgres.ContextScopes: the stamp function of %q is %q, not an import path, a dot and a "+
+					"function name", cs.Column, cs.Stamp)
 		}
 		seen[cs.Column] = true
+	}
+}
+
+// databaseColumns checks Postgres.DatabaseColumns: each entry a column name,
+// none twice, and none a scope column, which a derived write always sets.
+func (c *projectCheck) databaseColumns(scopes, cols []string) {
+	seen := map[string]bool{}
+	for _, col := range cols {
+		switch {
+		case !isColumnName(col):
+			c.add(c.at("Postgres.DatabaseColumns"), "write each column as its name, such as \"created_at\"",
+				"Postgres.DatabaseColumns entry %q is not a lower-case column name", col)
+		case seen[col]:
+			c.add(c.at("Postgres.DatabaseColumns"), "remove the second "+strconv.Quote(col),
+				"Postgres.DatabaseColumns lists %q twice", col)
+		case slices.Contains(scopes, col):
+			c.add(c.at("Postgres.DatabaseColumns"), "remove "+strconv.Quote(col)+": a derived write sets the scope",
+				"Postgres.DatabaseColumns lists the scope column %q", col)
+		}
+		seen[col] = true
 	}
 }
 

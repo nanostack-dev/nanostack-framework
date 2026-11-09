@@ -12,7 +12,9 @@ func UseSchema(schema string) {
 	Items = Items.FromSchema(schema)
 	LabelUses = LabelUses.FromSchema(schema)
 	Labels = Labels.FromSchema(schema)
+	Notes = Notes.FromSchema(schema)
 	Projects = Projects.FromSchema(schema)
 	SchemaMigrations = SchemaMigrations.FromSchema(schema)
+	Shelves = Shelves.FromSchema(schema)
 	Tenants = Tenants.FromSchema(schema)
 }

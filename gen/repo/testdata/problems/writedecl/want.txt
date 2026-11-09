@@ -1,0 +1,12 @@
+writedecl.go:54: table items has no unique key or unique index "items_sku_key"
+  fix: name one of items_pkey, items_tenant_sku_key, or run nanostack gen db after the migration
+writedecl.go:57: the target errors.New(notAnError) of nanorepo.OnUnique is not a package-level error variable
+  fix: declare var ErrX = errors.New(...) at package level and pass its name
+writedecl.go:59: nanorepo.ToRow maps Other to model.Items, but the mapper itemToDomain maps model.Items to Item
+  fix: pass a function from Item to model.Items, the other direction of itemToDomain
+writedecl.go:62: nanorepo.Implement passes nanorepo.ToRow twice
+  fix: keep one nanorepo.ToRow
+writedecl.go:65: nanorepo.ToRow is passed with NoMapper
+  fix: remove nanorepo.ToRow: with NoMapper, the writes take the model model.Tenants
+writedecl.go:67: the option option is not a call to nanorepo.ToRow or nanorepo.OnUnique
+  fix: pass nanorepo.ToRow(...) or nanorepo.OnUnique(...) in the call itself

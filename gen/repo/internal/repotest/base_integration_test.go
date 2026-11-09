@@ -46,8 +46,11 @@ func TestSchemaIsCurrent(t *testing.T) {
 	err := gendb.Run(gendb.Options{Dir: ".", Postgres: shop, Fresh: true, Check: true, Database: server().Open})
 	if err != nil {
 		t.Fatalf("%v\nregenerate with: go run ./cmd/nanostack gen db -dir repo/internal/repotest -name shop -out db "+
-			"(from gen/), then go run ./cmd/nanostack gen repo -dir repo/internal/repotest -scopes tenant_id,workspace_id "+
-			"-context-scopes workspace_id=github.com/nanostack-dev/nanostack-framework/gen/repo/internal/repotest/workspacescope.Filter", err)
+			"(from gen/), then go run ./cmd/nanostack gen repo -dir repo/internal/repotest -scopes tenant_id,workspace_id,store_id "+
+			"-context-scopes workspace_id=github.com/nanostack-dev/nanostack-framework/gen/repo/internal/repotest/workspacescope.Filter "+
+			"-scope-names tenant_id=Tenant,workspace_id=Workspace "+
+			"-context-stamps workspace_id=github.com/nanostack-dev/nanostack-framework/gen/repo/internal/repotest/workspacescope.Stamp "+
+			"-database-columns created_at,updated_at", err)
 	}
 }
 

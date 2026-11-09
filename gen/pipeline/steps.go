@@ -211,7 +211,14 @@ func runRepo(r *runner, u *unit, overlay map[string][]byte) (output, error) {
 				opts.ContextScopes = map[string]string{}
 			}
 			opts.ContextScopes[cs.Column] = cs.Func
+			if cs.Stamp != "" {
+				if opts.ContextStamps == nil {
+					opts.ContextStamps = map[string]string{}
+				}
+				opts.ContextStamps[cs.Column] = cs.Stamp
+			}
 		}
+		opts.DatabaseColumns = p.DatabaseColumns
 	}
 	if api := r.proj.API; api != nil {
 		opts.Spec, opts.SortByDirection = r.abs(api.Spec), api.SortByDirection

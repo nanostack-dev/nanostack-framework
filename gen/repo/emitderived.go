@@ -125,7 +125,13 @@ func (e *emitter) binding(r *resolution) {
 			e.p("//\n// UNSCOPED: the name ends in Internal, so it does not filter on %s.\n",
 				strings.Join(cols, " or "))
 		}
-		e.p("func (%s) %s(%s) %s {\n%s}\n\n", recv, m.fn.Name(), e.params(m), e.results(m, t), e.body(m, r.via))
+		body := ""
+		if m.op.isWrite() {
+			body = e.writeBody(m, b, r.via)
+		} else {
+			body = e.body(m, r.via)
+		}
+		e.p("func (%s) %s(%s) %s {\n%s}\n\n", recv, m.fn.Name(), e.params(m), e.results(m, t), body)
 	}
 	for _, m := range r.searches {
 		e.searchMethod(m, recv, impl, r.via)

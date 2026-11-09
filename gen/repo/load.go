@@ -42,6 +42,11 @@ type loaded struct {
 	// function, import path and name: Postgres.ContextScopes.
 	contextScopes map[string]string
 	scopeNames    map[string]string // column -> short Go name, Postgres.ScopeNames
+	// contextStamps maps a context tenant column to the function that
+	// stamps a new row with it (ContextScope.Stamp); databaseColumns are
+	// the columns that derived writes never set (Postgres.DatabaseColumns).
+	contextStamps   map[string]string
+	databaseColumns []string
 
 	specPath        string   // the OpenAPI spec, absolute; "" without one
 	spec            *apiSpec // read on the first search that declares API

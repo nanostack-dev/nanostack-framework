@@ -20,6 +20,8 @@ type tableBase struct {
 	columns   []column   // in the table type's order
 	keys      []uniqueKey
 	keysFound bool              // the table type has a UniqueKeys method
+	notKeys   []string          // the other unique indexes, which UniqueKeys lists as "Not a key"
+	defaults  map[string]bool   // column name -> it has a default in the catalogue
 	catalog   map[string]string // column name -> catalogue type, from the ColumnTypes method
 	catalogOK bool              // the table type has a ColumnTypes method
 	view      bool              // the table variable is in a view package of nanostack gen db
@@ -229,6 +231,8 @@ func (c *collector) tableOf(arg ast.Expr, v *types.Var, named *types.Named) (*ta
 	t.columns = tableColumns(named, names.columns)
 	keys, found := src.keys[named.Obj().Name()]
 	t.resolveKeys(keys, found)
+	t.notKeys = src.notKeys[named.Obj().Name()]
+	t.defaults = names.defaults
 	t.catalog, t.catalogOK = src.types[named.Obj().Name()]
 	t.foreignKeys, t.fksFound = src.foreignKeys[named.Obj().Name()]
 	return t, true

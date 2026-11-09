@@ -1,8 +1,8 @@
 Items on *itemsImpl (table items, scope tenant_id)
   FindActive                          ERROR: not implemented
-                                      note: it does not start with FindBy, GetBy, ExistsBy, CountBy, DeleteBy, FindAll or Count
+                                      note: it does not start with FindBy, GetBy, ExistsBy, CountBy, DeleteBy, CreateIn, UpdateBy, UpsertBy, FindAll, Count or Create
   Reserve                             ERROR: not implemented
-                                      note: it does not start with FindBy, GetBy, ExistsBy, CountBy, DeleteBy, FindAll or Count, and no derived method returns (Item, bool, error)
+                                      note: it does not start with FindBy, GetBy, ExistsBy, CountBy, DeleteBy, CreateIn, UpdateBy, UpsertBy, FindAll, Count or Create, and no derived method returns (Item, bool, error)
   FindByTenantIDAndNameIgnoreCase     ERROR: not implemented
                                       note: operator IgnoreCase on Name is not derived; only equality (And) is
   FindByTenantIDAndSkuIn              ERROR: not implemented
@@ -57,7 +57,7 @@ Items on *itemsImpl (table items, scope tenant_id)
   DeleteBySkuInternal                 ERROR: not implemented
                                       note: table items is scoped by tenant_id, and a derived delete must filter on it first: Internal skips the scope on derived reads only
   Ping                                ERROR: not implemented
-                                      note: it does not start with FindBy, GetBy, ExistsBy, CountBy, DeleteBy, FindAll or Count
+                                      note: it does not start with FindBy, GetBy, ExistsBy, CountBy, DeleteBy, CreateIn, UpdateBy, UpsertBy, FindAll, Count or Create
 AuditLog on *auditLogImpl (table audit_events)
   CountByClient  ERROR: not implemented
                  note: column audit_events.client has no equality predicate on the base: its catalogue type is inet, which does not compare with a text value

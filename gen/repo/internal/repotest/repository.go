@@ -23,13 +23,23 @@ import (
 
 // Scopes are the tenant columns of the fixture, as Postgres.Scopes declares
 // them in a service.
-var Scopes = []string{"tenant_id", "workspace_id"} //nolint:gochecknoglobals // fixture
+var Scopes = []string{"tenant_id", "workspace_id", "store_id"} //nolint:gochecknoglobals // fixture
 
 // ContextScopes registers the function that scopes each context tenant
 // column of the fixture, as Postgres.ContextScopes declares it.
 var ContextScopes = map[string]string{ //nolint:gochecknoglobals // fixture
 	"workspace_id": "github.com/nanostack-dev/nanostack-framework/gen/repo/internal/repotest/workspacescope.Filter",
 }
+
+// ContextStamps registers the function that stamps a new row with each
+// context tenant column of the fixture, as ContextScope.Stamp declares it.
+var ContextStamps = map[string]string{ //nolint:gochecknoglobals // fixture
+	"workspace_id": "github.com/nanostack-dev/nanostack-framework/gen/repo/internal/repotest/workspacescope.Stamp",
+}
+
+// DatabaseColumns are the columns the database writes, as
+// Postgres.DatabaseColumns declares them.
+var DatabaseColumns = []string{"created_at", "updated_at"} //nolint:gochecknoglobals // fixture
 
 // ErrItemSKUExists is returned when a tenant already has an item with the SKU.
 var ErrItemSKUExists = errors.New("an item with this SKU exists")

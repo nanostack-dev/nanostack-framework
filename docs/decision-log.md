@@ -580,3 +580,11 @@ Amends [ADR 0026](adr/0026-nano-gen-repo.md#amendment-2026-11-09-short-scope-nam
 
 - **A context scope named by its short name binds no parameter and applies its registered function.** Its Go field keeps a parameter.
 - **A derived read or delete on a table with a context scope column must name it.** A read may end in `Internal`; a delete may not.
+
+## 2026-11-09: Repository Writes Derive From Their Names
+
+Amends [ADR 0026](adr/0026-nano-gen-repo.md#amendment-2026-11-09-derived-writes). `Create`, `CreateIn<Scope...>`, `UpdateBy<Scope...>And<Key...>` and `UpsertBy<Scope...>And<Key...>` derive, with `nanorepo.ToRow` for the domain-to-row direction and `nanorepo.OnUnique` for duplicates.
+
+- **The tenant of a write comes from a parameter, never from the value.** The value is often a request body. A write names every scope column of its table, and a table without a NOT NULL hard scope, or with a nullable scope, gets no derived write.
+- **An upsert conflicts on a key that holds a hard scope.** Its `DO UPDATE` also requires every other scope column to match, so it never changes a row of another workspace.
+- **Columns the database owns (`Postgres.DatabaseColumns`) are never written.**

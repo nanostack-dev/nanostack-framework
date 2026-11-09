@@ -1391,7 +1391,7 @@ func (r *itemRepositoryImpl) ListActive(ctx context.Context, tenantID uuid.UUID)
 }
 ```
 
-The grammar: `FindBy`, `GetBy`, `ExistsBy`, `CountBy`, `DeleteBy`, `FindAll`, `Count`; columns by their Go field name joined by `And`, equality only; `ctx` first, then one parameter per column in name order. A single-row find derives only when its columns cover a key in `UniqueKeys()`. On a scoped table the name starts with a scope column, or ends in `Internal` on a read. A scope column may use the short name of `Postgres.ScopeNames`, and a context scope must be named: see [Tenant scopes](#tenant-scopes) and [Derived names](#derived-names-and-tenant-scopes).
+The grammar of reads: `FindBy`, `GetBy`, `ExistsBy`, `CountBy`, `DeleteBy`, `FindAll`, `Count`; columns by their Go field name joined by `And`, equality only; `ctx` first, then one parameter per column in name order. A single-row find derives only when its columns cover a key in `UniqueKeys()`. On a scoped table the name starts with a scope column, or ends in `Internal` on a read. A scope column may use the short name of `Postgres.ScopeNames`, and a context scope must be named: see [Tenant scopes](#tenant-scopes) and [Derived names](#derived-names-and-tenant-scopes). Writes (`Create`, `CreateIn`, `UpdateBy`, `UpsertBy`) derive with `nanorepo.ToRow`: see [Derived writes](#derived-writes).
 
 ### What is generated
 
@@ -1459,6 +1459,52 @@ ItemRepository on *itemRepositoryImpl (table items, scope tenant_id)
   ExistsByTenantIDAndName        hand-written repository.go:98
                                  note: the name also derives (SELECT COUNT(*) FROM (SELECT 1 FROM items WHERE tenant_id = $1 AND name = $2 LIMIT 1) found); the hand-written method wins
   ListActive                     hand-written repository.go:106
+```
+
+### Derived writes
+
+A write derives too ([ADR 0026, derived writes](adr/0026-nano-gen-repo.md#amendment-2026-11-09-derived-writes)). The declaration gives the other direction of its mapper with `nanorepo.ToRow`, and may map duplicates with `nanorepo.OnUnique`:
+
+```go
+nanorepo.Implement[NoteRepository, noteRepositoryImpl](table.Notes, noteToDomain,
+	nanorepo.ToRow(noteToRow),
+	nanorepo.OnUnique(ErrNoteSlugExists, "notes_tenant_slug_key", "notes_tenant_lower_slug_idx"))
+```
+
+| Name | Statement | Results |
+|---|---|---|
+| `Create(ctx, x)`, on a table without a scope | `INSERT` every column but `Postgres.DatabaseColumns`, `RETURNING *` | `(D, error)` or `error` |
+| `CreateIn<Scope...>(ctx, scopes..., x)` | the same; each hard scope parameter overwrites the value's column; each context scope named by its short name is set from `ContextScope.Stamp` | `(D, error)` or `error` |
+| `UpdateBy<Scope...>And<Key...>(ctx, scopes..., x)` | `UPDATE` every column but the name, the scope columns, the primary key and the database columns, `WHERE` the scopes and the key columns of the value | `(D, error)` or `error` (no row: `sql.ErrNoRows`), `(functional.Option[D], error)` (no row: absent) |
+| `UpsertBy<Scope...>And<Key...>(ctx, scopes..., x)` | `INSERT ... ON CONFLICT (key) DO UPDATE SET` the update's columns, `WHERE` every scope column outside the key is unchanged | `(D, error)` or `error` (a row of another scope met: `sql.ErrNoRows`) |
+
+The rules, each a refusal with a fix when broken:
+
+- **The tenant comes from a parameter, never from the value.** Pass it from the authenticated principal, as for a read. The value's tenant and workspace columns are overwritten on a Create and an Upsert, and never `SET` by an update.
+- **The name names every scope column of the table**, a hard scope first: each hard scope as a parameter, each context scope by its short name. `CreateIn` names scope columns only. A table with no hard scope (no scope column, or a context scope only) or with a nullable scope column gets no derived write.
+- **An update changes one row:** its hard scopes and key columns cover the primary key or a key of `UniqueKeys()`. The context scopes do not count, because their function reads TRUE without a workspace.
+- **An upsert conflicts on one key that is not partial and holds a hard scope**, among the columns of the name, with every key column of the value. A conflict never reaches another tenant's row, and the scope columns outside the key guard `DO UPDATE`.
+- **A request without a workspace** creates and upserts nothing: `Stamp` returns its error (`workspacescope.ErrNoWorkspace`). It updates within its whole tenant, as a read does.
+- **`OnUnique` names constraints the table file lists:** a key of `UniqueKeys()` or a "Not a key" index (an expression or partial index). It applies to every derived write of the declaration.
+- **No `Internal` on a write.** A partial update, a write of an input type, of two tables, or with an optimistic lock stays hand-written on `r.updateWhere` and the hatches.
+
+The project file gains `Postgres.DatabaseColumns` (the columns the database writes, such as `created_at` and `updated_at`; each needs a default where a Create or Upsert inserts) and `ContextScope.Stamp` (`func(context.Context) (C, error)`). The fixture's [`notes.go`](../gen/repo/internal/repotest/notes.go) declares one method of each shape; its integration tests attack each across two tenants and two workspaces and check the other rows with plain SQL. The generated update:
+
+```go
+// UpdateByTenantAndWorkspaceAndID is derived from its name:
+//
+//	UPDATE notes SET slug, body, pinned WHERE tenant_id = $1 AND workspacescope.Filter(ctx, workspace_id) AND id = <value>.ID RETURNING *
+func (r *noteRepositoryImpl) UpdateByTenantAndWorkspaceAndID(ctx context.Context, tenantID uuid.UUID, note Note) (Note, error) {
+	row := noteToRow(note)
+	stmt := r.t.UPDATE(r.t.Slug, r.t.Body, r.t.Pinned).
+		MODEL(row).
+		WHERE(r.where.TenantID(tenantID).AND(workspacescope.Filter(ctx, r.t.WorkspaceID)).AND(r.where.ID(row.ID))).
+		RETURNING(r.t.AllColumns)
+	return r.queryRow(ctx, stmt).
+		OnUnique(ErrNoteSlugExists, "notes_tenant_slug_key", "notes_tenant_lower_slug_idx").
+		OnNoRows(sql.ErrNoRows).
+		Value()
+}
 ```
 
 ### Errors an agent sees

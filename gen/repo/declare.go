@@ -41,13 +41,16 @@ type declarations struct {
 	searches []*searchDecl  // nanorepo.Search calls, in source order
 }
 
-// binding is one nanorepo.Implement[I, Impl](table, toDomain).
+// binding is one nanorepo.Implement[I, Impl](table, toDomain, options...).
 type binding struct {
 	iface *types.Named
 	impl  *types.Named
 	table *tableBase
 	file  string
 	line  int
+
+	toRow    *mapperRef     // nanorepo.ToRow; nil without one
+	onUnique []onUniqueRule // nanorepo.OnUnique, in source order
 }
 
 // at is the position of a declaration, relative to the package.
@@ -156,7 +159,7 @@ func (c *collector) call(call *ast.CallExpr) {
 		return
 	}
 	if fn.Name() == "Implement" {
-		if !ok || inst.TypeArgs.Len() != 4 || len(call.Args) != 2 {
+		if !ok || inst.TypeArgs.Len() != 4 || len(call.Args) < 2 {
 			c.errorf(call, "write nanorepo.Implement[YourRepository, yourRepositoryImpl](table.YourTable, rowToDomain)",
 				"nanorepo.Implement does not type-check")
 			return
@@ -230,8 +233,12 @@ func (c *collector) implement(call *ast.CallExpr, args *types.TypeList) {
 		return
 	}
 	file, line := c.l.position(c.l.pkg.Fset, call.Pos())
+	b := &binding{iface: iface, impl: impl, table: t, file: file, line: line}
+	if !c.options(call, b, args.At(2), args.At(3)) {
+		return
+	}
 	c.d.byImpl[impl.Obj().Name()] = len(c.d.bindings)
-	c.d.bindings = append(c.d.bindings, &binding{iface: iface, impl: impl, table: t, file: file, line: line})
+	c.d.bindings = append(c.d.bindings, b)
 }
 
 // qualified renders t for a message: the declaring package's own names

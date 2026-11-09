@@ -1,8 +1,8 @@
-derive.go:29: Items.FindActive: not implemented: no hand-written method on *itemsImpl, and the name does not derive: it does not start with FindBy, GetBy, ExistsBy, CountBy, DeleteBy, FindAll or Count
+derive.go:29: Items.FindActive: not implemented: no hand-written method on *itemsImpl, and the name does not derive: it does not start with FindBy, GetBy, ExistsBy, CountBy, DeleteBy, CreateIn, UpdateBy, UpsertBy, FindAll, Count or Create
   fix: write it by hand on *itemsImpl, in a non-generated file of package derive:
          func (r *itemsImpl) FindActive(ctx context.Context, tenantID uuid.UUID, status model.ItemStatus) ([]Item, error)
        or rename it to a derivable name: FindByTenantIDAndStatus
-derive.go:31: Items.Reserve: not implemented: no hand-written method on *itemsImpl, and the name does not derive: it does not start with FindBy, GetBy, ExistsBy, CountBy, DeleteBy, FindAll or Count, and no derived method returns (Item, bool, error)
+derive.go:31: Items.Reserve: not implemented: no hand-written method on *itemsImpl, and the name does not derive: it does not start with FindBy, GetBy, ExistsBy, CountBy, DeleteBy, CreateIn, UpdateBy, UpsertBy, FindAll, Count or Create, and no derived method returns (Item, bool, error)
   fix: write it by hand on *itemsImpl, in a non-generated file of package derive:
          func (r *itemsImpl) Reserve(ctx context.Context, tenantID uuid.UUID, sku string) (Item, bool, error)
 derive.go:33: Items.FindByTenantIDAndNameIgnoreCase: not implemented: no hand-written method on *itemsImpl, and the name does not derive: operator IgnoreCase on Name is not derived; only equality (And) is
@@ -122,6 +122,6 @@ derive.go:64: Items.DeleteBySkuInternal: not implemented: no hand-written method
 derive.go:78: AuditLog.CountByClient: not implemented: no hand-written method on *auditLogImpl, and the name does not derive: column audit_events.client has no equality predicate on the base: its catalogue type is inet, which does not compare with a text value
   fix: write it by hand on *auditLogImpl, in a non-generated file of package derive:
          func (r *auditLogImpl) CountByClient(ctx context.Context, client string) (int64, error)
-derive_mocks.gen.go:10: Items.Ping: not implemented: no hand-written method on *itemsImpl, and the name does not derive: it does not start with FindBy, GetBy, ExistsBy, CountBy, DeleteBy, FindAll or Count
+derive_mocks.gen.go:10: Items.Ping: not implemented: no hand-written method on *itemsImpl, and the name does not derive: it does not start with FindBy, GetBy, ExistsBy, CountBy, DeleteBy, CreateIn, UpdateBy, UpsertBy, FindAll, Count or Create
   fix: write it by hand on *itemsImpl, in a non-generated file of package derive:
          func (r *itemsImpl) Ping(ctx context.Context) error
