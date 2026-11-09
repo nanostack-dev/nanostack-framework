@@ -17,11 +17,20 @@ const (
 	opExists
 	opCount
 	opDelete
+	opCreate // Create or CreateIn<Scope...>: INSERT ... RETURNING
+	opUpdate // UpdateBy<Scope...>And<Key...>: UPDATE ... RETURNING
+	opUpsert // UpsertBy<Scope...>And<Key...>: INSERT ... ON CONFLICT ... DO UPDATE
 )
 
 func (o op) String() string {
-	return [...]string{"find", "exists", "count", "delete"}[o]
+	return [...]string{"find", "exists", "count", "delete", "create", "update", "upsert"}[o]
 }
+
+// isWrite reports whether o writes a value: Create, UpdateBy or UpsertBy.
+func (o op) isWrite() bool { return o >= opCreate }
+
+// changesRows reports whether o changes rows: a write or a delete.
+func (o op) changesRows() bool { return o == opDelete || o.isWrite() }
 
 // shape is the result list of a derived method (design D23).
 type shape int
@@ -41,9 +50,13 @@ const (
 var prefixes = []struct { //nolint:gochecknoglobals // read-only table.
 	name string
 	op   op
-}{{"FindBy", opFind}, {"GetBy", opFind}, {"ExistsBy", opExists}, {"CountBy", opCount}, {"DeleteBy", opDelete}}
+}{
+	{"FindBy", opFind}, {"GetBy", opFind}, {"ExistsBy", opExists}, {"CountBy", opCount}, {"DeleteBy", opDelete},
+	{"CreateIn", opCreate}, {"UpdateBy", opUpdate}, {"UpsertBy", opUpsert},
+}
 
-const grammarMsg = "it does not start with FindBy, GetBy, ExistsBy, CountBy, DeleteBy, FindAll or Count"
+const grammarMsg = "it does not start with FindBy, GetBy, ExistsBy, CountBy, DeleteBy, CreateIn, UpdateBy, " +
+	"UpsertBy, FindAll, Count or Create"
 
 // unsupported are operators a name may try after a column; only equality,
 // joined by And, derives (design D21). Longer operators come first.
@@ -64,8 +77,9 @@ type derivedMethod struct {
 	skipped  []string   // the scope fields an unscoped method does not filter on
 	preds    []string   // Go fields of the properties that bind a parameter, in name order
 	terms    []term     // every property, in name order: preds and the context scopes named by short name
-	params   []param    // one per entry of preds
-	key      *uniqueKey // the key that proves a single-row result
+	params   []param    // one per entry of preds; a write adds its value last
+	key      *uniqueKey // the key that proves a single-row result, or the conflict key of an upsert
+	write    *writePlan // the columns of a write; nil for a read or a delete
 }
 
 // param is one value parameter of a derived method.
@@ -116,7 +130,11 @@ func (r *resolver) parseName(fn *types.Func) (*derivedMethod, *refusal) {
 	if !known {
 		return nil, r.grammarRefusal(fn)
 	}
-	if rest == "" && base != "FindAll" && base != "Count" {
+	if m.internal && m.op.isWrite() {
+		return nil, &refusal{msg: "a derived write never ends in Internal: it skips no scope",
+			alt: "rename it " + strings.TrimSuffix(fn.Name(), "Internal") + ", or write it by hand"}
+	}
+	if rest == "" && base != "FindAll" && base != "Count" && base != "Create" {
 		return nil, &refusal{msg: "no property after By",
 			alt: "name at least one column after By, or use FindAll or Count"}
 	}
@@ -129,8 +147,12 @@ func (r *resolver) parseName(fn *types.Func) (*derivedMethod, *refusal) {
 			return nil, r.badName(fn, rest)
 		}
 		m.terms = r.termsOf(toks)
-		for _, t := range m.terms {
-			if t.ctx == nil {
+		for i, t := range m.terms {
+			switch {
+			case t.ctx != nil:
+			case m.op.isWrite() && !slices.Contains(r.allScope, t.field):
+				m.terms[i].fromRow = true // a key column: the write reads it from its value
+			default:
 				m.preds = append(m.preds, t.field)
 			}
 		}
@@ -150,7 +172,7 @@ func (r *resolver) scopeRules(fn *types.Func, m *derivedMethod, base string) *re
 	if !hardFail && len(missing) == 0 {
 		return nil
 	}
-	if m.internal && m.op != opDelete {
+	if m.internal && m.op != opDelete && !m.op.isWrite() {
 		m.unscoped = true
 		if hardFail {
 			m.skipped = slices.Clone(r.scope)
@@ -181,6 +203,9 @@ func (r *resolver) endsInColumn(name string) bool {
 // the properties after it. known is false outside the grammar.
 func parsePrefix(base string, m *derivedMethod) (rest string, known bool) {
 	switch base {
+	case "Create":
+		m.op = opCreate
+		return "", true
 	case "FindAll":
 		m.op = opFind
 		return "", true
@@ -293,11 +318,27 @@ func (r *resolver) scopeRefusal(fn *types.Func, m *derivedMethod, base string, h
 			body: bodyFor(fn, cond),
 		}
 	}
-	if m.op == opDelete {
-		return &refusal{msg: what + ", and the name does not " + verb2, alt: fix}
+	if m.op.changesRows() {
+		return writeScopeRefusal(m, what, verb2, fix, scoped, required, hardFail)
 	}
 	return &refusal{msg: what + ", and the name does not " + verb2,
 		alt: fix + ", or end the name in Internal for a trusted system path"}
+}
+
+// writeScopeRefusal is the scope refusal of a delete or a write. A Create
+// takes its scope from its name; an upsert whose name lacks the scope would
+// conflict on a key that could reach the row of another tenant.
+func writeScopeRefusal(m *derivedMethod, what, verb, fix, scoped string, required []string,
+	hardFail bool) *refusal {
+	switch {
+	case m.op == opCreate:
+		return &refusal{msg: what + ", and a derived Create takes " + strings.Join(required, " and ") +
+			" from the name: " + scoped, alt: "rename it " + scoped}
+	case m.op == opUpsert && hardFail:
+		return &refusal{msg: what + ", and the name does not " + verb + ": a conflict key without the scope " +
+			"could reach the row of another tenant", alt: fix}
+	}
+	return &refusal{msg: what + ", and the name does not " + verb, alt: fix}
 }
 
 // fieldOf returns the Go field that a displayed column name stands for.

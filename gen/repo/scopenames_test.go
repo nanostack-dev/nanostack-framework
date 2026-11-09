@@ -20,7 +20,8 @@ func fixtureOptions(dir string) Options {
 // the fixture's tenant columns, with the short names an application would
 // declare in Postgres.ScopeNames.
 func scopeNameOptions(dir string, names map[string]string) Options {
-	return Options{Dir: dir, Scopes: repotest.Scopes, ContextScopes: repotest.ContextScopes, ScopeNames: names}
+	return Options{Dir: dir, Scopes: repotest.Scopes, ContextScopes: repotest.ContextScopes, ScopeNames: names,
+		ContextStamps: repotest.ContextStamps, DatabaseColumns: repotest.DatabaseColumns}
 }
 
 //nolint:gochecknoglobals // fixture

@@ -51,7 +51,28 @@ func readUniqueKeys(fset *token.FileSet, f *ast.File, src *tableFiles) {
 			return false
 		})
 		src.keys[recv.Name] = keys
+		src.notKeys[recv.Name] = notKeysOf(fd.Doc)
 	}
+}
+
+// notKeysOf reads the names of the unique indexes that the doc comment of
+// UniqueKeys lists as "Not a key: <name>: <reason>.": they reject duplicates
+// as the keys do, so a derived write may map their violation (OnUnique).
+func notKeysOf(doc *ast.CommentGroup) []string {
+	if doc == nil {
+		return nil
+	}
+	var out []string
+	for line := range strings.SplitSeq(doc.Text(), "\n") {
+		rest, ok := strings.CutPrefix(line, "Not a key: ")
+		if !ok {
+			continue
+		}
+		if name, _, found := strings.Cut(rest, ": "); found && name != "" {
+			out = append(out, name)
+		}
+	}
+	return out
 }
 
 // keyOf reads one "name": {"col", ...} entry, with its trailing comment.

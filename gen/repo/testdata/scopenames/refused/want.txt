@@ -1,35 +1,42 @@
-refused.go:26: Projects.FindByTenantAndID: not implemented: no hand-written method on *projectsImpl, and the name does not derive: table projects has the context scope workspace_id (Postgres.ContextScopes), and the name does not name it
+refused.go:28: Projects.FindByTenantAndID: not implemented: no hand-written method on *projectsImpl, and the name does not derive: table projects has the context scope workspace_id (Postgres.ContextScopes), and the name does not name it
   fix: write it by hand on *projectsImpl, in a non-generated file of package refused:
          func (r *projectsImpl) FindByTenantAndID(ctx context.Context, tenantID uuid.UUID, id string) (functional.Option[Project], error)
        or rename it FindByTenantAndWorkspaceAndID; Workspace binds no parameter: it applies workspacescope.Filter to workspace_id, or end the name in Internal for a trusted system path
-refused.go:27: Projects.FindByTenantIDAndName: not implemented: no hand-written method on *projectsImpl, and the name does not derive: table projects has the context scope workspace_id (Postgres.ContextScopes), and the name does not name it
+refused.go:29: Projects.FindByTenantIDAndName: not implemented: no hand-written method on *projectsImpl, and the name does not derive: table projects has the context scope workspace_id (Postgres.ContextScopes), and the name does not name it
   fix: write it by hand on *projectsImpl, in a non-generated file of package refused:
          func (r *projectsImpl) FindByTenantIDAndName(ctx context.Context, tenantID uuid.UUID, name string) ([]Project, error)
        or rename it FindByTenantAndWorkspaceAndName; Workspace binds no parameter: it applies workspacescope.Filter to workspace_id, or end the name in Internal for a trusted system path
-refused.go:29: Projects.ListByName: not implemented: no hand-written method on *projectsImpl, and the name does not derive: it does not start with FindBy, GetBy, ExistsBy, CountBy, DeleteBy, FindAll or Count
+refused.go:31: Projects.ListByName: not implemented: no hand-written method on *projectsImpl, and the name does not derive: it does not start with FindBy, GetBy, ExistsBy, CountBy, DeleteBy, CreateIn, UpdateBy, UpsertBy, FindAll, Count or Create
   fix: write it by hand on *projectsImpl, in a non-generated file of package refused:
          func (r *projectsImpl) ListByName(ctx context.Context, tenantID uuid.UUID, name string) ([]Project, error)
        or rename it to a derivable name: FindByTenantAndWorkspaceAndName
-refused.go:31: Projects.DeleteByTenantAndID: not implemented: no hand-written method on *projectsImpl, and the name does not derive: table projects has the context scope workspace_id (Postgres.ContextScopes), and the name does not name it
+refused.go:33: Projects.DeleteByTenantAndID: not implemented: no hand-written method on *projectsImpl, and the name does not derive: table projects has the context scope workspace_id (Postgres.ContextScopes), and the name does not name it
   fix: write it by hand on *projectsImpl, in a non-generated file of package refused:
          func (r *projectsImpl) DeleteByTenantAndID(ctx context.Context, tenantID uuid.UUID, id string) error
        or rename it DeleteByTenantAndWorkspaceAndID; Workspace binds no parameter: it applies workspacescope.Filter to workspace_id
-refused.go:32: Projects.DeleteByTenantAndIDInternal: not implemented: no hand-written method on *projectsImpl, and the name does not derive: table projects has the context scope workspace_id (Postgres.ContextScopes), and a derived delete must name it: Internal skips the scope on derived reads only
+refused.go:34: Projects.DeleteByTenantAndIDInternal: not implemented: no hand-written method on *projectsImpl, and the name does not derive: table projects has the context scope workspace_id (Postgres.ContextScopes), and a derived delete must name it: Internal skips the scope on derived reads only
   fix: write it by hand on *projectsImpl, in a non-generated file of package refused:
          func (r *projectsImpl) DeleteByTenantAndIDInternal(ctx context.Context, tenantID uuid.UUID, id string) error {
              _, err := r.deleteWhere(ctx, r.where.TenantID(tenantID).AND(r.where.ID(id)))
              return err
          }
        or rename it DeleteByTenantAndWorkspaceAndID; Workspace binds no parameter: it applies workspacescope.Filter to workspace_id; a delete across tenants is written by hand, where review sees it
-refused.go:34: Projects.FindByWorkspaceAndTenantAndID: not implemented: no hand-written method on *projectsImpl, and the name does not derive: table projects is scoped by tenant_id, and the name does not filter on it first
+refused.go:36: Projects.FindByWorkspaceAndTenantAndID: not implemented: no hand-written method on *projectsImpl, and the name does not derive: table projects is scoped by tenant_id, and the name does not filter on it first
   fix: write it by hand on *projectsImpl, in a non-generated file of package refused:
          func (r *projectsImpl) FindByWorkspaceAndTenantAndID(ctx context.Context, tenantID uuid.UUID, id string) (functional.Option[Project], error)
        or move Tenant to the front of the name and of the parameters: FindByTenantAndWorkspaceAndID, or end the name in Internal for a trusted system path
-refused.go:36: Projects.FindByIDAndTenantAndWorkspace: not implemented: no hand-written method on *projectsImpl, and the name does not derive: table projects is scoped by tenant_id, and the name does not filter on it first
+refused.go:38: Projects.FindByIDAndTenantAndWorkspace: not implemented: no hand-written method on *projectsImpl, and the name does not derive: table projects is scoped by tenant_id, and the name does not filter on it first
   fix: write it by hand on *projectsImpl, in a non-generated file of package refused:
          func (r *projectsImpl) FindByIDAndTenantAndWorkspace(ctx context.Context, id string, tenantID uuid.UUID) (functional.Option[Project], error)
        or move Tenant to the front of the name and of the parameters: FindByTenantAndWorkspaceAndID, or end the name in Internal for a trusted system path
-refused.go:55: Boards.FindByID: not implemented: no hand-written method on *boardsImpl, and the name does not derive: table boards is scoped by workspace_id, and the name does not filter on it first
+refused.go:40: Projects.CreateInTenantAndWorkspace: not implemented: no hand-written method on *projectsImpl, and the name does not derive: a derived create stamps workspace_id from the context, and the column is nullable: a row without a workspace is written by hand
+  fix: write it by hand on *projectsImpl, in a non-generated file of package refused:
+         func (r *projectsImpl) CreateInTenantAndWorkspace(ctx context.Context, tenantID uuid.UUID, project Project) error
+refused.go:42: Projects.UpsertByTenantAndID: not implemented: no hand-written method on *projectsImpl, and the name does not derive: table projects has the context scope workspace_id (Postgres.ContextScopes), and the name does not name it
+  fix: write it by hand on *projectsImpl, in a non-generated file of package refused:
+         func (r *projectsImpl) UpsertByTenantAndID(ctx context.Context, tenantID uuid.UUID, project Project) error
+       or rename it UpsertByTenantAndWorkspaceAndID; Workspace binds no parameter: it applies workspacescope.Filter to workspace_id
+refused.go:61: Boards.FindByID: not implemented: no hand-written method on *boardsImpl, and the name does not derive: table boards is scoped by workspace_id, and the name does not filter on it first
   fix: write it by hand on *boardsImpl, in a non-generated file of package refused:
          func (r *boardsImpl) FindByID(ctx context.Context, id string) (functional.Option[Board], error)
        or rename it FindByWorkspaceAndID; Workspace binds no parameter: it applies workspacescope.Filter to workspace_id, or end the name in Internal for a trusted system path

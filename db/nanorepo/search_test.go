@@ -246,7 +246,7 @@ func TestSearchOptionTypeGuard(t *testing.T) {
 	}{
 		{dir: "./testdata/implementok"},
 		{dir: "./testdata/implementextraoption", want: []string{
-			"too many arguments in call to nanorepo.Implement", "nanorepo.SearchOption",
+			"nanorepo.SearchOption does not implement nanorepo.Option",
 		}},
 		{dir: "./testdata/implementoptionasmapper", want: []string{"nanorepo.SearchOption"}},
 		{dir: "./testdata/searchforeignoption", want: []string{

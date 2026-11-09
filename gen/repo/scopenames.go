@@ -23,8 +23,9 @@ type ctxScope struct {
 // its short name has ctx set: it binds no parameter, and the method ANDs the
 // registered function of the column. Every other term binds one parameter.
 type term struct {
-	field string
-	ctx   *ctxScope
+	field   string
+	ctx     *ctxScope
+	fromRow bool // a write reads the column from its value: a key column, not a scope
 }
 
 // word is a word of a derived name that resolves to a column: its Go field,
@@ -212,6 +213,8 @@ func (r *resolver) scopeOrder(terms []term) []string {
 func suggestNamed(base string, names []string) string {
 	prefix := ""
 	switch base {
+	case "Create":
+		prefix = "CreateIn"
 	case "FindAll":
 		prefix = "FindBy"
 	case "Count":

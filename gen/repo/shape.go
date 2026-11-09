@@ -12,6 +12,9 @@ import (
 // type or a named type over it, never a pointer, and never named after
 // another column of the name.
 func (r *resolver) checkParams(fn *types.Func, m *derivedMethod) *refusal {
+	if m.op.isWrite() {
+		return r.checkWriteParams(fn, m)
+	}
 	params := signatureOf(fn).Params()
 	if params.Len() == 0 || !isNamed(params.At(0).Type(), "context", "Context") {
 		return &refusal{msg: "the first parameter is not context.Context",
@@ -112,6 +115,8 @@ func (r *resolver) checkResults(fn *types.Func, m *derivedMethod) *refusal {
 	}
 	first := func(k types.BasicKind) bool { return results.Len() == 2 && isBasic(results.At(0).Type(), k) }
 	switch m.op {
+	case opCreate, opUpdate, opUpsert:
+		return r.writeShape(results, m, wrong)
 	case opFind:
 		return r.findShape(results, m, wrong)
 	case opExists:
@@ -190,6 +195,9 @@ func (r *resolver) sameDomain(res types.Type) *refusal {
 // every column of the primary key or of a key UniqueKeys lists. No silent
 // first row.
 func (r *resolver) checkUnique(fn *types.Func, m *derivedMethod) *refusal {
+	if m.op.isWrite() {
+		return r.checkWrite(m)
+	}
 	if m.op != opFind || (m.shape != shapeOne && m.shape != shapeOption) {
 		return nil
 	}
@@ -233,6 +241,9 @@ func (r *resolver) checkUnique(fn *types.Func, m *derivedMethod) *refusal {
 // methodSQL is the statement a derived method runs, for its comment and
 // -explain.
 func (r *resolver) methodSQL(m *derivedMethod) string {
+	if m.op.isWrite() {
+		return r.writeSQL(m)
+	}
 	where := ""
 	if len(m.terms) > 0 {
 		parts := make([]string, len(m.terms))
@@ -254,7 +265,7 @@ func (r *resolver) methodSQL(m *derivedMethod) string {
 		return "SELECT COUNT(*) FROM " + r.t.sqlName + where
 	case opDelete:
 		return "DELETE FROM " + r.t.sqlName + where
-	case opFind:
+	case opFind, opCreate, opUpdate, opUpsert:
 	}
 	s := "SELECT * FROM " + r.t.sqlName + where
 	if m.key != nil {

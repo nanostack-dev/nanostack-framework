@@ -1,0 +1,40 @@
+writes.go:33: Items.Create: not implemented: no hand-written method on *itemsImpl, and the name does not derive: table items is scoped by tenant_id, and a derived Create takes TenantID from the name: CreateInTenantID
+  fix: write it by hand on *itemsImpl, in a non-generated file of package writes:
+         func (r *itemsImpl) Create(ctx context.Context, item Item) (Item, error)
+       or rename it CreateInTenantID
+writes.go:35: Items.CreateInTenantIDAndSku: not implemented: no hand-written method on *itemsImpl, and the name does not derive: CreateIn names scope columns only, and sku is not one
+  fix: write it by hand on *itemsImpl, in a non-generated file of package writes:
+         func (r *itemsImpl) CreateInTenantIDAndSku(ctx context.Context, tenantID uuid.UUID, item Item) (Item, error)
+       or drop Sku from the name: a derived Create inserts every column of the value
+writes.go:37: Items.CreateInTenantID: not implemented: no hand-written method on *itemsImpl, and the name does not derive: its last parameter item is *Item; a derived create takes the domain type Item, which the mapper returns
+  fix: write it by hand on *itemsImpl, in a non-generated file of package writes:
+         func (r *itemsImpl) CreateInTenantID(ctx context.Context, tenantID uuid.UUID, item *Item) error
+       or take Item, or write the method by hand (an input type that is not the domain type)
+writes.go:39: Items.UpdateBySku: not implemented: no hand-written method on *itemsImpl, and the name does not derive: table items is scoped by tenant_id, and the name does not filter on it first
+  fix: write it by hand on *itemsImpl, in a non-generated file of package writes:
+         func (r *itemsImpl) UpdateBySku(ctx context.Context, item Item) error
+       or take tenantID first and rename it UpdateByTenantIDAndSku
+writes.go:41: Items.UpdateByTenantIDAndName: not implemented: no hand-written method on *itemsImpl, and the name does not derive: a derived update changes one row, but (tenant_id, name) covers no unique key; the keys of items are items_pkey (id), items_tenant_sku_key (tenant_id, sku)
+  fix: name the columns of a key after the scope, such as UpdateByTenantIDAndID, or write the update by hand on r.updateWhere;
+       or write it by hand on *itemsImpl, in a non-generated file of package writes:
+         func (r *itemsImpl) UpdateByTenantIDAndName(ctx context.Context, tenantID uuid.UUID, item Item) (Item, error)
+writes.go:43: Items.UpdateByTenantIDAndIDInternal: not implemented: no hand-written method on *itemsImpl, and the name does not derive: a derived write never ends in Internal: it skips no scope
+  fix: write it by hand on *itemsImpl, in a non-generated file of package writes:
+         func (r *itemsImpl) UpdateByTenantIDAndIDInternal(ctx context.Context, tenantID uuid.UUID, item Item) error
+       or rename it UpdateByTenantIDAndID, or write it by hand
+writes.go:45: Items.UpdateByTenantIDAndID: not implemented: no hand-written method on *itemsImpl, and the name does not derive: returns bool, but the mapper returns Item
+  fix: write it by hand on *itemsImpl, in a non-generated file of package writes:
+         func (r *itemsImpl) UpdateByTenantIDAndID(ctx context.Context, tenantID uuid.UUID, item Item) (bool, error)
+       or return Item, or bind the mapper that returns bool in nanorepo.Implement
+writes.go:48: Items.UpsertBySku: not implemented: no hand-written method on *itemsImpl, and the name does not derive: table items is scoped by tenant_id, and the name does not filter on it first: a conflict key without the scope could reach the row of another tenant
+  fix: write it by hand on *itemsImpl, in a non-generated file of package writes:
+         func (r *itemsImpl) UpsertBySku(ctx context.Context, item Item) (Item, error)
+       or filter on TenantID first (UpsertByTenantIDAndSku is already declared)
+writes.go:50: Items.UpsertByTenantID: not implemented: no hand-written method on *itemsImpl, and the name does not derive: a derived upsert conflicts on exactly one unique key, and (tenant_id) is none; the keys of items are items_pkey (id), items_tenant_sku_key (tenant_id, sku)
+  fix: name the columns of one key, the scope first, or write the upsert by hand;
+       or write it by hand on *itemsImpl, in a non-generated file of package writes:
+         func (r *itemsImpl) UpsertByTenantID(ctx context.Context, tenantID uuid.UUID, item Item) error
+writes.go:57: ItemsWithoutToRow.CreateInTenantID: not implemented: no hand-written method on *itemsWithoutToRowImpl, and the name does not derive: a derived create maps Item to a row, and the declaration has no nanorepo.ToRow
+  fix: add nanorepo.ToRow(itemToRow) to the nanorepo.Implement of itemsWithoutToRowImpl, a stateless function from Item to model.Items;
+       or write it by hand on *itemsWithoutToRowImpl, in a non-generated file of package writes:
+         func (r *itemsWithoutToRowImpl) CreateInTenantID(ctx context.Context, tenantID uuid.UUID, item Item) (Item, error)

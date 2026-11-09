@@ -4,7 +4,7 @@ Projects on *projectsImpl (table projects, scope tenant_id (Tenant))
   FindByTenantIDAndName          ERROR: not implemented
                                  note: table projects has the context scope workspace_id (Postgres.ContextScopes), and the name does not name it
   ListByName                     ERROR: not implemented
-                                 note: it does not start with FindBy, GetBy, ExistsBy, CountBy, DeleteBy, FindAll or Count
+                                 note: it does not start with FindBy, GetBy, ExistsBy, CountBy, DeleteBy, CreateIn, UpdateBy, UpsertBy, FindAll, Count or Create
   DeleteByTenantAndID            ERROR: not implemented
                                  note: table projects has the context scope workspace_id (Postgres.ContextScopes), and the name does not name it
   DeleteByTenantAndIDInternal    ERROR: not implemented
@@ -13,6 +13,10 @@ Projects on *projectsImpl (table projects, scope tenant_id (Tenant))
                                  note: table projects is scoped by tenant_id, and the name does not filter on it first
   FindByIDAndTenantAndWorkspace  ERROR: not implemented
                                  note: table projects is scoped by tenant_id, and the name does not filter on it first
+  CreateInTenantAndWorkspace     ERROR: not implemented
+                                 note: a derived create stamps workspace_id from the context, and the column is nullable: a row without a workspace is written by hand
+  UpsertByTenantAndID            ERROR: not implemented
+                                 note: table projects has the context scope workspace_id (Postgres.ContextScopes), and the name does not name it
 Boards on *boardsImpl (table boards, scope workspace_id (Workspace))
   FindByID          ERROR: not implemented
                     note: table boards is scoped by workspace_id, and the name does not filter on it first

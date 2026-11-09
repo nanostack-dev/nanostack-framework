@@ -91,8 +91,14 @@ func fixtureScopeFlags() []string {
 		names = append(names, col+"="+name)
 	}
 	slices.Sort(names)
+	stamps := make([]string, 0, len(repotest.ContextStamps))
+	for col, fn := range repotest.ContextStamps {
+		stamps = append(stamps, col+"="+fn)
+	}
+	slices.Sort(stamps)
 	return []string{"-scopes", strings.Join(repotest.Scopes, ","), "-context-scopes", strings.Join(ctx, ","),
-		"-scope-names", strings.Join(names, ",")}
+		"-scope-names", strings.Join(names, ","), "-context-stamps", strings.Join(stamps, ","),
+		"-database-columns", strings.Join(repotest.DatabaseColumns, ",")}
 }
 
 // -check names a stale derived file and an orphan; a run rewrites the one
@@ -197,9 +203,10 @@ func TestForwardStub(t *testing.T) {
 	_, row := stubs[mustAbs(t, filepath.Join(dir, "row"+derivedSuffix))]
 	_, tenant := stubs[mustAbs(t, filepath.Join(dir, "tenant"+derivedSuffix))]
 	_, project := stubs[mustAbs(t, filepath.Join(dir, "project"+derivedSuffix))]
-	if len(stubs) != 5 || !ok || !search || !row || !tenant || !project {
-		t.Fatalf("stubs for %d files, want %s and the stubs of search.go, row.go, tenant.go and project.go",
-			len(stubs), derived)
+	_, notes := stubs[mustAbs(t, filepath.Join(dir, "notes"+derivedSuffix))]
+	if len(stubs) != 6 || !ok || !search || !row || !tenant || !project || !notes {
+		t.Fatalf("stubs for %d files, want %s and the stubs of search.go, row.go, tenant.go, project.go and "+
+			"notes.go", len(stubs), derived)
 	}
 	for _, want := range []string{"func (r *itemRepositoryImpl) FindByTenantIDAndName(", "FindAllInternal(",
 		`import uuid "github.com/google/uuid"`} {

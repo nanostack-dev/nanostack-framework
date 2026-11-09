@@ -17,15 +17,17 @@ import (
 
 // tableNames are the names a table file gives a table and its columns.
 type tableNames struct {
-	schema  string
-	table   string
-	columns map[string]string // field -> column name
+	schema   string
+	table    string
+	columns  map[string]string // field -> column name
+	defaults map[string]bool   // column name -> it has a default (the defaultColumns list)
 }
 
 // tableFiles is what the files of one table package declare.
 type tableFiles struct {
 	tables      map[string]tableNames        // table variable -> names
 	keys        map[string][]uniqueKey       // table type, such as ItemsTable -> its UniqueKeys
+	notKeys     map[string][]string          // table type -> the unique indexes UniqueKeys lists as "Not a key"
 	types       map[string]map[string]string // table type -> its ColumnTypes: column name -> catalogue type
 	foreignKeys map[string][]foreignKey      // table type -> its ForeignKeys
 }
@@ -36,7 +38,7 @@ func (l *loaded) tableSource(path string) (*tableFiles, error) {
 	if err != nil {
 		return nil, err
 	}
-	src := &tableFiles{tables: map[string]tableNames{}, keys: map[string][]uniqueKey{},
+	src := &tableFiles{tables: map[string]tableNames{}, keys: map[string][]uniqueKey{}, notKeys: map[string][]string{},
 		types: map[string]map[string]string{}, foreignKeys: map[string][]foreignKey{}}
 	for _, f := range files {
 		readTableFile(f, src)
@@ -144,7 +146,7 @@ func readTableFile(f *ast.File, src *tableFiles) {
 			continue
 		}
 		if variable, known := constructors[strings.TrimSuffix(fd.Name.Name, "Impl")]; known {
-			readColumns(fd.Body, src.tables[variable].columns)
+			readColumns(fd.Body, src.tables[variable].columns, src.tables[variable].defaults)
 		}
 	}
 }
@@ -196,19 +198,23 @@ func readTableVar(spec ast.Spec, src *tableFiles, constructors map[string]string
 		return
 	}
 	constructors[fn.Name] = vs.Names[0].Name
-	src.tables[vs.Names[0].Name] = tableNames{schema: schema, table: name, columns: map[string]string{}}
+	src.tables[vs.Names[0].Name] = tableNames{schema: schema, table: name, columns: map[string]string{},
+		defaults: map[string]bool{}}
 }
 
-// readColumns reads `XColumn = postgres.StringColumn("x")` and the `X:
-// XColumn` fields of the returned literal.
-func readColumns(body *ast.BlockStmt, out map[string]string) {
+// readColumns reads `XColumn = postgres.StringColumn("x")`, the `X:
+// XColumn` fields of the returned literal, and the columns of
+// `defaultColumns = postgres.ColumnList{...}`, which have a default.
+func readColumns(body *ast.BlockStmt, out map[string]string, defaults map[string]bool) {
 	byVar := map[string]string{}
+	var defaultVars []string
 	ast.Inspect(body, func(n ast.Node) bool {
 		switch x := n.(type) {
 		case *ast.ValueSpec:
 			if variable, name, ok := columnVar(x); ok {
 				byVar[variable] = name
 			}
+			defaultVars = append(defaultVars, defaultColumnVars(x)...)
 		case *ast.KeyValueExpr:
 			key, value := identOf(x.Key), identOf(x.Value)
 			if key == nil || value == nil {
@@ -220,6 +226,30 @@ func readColumns(body *ast.BlockStmt, out map[string]string) {
 		}
 		return true
 	})
+	for _, v := range defaultVars {
+		if name, ok := byVar[v]; ok {
+			defaults[name] = true
+		}
+	}
+}
+
+// defaultColumnVars reads `defaultColumns = postgres.ColumnList{XColumn,
+// ...}`: the variables of the columns that have a default.
+func defaultColumnVars(vs *ast.ValueSpec) []string {
+	if len(vs.Names) != 1 || vs.Names[0].Name != "defaultColumns" || len(vs.Values) != 1 {
+		return nil
+	}
+	lit, isLit := vs.Values[0].(*ast.CompositeLit)
+	if !isLit {
+		return nil
+	}
+	var out []string
+	for _, e := range lit.Elts {
+		if id := identOf(e); id != nil {
+			out = append(out, id.Name)
+		}
+	}
+	return out
 }
 
 // columnVar reads XColumn = postgres.StringColumn("x").

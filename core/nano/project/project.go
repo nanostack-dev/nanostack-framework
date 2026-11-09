@@ -101,6 +101,13 @@ type Postgres struct {
 	// function of ContextScopes (ADR 0026). Empty: derived names use the Go
 	// field names only.
 	ScopeNames map[string]string
+	// DatabaseColumns are the columns that the database writes, by name,
+	// on every table that has them, such as "created_at" (a default) and
+	// "updated_at" (a default and an update trigger). A derived write never
+	// sets them, and reads them back. Each must have a default on every
+	// table that has it, or nanostack gen repo refuses the derived Create and
+	// Upsert of that table. Empty: derived writes set every column.
+	DatabaseColumns []string
 }
 
 // ContextScope registers the function that scopes one context tenant
@@ -115,6 +122,13 @@ type ContextScope struct {
 	// func(context.Context, C) B: C is a column type and B a boolean
 	// expression.
 	Func string
+	// Stamp is the function that gives a new row its value of Column, in
+	// the same form: func(context.Context) (C, error), such as
+	// "example.com/app/internal/db/workspacescope.Stamp". A derived Create or
+	// Upsert on a table with the column sets it from Stamp, and returns the
+	// error of Stamp, such as a request without a workspace. Empty: such
+	// writes do not derive, and are written by hand.
+	Stamp string
 }
 
 // OpenAPI is the API contract and the Go packages generated from it. nanostack

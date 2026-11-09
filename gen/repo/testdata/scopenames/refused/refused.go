@@ -20,6 +20,8 @@ type Project struct{ ID string }
 
 func projectToDomain(row model.Projects) Project { return Project{ID: row.ID} }
 
+func projectToRow(p Project) model.Projects { return model.Projects{ID: p.ID} }
+
 // Projects has a hard scope (tenant_id) and a context scope (workspace_id).
 type Projects interface {
 	// The context scope is left out: a read may end in Internal.
@@ -34,10 +36,14 @@ type Projects interface {
 	FindByWorkspaceAndTenantAndID(ctx context.Context, tenantID uuid.UUID, id string) (functional.Option[Project], error)
 	// Neither scope first.
 	FindByIDAndTenantAndWorkspace(ctx context.Context, id string, tenantID uuid.UUID) (functional.Option[Project], error)
+	// A nullable context scope is not stamped: a Create of it is hand-written.
+	CreateInTenantAndWorkspace(ctx context.Context, tenantID uuid.UUID, project Project) error
+	// An upsert names the context scope too.
+	UpsertByTenantAndID(ctx context.Context, tenantID uuid.UUID, project Project) error
 }
 
 func _() {
-	nanorepo.Implement[Projects, projectsImpl](table.Projects, projectToDomain)
+	nanorepo.Implement[Projects, projectsImpl](table.Projects, projectToDomain, nanorepo.ToRow(projectToRow))
 }
 
 type projectsImpl struct{ projectsBase }

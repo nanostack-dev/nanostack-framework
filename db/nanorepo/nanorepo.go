@@ -49,8 +49,50 @@ type Table interface {
 // Two declarations on one table in one package share the base and pass the
 // same toDomain.
 //
+// The options are ToRow, which lets the writes of I derive, and OnUnique,
+// which maps a unique violation of a derived write to an error of the
+// service.
+//
 //nolint:revive // the parameters document the call; nanostack gen repo reads the arguments from source
-func Implement[I, Impl, E, D any](table Table, toDomain func(E) D) {}
+func Implement[I, Impl, E, D any](table Table, toDomain func(E) D, options ...Option) {}
+
+// Option is an option of Implement: ToRow or OnUnique. A search option is
+// not one.
+type Option interface {
+	implementOption()
+}
+
+type implementOption struct{}
+
+func (implementOption) implementOption() {}
+
+// ToRow is the other direction of toDomain: it maps a domain value to the row
+// of the generated model that a derived write (Create, CreateIn..., UpdateBy...,
+// UpsertBy...) inserts or updates. E and D must be the row and domain types of
+// toDomain; nanostack gen repo checks them. toRow follows the rule of toDomain: a
+// function, a variable of the declaring package set to a function or to a
+// method value on a type without fields. A declaration with NoMapper needs
+// no ToRow: its writes take the model itself.
+//
+//	nanorepo.Implement[ProductPermissionRepository, productPermissionRepositoryImpl](
+//		table.ProductPermissions, productPermissionToDomain,
+//		nanorepo.ToRow(productPermissionToRow))
+//
+//nolint:revive // the parameter documents the call; nanostack gen repo reads the argument from source
+func ToRow[E, D any](toRow func(D) E) Option { return implementOption{} }
+
+// OnUnique makes every derived write of the declaration return target when
+// the statement violates one of the named unique constraints or unique
+// indexes: transactor's Result.OnUnique on each of them. target is a
+// package-level error variable; each name is a string constant that
+// nanostack gen repo finds among the unique keys and indexes the table file
+// lists. A violation of another constraint keeps its PostgreSQL error.
+//
+//	nanorepo.OnUnique(ErrProductPermissionExists,
+//		"product_permissions_pkey", "idx_product_permissions_product_lower_name_unique")
+//
+//nolint:revive // the parameters document the call; nanostack gen repo reads the arguments from source
+func OnUnique(target error, constraint string, more ...string) Option { return implementOption{} }
 
 // NoMapper is the toDomain of a table whose rows the base returns as the
 // generated model itself:

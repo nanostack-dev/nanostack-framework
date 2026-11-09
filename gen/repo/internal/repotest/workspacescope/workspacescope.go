@@ -4,6 +4,7 @@ package workspacescope
 
 import (
 	"context"
+	"errors"
 
 	"github.com/nanostack-dev/nanostack-framework/db/postgres"
 )
@@ -24,4 +25,18 @@ func Filter(ctx context.Context, column postgres.ColumnString) postgres.BoolExpr
 		return postgres.Bool(true)
 	}
 	return column.EQ(postgres.String(workspace))
+}
+
+// ErrNoWorkspace refuses a new row written outside any workspace.
+var ErrNoWorkspace = errors.New("an owned row needs a workspace: the context carries none")
+
+// Stamp is the workspace a new row belongs to, the one of ctx. A write
+// without a workspace is an error: unlike a read, it cannot fall back to
+// the whole tenant.
+func Stamp(ctx context.Context) (string, error) {
+	workspace, found := ctx.Value(workspaceKey{}).(string)
+	if !found {
+		return "", ErrNoWorkspace
+	}
+	return workspace, nil
 }

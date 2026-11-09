@@ -192,6 +192,14 @@ go tool nanostack gen
 
 - A consumer goes back to the last good version with `go get <module>@<version>`, then `go mod tidy`.
 
+## Upgrade from v0.23.0-beta.6
+
+`db/v0.23.0-beta.5`, root `v0.23.0-beta.7` and `gen/v0.23.0-beta.10` derive repository writes ([CHANGELOG.md](CHANGELOG.md#genv0230-beta10-v0230-beta7-and-dbv0230-beta5)). `pkg/functional` keeps `v0.23.0-beta.1`.
+
+1. Bump all three: `go get github.com/nanostack-dev/nanostack-framework@v0.23.0-beta.7 github.com/nanostack-dev/nanostack-framework/db@v0.23.0-beta.5 && go get -tool github.com/nanostack-dev/nanostack-framework/gen/cmd/nanostack@gen/v0.23.0-beta.10 && go mod tidy`.
+2. Nothing else is required: hand-written writes keep winning.
+3. To derive writes: set `Postgres.DatabaseColumns` (such as `created_at`, `updated_at`) and the `Stamp` of each `ContextScope` in `nanogen/project.go`; add `nanorepo.ToRow(xToRow)` (and `nanorepo.OnUnique` where a duplicate maps to a domain error) to each `nanorepo.Implement`; rename each write into the grammar, passing the scope from the principal at the call sites; delete the bodies; run `go tool nanostack gen`.
+
 ## Upgrade from v0.23.0-beta.5
 
 Root `v0.23.0-beta.6` and `gen/v0.23.0-beta.9` add short scope names and context scopes to derived methods ([CHANGELOG.md](CHANGELOG.md#genv0230-beta9-and-v0230-beta6)). `db` and `pkg/functional` keep `v0.23.0-beta.4` and `v0.23.0-beta.1`.
