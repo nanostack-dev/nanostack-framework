@@ -11,21 +11,21 @@ import (
 
 // IntKey orders on a NOT NULL integer column.
 func IntKey[T any](column jet.ColumnInteger, value func(T) int64) Key[T] {
-	return intKey(column, false, ptrOf(value))
+	return intKey(columnTarget(column), column, false, ptrOf(value))
 }
 
 // NullableIntKey orders on a nullable integer column.
 func NullableIntKey[T any](column jet.ColumnInteger, value func(T) *int64) Key[T] {
-	return intKey(column, true, value)
+	return intKey(columnTarget(column), column, true, value)
 }
 
-func intKey[T any](column jet.ColumnInteger, nullable bool, value func(T) *int64) Key[T] {
+func intKey[T any](target keyTarget, column jet.IntegerExpression, nullable bool, value func(T) *int64) Key[T] {
 	// The literal is cast to bigint: a bare parameter would take the column's
 	// type, and a forged value past smallint or integer would fail to bind.
 	// PostgreSQL compares integer widths across one btree family, so an index
 	// on the column still serves the comparison.
 	typed := func(v int64) jet.IntegerExpression { return jet.IntExp(jet.CAST(jet.Int(v)).AS_BIGINT()) }
-	return newKey(column, nullable, value,
+	return newTargetKey(target, nullable, value, jsonCodec[int64](),
 		func(v int64) jet.Expression { return typed(v) },
 		func(v int64) (jet.BoolExpression, jet.BoolExpression, jet.BoolExpression) {
 			return column.GT(typed(v)), column.LT(typed(v)), column.EQ(typed(v))
@@ -37,12 +37,12 @@ func intKey[T any](column jet.ColumnInteger, nullable bool, value func(T) *int64
 // takes RealKey. NaN and the infinities, which PostgreSQL orders above every
 // number, round-trip exactly.
 func FloatKey[T any](column jet.ColumnFloat, value func(T) float64) Key[T] {
-	return floatKey(column, false, ptrOf(value))
+	return floatKey(columnTarget(column), column, false, ptrOf(value))
 }
 
 // NullableFloatKey orders on a nullable double precision column.
 func NullableFloatKey[T any](column jet.ColumnFloat, value func(T) *float64) Key[T] {
-	return floatKey(column, true, value)
+	return floatKey(columnTarget(column), column, true, value)
 }
 
 // typedFloat casts the literal to double precision explicitly.
@@ -127,8 +127,8 @@ func floatCodec() keyCodec[float64] {
 	}
 }
 
-func floatKey[T any](column jet.ColumnFloat, nullable bool, value func(T) *float64) Key[T] {
-	return newCodecKey(column, nullable, value, floatCodec(),
+func floatKey[T any](target keyTarget, column jet.FloatExpression, nullable bool, value func(T) *float64) Key[T] {
+	return newTargetKey(target, nullable, value, floatCodec(),
 		func(v float64) jet.Expression { return typedFloat(v) },
 		func(v float64) (jet.BoolExpression, jet.BoolExpression, jet.BoolExpression) {
 			return column.GT(typedFloat(v)), column.LT(typedFloat(v)), column.EQ(typedFloat(v))

@@ -15,12 +15,12 @@ import (
 
 // StringKey orders on a NOT NULL text column.
 func StringKey[T any](column jet.ColumnString, value func(T) string) Key[T] {
-	return stringKey(column, false, ptrOf(value))
+	return stringKey(columnTarget(column), column, false, ptrOf(value))
 }
 
 // NullableStringKey orders on a nullable text column.
 func NullableStringKey[T any](column jet.ColumnString, value func(T) *string) Key[T] {
-	return stringKey(column, true, value)
+	return stringKey(columnTarget(column), column, true, value)
 }
 
 // textCodec refuses a NUL byte, which PostgreSQL text cannot hold: binding it
@@ -41,8 +41,8 @@ func textCodec() keyCodec[string] {
 	}
 }
 
-func stringKey[T any](column jet.ColumnString, nullable bool, value func(T) *string) Key[T] {
-	return newCodecKey(column, nullable, value, textCodec(),
+func stringKey[T any](target keyTarget, column jet.StringExpression, nullable bool, value func(T) *string) Key[T] {
+	return newTargetKey(target, nullable, value, textCodec(),
 		func(v string) jet.Expression { return jet.String(v) },
 		func(v string) (jet.BoolExpression, jet.BoolExpression, jet.BoolExpression) {
 			return column.GT(jet.String(v)), column.LT(jet.String(v)), column.EQ(jet.String(v))

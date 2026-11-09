@@ -44,6 +44,10 @@ type Order[T any] struct {
 // sort (ascending when there is none), so a composite index on (sort, id)
 // serves the query in one scan. A column requested twice keeps its first
 // position, and a tiebreak column that was requested is not repeated.
+//
+// Two different keys of one name, for example a computed key named after the
+// tiebreak column, are an error, whatever the request sorts on: one would
+// silently replace the other in the order and in the cursor.
 func OrderOf[S ~string, T any](
 	sorts []search.Sort[S], keys map[S]Key[T], tiebreak Key[T], more ...Key[T],
 ) (Order[T], error) {
@@ -56,12 +60,15 @@ func OrderOf[S ~string, T any](
 	if len(unknown) > 0 {
 		return Order[T]{}, fmt.Errorf("%w: %s", search.ErrUnknownSort, strings.Join(unknown, ", "))
 	}
+	if err := distinctNames(keys, append([]Key[T]{tiebreak}, more...)); err != nil {
+		return Order[T]{}, err
+	}
 	order := Order[T]{}
 	seen := map[string]bool{}
 	direction := search.SortAscending
 	for _, sort := range sorts {
 		key := keys[sort.Field]
-		name := qualifiedName(key.column)
+		name := key.name()
 		if seen[name] {
 			continue
 		}
@@ -70,7 +77,7 @@ func OrderOf[S ~string, T any](
 		order.keys = append(order.keys, orderedKey[T]{key: key, direction: direction})
 	}
 	for _, key := range append([]Key[T]{tiebreak}, more...) {
-		name := qualifiedName(key.column)
+		name := key.name()
 		if seen[name] {
 			continue
 		}
@@ -81,13 +88,39 @@ func OrderOf[S ~string, T any](
 	return order, nil
 }
 
+// distinctNames refuses two different keys of one name among every key the
+// search declares, so the result does not depend on the sorts of a request.
+// One key listed twice is not an error.
+func distinctNames[S comparable, T any](keys map[S]Key[T], tiebreaks []Key[T]) error {
+	seen := map[string]string{}
+	check := func(key Key[T]) error {
+		name, identity := key.name(), key.identity()
+		if previous, ok := seen[name]; ok && previous != identity {
+			return fmt.Errorf("keyset: the key name %s names two different keys", name)
+		}
+		seen[name] = identity
+		return nil
+	}
+	for _, key := range tiebreaks {
+		if err := check(key); err != nil {
+			return err
+		}
+	}
+	for _, key := range keys {
+		if err := check(key); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // signatureOf names each key by its column, direction and NULL placement. It
 // names columns, not SQL, so the same walk gets the same cursor on any
 // dialect.
 func signatureOf[T any](keys []orderedKey[T]) string {
 	parts := make([]string, len(keys))
 	for i, k := range keys {
-		parts[i] = qualifiedName(k.key.column) + ":" + string(k.direction)
+		parts[i] = k.key.name() + ":" + string(k.direction)
 		switch k.key.nulls {
 		case nullsFirst:
 			parts[i] += ":NULLS_FIRST"
@@ -138,9 +171,9 @@ func (o Order[T]) Signature() string {
 func (o Order[T]) OrderBy() []jet.OrderByClause {
 	clauses := make([]jet.OrderByClause, len(o.keys))
 	for i, k := range o.keys {
-		clause := k.key.column.ASC()
+		clause := k.key.expression.ASC()
 		if k.direction == search.SortDescending {
-			clause = k.key.column.DESC()
+			clause = k.key.expression.DESC()
 		}
 		switch k.key.nulls {
 		case nullsFirst:
@@ -152,4 +185,20 @@ func (o Order[T]) OrderBy() []jet.OrderByClause {
 		clauses[i] = clause
 	}
 	return clauses
+}
+
+// Projections returns the computed keys of the ordering, each selected AS its
+// name (Key.Projection), so the scan fills the row field that the cursor
+// reads. It is empty when every key is a column. PageBuilder adds them to the
+// page itself. A hand-written query that orders or seeks with this ordering
+// adds them to its select list, and must not select another column with the
+// alias of a computed key.
+func (o Order[T]) Projections() jet.ProjectionList {
+	var projections jet.ProjectionList
+	for _, k := range o.keys {
+		if k.key.projection != nil {
+			projections = append(projections, k.key.projection)
+		}
+	}
+	return projections
 }

@@ -10,17 +10,28 @@ import (
 )
 
 // Key is one column of a keyset ordering over scanned rows of T: the column
-// to order and compare on, and how to read that column's value from a row.
+// or computed expression to order and compare on, and how to read its value
+// from a row.
 //
 // Build keys with the typed constructors (StringKey, UUIDKey, InetKey, EnumKey,
-// TimeKey, LocalTimeKey, IntKey, FloatKey, RealKey and their Nullable forms)
-// so the cursor value and the SQL literal share one type. A constructor
-// refuses a cursor value its column cannot hold with search.ErrInvalidCursor,
-// before any query runs.
+// TimeKey, LocalTimeKey, IntKey, FloatKey, RealKey, the computed keys
+// IntExprKey, FloatExprKey, TimeExprKey and StringExprKey, and their Nullable
+// forms) so the cursor value and the SQL literal share one type. A
+// constructor refuses a cursor value its column cannot hold with
+// search.ErrInvalidCursor, before any query runs.
 type Key[T any] struct {
-	column   jet.Column
-	nullable bool
-	nulls    nullPlacement
+	// column is the column of a column key, nil for a computed key.
+	column jet.Column
+	// expression is what the key orders and compares on: the column, or the
+	// expression of a computed key.
+	expression jet.Expression
+	// computed is the name of a computed key: its name in the cursor
+	// signature and its select alias. It is empty for a column key.
+	computed string
+	// projection is the expression AS computed, nil for a column key.
+	projection jet.Projection
+	nullable   bool
+	nulls      nullPlacement
 	// value reads the row's value, nil for SQL NULL.
 	value func(T) any
 	// bound decodes a cursor value into the comparisons against it. A JSON
@@ -99,16 +110,6 @@ func jsonCodec[V any]() keyCodec[V] {
 // compareFunc builds the comparisons of the column against one value.
 type compareFunc[V any] func(V) (gt, lt, eq jet.BoolExpression)
 
-func newKey[T, V any](
-	column jet.Column,
-	nullable bool,
-	value func(T) *V,
-	literal func(V) jet.Expression,
-	compare compareFunc[V],
-) Key[T] {
-	return newCodecKey(column, nullable, value, jsonCodec[V](), literal, compare)
-}
-
 func newCodecKey[T, V any](
 	column jet.Column,
 	nullable bool,
@@ -117,9 +118,58 @@ func newCodecKey[T, V any](
 	literal func(V) jet.Expression,
 	compare compareFunc[V],
 ) Key[T] {
+	return newTargetKey(columnTarget(column), nullable, value, codec, literal, compare)
+}
+
+// keyTarget is what a key orders on: a column, or a named expression.
+type keyTarget struct {
+	column     jet.Column
+	expression jet.Expression
+	computed   string
+	projection jet.Projection
+}
+
+func columnTarget(column jet.Column) keyTarget {
+	return keyTarget{column: column, expression: column}
+}
+
+// computedTarget checks name, which the pager writes into the SQL as the
+// select alias.
+func computedTarget(name string, expression jet.Expression) keyTarget {
+	if !computedName.MatchString(name) {
+		panic(fmt.Sprintf("keyset: computed key name %q is not a row.field alias (%s)", name, computedName))
+	}
+	return keyTarget{expression: expression, computed: name, projection: expression.AS(name)}
+}
+
+// computedName is the form of a computed key name: exactly one dot, so the
+// scan maps the alias to a field (row.field). The scan splits an alias at its
+// first dot, so a name with no dot or with two dots fills no field, and the
+// cursor would carry the zero value.
+var computedName = regexp.MustCompile(`^[a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*$`)
+
+// label names the target in an error message.
+func (t keyTarget) label() string {
+	if t.computed != "" {
+		return "computed key " + t.computed
+	}
+	return "column " + t.column.Name()
+}
+
+func newTargetKey[T, V any](
+	target keyTarget,
+	nullable bool,
+	value func(T) *V,
+	codec keyCodec[V],
+	literal func(V) jet.Expression,
+	compare compareFunc[V],
+) Key[T] {
 	return Key[T]{
-		column:   column,
-		nullable: nullable,
+		column:     target.column,
+		expression: target.expression,
+		computed:   target.computed,
+		projection: target.projection,
+		nullable:   nullable,
 		value: func(row T) any {
 			if v := value(row); v != nil {
 				return codec.encode(*v)
@@ -130,21 +180,49 @@ func newCodecKey[T, V any](
 			if string(raw) == "null" {
 				if !nullable {
 					return keyBound{}, fmt.Errorf(
-						"%w: null for non-null column %s",
+						"%w: null for non-null %s",
 						search.ErrInvalidCursor,
-						column.Name(),
+						target.label(),
 					)
 				}
-				return keyBound{isNull: true, eq: column.IS_NULL()}, nil
+				return keyBound{isNull: true, eq: target.expression.IS_NULL()}, nil
 			}
 			v, err := codec.decode(raw)
 			if err != nil {
-				return keyBound{}, fmt.Errorf("%w: value for column %s", search.ErrInvalidCursor, column.Name())
+				return keyBound{}, fmt.Errorf("%w: value for %s", search.ErrInvalidCursor, target.label())
 			}
 			gt, lt, eq := compare(v)
 			return keyBound{literal: literal(v), gt: gt, lt: lt, eq: eq}, nil
 		},
 	}
+}
+
+// name identifies the key in the cursor signature: the column as the SQL
+// references it, or the name of a computed key. A column key reads it when
+// the order is built, not when the key is, so a key built before its table
+// still gets the table name.
+func (k Key[T]) name() string {
+	if k.computed != "" {
+		return k.computed
+	}
+	return qualifiedName(k.column)
+}
+
+// Projection returns the expression of a computed key AS its name, and nil
+// for a column key. Put it in the columns of a page to fill the row field on
+// every order, not only when the order uses the key: Page does not select it
+// twice.
+func (k Key[T]) Projection() jet.Projection {
+	return k.projection
+}
+
+// identity tells two keys of one name apart: a column, or the SQL of a
+// computed expression.
+func (k Key[T]) identity() string {
+	if k.computed == "" {
+		return "column " + qualifiedName(k.column)
+	}
+	return "computed " + jet.SELECT(k.projection).DebugSql()
 }
 
 func ptrOf[T, V any](value func(T) V) func(T) *V {
@@ -154,8 +232,8 @@ func ptrOf[T, V any](value func(T) V) func(T) *V {
 	}
 }
 
-// identifier is the form of a name that a key writes into the SQL as raw
-// text: an enum type name today, and the name of a computed key.
+// identifier is the form of an enum type name, which a key writes into the
+// SQL as raw text.
 var identifier = regexp.MustCompile(`^[a-z_][a-z0-9_.]*$`)
 
 // mustIdentifier panics when name is not a plain lower-case identifier. The
