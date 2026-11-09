@@ -10,8 +10,10 @@ import (
 
 	"github.com/nanostack-dev/nanostack-framework/db/internal/jet"
 	"github.com/nanostack-dev/nanostack-framework/db/keyset"
+	"github.com/nanostack-dev/nanostack-framework/db/mysql"
 	"github.com/nanostack-dev/nanostack-framework/db/postgres"
 	"github.com/nanostack-dev/nanostack-framework/db/search"
+	"github.com/nanostack-dev/nanostack-framework/db/sqlite"
 )
 
 // The field types of a generated builder. A generated filter method returns one field of
@@ -174,7 +176,8 @@ type TimeRange[Q any] struct {
 	expr jet.TimestampzExpression
 }
 
-// NewTimeRange binds a TimeRange field to q. expr is a timestamp with time zone.
+// NewTimeRange binds a TimeRange field to q. expr is a timestamp with time zone: a
+// PostgreSQL timestamptz, a MySQL DATETIME or TIMESTAMP, or a SQLite DATETIME column.
 func NewTimeRange[T any, Q Builder[T, Q, S, P], S ~string, P comparable](
 	q Query[T, Q, S, P], expr jet.TimestampzExpression,
 ) TimeRange[Q] {
@@ -182,29 +185,56 @@ func NewTimeRange[T any, Q Builder[T, Q, S, P], S ~string, P comparable](
 	return TimeRange[Q]{b: bind(q), expr: expr}
 }
 
-// The four bounds move t to a whole microsecond, the precision of timestamptz, in the
-// direction that keeps the meaning of the bound for every stored value. The drivers do not
-// agree on a bound with nanoseconds: lib/pq sends them and PostgreSQL rounds them, pgx
-// truncates them. So t+600ns is the next microsecond for one driver and t for the other.
+// The four bounds keep their meaning for every stored value on every dialect:
+//
+//   - PostgreSQL and MySQL hold a whole microsecond (timestamptz, DATETIME(6)). The bound
+//     moves to a whole microsecond in the direction that keeps its meaning, and the driver
+//     sends it as a time. The drivers do not agree on a bound with nanoseconds: lib/pq sends
+//     them and PostgreSQL rounds them, pgx truncates them. So t+600ns is the next microsecond
+//     for one driver and t for the other. The MySQL driver sends the bound in the time zone
+//     of its loc setting, the zone in which it writes the rows.
+//   - SQLite has no time type. The column holds the text in which the driver writes a
+//     time.Time, "2006-01-02 15:04:05.999999999-07:00", and compares as text. The bound is t
+//     in UTC in that form, with every digit, so the column must hold the times of the rows
+//     in UTC, written through the driver, as for keyset.LocalTimeKey.
 
 // Since keeps the rows at t or later: expr >= t, with t rounded up to a microsecond.
 func (f TimeRange[Q]) Since(t time.Time) Q {
-	return f.b.add(func() jet.BoolExpression { return f.expr.GT_EQ(jet.TimestampzT(ceilMicro(t))) })
+	return f.b.add(func() jet.BoolExpression { return f.expr.GT_EQ(timeBound(t, ceilMicro)) })
 }
 
 // Until keeps the rows at t or earlier: expr <= t, with t rounded down to a microsecond.
 func (f TimeRange[Q]) Until(t time.Time) Q {
-	return f.b.add(func() jet.BoolExpression { return f.expr.LT_EQ(jet.TimestampzT(t.Truncate(time.Microsecond))) })
+	return f.b.add(func() jet.BoolExpression { return f.expr.LT_EQ(timeBound(t, floorMicro)) })
 }
 
 // After keeps the rows later than t: expr > t, with t rounded down to a microsecond.
 func (f TimeRange[Q]) After(t time.Time) Q {
-	return f.b.add(func() jet.BoolExpression { return f.expr.GT(jet.TimestampzT(t.Truncate(time.Microsecond))) })
+	return f.b.add(func() jet.BoolExpression { return f.expr.GT(timeBound(t, floorMicro)) })
 }
 
 // Before keeps the rows earlier than t: expr < t, with t rounded up to a microsecond.
 func (f TimeRange[Q]) Before(t time.Time) Q {
-	return f.b.add(func() jet.BoolExpression { return f.expr.LT(jet.TimestampzT(ceilMicro(t))) })
+	return f.b.add(func() jet.BoolExpression { return f.expr.LT(timeBound(t, ceilMicro)) })
+}
+
+// sqliteTimeLayout is the text form in which the SQLite driver writes a time.Time.
+const sqliteTimeLayout = "2006-01-02 15:04:05.999999999-07:00"
+
+// timeBound is the literal of the bound t on the statement's dialect: t moved to a whole
+// microsecond by round on PostgreSQL and MySQL, and t in UTC as the driver's text on SQLite.
+func timeBound(t time.Time, round func(time.Time) time.Time) jet.TimestampzExpression {
+	return jet.TimestampzDialectSwitch(func(d jet.Dialect) jet.TimestampzExpression {
+		if d == sqlite.Dialect {
+			return jet.TimestampzExp(jet.String(t.UTC().Format(sqliteTimeLayout)))
+		}
+		return jet.TimestampzT(round(t))
+	})
+}
+
+// floorMicro rounds t down to a whole microsecond.
+func floorMicro(t time.Time) time.Time {
+	return t.Truncate(time.Microsecond)
 }
 
 // ceilMicro rounds t up to a whole microsecond.
@@ -328,8 +358,8 @@ type Exists[Q, V any] struct {
 // correlation ties the child row to the row of the search: the link column of child equals
 // the key that it references, and each tenant column of child equals a covered tenant
 // column or a scope value. nano gen repo writes it from the declared foreign key and checks
-// the tenant columns. child must be a db/postgres table; a child of another dialect records
-// keyset.ErrDialect.
+// the tenant columns. child must be a table of db/postgres, db/mysql or db/sqlite, of the
+// dialect of the search; any other child records keyset.ErrDialect.
 func NewExists[T any, Q Builder[T, Q, S, P], S ~string, P comparable, V any, E jet.Expression](
 	q Query[T, Q, S, P], child keyset.Source, correlation jet.BoolExpression, column jet.Expression, lit func(V) E,
 ) Exists[Q, V] {
@@ -364,23 +394,39 @@ func (f Exists[Q, V]) In(vs ...V) Q {
 	if err := checkValues(vs, f.expr); err != nil {
 		return f.b.refuse(err)
 	}
-	child, ok := f.child.(postgres.ReadableTable)
-	if !ok {
-		return f.b.refuse(
-			fmt.Errorf("%w: the search runtime supports PostgreSQL only; the child %T is not a PostgreSQL table",
-				keyset.ErrDialect, f.child),
-		)
+	subquery, err := existsSelect(f.child)
+	if err != nil {
+		return f.b.refuse(err)
 	}
 	if len(vs) == 0 {
 		return f.b.add(sqlFalse)
 	}
 	return f.b.add(func() jet.BoolExpression {
-		return jet.EXISTS(
-			postgres.SELECT(jet.AtomicCustomExpression(jet.Token("1"))).
-				FROM(child).
-				WHERE(jet.AND(f.correlation, f.match(vs))),
-		)
+		return jet.EXISTS(subquery(jet.AND(f.correlation, f.match(vs))))
 	})
+}
+
+// existsSelect returns the SELECT 1 FROM child WHERE ... of an Exists field, in the
+// builder of the child's dialect. Any other child is keyset.ErrDialect.
+func existsSelect(child keyset.Source) (func(jet.BoolExpression) jet.Expression, error) {
+	one := jet.AtomicCustomExpression(jet.Token("1"))
+	switch table := child.(type) {
+	case postgres.ReadableTable:
+		return func(where jet.BoolExpression) jet.Expression {
+			return postgres.SELECT(one).FROM(table).WHERE(where)
+		}, nil
+	case mysql.ReadableTable:
+		return func(where jet.BoolExpression) jet.Expression {
+			return mysql.SELECT(one).FROM(table).WHERE(where)
+		}, nil
+	case sqlite.ReadableTable:
+		return func(where jet.BoolExpression) jet.Expression {
+			return sqlite.SELECT(one).FROM(table).WHERE(where)
+		}, nil
+	default:
+		return nil, fmt.Errorf("%w: the child %T is not a table of db/postgres, db/mysql or db/sqlite",
+			keyset.ErrDialect, child)
+	}
 }
 
 // StringLit is the literal of a string or of a named string type, for a text column.

@@ -11,7 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/nanostack-dev/nanostack-framework/db/keyset"
-	"github.com/nanostack-dev/nanostack-framework/db/mysql"
 	"github.com/nanostack-dev/nanostack-framework/db/postgres"
 	"github.com/nanostack-dev/nanostack-framework/db/search"
 	"github.com/nanostack-dev/nanostack-framework/db/searchexec"
@@ -360,16 +359,9 @@ func TestFieldsKeepTheQueryImmutable(t *testing.T) {
 	assert.Equal(t, []any{"a", int64(1), false}, args)
 }
 
-func TestExistsRefusesAChildOfAnotherDialect(t *testing.T) {
-	child := mysql.NewTable("db", "perms", "", mysql.StringColumn("name"))
+func TestExistsRefusesAChildThatIsNotATable(t *testing.T) {
 	q := newItemSearch(fullScope())
-	f := searchexec.NewExists(
-		q.Query,
-		keyset.Source(child),
-		postgres.Bool(true),
-		permName,
-		searchexec.StringLit[string],
-	)
+	f := searchexec.NewExists(q.Query, keyset.Source("perms"), postgres.Bool(true), permName, searchexec.StringLit[string])
 	_, err := searchexec.Resolve(t.Context(), itemSpec, f.In("read").Query)
 	require.ErrorIs(t, err, keyset.ErrDialect)
 }

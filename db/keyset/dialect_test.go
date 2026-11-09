@@ -43,6 +43,12 @@ type dRow struct {
 	Stamp   time.Time
 	At      time.Time
 	IP      string
+	// The computed keys: aggregates of the widget's requests.
+	Requests int64
+	Biggest  *int64
+	Total    float64
+	Label    *string
+	Last     time.Time
 }
 
 type dField string
@@ -66,6 +72,12 @@ const (
 	dCreatedSQL dField = "CREATED_SQL_TEXT"
 	// dStampMaria is STAMP on MariaDB 11.5 and later.
 	dStampMaria dField = "STAMP_MARIADB"
+	// The computed keys.
+	dRequests dField = "REQUEST_COUNT"
+	dBiggest  dField = "BIGGEST"
+	dTotal    dField = "TOTAL"
+	dLabel    dField = "LABEL"
+	dLast     dField = "LAST_RECEIVED"
 )
 
 var dLabels = []string{"pending", "active", "archived"}
@@ -95,18 +107,33 @@ func newDTable(dialect string) dTable {
 		stamp   = jet.TimestampColumn("stamp")
 		at      = jet.TimestampzColumn("at")
 		ip      = jet.StringColumn("ip")
+
+		reqWidget   = jet.StringColumn("widget_id")
+		reqSize     = jet.IntegerColumn("size")
+		reqAmount   = jet.FloatColumn("amount")
+		reqLabel    = jet.StringColumn("label")
+		reqReceived = jet.TimestampzColumn("received")
 	)
+	// ofWidget is a correlated subquery over the requests of the widget, in the
+	// dialect's own builder.
+	var ofWidget func(jet.Projection) jet.Expression
 	table := dTable{dialect: dialect}
 	switch dialect {
 	case "postgres":
 		table.source = jet.NewTable("public", "widgets", "",
 			id, name, note, status, statusP, ref, rank, score, ratio, created, stamp, at, ip)
+		requests := jet.NewTable("public", "requests", "", reqWidget, reqSize, reqAmount, reqLabel, reqReceived)
+		ofWidget = func(p jet.Projection) jet.Expression { return requests.SELECT(p).WHERE(reqWidget.EQ(id)) }
 	case "mysql":
 		table.source = mysql.NewTable("db", "widgets", "",
 			id, name, note, status, statusP, ref, rank, score, ratio, created, stamp, at, ip)
+		requests := mysql.NewTable("db", "requests", "", reqWidget, reqSize, reqAmount, reqLabel, reqReceived)
+		ofWidget = func(p jet.Projection) jet.Expression { return requests.SELECT(p).WHERE(reqWidget.EQ(id)) }
 	case "sqlite":
 		table.source = sqlite.NewTable("", "widgets", "",
 			id, name, note, status, statusP, ref, rank, score, ratio, created, stamp, at, ip)
+		requests := sqlite.NewTable("", "requests", "", reqWidget, reqSize, reqAmount, reqLabel, reqReceived)
+		ofWidget = func(p jet.Projection) jet.Expression { return requests.SELECT(p).WHERE(reqWidget.EQ(id)) }
 	}
 	table.id = keyset.StringKey(id, func(r dRow) string { return r.ID })
 	table.keys = map[dField]keyset.Key[dRow]{
@@ -127,6 +154,16 @@ func newDTable(dialect string) dTable {
 		dStampMaria: keyset.MariaDBTimestampKey(stamp, func(r dRow) time.Time { return r.Stamp }),
 		dAt:         keyset.TimeKey(at, func(r dRow) time.Time { return r.At }),
 		dIP:         keyset.InetKey(ip, func(r dRow) string { return r.IP }),
+		dRequests: keyset.IntExprKey("widget_row.request_count", jet.IntExp(ofWidget(jet.COUNT(jet.STAR))),
+			func(r dRow) int64 { return r.Requests }),
+		dBiggest: keyset.NullableIntExprKey("widget_row.biggest", jet.IntExp(ofWidget(jet.MAXi(reqSize))),
+			func(r dRow) *int64 { return r.Biggest }),
+		dTotal: keyset.FloatExprKey("widget_row.total", jet.FloatExp(ofWidget(jet.SUMf(reqAmount))),
+			func(r dRow) float64 { return r.Total }),
+		dLabel: keyset.NullableStringExprKey("widget_row.label", jet.StringExp(ofWidget(jet.MIN(reqLabel))),
+			func(r dRow) *string { return r.Label }),
+		dLast: keyset.TimeExprKey("widget_row.last_received", jet.TimestampzExp(ofWidget(jet.MAX(reqReceived))),
+			func(r dRow) time.Time { return r.Last }),
 	}
 	return table
 }
@@ -162,6 +199,12 @@ var dSample = dRow{
 	Stamp:   time.Date(2026, time.March, 4, 10, 11, 12, 0, time.UTC),
 	At:      time.Date(2026, time.March, 4, 10, 11, 12, 0, time.UTC),
 	IP:      "10.0.0.1",
+
+	Requests: 3,
+	Biggest:  new(int64(2)),
+	Total:    1.25,
+	Label:    new("b"),
+	Last:     time.Date(2026, time.March, 4, 10, 11, 12, 0, time.UTC),
 }
 
 // dCase is one page whose SQL the golden pins on every dialect that runs it.
@@ -180,6 +223,8 @@ func dCases() []dCase {
 	unknown.Status = ""
 	nullStatus := dSample
 	nullStatus.StatusP = nil
+	noRequests := dSample
+	noRequests.Requests, noRequests.Biggest, noRequests.Total, noRequests.Label = 0, nil, 0, nil
 	return []dCase{
 		{name: "created ascending (NOT NULL keys)", sorts: []search.Sort[dField]{asc(dCreated)}, row: dSample},
 		{name: "created descending (NOT NULL keys)", sorts: []search.Sort[dField]{desc(dCreated)}, row: dSample},
@@ -203,6 +248,19 @@ func dCases() []dCase {
 		{name: "inet ascending", sorts: []search.Sort[dField]{asc(dIP)}, row: dSample},
 		// MySQL's value for an invalid ENUM label: it sorts before every label.
 		{name: "enum ascending after MySQL's empty value", sorts: []search.Sort[dField]{asc(dStatus)}, row: unknown},
+		{name: "computed count descending", sorts: []search.Sort[dField]{desc(dRequests)}, row: dSample},
+		{name: "computed nullable max ascending", sorts: []search.Sort[dField]{asc(dBiggest)}, row: dSample},
+		{
+			name: "computed nullable max ascending after a NULL", sorts: []search.Sort[dField]{asc(dBiggest)},
+			row: noRequests,
+		},
+		{
+			name: "computed nullable max descending, then rank", sorts: []search.Sort[dField]{desc(dBiggest), asc(dRank)},
+			row: dSample,
+		},
+		{name: "computed float, then name", sorts: []search.Sort[dField]{asc(dTotal), asc(dName)}, row: dSample},
+		{name: "computed nullable text descending", sorts: []search.Sort[dField]{desc(dLabel)}, row: dSample},
+		{name: "computed timestamptz ascending", sorts: []search.Sort[dField]{asc(dLast)}, row: dSample},
 	}
 }
 
