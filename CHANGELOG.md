@@ -60,7 +60,7 @@ The first release of the `gen` module: the generators and the `nano` CLI, which 
 
 ### Upgrade from v0.23.0-beta.1
 
-[RELEASING.md](RELEASING.md#upgrade-from-v0230-beta1) gives the commands. Steps 1 to 5 are the upgrade; echopoint and anchor built, vetted and passed their generated-file tests with them. Step 6 is a separate pull request.
+[RELEASING.md](RELEASING.md#upgrade-from-v0230-beta1) gives the commands. Steps 1 to 5 are the upgrade. Steps 1 to 3 were run on echopoint and anchor: both built and vetted, and passed their generated-file tests after step 3; anchor needs six field renames in step 3 before `go vet` passes again. Step 6 is a separate pull request.
 
 1. Require root `v0.23.0-beta.2`. `db` and `pkg/functional` stay at `v0.23.0-beta.1`.
 2. Pin `nano` with a `tool` directive at `gen/v0.23.0-beta.2`, and change each `//go:generate` line from `go run github.com/nanostack-dev/nanostack-framework/cmd/nano` to `go tool nano`. Tests that import `gen/config` or `gen/wire` resolve them through the tool requirement. The pin raises the OpenAPI generator that the service's module resolves to the version that `nano` links; regenerate the server and review the diff.

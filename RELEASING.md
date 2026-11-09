@@ -60,10 +60,10 @@ Make sure that the new tags do not exist. A tag is never moved or deleted (see [
 - Run each `go list -m` and each `go mod tidy` of the release steps with an empty module cache: `GOMODCACHE="$(mktemp -d)"`.
 - `GOPROXY=direct` and `GOPRIVATE` make Go fetch this repository with git over HTTPS. A git `url.<ssh>.insteadOf https://github.com/nanostack-dev` rule sends those fetches to SSH; when SSH is not available, run the Go commands with `GIT_CONFIG_GLOBAL` pointing at a config without that rule (the repository is public).
 
-**A module that keeps its last tag.** The tag of a module that did not change can sit on an earlier release branch: `db/v0.23.0-beta.1` points at a commit of `release/v0.23.0-beta.1`, which is not in `main`. `release.yml` requires each required tag to be in the history of the new tag, so merge that release branch into the new one before the first release commit, with the `ours` strategy. The merge adds the history and keeps the tree of `origin/main`:
+**A module that keeps its last tag.** The tag of a module that did not change can sit on an earlier release branch: `db/v0.23.0-beta.1` points at a commit of `release/v0.23.0-beta.1`, which is not in `main`. `release.yml` requires each required tag to be in the history of the new tag, so merge the root tag of that release (`v0.23.0-beta.1`, the last commit of its release branch) into the new release branch before the first release commit, with the `ours` strategy. The merge adds the history and keeps the tree of `origin/main`. Merge the tag, not the branch: a tag is never deleted:
 
 ```sh
-git merge -s ours --no-edit origin/release/v0.23.0-beta.1
+git merge -s ours --no-edit v0.23.0-beta.1
 git diff --quiet origin/main HEAD && git merge-base --is-ancestor 'db/v0.23.0-beta.1^{commit}' HEAD
 ```
 
@@ -179,7 +179,7 @@ go tool nano gen
 
 ## Upgrade from v0.23.0-beta.1
 
-[CHANGELOG.md](CHANGELOG.md), `gen/v0.23.0-beta.2` and `v0.23.0-beta.2 (root)`, lists every change. Steps 1 to 5 are the upgrade; echopoint and anchor built, vetted and passed their generated-file tests with them before the tags existed (with the replaces of [the deployment runbook](docs/runbooks/deployment.md)). Step 6 moves a service to the pipeline and is its own pull request.
+[CHANGELOG.md](CHANGELOG.md), `gen/v0.23.0-beta.2` and `v0.23.0-beta.2 (root)`, lists every change. Steps 1 to 5 are the upgrade. Steps 1 to 3 were run on echopoint and anchor before the tags existed, with the replaces of [the deployment runbook](docs/runbooks/deployment.md): both built and vetted, and passed their generated-file tests after step 3; anchor needs the six field renames of step 3 before `go vet` passes again. Step 6 moves a service to the pipeline and is its own pull request.
 
 1. Upgrade the root module. `db` and `pkg/functional` did not change and stay at `v0.23.0-beta.1`:
 
