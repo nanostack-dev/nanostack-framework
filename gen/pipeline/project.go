@@ -397,6 +397,7 @@ func (c *projectCheck) postgres(p project.Postgres) {
 		c.insideAt("Postgres.Out", p.Out, "Postgres")
 	}
 	c.scopes(p.Scopes)
+	c.contextScopes(p.Scopes, p.ContextScopes)
 }
 
 // client checks one client; outputs holds the outputs of the server and the

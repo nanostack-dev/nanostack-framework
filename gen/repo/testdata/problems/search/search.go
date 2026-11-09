@@ -61,8 +61,8 @@ func _() {
 		nanorepo.Tiebreak(shop.Tenants.ID, shop.Items.ID),
 	)
 	// E11: two searches with one name.
-	nanorepo.Search[shopmodel.Items]("Twice", shop.Items)
-	nanorepo.Search[shopmodel.Items]("Twice", shop.Items)
+	nanorepo.Search[shopmodel.Items]("Twice", shop.Items, nanorepo.Scope(shop.Items.TenantID))
+	nanorepo.Search[shopmodel.Items]("Twice", shop.Items, nanorepo.Scope(shop.Items.TenantID))
 	// E13: FilterAs over another type than the model field.
 	nanorepo.Search[shopmodel.Items]("WrongAs", shop.Items, nanorepo.FilterAs[sku](shop.Items.Sku, nanorepo.In))
 	// E14: a default sort that is not a sort.

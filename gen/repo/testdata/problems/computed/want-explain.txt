@@ -1,0 +1,21 @@
+search ComputedKeys on items (rows eventRow)
+  read      items; root; nullable weight, released_on, local_at, opens_at, deleted_at, external_id, tags; tenant tenant_id
+  subquery  SortExpr LastEvent lastEventID reads item_events; WHERE table.ItemEvents.ItemID.EQ(table.Items.ID)
+  subquery  SortExpr FirstEvent firstEventItem reads item_events; WHERE table.ItemEvents.ItemID.EQ(table.Items.ID)
+  subquery  SortExpr Missing eventCount reads item_events; WHERE table.ItemEvents.ItemID.EQ(table.Items.ID)
+  subquery  SortExpr Count eventCount reads item_events; WHERE table.ItemEvents.ItemID.EQ(table.Items.ID)
+  subquery  SortExpr Fine lastEventID reads item_events; WHERE table.ItemEvents.ItemID.EQ(table.Items.ID)
+  tenant    items: tenant_id by Scope
+  tenant    SortExpr LastEvent lastEventID: item_events: no tenant column; linked to items by item_events_item_id_fkey
+  tenant    SortExpr FirstEvent firstEventItem: item_events: no tenant column; linked to items by item_events_item_id_fkey
+  tenant    SortExpr Missing eventCount: item_events: no tenant column; linked to items by item_events_item_id_fkey
+  tenant    SortExpr Count eventCount: item_events: no tenant column; linked to items by item_events_item_id_fkey
+  tenant    SortExpr Fine lastEventID: item_events: no tenant column; linked to items by item_events_item_id_fkey
+  scope     Scope items.tenant_id
+  sort      name: items.name
+  sort      last_event: field LastEvent = lastEventID()
+  sort      first_event: field FirstEvent = firstEventItem()
+  sort      missing: field Missing = eventCount()
+  sort      count: field Count = eventCount()
+  sort      fine: field Fine = lastEventID()
+  tiebreak  id: the primary key items_pkey (id), by default

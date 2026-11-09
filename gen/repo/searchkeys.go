@@ -12,8 +12,7 @@ import (
 // sort.
 func (c *collector) builderSorts(b *builder) {
 	s := b.s
-	// SortHandWritten adds a constant and no key. SortExpr gives its own
-	// problem until G13.
+	// SortHandWritten adds a constant and no key.
 	if !slices.ContainsFunc(s.sorts, func(x *searchSort) bool { return x.kind != "SortHandWritten" }) {
 		c.errorf(s.tableNode, "add nanorepo.Sort(...) with the columns an API client may sort on, such as "+
 			"nanorepo.Sort("+s.tableText+"."+s.order[0].field+")",
@@ -50,10 +49,9 @@ func (c *collector) builderSorts(b *builder) {
 func (c *collector) builderSort(b *builder, sort *searchSort) {
 	switch sort.kind {
 	case "SortExpr":
-		c.errorf(sort.expr, "sort on a column, or write the method by hand on searchexec.Resolve with "+
-			"keyset.IntExprKey (or its kin) in plan.Order",
-			"search %s: SortExpr(%q) is read, and nano gen repo does not generate a computed key yet",
-			b.s.name, sort.field)
+		if key := c.exprKey(b, sort); key != nil {
+			b.sorts = append(b.sorts, sortConst{name: sort.field, api: sort.api[0], key: key})
+		}
 		return
 	case "SortHandWritten":
 		b.sorts = append(b.sorts, sortConst{name: goName(sort.api[0]), api: sort.api[0]})
@@ -73,11 +71,17 @@ func (c *collector) builderSort(b *builder, sort *searchSort) {
 // DefaultSort.
 func defaultConst(b *builder) *sortConst {
 	d := b.s.defaultSort
-	if d == nil || d.col == nil {
+	if d == nil {
 		return nil
 	}
 	for i, sort := range b.sorts {
-		if sort.key != nil && sort.key.col.table == d.col.table && sort.key.col.alias == d.col.alias &&
+		if d.col == nil {
+			if sort.key != nil && sort.key.expr != nil && sort.key.field == d.field {
+				return &b.sorts[i]
+			}
+			continue
+		}
+		if sort.key != nil && sort.key.col != nil && sort.key.col.table == d.col.table && sort.key.col.alias == d.col.alias &&
 			sort.key.col.col.field == d.col.col.field {
 			return &b.sorts[i]
 		}

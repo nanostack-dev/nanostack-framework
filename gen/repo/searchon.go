@@ -264,8 +264,29 @@ func (c *collector) scopeField(s *searchDecl, e ast.Expr) bool {
 	if obj := c.l.pkg.TypesInfo.Uses[tableIdent(ast.Unparen(call.Fun))]; obj == nil || !inDB(obj.Pkg()) {
 		return false
 	}
-	field, isSel := ast.Unparen(call.Args[0]).(*ast.SelectorExpr)
-	return isSel && c.isScopeVar(s, field.X)
+	switch arg := ast.Unparen(call.Args[0]).(type) {
+	case *ast.SelectorExpr:
+		return c.isScopeVar(s, arg.X)
+	case *ast.Ident: // a scope of one field is the value itself
+		return c.isScopeVar(s, arg) && singleField(s) != ""
+	}
+	return false
+}
+
+// singleField is the field of a scope value of one field, the field of its
+// one Scope or ScopeOrNull, else "".
+func singleField(s *searchDecl) string {
+	field := ""
+	for _, sc := range s.scopes {
+		if sc.kind == "ScopeNull" || len(sc.cols) == 0 {
+			continue
+		}
+		if field != "" {
+			return ""
+		}
+		field = sc.cols[0].col.field
+	}
+	return field
 }
 
 // isScopeVar reports whether e names the parameter of the From function,

@@ -100,6 +100,7 @@ func (l *loaded) declarations() (*declarations, error) {
 			return true
 		})
 	}
+	c.checkUnkeyedScopes()
 	if len(c.problems) == 0 && len(d.tables) == 0 && len(d.searches) > 0 {
 		c.problems = append(c.problems, l.searchWithoutRepository(d.searches[0]))
 	}

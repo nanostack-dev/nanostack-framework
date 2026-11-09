@@ -79,7 +79,31 @@ type Postgres struct {
 	// column. nano gen repo warns on a hand-written query of a scoped table,
 	// built on its generated base, that does not filter on the column,
 	// unless the method name ends in Internal. Empty: no table is scoped.
+	// nano gen repo also proves that every generated search covers each of
+	// them (ADR 0027): a column that is not in ContextScopes is a hard scope,
+	// whose value the caller passes in the scope value of the search.
 	Scopes []string
+	// ContextScopes are the tenant columns of Scopes whose value comes from
+	// the request context, such as a workspace that a header selects. A
+	// search scopes such a column only with nanorepo.ScopeFunc and the
+	// function registered here; the function can return TRUE for a read
+	// across the column, and must not return nil. Empty: every tenant column
+	// is a hard scope.
+	ContextScopes []ContextScope
+}
+
+// ContextScope registers the function that scopes one context tenant
+// column, for example:
+//
+//	{Column: "workspace_id", Func: "example.com/app/internal/db/workspacescope.Filter"}
+type ContextScope struct {
+	// Column is a column of Postgres.Scopes.
+	Column string
+	// Func is the import path of the function's package, a dot and the
+	// function's name. The function has the form
+	// func(context.Context, C) B: C is a column type and B a boolean
+	// expression.
+	Func string
 }
 
 // OpenAPI is the API contract and the Go packages generated from it. nano

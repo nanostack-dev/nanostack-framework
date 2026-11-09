@@ -4,21 +4,15 @@
 package builder
 
 import (
-	"context"
-
 	"github.com/nanostack-dev/nanostack-framework/db/nanorepo"
 	"github.com/nanostack-dev/nanostack-framework/db/postgres"
 	"github.com/nanostack-dev/nanostack-framework/gen/repo/internal/repotest/db/shop/public/model"
 	"github.com/nanostack-dev/nanostack-framework/gen/repo/internal/repotest/db/shop/public/table"
+	"github.com/nanostack-dev/nanostack-framework/gen/repo/internal/repotest/workspacescope"
 )
 
 // sku is a named type over the model field of items.sku.
 type sku string
-
-// tenantFilter stands for a context scope that project.go registers.
-func tenantFilter(context.Context, postgres.ColumnString) postgres.BoolExpression {
-	return postgres.Bool(true)
-}
 
 func _() {
 	nanorepo.Base[model.Tenants](table.Tenants)
@@ -50,15 +44,15 @@ func _() {
 
 	// The tenant comes from the context only: the scope is struct{}, the
 	// constructor takes no argument, and a From function takes struct{}.
-	nanorepo.Search[model.Tenants]("Tenant", table.Tenants,
-		nanorepo.From(allTenants),
-		nanorepo.ScopeFunc(tenantFilter, table.Tenants.Name),
-		nanorepo.Filter(table.Tenants.ID, nanorepo.Eq, nanorepo.In),
-		nanorepo.Sort(table.Tenants.Name),
+	nanorepo.Search[model.Boards]("Board", table.Boards,
+		nanorepo.From(allBoards),
+		nanorepo.ScopeFunc(workspacescope.Filter, table.Boards.WorkspaceID),
+		nanorepo.Filter(table.Boards.ID, nanorepo.Eq, nanorepo.In),
+		nanorepo.Sort(table.Boards.Title),
 	)
 }
 
-func allTenants(struct{}) postgres.ReadableTable { return table.Tenants }
+func allBoards(struct{}) postgres.ReadableTable { return table.Boards }
 
 func listed() postgres.BoolExpression { return table.Items.DeletedAt.IS_NULL() }
 

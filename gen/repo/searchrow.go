@@ -83,6 +83,8 @@ func (c *collector) builderRow(b *builder) {
 		case !f.Exported():
 			c.rowError(b, f, "export it and tag it with the column it reads, or remove it",
 				"%s is not exported, and the scan sets only exported fields", c.rowFieldName(b, f))
+		case slices.ContainsFunc(s.sorts, func(x *searchSort) bool { return x.kind == "SortExpr" && x.field == f.Name() }):
+			// the projection of its SortExpr key selects it
 		case !handWritten:
 			c.rowError(b, f, c.plainFieldFix(b, f),
 				"%s has no alias tag, so the search selects nothing for it", c.rowFieldName(b, f))

@@ -11,6 +11,7 @@ import (
 	"github.com/nanostack-dev/nanostack-framework/db/searchexec"
 	"github.com/nanostack-dev/nanostack-framework/gen/repo/internal/repotest/db/shop/public/model"
 	"github.com/nanostack-dev/nanostack-framework/gen/repo/internal/repotest/db/shop/public/table"
+	"github.com/nanostack-dev/nanostack-framework/gen/repo/internal/repotest/workspacescope"
 )
 
 // ItemSearch is an immutable search of items. Start one with NewItemSearch.
@@ -99,35 +100,35 @@ func (q ItemSearch) FullText(term string) ItemSearch {
 	return searchexec.NewText(q.Query, table.Items.Name, table.Items.Sku, skuText()).Contains(term)
 }
 
-// TenantSearch is an immutable search of tenants. Start one with NewTenantSearch.
-type TenantSearch struct {
-	searchexec.Query[model.Tenants, TenantSearch, TenantSort, struct{}]
+// BoardSearch is an immutable search of boards. Start one with NewBoardSearch.
+type BoardSearch struct {
+	searchexec.Query[model.Boards, BoardSearch, BoardSort, struct{}]
 }
 
-// TenantSort is a sort of TenantSearch.
-type TenantSort string
+// BoardSort is a sort of BoardSearch.
+type BoardSort string
 
 const (
-	TenantSortName TenantSort = "name"
+	BoardSortTitle BoardSort = "title"
 )
 
-var tenantSearch = searchexec.DefineSpec(searchexec.SpecDef[model.Tenants, TenantSort, struct{}]{
-	From:    func(s struct{}) keyset.Source { return allTenants(s) },
-	Columns: table.Tenants.AllColumns, // the Row is model.Tenants
-	Context: []searchexec.ContextScope{searchexec.ScopeFunc(tenantFilter, table.Tenants.Name)},
-	Keys: map[TenantSort]keyset.Key[model.Tenants]{
-		TenantSortName: keyset.StringKey(table.Tenants.Name, func(r model.Tenants) string { return r.Name }),
+var boardSearch = searchexec.DefineSpec(searchexec.SpecDef[model.Boards, BoardSort, struct{}]{
+	From:    func(s struct{}) keyset.Source { return allBoards(s) },
+	Columns: table.Boards.AllColumns, // the Row is model.Boards
+	Context: []searchexec.ContextScope{searchexec.ScopeFunc(workspacescope.Filter, table.Boards.WorkspaceID)},
+	Keys: map[BoardSort]keyset.Key[model.Boards]{
+		BoardSortTitle: keyset.StringKey(table.Boards.Title, func(r model.Boards) string { return r.Title }),
 	},
-	Tiebreak: []keyset.Key[model.Tenants]{ // tenants_pkey (id)
-		keyset.UUIDKey(table.Tenants.ID, func(r model.Tenants) uuid.UUID { return r.ID }),
+	Tiebreak: []keyset.Key[model.Boards]{ // boards_pkey (id)
+		keyset.StringKey(table.Boards.ID, func(r model.Boards) string { return r.ID }),
 	},
 	Limit: 20,
 })
 
-// NewTenantSearch starts a TenantSearch of one tenant. Only a query built here runs: Resolve and Run compare the spec.
-func NewTenantSearch() TenantSearch { return searchexec.New[TenantSearch](tenantSearch, struct{}{}) }
+// NewBoardSearch starts a BoardSearch of one tenant. Only a query built here runs: Resolve and Run compare the spec.
+func NewBoardSearch() BoardSearch { return searchexec.New[BoardSearch](boardSearch, struct{}{}) }
 
-// The filters of TenantSearch: each returns a field of q, whose method returns the filtered copy.
-func (q TenantSearch) ID() searchexec.EqIn[TenantSearch, uuid.UUID] {
-	return searchexec.NewEqIn(q.Query, table.Tenants.ID, searchexec.UUIDLit)
+// The filters of BoardSearch: each returns a field of q, whose method returns the filtered copy.
+func (q BoardSearch) ID() searchexec.EqIn[BoardSearch, string] {
+	return searchexec.NewEqIn(q.Query, table.Boards.ID, searchexec.StringLit[string])
 }

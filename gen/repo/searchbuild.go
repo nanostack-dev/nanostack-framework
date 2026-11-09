@@ -60,12 +60,17 @@ type sortKey struct {
 	enumType string     // EnumKey: the enum's SQL type name
 	labels   []string   // EnumKey: the model constants, in declaration order
 	nulls    string     // NullsFirst or NullsLast, else ""
+	// expr and computed are the function and the name (row.field, the
+	// select alias and the cursor signature) of a SortExpr key; col is nil.
+	expr     *types.Func
+	computed string
+	varName  string // the package variable of a SortExpr key
 }
 
 // builderField is the accessor of one filter.
 type builderField struct {
 	f      *searchFilter
-	kind   string       // In, Eq, EqIn, InFold, Text, Presence, TimeRange or Flag
+	kind   string       // In, Eq, EqIn, InFold, Text, Presence, TimeRange, Flag, Exists or ExistsFold
 	value  types.Type   // V of In, Eq, EqIn and InFold
 	lit    string       // the searchexec literal function of In, Eq and EqIn
 	labels []string     // EnumLit: the model constants of the enum, in declaration order

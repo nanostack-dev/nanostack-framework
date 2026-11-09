@@ -1,4 +1,4 @@
-buildergap.go:21: the generated buildergap_repo.gen.go does not compile: TenantID redeclared (buildergap_repo.gen.go:54)
-  fix: report this gap in the nano gen repo checks; meanwhile write the search by hand on searchexec.DefineSpec
-buildergap.go:21: the generated buildergap_repo.gen.go does not compile: 	other declaration of TenantID (buildergap_repo.gen.go:53)
-  fix: report this gap in the nano gen repo checks; meanwhile write the search by hand on searchexec.DefineSpec
+buildergap.go:22: search Twice: Scope(table.Items.TenantID) and ScopeOrNull(table.Items.TenantID) both make the field TenantID
+  fix: nanorepo.Scope(table.Items.TenantID, table.Items.TenantID) gives one value to both
+buildergap.go:22: search Twice: ScopeOrNull(table.Items.TenantID) names items.tenant_id, which Scope names already
+  fix: name each column in one scope option

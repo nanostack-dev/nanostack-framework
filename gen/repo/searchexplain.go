@@ -48,6 +48,9 @@ func (c *collector) explainSearch(s *searchDecl) SearchExplanation {
 	for _, in := range s.inner {
 		add("subquery", "%s", c.explainInner(in))
 	}
+	for _, line := range s.tenantLines {
+		add("tenant", "%s", line)
+	}
 	if s.mapper != nil {
 		kind := "Map"
 		if s.mapper.page {

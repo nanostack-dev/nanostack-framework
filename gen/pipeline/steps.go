@@ -196,13 +196,22 @@ func runErrors(_ *runner, u *unit, overlay map[string][]byte) (output, error) {
 // runRepo writes the repository bases of one package. The scope columns
 // come from the Postgres declaration; without one, no table is scoped.
 func runRepo(r *runner, u *unit, overlay map[string][]byte) (output, error) {
-	var scopes []string
-	if r.proj.Postgres != nil {
-		scopes = r.proj.Postgres.Scopes
+	opts := genrepo.Options{Dir: u.dir, Overlay: overlay}
+	if p := r.proj.Postgres; p != nil {
+		opts.Scopes = p.Scopes
+		for _, cs := range p.ContextScopes {
+			if opts.ContextScopes == nil {
+				opts.ContextScopes = map[string]string{}
+			}
+			opts.ContextScopes[cs.Column] = cs.Func
+		}
 	}
-	res, err := genrepo.Generate(genrepo.Options{Dir: u.dir, Scopes: scopes, Overlay: overlay})
+	res, err := genrepo.Generate(opts)
 	if err != nil {
 		return output{}, err
+	}
+	for _, e := range res.Exemptions {
+		r.exemptions = append(r.exemptions, r.rel(u.dir)+": "+e.String())
 	}
 	return output{files: res.Files, warnings: res.Warnings}, nil
 }

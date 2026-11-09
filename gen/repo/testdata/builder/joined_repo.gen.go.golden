@@ -41,7 +41,6 @@ var itemOfTenantSearch = searchexec.DefineSpec(searchexec.SpecDef[model.Items, I
 		searchexec.ScopeOrNull(func(s ItemOfTenantScope) string { return s.ExternalID }, table.Items.ExternalID),
 		searchexec.ScopeNull[ItemOfTenantScope](table.Items.ReleasedOn),
 	},
-	Unscoped: []string{"tenants.name: the ON clause scopes it"},
 	Keys: map[ItemOfTenantSort]keyset.Key[model.Items]{
 		ItemOfTenantSortName:  keyset.StringKey(table.Items.Name, func(r model.Items) string { return r.Name }),
 		ItemOfTenantSortTitle: keyset.StringKey(table.Items.Name, func(r model.Items) string { return r.Name }),
@@ -95,7 +94,6 @@ var shapedSearch = searchexec.DefineSpec(searchexec.SpecDef[model.Items, ShapedS
 		searchexec.ScopeEq(func(s ShapedScope) uuid.UUID { return s.TenantID }, table.Items.TenantID),
 		searchexec.ScopeEq(func(s ShapedScope) string { return s.ExternalID }, table.Items.ExternalID),
 	},
-	Context: []searchexec.ContextScope{searchexec.ScopeFunc(tenantFilter, table.Tenants.Name)},
 	Keys: map[ShapedSort]keyset.Key[model.Items]{
 		ShapedSortCreatedAt: keyset.TimeKey(table.Items.CreatedAt, func(r model.Items) time.Time { return r.CreatedAt }),
 		ShapedSortStatus:    keyset.EnumKey(table.Items.Status, "public.item_status", []string{string(model.ItemStatus_Active), string(model.ItemStatus_Archived)}, func(r model.Items) string { return string(r.Status) }),

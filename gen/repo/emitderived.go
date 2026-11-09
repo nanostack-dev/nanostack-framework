@@ -116,6 +116,31 @@ func (e *emitter) binding(r *resolution) {
 		}
 		e.p("func (%s) %s(%s) %s {\n%s}\n\n", recv, m.fn.Name(), e.params(m), e.results(m, t), e.body(m, r.via))
 	}
+	for _, m := range r.searches {
+		e.searchMethod(m, recv, impl, r.via)
+	}
+}
+
+// searchMethod writes a generated method that runs a declared search on
+// the search hatch of the base (design G8).
+func (e *emitter) searchMethod(m *searchMethod, recv, impl, via string) {
+	s, q := m.s, m.s.name+"Search"
+	e.p("// %s runs %s %s: *%s has no hand-written %s.\n", m.fn.Name(), article(q), q, impl, m.fn.Name())
+	ctx := e.ref("context", "context", "Context")
+	row := e.typ(s.row)
+	mapper := m.mapper
+	switch {
+	case m.mapFunc != nil:
+		mapper = e.fn(m.mapFunc)
+	case mapper == "":
+		mapper = "func(row " + row + ") " + row + " { return row }"
+	}
+	hatch := "search"
+	if m.page {
+		hatch = "searchPage"
+	}
+	e.p("func (%s) %s(ctx %s, q %s) (%s, error) {\n", recv, m.fn.Name(), ctx, q, e.typ(m.result))
+	e.p("\treturn %s%s(ctx, %s, q.Query, %s)\n}\n\n", via, hatch, specVar(s), mapper)
 }
 
 // params renders the parameter list of a derived method.

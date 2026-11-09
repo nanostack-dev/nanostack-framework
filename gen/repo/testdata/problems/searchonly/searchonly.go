@@ -9,5 +9,5 @@ import (
 )
 
 func _() {
-	nanorepo.Search[model.Items]("Item", table.Items)
+	nanorepo.Search[model.Items]("Item", table.Items, nanorepo.Scope(table.Items.TenantID))
 }

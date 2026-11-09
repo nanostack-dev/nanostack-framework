@@ -125,6 +125,10 @@ type Options struct {
 	Dir string
 	// Scopes are the tenant columns, Postgres.Scopes of nanogen/project.go.
 	Scopes []string
+	// ContextScopes maps each context tenant column to the function that
+	// scopes it, written as its import path, a dot and its name:
+	// Postgres.ContextScopes of nanogen/project.go.
+	ContextScopes map[string]string
 	// Check compares instead of writing and returns an error wrapping
 	// gen.ErrStale on drift.
 	Check bool
@@ -149,6 +153,10 @@ type Result struct {
 	// Searches holds one entry per nanorepo.Search, in source order, once
 	// every declaration reads without a problem.
 	Searches []SearchExplanation
+	// Exemptions are the tenant exemptions of the searches, in source
+	// order, set when the run succeeds. nano gen writes them, for every
+	// package of the module, to ExemptionsFile.
+	Exemptions []Exemption
 }
 
 // Generate returns the generated files without touching the disk. Errors
@@ -163,14 +171,14 @@ func Generate(opts Options) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	l.scopes = opts.Scopes
+	l.scopes, l.contextScopes = opts.Scopes, opts.ContextScopes
 	decls, err := l.declarations()
 	if err != nil {
 		return nil, err
 	}
 	res := l.resolve(decls, opts.Scopes)
 	result := &Result{Searches: l.explainSearches(decls)}
-	var problems []error
+	problems := l.unusedSearches(decls, res)
 	var missing []string
 	failing := false
 	for _, r := range res {
@@ -203,6 +211,7 @@ func Generate(opts Options) (*Result, error) {
 		return result, errors.Join(sortProblems(problems)...)
 	}
 	result.Files = out.files
+	result.Exemptions = exemptions(decls)
 	result.Warnings = l.scopeWarnings(pkg, decls, opts.Scopes)
 	return result, nil
 }
@@ -326,7 +335,7 @@ func orphans(opts Options, files []gen.File) ([]string, error) {
 	return deleted, errors.Join(problems...)
 }
 
-// Main runs `nano gen repo [-dir d] [-scopes a,b] [-check] [-explain
+// Main runs `nano gen repo [-dir d] [-scopes a,b] [-context-scopes c=pkg.F] [-check] [-explain
 // [Iface|Search...]]` and returns the process exit code: 0 on success, also with
 // warnings, 1 on stale output or a declaration error, 2 on bad flags, 3 when
 // the environment fails; -h prints the flags and returns 0. Warnings print to
@@ -337,11 +346,13 @@ func Main(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("nano gen repo", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	var opts Options
-	var scopes string
+	var scopes, contextScopes string
 	var explain bool
 	fs.StringVar(&opts.Dir, "dir", ".", "package directory holding the nanorepo declarations")
 	fs.StringVar(&scopes, "scopes", "",
 		"comma-separated tenant columns, as Postgres.Scopes in nanogen/project.go (nano gen passes them)")
+	fs.StringVar(&contextScopes, "context-scopes", "",
+		"comma-separated column=importpath.Func pairs, as Postgres.ContextScopes in nanogen/project.go")
 	fs.BoolVar(&opts.Check, "check", false, "write nothing; exit 1 when an output is stale or orphaned")
 	fs.BoolVar(&explain, "explain", false,
 		"print how each method of each bound interface resolves and what each search reads; "+
@@ -359,6 +370,20 @@ func Main(args []string, stdout, stderr io.Writer) int {
 		if s = strings.TrimSpace(s); s != "" {
 			opts.Scopes = append(opts.Scopes, s)
 		}
+	}
+	for pair := range strings.SplitSeq(contextScopes, ",") {
+		if pair = strings.TrimSpace(pair); pair == "" {
+			continue
+		}
+		col, fn, ok := strings.Cut(pair, "=")
+		if !ok || col == "" || fn == "" {
+			_, _ = fmt.Fprintf(stderr, "nano gen repo: -context-scopes entry %q is not column=importpath.Func\n", pair)
+			return 2
+		}
+		if opts.ContextScopes == nil {
+			opts.ContextScopes = map[string]string{}
+		}
+		opts.ContextScopes[col] = fn
 	}
 	if explain {
 		return mainExplain(opts, fs.Args(), stdout, stderr)

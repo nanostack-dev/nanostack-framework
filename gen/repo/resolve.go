@@ -33,7 +33,9 @@ type resolution struct {
 	recvPtr   bool   // generated methods take a pointer receiver
 	via       string // "r." or "r.itemsBase." when the implementation embeds several bases
 	problems  []error
-	missing   []string // methods with no implementation: compile errors they cause are not reported twice
+	missing   []string        // methods with no implementation: compile errors they cause are not reported twice
+	searches  []*searchMethod // generated methods that run a declared search
+	takes     []string        // the builder types that a method of the interface takes, XSearch
 	// incomplete is true when a method was skipped because its signature
 	// does not type-check: the package's own compile error says why.
 	incomplete bool
@@ -92,7 +94,24 @@ func (r *resolver) run(d *declarations) {
 	hand, ptr, val := r.handWritten()
 	r.res.recvPtr = ptr || !val
 	for _, fn := range r.methods() {
+		s := r.searchOf(d, fn)
+		if s != nil {
+			r.res.takes = append(r.res.takes, s.name+"Search")
+		}
 		switch {
+		case s != nil && hand[fn.Name()] != nil:
+			r.checkHandSearch(fn, hand[fn.Name()], s)
+			file, line := r.l.position(r.l.pkg.Fset, hand[fn.Name()].Pos())
+			r.line(fn, fmt.Sprintf("hand-written %s:%d, runs search %s", file, line, s.name), "")
+		case s != nil && len(r.promoted(fn.Name())) > 0:
+			h := r.promoted(fn.Name())[0]
+			r.fail(fn.Pos(), fn, fmt.Sprintf("write %s on *%s by hand on searchexec.Resolve, or remove it from %s "+
+				"so nano gen repo generates it", fn.Name(), r.b.impl.Obj().Name(), h.field.Name()),
+				"%s takes a %sSearch and is promoted from the embedded %s: nano gen repo cannot check that it "+
+					"runs the declared scope", fn.Name(), s.name, h.field.Name())
+			r.line(fn, "ERROR: a promoted method takes a search", "")
+		case s != nil:
+			r.resolveSearch(fn, s)
 		case invalidSig(fn.Type()):
 			r.res.incomplete = true
 			r.line(fn, "ERROR: the signature does not type-check", "")
@@ -119,6 +138,13 @@ func (r *resolver) run(d *declarations) {
 	bases := r.embeddedBases(d)
 	if len(bases) > 1 {
 		r.res.via = "r." + r.t.baseName() + "."
+	}
+	if len(r.res.searches) > 0 && len(r.res.derived) == 0 && !slices.Contains(bases, r.t.baseName()) {
+		r.res.problems = append(r.res.problems, gen.Errorf(r.b.file, r.b.line,
+			fmt.Sprintf("embed it: add %s as a field of %s, set to %s(db) in the constructor",
+				r.t.baseName(), r.b.impl.Obj().Name(), r.t.newName()),
+			"%s runs on the generated %s, but %s does not embed it", r.res.searches[0].fn.Name(),
+			r.t.baseName(), r.b.impl.Obj().Name()))
 	}
 	if len(r.res.derived) > 0 && !slices.Contains(bases, r.t.baseName()) {
 		name := r.res.explain.Iface

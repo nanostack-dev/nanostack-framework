@@ -12,8 +12,10 @@ const textFix = "use nanorepo.Range(...), Eq or In, or nanorepo.FullTextExpr on 
 
 // checkSearch checks a search that reads without a problem: the columns
 // of the options (E5), the text operators (E2), FilterAs (E13), the default
-// sort (E14) and the order (E3, E4).
+// sort (E14), the order (E3, E4), then the tenant coverage (E8 to E10,
+// E12, E29, E30) of a search that has no other problem.
 func (c *collector) checkSearch(s *searchDecl) {
+	before := len(c.problems)
 	if !c.checkColumnsRead(s) {
 		return
 	}
@@ -29,6 +31,9 @@ func (c *collector) checkSearch(s *searchDecl) {
 	}
 	c.checkDefaultSort(s)
 	c.order(s)
+	if len(c.problems) == before {
+		c.checkTenant(s)
+	}
 }
 
 // checkFilter checks the text operators (Contains, ContainsAny, InFold)
@@ -381,14 +386,62 @@ func (c *collector) checkColumnsRead(s *searchDecl) bool {
 		if f.kind != "FilterExists" {
 			continue
 		}
+		named := true
 		for _, col := range []*colRef{f.link, f.col} {
 			if col.table != f.child || col.alias != "" {
-				ok = false
+				ok, named = false, false
 				c.errorf(col.expr, "name a column of "+f.child.sqlName+", the child table of FilterExists",
 					"search %s: FilterExists(%s, ...) names %s, which is not a column of %s", s.name,
 					f.child.sqlName, col, f.child.sqlName)
 			}
 		}
+		if named && !c.existsLink(s, f) {
+			ok = false
+		}
 	}
 	return ok
+}
+
+// existsLink sets the root column that the link column of a FilterExists
+// references, from a declared foreign key of the child to the searched
+// table (E8): the subquery correlates on it, so the child row is the
+// searched row's own data.
+func (c *collector) existsLink(s *searchDecl, f *searchFilter) bool {
+	root := s.root.table
+	for _, k := range f.child.foreignKeys {
+		if len(k.columns) != 1 || k.columns[0] != f.link.col.sqlName || k.references != root.sqlName ||
+			(k.refSchema != "" && k.refSchema != root.schema) {
+			continue
+		}
+		for _, col := range root.columns {
+			if col.sqlName == k.refColumns[0] {
+				f.ref, f.key = &colRef{table: root, alias: s.root.alias, tableText: s.root.text, col: col}, k.name
+				return true
+			}
+		}
+	}
+	var keys []string
+	for _, k := range f.child.foreignKeys {
+		if k.references == root.sqlName && len(k.columns) == 1 {
+			keys = append(keys, f.child.goName+"."+columnField(f.child, k.columns[0])+" ("+k.name+")")
+		}
+	}
+	fix := "declare a foreign key from " + f.child.sqlName + " to " + root.sqlName + " and link on its column"
+	if len(keys) > 0 {
+		fix = "link on the column of a foreign key to " + root.sqlName + ": " + strings.Join(keys, ", ")
+	}
+	c.errorf(f.link.expr, fix, "search %s: FilterExists(%s, %s, ...): %s.%s is not the column of a declared "+
+		"foreign key to %s, so the subquery is not correlated on the searched row", s.name, f.child.sqlName,
+		f.link, f.child.sqlName, f.link.col.sqlName, root.sqlName)
+	return false
+}
+
+// columnField is the Go field of the column sqlName of t.
+func columnField(t *tableBase, sqlName string) string {
+	for _, col := range t.columns {
+		if col.sqlName == sqlName {
+			return col.field
+		}
+	}
+	return sqlName
 }

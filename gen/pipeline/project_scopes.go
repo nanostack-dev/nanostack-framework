@@ -1,6 +1,13 @@
 package pipeline
 
-import "strconv"
+import (
+	"go/token"
+	"slices"
+	"strconv"
+	"strings"
+
+	"github.com/nanostack-dev/nanostack-framework/core/nano/project"
+)
 
 // scopes checks Postgres.Scopes: each entry a column name, none twice.
 func (c *projectCheck) scopes(scopes []string) {
@@ -16,6 +23,40 @@ func (c *projectCheck) scopes(scopes []string) {
 		}
 		seen[scope] = true
 	}
+}
+
+// contextScopes checks Postgres.ContextScopes: each column a column of
+// Scopes, once, with a function written as an import path, a dot and a
+// function name. nano gen repo checks the function itself where a search
+// names it: the project check loads no package.
+func (c *projectCheck) contextScopes(scopes []string, ctx []project.ContextScope) {
+	const fix = `write the function as "example.com/app/internal/db/workspacescope.Filter"`
+	seen := map[string]bool{}
+	for _, cs := range ctx {
+		switch {
+		case !slices.Contains(scopes, cs.Column):
+			c.add(c.at("Postgres.ContextScopes"), "add "+strconv.Quote(cs.Column)+" to Postgres.Scopes, or "+
+				"remove its context scope", "Postgres.ContextScopes names %q, which is not in Postgres.Scopes",
+				cs.Column)
+		case seen[cs.Column]:
+			c.add(c.at("Postgres.ContextScopes"), "register one function per column",
+				"Postgres.ContextScopes names %q twice", cs.Column)
+		case !funcPath(cs.Func):
+			c.add(c.at("Postgres.ContextScopes"), fix, "Postgres.ContextScopes: the function of %q is %q, not "+
+				"an import path, a dot and a function name", cs.Column, cs.Func)
+		}
+		seen[cs.Column] = true
+	}
+}
+
+// funcPath reports whether s is an import path, a dot and an identifier:
+// example.com/app/scope.Filter.
+func funcPath(s string) bool {
+	dot := strings.LastIndex(s, ".")
+	if dot <= 0 || dot < strings.LastIndex(s, "/") {
+		return false
+	}
+	return token.IsIdentifier(s[dot+1:])
 }
 
 // isColumnName reports whether s is a column name as nano gen db reads

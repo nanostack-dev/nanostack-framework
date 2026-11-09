@@ -52,6 +52,7 @@ func _() {
 	// A Tiebreak that covers items_tenant_sku_key and items_pkey names the
 	// primary key, whatever the order of the key names.
 	nanorepo.Search[model.Items]("ItemByTenantSku", table.Items,
+		nanorepo.Scope(table.Items.TenantID),
 		nanorepo.Sort(table.Items.Name),
 		nanorepo.Tiebreak(table.Items.TenantID, table.Items.Sku, table.Items.ID),
 	)

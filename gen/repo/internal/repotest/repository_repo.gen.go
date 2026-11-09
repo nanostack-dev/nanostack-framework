@@ -7,6 +7,7 @@ import (
 	"database/sql"
 
 	"github.com/google/uuid"
+	"github.com/nanostack-dev/nanostack-framework/db/search"
 	"github.com/nanostack-dev/nanostack-framework/gen/repo/internal/repotest/db/shop/public/model"
 	"github.com/nanostack-dev/nanostack-framework/pkg/functional"
 )
@@ -107,6 +108,41 @@ func (r *itemRepositoryImpl) FindAllInternal(ctx context.Context) ([]Item, error
 // UNSCOPED: the name ends in Internal, so it does not filter on tenant_id.
 func (r *itemRepositoryImpl) CountInternal(ctx context.Context) (int64, error) {
 	return r.count(ctx, nil)
+}
+
+// SearchItems runs an ItemSearch: *itemRepositoryImpl has no hand-written SearchItems.
+func (r *itemRepositoryImpl) SearchItems(ctx context.Context, q ItemSearch) (search.Result[Item], error) {
+	return r.search(ctx, itemSearch, q.Query, itemToDomain)
+}
+
+// SearchItemSummaries runs an ItemSummarySearch: *itemRepositoryImpl has no hand-written SearchItemSummaries.
+func (r *itemRepositoryImpl) SearchItemSummaries(ctx context.Context, q ItemSummarySearch) (search.Result[itemSummary], error) {
+	return r.search(ctx, itemSummarySearch, q.Query, func(row itemSummary) itemSummary { return row })
+}
+
+// SearchItemsWithOwner runs an ItemWithOwnerSearch: *itemRepositoryImpl has no hand-written SearchItemsWithOwner.
+func (r *itemRepositoryImpl) SearchItemsWithOwner(ctx context.Context, q ItemWithOwnerSearch) (search.Result[itemWithOwner], error) {
+	return r.search(ctx, itemWithOwnerSearch, q.Query, func(row itemWithOwner) itemWithOwner { return row })
+}
+
+// SearchItemsOfOwner runs an ItemOfOwnerSearch: *itemRepositoryImpl has no hand-written SearchItemsOfOwner.
+func (r *itemRepositoryImpl) SearchItemsOfOwner(ctx context.Context, q ItemOfOwnerSearch) (search.Result[itemOfOwner], error) {
+	return r.search(ctx, itemOfOwnerSearch, q.Query, func(row itemOfOwner) itemOfOwner { return row })
+}
+
+// SearchManagedLabels runs a ManagedLabelSearch: *itemRepositoryImpl has no hand-written SearchManagedLabels.
+func (r *itemRepositoryImpl) SearchManagedLabels(ctx context.Context, q ManagedLabelSearch) (search.Result[Label], error) {
+	return r.search(ctx, managedLabelSearch, q.Query, r.labels.toLabel)
+}
+
+// SearchLicensedItems runs a LicensedItemSearch: *itemRepositoryImpl has no hand-written SearchLicensedItems.
+func (r *itemRepositoryImpl) SearchLicensedItems(ctx context.Context, q LicensedItemSearch) (search.Result[itemWithLicense], error) {
+	return r.search(ctx, licensedItemSearch, q.Query, func(row itemWithLicense) itemWithLicense { return row })
+}
+
+// SearchCountedItems runs a CountedItemSearch: *itemRepositoryImpl has no hand-written SearchCountedItems.
+func (r *itemRepositoryImpl) SearchCountedItems(ctx context.Context, q CountedItemSearch) (search.Result[itemWithEvents], error) {
+	return r.search(ctx, countedItemSearch, q.Query, func(row itemWithEvents) itemWithEvents { return row })
 }
 
 // AuditLog on *auditLogImpl: 0 derived methods on table audit_events; the other methods are

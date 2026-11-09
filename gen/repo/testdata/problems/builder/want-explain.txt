@@ -1,20 +1,16 @@
-search NoTenant on items (rows model.Items)
-  read      items; root; nullable weight, released_on, local_at, opens_at, deleted_at, external_id, tags; tenant tenant_id
-  scope     Unscoped items.tenant_id: fixture
-  sort      name: items.name
-  tiebreak  id: the primary key items_pkey (id), by default
 search NoSort on items (rows model.Items)
   read      items; root; nullable weight, released_on, local_at, opens_at, deleted_at, external_id, tags; tenant tenant_id
+  tenant    items: tenant_id by Scope
   scope     Scope items.tenant_id
   tiebreak  id: the primary key items_pkey (id), by default
 search Shapes on items (rows model.Items)
   read      items; root; nullable weight, released_on, local_at, opens_at, deleted_at, external_id, tags; tenant tenant_id
+  tenant    items: tenant_id by Scope
   scope     Scope items.tenant_id
   filter    Sku: In, Present on items.sku (text, string)
   filter    Limit: Eq on lowerName()
   filter    Name: Eq on items.name (text, string)
   filter    Name: In on lowerName()
-  filter    TenantsName: In on EXISTS tenants by tenants.id
   filter    Stock: Range (min_stock, max_stock) on items.stock (int4, int32)
   filter    Price: Eq on items.price (float8, float64)
   sort      name: items.name, NullsFirst
@@ -24,35 +20,46 @@ search WrongFrom on items (rows model.Items)
   from      itemsOf
   read      items; root; nullable weight, released_on, local_at, opens_at, deleted_at, external_id, tags; tenant tenant_id
   read      tenants; INNER JOIN; ON table.Tenants.ID.EQ(table.Items.TenantID).AND(table.Tenants.Name.EQ(postgres.String(s.TenantID))); one row by tenants_pkey (id)
+  tenant    items: tenant_id by Scope
+  tenant    tenants: no tenant column; linked to items by items_tenant_id_fkey
   scope     Scope items.tenant_id
   scope     Scope items.sku
   sort      name: items.name
   tiebreak  id: the primary key items_pkey (id), by default
 search HandOnly on items (rows model.Items)
   read      items; root; nullable weight, released_on, local_at, opens_at, deleted_at, external_id, tags; tenant tenant_id
+  tenant    items: tenant_id by Scope
   scope     Scope items.tenant_id
   sort      popularity: hand-written
   tiebreak  id: the primary key items_pkey (id), by default
 search TwiceKey on items (rows model.Items)
   read      items; root; nullable weight, released_on, local_at, opens_at, deleted_at, external_id, tags; tenant tenant_id
+  tenant    items: tenant_id by Scope
   scope     Scope items.tenant_id
   sort      name: items.name
   sort      name: items.name
   tiebreak  id: the primary key items_pkey (id), by default
 search TwiceHand on items (rows model.Items)
   read      items; root; nullable weight, released_on, local_at, opens_at, deleted_at, external_id, tags; tenant tenant_id
+  tenant    items: tenant_id by Scope
   scope     Scope items.tenant_id
   sort      name: items.name
   sort      name: hand-written
   tiebreak  id: the primary key items_pkey (id), by default
 search OneConst on items (rows model.Items)
   read      items; root; nullable weight, released_on, local_at, opens_at, deleted_at, external_id, tags; tenant tenant_id
+  tenant    items: tenant_id by Scope
   scope     Scope items.tenant_id
   sort      created-at: items.name
   sort      created_at: items.created_at
   tiebreak  id: the primary key items_pkey (id), by default
 search Client on audit_events (rows model.AuditEvents)
+  from      eventsOfItems
   read      audit_events; root; nullable item_id, note, client, payload
+  read      items; INNER JOIN; ON table.Items.ID.EQ(table.AuditEvents.ItemID); one row by items_pkey (id); nullable weight, released_on, local_at, opens_at, deleted_at, external_id, tags; tenant tenant_id
+  tenant    audit_events: no tenant column; linked to items by audit_events_item_id_fkey
+  tenant    items: tenant_id by Scope
+  scope     Scope items.tenant_id
   scope     Scope audit_events.item_id
   filter    Client: Eq on audit_events.client (inet, string)
   sort      at: audit_events.at

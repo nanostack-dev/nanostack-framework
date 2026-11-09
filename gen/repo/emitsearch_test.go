@@ -16,6 +16,7 @@ import (
 
 	"github.com/nanostack-dev/nanostack-framework/gen"
 	"github.com/nanostack-dev/nanostack-framework/gen/internal/importset"
+	"github.com/nanostack-dev/nanostack-framework/gen/repo/internal/repotest"
 )
 
 // maxSearchLines is the most non-blank lines one fixture search may own in
@@ -31,7 +32,7 @@ const maxSearchLines = 80
 // fields, and two embedded models.
 func TestBuilderGolden(t *testing.T) {
 	t.Parallel()
-	res, err := Generate(Options{Dir: "testdata/builder", Scopes: []string{"tenant_id"}})
+	res, err := Generate(Options{Dir: "testdata/builder", Scopes: repotest.Scopes, ContextScopes: repotest.ContextScopes})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,7 +49,7 @@ func TestBuilderGolden(t *testing.T) {
 // files, and its hand-written code uses the builders.
 func TestBuilderBuildsAndVets(t *testing.T) {
 	t.Parallel()
-	res, err := Generate(Options{Dir: "testdata/builder", Scopes: []string{"tenant_id"}})
+	res, err := Generate(Options{Dir: "testdata/builder", Scopes: repotest.Scopes, ContextScopes: repotest.ContextScopes})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -292,7 +293,7 @@ func TestBuilderCheckAndOrphan(t *testing.T) {
 	if err := os.Remove(filepath.Join(dir, "use.go")); err != nil {
 		t.Fatal(err)
 	}
-	opts := Options{Dir: dir, Scopes: []string{"tenant_id"}}
+	opts := Options{Dir: dir, Scopes: repotest.Scopes, ContextScopes: repotest.ContextScopes}
 	if _, err := Run(opts); err != nil {
 		t.Fatal(err)
 	}
