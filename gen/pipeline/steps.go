@@ -127,12 +127,13 @@ func (r *runner) dbUnits(s *step) []*unit {
 		outputs: gendb.Planned(r.root, p)}}
 }
 
-// repoUnits returns one unit per package with a nanorepo declaration.
+// repoUnits returns one unit per package with a nanorepo declaration. Its
+// outputs are the base and the derived file of each declaring file that
+// binds an interface.
 func (r *runner) repoUnits(s *step) []*unit {
 	units := make([]*unit, 0, len(r.found.repos))
 	for _, p := range r.found.repos {
-		units = append(units, &unit{step: s, dir: p.dir, inputs: p.files,
-			outputs: []string{filepath.Join(p.dir, genrepo.FileName)}})
+		units = append(units, &unit{step: s, dir: p.dir, inputs: p.files, outputs: genrepo.Planned(p.dir, p.files)})
 	}
 	return units
 }
@@ -203,7 +204,7 @@ func runRepo(r *runner, u *unit, overlay map[string][]byte) (output, error) {
 	if err != nil {
 		return output{}, err
 	}
-	return output{files: []gen.File{res.File}, warnings: res.Warnings}, nil
+	return output{files: res.Files, warnings: res.Warnings}, nil
 }
 
 func runConfig(r *runner, u *unit, overlay map[string][]byte) (output, error) {

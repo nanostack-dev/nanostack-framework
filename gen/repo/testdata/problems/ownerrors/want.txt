@@ -1,0 +1,8 @@
+ownerrors.go:19: compile error: undefined: Skuu
+  fix: fix the compile error here; nano gen repo needs the package to type-check, apart from the names it generates
+ownerrors.go:20: Items.FindActive: not implemented: no hand-written method on *itemsImpl, and the name does not derive: it does not start with FindBy, GetBy, ExistsBy, CountBy, DeleteBy, FindAll or Count
+  fix: write it by hand on *itemsImpl, in a non-generated file of package ownerrors:
+         func (r *itemsImpl) FindActive(ctx context.Context, tenantID uuid.UUID) ([]model.Items, error)
+       or rename it to a derivable name: FindByTenantID
+ownerrors.go:35: compile error: r.t.Nmae undefined (type *table.ItemsTable has no field or method Nmae)
+  fix: fix the compile error here; nano gen repo needs the package to type-check, apart from the names it generates

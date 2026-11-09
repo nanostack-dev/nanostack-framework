@@ -1,10 +1,12 @@
 package genrepo
 
 import (
+	"bytes"
 	"cmp"
 	"errors"
 	"go/ast"
 	"go/token"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -22,20 +24,27 @@ const loadMode = packages.NeedName | packages.NeedTypes | packages.NeedSyntax | 
 const compileFix = "fix the compile error here; nano gen repo needs the package to type-check, " +
 	"apart from the names it generates"
 
-// loaded is the declaring package, type-checked with an empty base file.
+// loaded is the declaring package, type-checked with the files nano gen
+// repo wrote replaced by empty files.
 type loaded struct {
 	dir     string // absolute package directory
 	outPath string // absolute path of repo_base.gen.go
 	overlay map[string][]byte
+	empty   []byte   // an empty file of the package
+	own     []string // absolute paths of the files nano gen repo wrote, by their header
+	oldBase []byte   // repo_base.gen.go before this run, for the columns it had
 	pkg     *packages.Package
 	files   map[string]map[string]*ast.File // package path -> file name -> parsed file, for tables and enums
+	fset    *token.FileSet                  // of files
 }
 
-// loadPackage type-checks the package with repo_base.gen.go replaced by an
-// empty file, so a stale or broken previous base never blocks a run.
-// Hand-written code that uses the base does not type-check yet; verify
-// reports what remains once the new base is in place. Errors that stop
-// type checking (go list, syntax) are returned.
+// loadPackage type-checks the package with repo_base.gen.go and every
+// other file nano gen repo wrote replaced by empty files, so a stale or
+// broken previous output never blocks a run, and a method a previous run
+// generated never counts as hand-written. Hand-written code that uses the
+// base does not type-check yet; verify reports what remains once the new
+// outputs are in place. Errors that stop type checking (go list, syntax)
+// are returned.
 func loadPackage(opts Options) (*loaded, error) {
 	absDir, err := filepath.Abs(opts.Dir)
 	if err != nil {
@@ -45,8 +54,10 @@ func loadPackage(opts Options) (*loaded, error) {
 	if err != nil {
 		return nil, err
 	}
-	l := &loaded{dir: absDir, outPath: filepath.Join(absDir, FileName), overlay: opts.Overlay}
-	l.pkg, err = l.load([]byte("package " + pkgName + "\n"))
+	l := &loaded{dir: absDir, outPath: filepath.Join(absDir, FileName), overlay: opts.Overlay,
+		empty: []byte("package " + pkgName + "\n")}
+	l.findOwn()
+	l.pkg, err = l.load(nil)
 	if err != nil {
 		return nil, err
 	}
@@ -58,15 +69,65 @@ func loadPackage(opts Options) (*loaded, error) {
 	}
 	if len(fatal) > 0 {
 		return nil, errors.Join(gopkg.Problems(fatal, l.relPath,
-			"make the package compile; nano gen repo replaces "+FileName+" with an empty file")...)
+			"make the package compile; nano gen repo replaces the files it wrote with empty files")...)
 	}
 	return l, nil
 }
 
-// load type-checks the package with generated as repo_base.gen.go, on top
-// of the caller's overlay.
-func (l *loaded) load(generated []byte) (*packages.Package, error) {
-	overlay, err := gopkg.Overlay(l.overlay, map[string][]byte{l.outPath: generated})
+// findOwn lists the Go files of the package directory, on disk or in the
+// overlay, that start with the header of nano gen repo, and keeps the
+// base on disk.
+func (l *loaded) findOwn() {
+	names := map[string]bool{}
+	if entries, err := os.ReadDir(l.dir); err == nil {
+		for _, e := range entries {
+			names[filepath.Join(l.dir, e.Name())] = true
+		}
+	}
+	for path := range l.overlay {
+		if filepath.Dir(path) == l.dir {
+			names[path] = true
+		}
+	}
+	for path := range names {
+		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			continue
+		}
+		data, ok := l.overlay[path]
+		if !ok {
+			var err error
+			if data, err = os.ReadFile(filepath.Clean(path)); err != nil {
+				continue
+			}
+		}
+		if bytes.HasPrefix(data, []byte(header)) {
+			l.own = append(l.own, path)
+			if path == l.outPath {
+				l.oldBase = data
+			}
+		}
+	}
+	slices.Sort(l.own)
+}
+
+// isOwn reports whether path is a file nano gen repo wrote.
+func (l *loaded) isOwn(path string) bool {
+	_, found := slices.BinarySearch(l.own, path)
+	return found
+}
+
+// load type-checks the package with generated in place of the files nano
+// gen repo writes, and every other file it wrote empty, on top of the
+// caller's overlay.
+func (l *loaded) load(generated []gen.File) (*packages.Package, error) {
+	own := map[string][]byte{l.outPath: l.empty}
+	for _, path := range l.own {
+		own[path] = l.empty
+	}
+	for _, f := range generated {
+		own[f.Path] = f.Data
+	}
+	overlay, err := gopkg.Overlay(l.overlay, own)
 	if err != nil {
 		return nil, err
 	}
@@ -146,66 +207,128 @@ func failedImport(pkg *packages.Package, msg string) (path, reason string, ok bo
 	return path, reason, path != ""
 }
 
-// verify type-checks the package with src as repo_base.gen.go and returns
-// it. An import of the new base that the module cannot load is a missing
+// rendered is what one run writes: the base, then one file of derived
+// methods per declaring file with a binding.
+type rendered struct {
+	files  []gen.File
+	byFile map[string][]*resolution // derived file name -> its bindings, in file order
+}
+
+// verify type-checks the package with the rendered files and returns it.
+// An import of a generated file that the module cannot load is a missing
 // requirement in go.mod, such as pkg/db/transactor in a module that never
-// imported it. Any other type error in the new base is a gap in the checks
-// of this package. Both are reported at the declaration of the table whose
-// base holds the line. Any other type error is the
-// package's own, reported at its line: nano gen repo writes nothing while
-// the package does not compile with the base it would write.
-func (l *loaded) verify(decls *declarations, src []byte) (*packages.Package, error) {
-	pkg, err := l.load(src)
+// imported it. Any other type error in a generated file is a gap in the
+// checks of this package. Both are reported at the declaration that
+// produced the line. Any other type error is the package's own, reported at
+// its line: nano gen repo writes nothing while the package does not compile
+// with what it would write.
+//
+// failing is true when resolution already failed: the generated files then
+// lack the methods that failed, so their errors, and a missing method in
+// hand-written code, repeat a reported problem and are left out.
+func (l *loaded) verify(decls *declarations, out *rendered, failing bool, missing []string) (
+	*packages.Package, []error, error,
+) {
+	pkg, err := l.load(out.files)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	var inBase, other []packages.Error
-	var imports []error
+	srcs := map[string][]byte{}
+	for _, f := range out.files {
+		srcs[f.Path] = f.Data
+	}
+	var other []packages.Error
+	var imports, gaps []error
 	for _, e := range pkg.Errors {
 		if gopkg.IsCompileReport(pkg, e) {
 			continue
 		}
 		file, line := gopkg.SplitPos(e.Pos)
-		if file != l.outPath {
-			other = append(other, e)
-			continue
+		src, generated := srcs[file]
+		switch {
+		case !generated:
+			if !failing || !consequence(e.Msg, missing) {
+				other = append(other, e)
+			}
+		case failing:
+			if path, reason, ok := failedImport(pkg, e.Msg); ok {
+				imports = append(imports, l.importProblem(decls, out, file, src, line, path, reason))
+			}
+		default:
+			if path, reason, ok := failedImport(pkg, e.Msg); ok {
+				imports = append(imports, l.importProblem(decls, out, file, src, line, path, reason))
+				continue
+			}
+			gaps = append(gaps, l.gap(decls, out, file, src, line, e.Msg))
 		}
-		if path, reason, ok := failedImport(pkg, e.Msg); ok {
-			t := decls.tableAtLine(src, line)
-			imports = append(imports, gen.Errorf(t.file, t.line,
-				"add its module to go.mod: go get "+path+", then rerun nano gen repo",
-				"the generated base imports %s, which the module cannot load%s", path, reason))
-			continue
-		}
-		inBase = append(inBase, e)
 	}
 	if len(imports) > 0 {
-		return nil, errors.Join(imports...)
+		return nil, imports, nil
 	}
-	if len(inBase) > 0 {
-		problems := make([]error, 0, len(inBase))
-		for _, e := range inBase {
-			_, line := gopkg.SplitPos(e.Pos)
-			t := decls.tableAtLine(src, line)
-			problems = append(problems, gen.Errorf(t.file, t.line,
-				"report this gap in the nano gen repo checks; meanwhile declare the table with nanorepo.Base "+
-					"or write the repository by hand",
-				"the base of table %s does not compile: %s (%s:%d)", t.sqlName, e.Msg, FileName, line))
+	if len(gaps) > 0 {
+		return nil, gaps, nil
+	}
+	slices.SortStableFunc(other, func(a, b packages.Error) int {
+		fa, la := gopkg.SplitPos(a.Pos)
+		fb, lb := gopkg.SplitPos(b.Pos)
+		return cmp.Or(strings.Compare(fa, fb), cmp.Compare(la, lb))
+	})
+	problems := make([]error, 0, len(other))
+	for _, e := range other {
+		file, line := gopkg.SplitPos(e.Pos)
+		problems = append(problems, gen.Errorf(l.relPath(file), line, compileFix, "compile error: %s", e.Msg))
+	}
+	return pkg, problems, nil
+}
+
+// consequence reports whether a compile error in hand-written code follows
+// from a method that failed to resolve.
+func consequence(msg string, missing []string) bool {
+	if strings.Contains(msg, "missing method") {
+		return true
+	}
+	for _, m := range missing {
+		if strings.HasSuffix(msg, "has no field or method "+m+")") {
+			return true
 		}
-		return nil, errors.Join(problems...)
 	}
-	if len(other) > 0 {
-		slices.SortStableFunc(other, func(a, b packages.Error) int {
-			fa, la := gopkg.SplitPos(a.Pos)
-			fb, lb := gopkg.SplitPos(b.Pos)
-			return cmp.Or(strings.Compare(fa, fb), cmp.Compare(la, lb))
-		})
-		problems := make([]error, 0, len(other))
-		for _, e := range other {
-			file, line := gopkg.SplitPos(e.Pos)
-			problems = append(problems, gen.Errorf(l.relPath(file), line, compileFix, "compile error: %s", e.Msg))
-		}
-		return nil, errors.Join(problems...)
+	return false
+}
+
+// origin returns the declaration that produced line of the generated file:
+// the table whose base holds it, or the binding whose code holds it.
+func (l *loaded) origin(decls *declarations, out *rendered, file string, src []byte, line int) at {
+	if file == l.outPath {
+		t := decls.tableAtLine(src, line)
+		return at{t.file, t.line}
 	}
-	return pkg, nil
+	res := out.byFile[filepath.Base(file)]
+	r := bindingAtLine(src, line, res, func(r *resolution) string { return r.explain.Iface })
+	return at{r.b.file, r.b.line}
+}
+
+// importProblem reports an import of a generated file that the module
+// cannot load.
+func (l *loaded) importProblem(decls *declarations, out *rendered, file string, src []byte, line int,
+	path, reason string,
+) error {
+	o := l.origin(decls, out, file, src, line)
+	return gen.Errorf(o.file, o.line, "add its module to go.mod: go get "+path+", then rerun nano gen repo",
+		"the generated %s imports %s, which the module cannot load%s", filepath.Base(file), path, reason)
+}
+
+// gap reports a type error in a generated file that the checks of nano gen
+// repo let through.
+func (l *loaded) gap(decls *declarations, out *rendered, file string, src []byte, line int, msg string) error {
+	o := l.origin(decls, out, file, src, line)
+	if file == l.outPath {
+		t := decls.tableAtLine(src, line)
+		return gen.Errorf(o.file, o.line,
+			"report this gap in the nano gen repo checks; meanwhile declare the table with nanorepo.Base "+
+				"or write the repository by hand",
+			"the base of table %s does not compile: %s (%s:%d)", t.sqlName, msg, FileName, line)
+	}
+	return gen.Errorf(o.file, o.line,
+		"report this gap in the nano gen repo checks; meanwhile write the method by hand",
+		"the generated %s does not compile: %s (%s:%d)", filepath.Base(file), msg, filepath.Base(file), line)
 }

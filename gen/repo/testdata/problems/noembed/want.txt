@@ -1,0 +1,2 @@
+noembed.go:21: Items has derived methods, which run on the generated itemsBase, but itemsImpl does not embed it
+  fix: embed it: add itemsBase as a field of itemsImpl, set to newItemsBase(db) in the constructor

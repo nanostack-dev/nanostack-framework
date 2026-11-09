@@ -1,0 +1,4 @@
+nokeys.go:16: Events.FindByID: not implemented: no hand-written method on *eventsImpl, and the name does not derive: it returns one row, and the table package has no UniqueKeys for audit_events to prove it
+  fix: run nano gen db, which writes UniqueKeys into the table package, then rerun nano gen repo;
+       or write it by hand on *eventsImpl, in a non-generated file of package nokeys:
+         func (r *eventsImpl) FindByID(ctx context.Context, id int64) (functional.Option[model.AuditEvents], error)

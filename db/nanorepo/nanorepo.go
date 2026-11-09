@@ -24,6 +24,11 @@
 //		return &productUserRepositoryImpl{productUsersBase: newProductUsersBase(db)}
 //	}
 //
+// Each method of the interface that the implementation does not have is
+// derived from its name, such as FindByTenantIDAndSku, into
+// <file>_repo.gen.go next to the declaring file, or nano gen repo fails at
+// the method with the signature to write by hand.
+//
 // The declaring file carries no build tag, so go build, go vet and gopls
 // type-check the declaration and a rename updates it.
 package nanorepo
@@ -34,7 +39,8 @@ type Table interface {
 }
 
 // Implement binds the repository interface I to its implementation Impl, a
-// struct type of the declaring package, on table. toDomain maps one row of
+// struct type of the declaring package, on table. Every method of I is a
+// method of Impl or derived from its name on table. toDomain maps one row of
 // the generated model E to the domain type D that the base's row helpers
 // return; E and D are inferred from it. toDomain is a function, a variable
 // of the declaring package set to a function or to a method value on a type

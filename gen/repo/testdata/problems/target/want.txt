@@ -1,0 +1,2 @@
+target.go:19: target_repo.gen.go exists, and nano gen repo did not write it (it has no nano gen repo header)
+  fix: rename that file: nano gen repo writes target_repo.gen.go for the declarations in target.go

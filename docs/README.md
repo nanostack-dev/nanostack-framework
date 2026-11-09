@@ -11,7 +11,7 @@ Start with [agent rules](../AGENTS.md) and [canonical vocabulary](../CONTEXT.md)
 - [HTTP lifecycle](../modules/httpserver/README.md), [request logging](../pkg/httputil/requestlog/README.md), [legacy error envelope](../pkg/httputil/errorenvelope/README.md), [distributed tracing](../pkg/tracing/README.md), [typed cache](../modules/cache/README.md), [shared state, mutex and pub/sub on Redis](../pkg/redisx/README.md), [queue lifecycle](../modules/pgqueue/README.md).
 - [The `nano gen` pipeline](generation.md#the-pipeline-nano-gen): one command, `nanogen/project.go`, discovery, `-check`, orphans and guards ([ADR 0023](adr/0023-nano-gen-pipeline.md)).
 - [The tag split](generation.md#the-tag-split): one interface per OpenAPI tag, `Handlers`, `NewHandlers` and the tag rules ([ADR 0024](adr/0024-api-split-by-tag.md)).
-- [Repository bases](generation.md#repository-bases-nano-gen-repo): `nanorepo.Implement`, the generated base per table, `findOne` and `ErrMoreThanOneRow`, scope columns ([ADR 0026](adr/0026-nano-gen-repo.md)).
+- [Repositories](generation.md#repositories-nano-gen-repo): `nanorepo.Implement`, the generated base per table, derived methods, `findOne` and `ErrMoreThanOneRow`, scope columns, `-explain` ([ADR 0026](adr/0026-nano-gen-repo.md)).
 - [Generated wiring: manifests, lifecycle, Overrides and `nano gen wire`](generation.md#wiring-nano-gen-wire), and the [generator contract](../gen/README.md).
 - [Reviewing generated code](generated-code.md): what each generator writes, what to read in a generated diff and what to trust to `-check`.
 - [Nano modules](modules.md): the generated-wiring replacements of the fx modules, their contract, and how a service moves one module at a time.

@@ -1,0 +1,60 @@
+Items on *itemsImpl (table items, scope tenant_id)
+  FindActive                          ERROR: not implemented
+                                      note: it does not start with FindBy, GetBy, ExistsBy, CountBy, DeleteBy, FindAll or Count
+  Reserve                             ERROR: not implemented
+                                      note: it does not start with FindBy, GetBy, ExistsBy, CountBy, DeleteBy, FindAll or Count, and no derived method returns (Item, bool, error)
+  FindByTenantIDAndNameIgnoreCase     ERROR: not implemented
+                                      note: operator IgnoreCase on Name is not derived; only equality (And) is
+  FindByTenantIDAndSkuIn              ERROR: not implemented
+                                      note: operator In on Sku is not derived; only equality (And) is
+  FindByTenantIDOrderByCreatedAtDesc  ERROR: not implemented
+                                      note: OrderBy is not derived
+  FindByTenantIDAndSkuOrName          ERROR: not implemented
+                                      note: Or is not derived; only And is
+  FindByTenantIdAndSku                ERROR: not implemented
+                                      note: no column "TenantId" on table items
+  CountByTenantIDAndExtID             ERROR: not implemented
+                                      note: no column "ExtID" on table items
+  CountByTenantIDAndColour            ERROR: not implemented
+                                      note: no column "Colour" on table items
+  FindBy                              ERROR: not implemented
+                                      note: no property after By
+  FindByTenantIDAndName               ERROR: not implemented
+                                      note: it returns one row, but (tenant_id, name) covers no unique key; the keys of items are items_pkey (id), items_tenant_sku_key (tenant_id, sku)
+  GetByTenantIDAndStatus              ERROR: not implemented
+                                      note: it returns one row, but (tenant_id, status) covers no unique key; the keys of items are items_pkey (id), items_tenant_sku_key (tenant_id, sku)
+  FindByTenantIDAndSkuAndName         ERROR: not implemented
+                                      note: has 2 value parameter(s), the name has 3 properties
+  ExistsByTenantIDAndExternalID       ERROR: not implemented
+                                      note: parameter externalID is *string; a derived predicate compares with =, which never matches NULL
+  ExistsByTenantIDAndSkuAndName       ERROR: not implemented
+                                      note: parameter name is bound to sku by its position, but its name says name; the name orders the columns tenant_id, sku, name
+  CountByTenantIDAndStock             ERROR: not implemented
+                                      note: parameter stock has type int64; column items.stock is int32
+  CountByTenantIDAndTags              ERROR: not implemented
+                                      note: column items.tags has no equality predicate on the base: its model type is pq.StringArray
+  FindByTenantIDAndRank               ERROR: not implemented
+                                      note: the first parameter is not context.Context
+  CountByTenantIDAndSku               ERROR: not implemented
+                                      note: a derived count cannot return (bool, error)
+  ExistsByTenantIDAndName             ERROR: not implemented
+                                      note: a derived exists cannot return (int64, error)
+  FindByTenantIDAndPrice              ERROR: not implemented
+                                      note: returns Tenant, but the mapper returns Item
+  DeleteByTenantIDAndRank             ERROR: not implemented
+                                      note: a derived delete cannot return (string, error)
+  FindByTenantIDAndActive             ERROR: not implemented
+                                      note: the last result is not error
+  FindByIDAndTenantID                 ERROR: not implemented
+                                      note: table items is scoped by tenant_id, and the name does not filter on it first
+  ExistsBySku                         ERROR: not implemented
+                                      note: table items is scoped by tenant_id, and the name does not filter on it first
+  ExistsByTenantIDAndSku              derived: SELECT COUNT(*) FROM (SELECT 1 FROM items WHERE tenant_id = $1 AND sku = $2 LIMIT 1) found
+  FindAll                             ERROR: not implemented
+                                      note: table items is scoped by tenant_id, and the name does not filter on it first
+  DeleteBySku                         ERROR: not implemented
+                                      note: table items is scoped by tenant_id, and the name does not filter on it first
+  DeleteBySkuInternal                 ERROR: not implemented
+                                      note: table items is scoped by tenant_id, and a derived delete must filter on it first: Internal skips the scope on derived reads only
+  Ping                                ERROR: not implemented
+                                      note: it does not start with FindBy, GetBy, ExistsBy, CountBy, DeleteBy, FindAll or Count

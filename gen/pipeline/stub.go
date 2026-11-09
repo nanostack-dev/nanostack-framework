@@ -4,17 +4,16 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"path"
-	"regexp"
+	"os"
+	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
+
+	"github.com/nanostack-dev/nanostack-framework/gen/internal/gopkg"
 )
 
 // stubBody replaces every function body of a stub.
 const stubBody = ` panic("nano gen stub") `
-
-var majorVersion = regexp.MustCompile(`^v[0-9]+$`) //nolint:gochecknoglobals // compiled once.
 
 // stub returns src with every function body replaced by a panic. Every
 // declaration stays, so code that calls the file's functions still
@@ -46,7 +45,7 @@ func stub(src []byte) ([]byte, bool) {
 	}
 	inside, outside := selectorNames(f, bodies)
 	for _, imp := range f.Imports {
-		name := importName(imp)
+		name := gopkg.ImportName(imp)
 		if name == "_" || name == "." || outside[name] || !inside[name] {
 			// Kept: still used, or used under a name the guess missed.
 			continue
@@ -104,23 +103,54 @@ func selectorX(n ast.Node) *ast.Ident {
 	return id
 }
 
-// importName returns the name an import binds: its explicit name, or a guess
-// from its path (the last element, without a major version suffix).
-func importName(imp *ast.ImportSpec) string {
-	if imp.Name != nil {
-		return imp.Name.Name
+// overlay returns the files that replace the disk in unit i's package
+// loads: the fresh outputs of earlier units under -check, and a stub of each
+// Go output of a later unit: its step's forward stub, or else the
+// body-stripped stub of the file on disk.
+func (r *runner) overlay(i int) map[string][]byte {
+	ov := map[string][]byte{}
+	if r.opts.Check {
+		for path, data := range r.fresh {
+			if strings.HasSuffix(path, ".go") && dirExists(filepath.Dir(path)) {
+				ov[path] = data
+			}
+		}
 	}
-	p, err := strconv.Unquote(imp.Path.Value)
-	if err != nil {
-		return ""
+	for _, later := range r.units[i+1:] {
+		r.stubOutputs(later, ov)
 	}
-	name := path.Base(p)
-	if majorVersion.MatchString(name) && path.Dir(p) != "." {
-		name = path.Base(path.Dir(p))
+	return ov
+}
+
+// stubOutputs adds the stubs of the outputs of later, a unit that has not
+// run yet, to ov.
+func (r *runner) stubOutputs(later *unit, ov map[string][]byte) {
+	var forward map[string][]byte
+	if later.step.forward != nil {
+		forward = later.step.forward(later)
 	}
-	if i := strings.Index(name, ".v"); i > 0 {
-		name = name[:i]
+	for path, src := range forward {
+		if _, done := r.fresh[path]; !done {
+			ov[path] = src
+		}
 	}
-	name = strings.TrimPrefix(name, "go-")
-	return strings.ReplaceAll(name, "-", "_")
+	for _, out := range later.outputs {
+		_, done := r.fresh[out]
+		_, stubbed := forward[out]
+		if done || stubbed || !strings.HasSuffix(out, ".go") {
+			continue
+		}
+		src, err := os.ReadFile(out)
+		if err != nil {
+			continue // missing: nothing to replace
+		}
+		if s, ok := stub(src); ok {
+			ov[out] = s
+		}
+	}
+}
+
+func dirExists(dir string) bool {
+	fi, err := os.Stat(dir)
+	return err == nil && fi.IsDir()
 }

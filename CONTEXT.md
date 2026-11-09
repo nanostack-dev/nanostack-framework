@@ -46,6 +46,8 @@ The framework owns reusable service infrastructure shared by Nanostack applicati
 
 **Generated base:** The struct per table in `repo_base.gen.go` (`<table>Base`) that a repository implementation embeds: the table (`t`), the typed predicates (`where`), the condition helpers and the transactor functions as methods. Do not call it a DAO or a generic repository.
 
+**Derived method:** A method of a bound repository interface that the implementation does not have and whose name follows the grammar (`FindByTenantIDAndSku`), so `nano gen repo` generates it into `<file>_repo.gen.go`. A hand-written method of the same name wins. Do not call it a query method or a magic finder.
+
 **Scope column:** A tenant column named in `Postgres.Scopes`. A table with one as a `NOT NULL` column is scoped, and a query on it without that column may read another tenant's rows.
 
 **Hand-written method:** A repository method a person writes on the implementation, usually on the generated base. The scope check warns on one that touches a scoped table without its scope column, unless its name ends in `Internal`.

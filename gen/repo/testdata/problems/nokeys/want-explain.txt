@@ -1,0 +1,4 @@
+Events on *eventsImpl (table audit_events)
+  FindByID      ERROR: not implemented
+                note: it returns one row, and the table package has no UniqueKeys for audit_events to prove it
+  FindByAction  derived: SELECT * FROM audit_events WHERE action = $1

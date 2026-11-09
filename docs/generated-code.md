@@ -32,8 +32,7 @@ PR 2 of the pipeline (#69) merged at `4b6c468`. PR 3 (pipeline core) is **in pro
 | config | **shipped**. Load under `-tags=nanogen`: **on main**. | `Config` struct and field tags | `config.gen.go`, `CONFIG.md`, `.env.example` | echopoint: 80 + module sections → 526 + 79 + 250. anchor: 46 + 65 + module sections → 421 + 66 + 198. | A `Run(Check)` test in each service. Bind reports every issue at start. |
 | wire | **shipped**. Two-line `fix:` errors: **on main**. | `manifest.go`, each package's `module.go` | `wire.gen.go` | anchor: 56 → 2,218. echopoint: 98 → 2,758. | A `Run(Check)` test in each service. `file:line` errors with a fix. |
 | pipeline | Nested `gen` module (#68) and error contract (#69) **on main**. `go tool nano gen` core (PR 3): **in progress**. Later steps **designed**. | `nanogen/project.go` | Runs all of the above in order | n/a | Designed: `-check` covers every output, orphans included. |
-| repo base | **on main**, unused | One `nanorepo.Implement` per repository, `Postgres.Scopes` | `repo_base.gen.go`: per table, typed predicates and helpers on the transactor | Fixture: 3 declarations → 1,124 lines. | `-check`; `findOne` fails on two rows; a scope warning on a hand-written finder without the tenant column. |
-| derived repositories | **prototype** (PR 8) | Method names on a query interface | `derived_repo.gen.go` in the report; `repo.gen.go` in the current prototype | Prototype report, on anchor: 11 declaration lines → 134 generated, replacing 181 hand-written lines. | Prototype `-check` and a database test. |
+| repo | **on main**, unused | One repository interface and one `nanorepo.Implement` per repository, `Postgres.Scopes` | `repo_base.gen.go`: per table, typed predicates and helpers on the transactor; `<file>_repo.gen.go`: the derived methods and a `var _` line per binding | Fixture: 3 declarations → 1,124 lines of bases; 11 derived methods → 117 lines. Prototype on anchor: 9 methods (156 hand lines) → 8 derived and 1 hand-written. | `-check`; an interface method that is neither hand-written nor derivable fails the run at its line; `var _` fails the build; `findOne` fails on two rows; a scope warning on a hand-written finder without the tenant column. |
 | search builder | **prototype**, still changing, no report yet | A `nanosearch.Search(...)` declaration | A typed search builder in `repo.gen.go`, the request mapper `search_mapper.gen.go` and a test case table | n/a | Prototype checks against the OpenAPI search schema. |
 
 ## How to review generated code
@@ -41,7 +40,7 @@ PR 2 of the pipeline (#69) merged at `4b6c468`. PR 3 (pipeline core) is **in pro
 1. **Review the source of truth, not the output.** Each section below names the file a developer writes. A diff in generated code is explained by a diff in that file. If the generated diff has no source diff, the generator or its version changed. Ask why.
 2. **Trust `-check` for freshness.** Each nano generator takes `-check`. It writes nothing and exits 1 when a committed output is missing or differs from what the source produces. Today the services run it for config and wire only, as a Go test (`Run(Options{Check: true})`). Once a service adopts the pipeline, CI runs `go tool nano gen -check -fresh` instead. `-check` proves that the output matches the source. It does not prove that the generator is right: the generator's golden tests do that. So read only the parts the checklists below name, and read more when the generator version changed.
 3. **Know what is not checked.** The DB models and the oapi server have no freshness check today. For those, confirm that the generated diff matches the source diff (see their sections).
-4. **Read the human-facing outputs.** Some outputs are written for people: `ERRORS.md` (the error contract), `CONFIG.md` (every setting) and the SQL comments in derived repositories. A one-row diff there is the fastest way to see a contract change.
+4. **Read the human-facing outputs.** Some outputs are written for people: `ERRORS.md` (the error contract), `CONFIG.md` (every setting) and the SQL comments of derived repository methods (`nano gen repo -explain` prints them all). A one-row diff there is the fastest way to see a contract change.
 5. **Never hand-edit a file with a generated header.** The next run overwrites the edit, and, where a `-check` runs, it fails until the source matches. Change the source and regenerate.
 6. **Read the waivers.** Every place the generator lets a developer opt out carries a reason or a flag: `-allow` in validate, `Skip`, `Unused` and `Cast` in a mapper, `config:"-"` in config. These are the decisions in the change. Check that each reason is true.
 
@@ -1356,15 +1355,26 @@ The mapper step (part 2) joins before repo; the lint step comes last.
 
 ---
 
-## 10. Repository bases: `nano gen repo`
+## 10. Repositories: `nano gen repo`
 
-**Status: on main**, unused by the services. The base (design PR 7, [ADR 0026](adr/0026-nano-gen-repo.md)) generates typed predicates and helpers for hand-written finders; derived method names come with PR 8. Reference: [Repository bases](generation.md#repository-bases-nano-gen-repo). Fixture: [`gen/repo/internal/repotest`](../gen/repo/internal/repotest), whose integration tests run every helper on PostgreSQL.
+**Status: on main**, unused by the services. One repository interface per repository: each method is hand-written, or derived from its name, or the run fails at the method (design PRs 7 and 8, [ADR 0026](adr/0026-nano-gen-repo.md)). Reference: [Repositories](generation.md#repositories-nano-gen-repo). Fixture: [`gen/repo/internal/repotest`](../gen/repo/internal/repotest), whose integration tests run every helper of the base and every derived method on PostgreSQL, against the hand-written body a developer would write.
 
 ### What you write
 
-A declaration per repository, then the implementation embeds the base. From the fixture's `repository.go`:
+The interface, one declaration and the implementation, which embeds the base. Methods without a body here are derived. From the fixture's `repository.go`:
 
 ```go
+type ItemRepository interface {
+	FindByTenantIDAndSku(ctx context.Context, tenantID uuid.UUID, sku string) (functional.Option[Item], error)
+	GetByTenantIDAndID(ctx context.Context, tenantID TenantID, id string) (Item, error)
+	DeleteByTenantIDAndSku(ctx context.Context, tenantID uuid.UUID, sku string) (bool, error)
+	CountInternal(ctx context.Context) (int64, error)
+	// Hand-written: also derivable, but compares the name case-insensitively.
+	ExistsByTenantIDAndName(ctx context.Context, tenantID uuid.UUID, name string) (bool, error)
+	ListActive(ctx context.Context, tenantID uuid.UUID) ([]Item, error)
+	// …
+}
+
 func _() {
 	nanorepo.Implement[ItemRepository, itemRepositoryImpl](table.Items, itemToDomain)
 }
@@ -1378,6 +1388,8 @@ func (r *itemRepositoryImpl) ListActive(ctx context.Context, tenantID uuid.UUID)
 		r.t.Sku.ASC(), r.t.ID.ASC())
 }
 ```
+
+The grammar: `FindBy`, `GetBy`, `ExistsBy`, `CountBy`, `DeleteBy`, `FindAll`, `Count`; columns by their Go field name joined by `And`, equality only; `ctx` first, then one parameter per column in name order. A single-row find derives only when its columns cover a key in `UniqueKeys()`. On a scoped table the name starts with a scope column, or ends in `Internal` on a read.
 
 ### What is generated
 
@@ -1404,107 +1416,103 @@ func (b itemsBase) findOne(ctx context.Context, cond postgres.BoolExpression) (f
 	}
 	return functional.Some(rows[0]), nil
 }
+```
 
-// TenantID is tenant_id = v.
-func (itemsWhere) TenantID(v uuid.UUID) postgres.BoolExpression {
-	return table.Items.TenantID.EQ(postgres.UUID(v))
+`<file>_repo.gen.go`, one per declaring file with a `nanorepo.Implement`: the `var _` line of each binding and its derived methods, each one helper call with the SQL in its comment. From the fixture's `repository_repo.gen.go`:
+
+```go
+// ItemRepository on *itemRepositoryImpl: 11 derived methods on table items; the other methods are
+// hand-written (nano gen repo -explain lists each one).
+//
+// Hand-written although the name derives (deleting the method switches it
+// to the derived query): ExistsByTenantIDAndName.
+//
+// A compile error on the next line means ItemRepository gained or lost a method since
+// the last run: run nano gen repo.
+var _ ItemRepository = (*itemRepositoryImpl)(nil)
+
+// FindByTenantIDAndSku is derived from its name:
+//
+//	SELECT * FROM items WHERE tenant_id = $1 AND sku = $2 LIMIT 2 -- at most one row: items_tenant_sku_key (tenant_id, sku); a second row is ErrMoreThanOneRow
+func (r *itemRepositoryImpl) FindByTenantIDAndSku(ctx context.Context, tenantID uuid.UUID, sku string) (functional.Option[Item], error) {
+	return r.findOne(ctx, r.where.TenantID(tenantID).AND(r.where.Sku(sku)))
 }
+
+// CountInternal is derived from its name:
+//
+//	SELECT COUNT(*) FROM items
+//
+// UNSCOPED: the name ends in Internal, so it does not filter on tenant_id.
+func (r *itemRepositoryImpl) CountInternal(ctx context.Context) (int64, error) {
+	return r.count(ctx, nil)
+}
+```
+
+`go tool nano gen repo -dir internal/repository -scopes tenant_id -explain` prints how each method resolves, and writes nothing:
+
+```text
+ItemRepository on *itemRepositoryImpl (table items, scope tenant_id)
+  FindByTenantIDAndSku           derived: SELECT * FROM items WHERE tenant_id = $1 AND sku = $2 LIMIT 2 -- at most one row: items_tenant_sku_key (tenant_id, sku); a second row is ErrMoreThanOneRow
+  CountInternal                  derived, UNSCOPED (Internal): SELECT COUNT(*) FROM items
+  ExistsByTenantIDAndName        hand-written repository.go:98
+                                 note: the name also derives (SELECT COUNT(*) FROM (SELECT 1 FROM items WHERE tenant_id = $1 AND name = $2 LIMIT 1) found); the hand-written method wins
+  ListActive                     hand-written repository.go:106
 ```
 
 ### Errors an agent sees
 
-Each at its line, all in one run. The scope warning, from the pipeline fixture `gen/pipeline/testdata/dbapp`:
+Each at its line, all in one run, one golden per rule in [`gen/repo/testdata/problems`](../gen/repo/testdata/problems). A method that is not hand-written and does not derive names why, and gives the signature to paste and, when one works, the rename:
 
 ```text
-internal/repository/users.go:31: ByEmail: condition on users has no tenant_id; this query can read or change another tenant's rows
+derive.go:43: Items.FindByTenantIDAndName: not implemented: no hand-written method on *itemsImpl, and the name does not derive: it returns one row, but (tenant_id, name) covers no unique key; the keys of items are items_pkey (id), items_tenant_sku_key (tenant_id, sku)
+  fix: return []Item; or add a unique index on (tenant_id, name) in a migration and rerun nano gen db;
+       or write it by hand on *itemsImpl, in a non-generated file of package derive:
+         func (r *itemsImpl) FindByTenantIDAndName(ctx context.Context, tenantID uuid.UUID, name string) (functional.Option[Item], error) {
+             return r.first(ctx, r.where.TenantID(tenantID).AND(r.where.Name(name)), r.t.CreatedAt.ASC(), r.t.ID.ASC())
+         }
+derive.go:38: Items.FindByTenantIdAndSku: not implemented: no hand-written method on *itemsImpl, and the name does not derive: no column "TenantId" on table items
+  fix: write it by hand on *itemsImpl, in a non-generated file of package derive:
+         func (r *itemsImpl) FindByTenantIdAndSku(ctx context.Context, tenantID uuid.UUID, sku string) (functional.Option[Item], error)
+       or rename it FindByTenantIDAndSku (did you mean TenantID?)
+```
+
+The other rules: the grammar, an operator (`IgnoreCase`, `In`, `OrderBy`, `Or`, with the hand-written body), the parameters (count, pointer, a name that says another column, the type), the results, the mapper's domain type, the tenant scope (`Internal` skips it on reads only), a hand-written or promoted method whose signature differs, an ambiguous promotion, an implementation that does not embed its base, a table package without `UniqueKeys` (run `nano gen db`), a column a migration renamed (the rename first), and the package's own compile errors. The scope warning on hand-written code keeps exit 0:
+
+```text
+warning: internal/repository/users.go:31: ByEmail: condition on users has no tenant_id; this query can read or change another tenant's rows
   fix: add u.where.TenantID(…) to the condition, or name it ByEmailInternal for a trusted system path
 ```
 
-The first line is a `warning`: it keeps exit 0. The other problems are errors, one golden per rule in [`gen/repo/testdata/problems`](../gen/repo/testdata/problems): a type argument that is not an interface or a struct of the package, a mapper with state, a table of MySQL or SQLite, a hand-written name that a generated one would clash with, and a compile error left once the new base is in place.
+Before `nano gen` runs again, the compiler shows two messages:
+
+- `cannot use (*impl)(nil) … (missing method X)` at the `var _` line of `<file>_repo.gen.go`: the interface gained `X`, or its hand-written body was deleted. Run `go tool nano gen`; it derives `X` or names the fix.
+- `method impl.X already declared at <file>_repo.gen.go:N`: you hand-wrote a method that the last run derived. Run `go tool nano gen`; the hand-written method wins and the derived copy goes.
 
 ### Adopting it in a service
 
 1. Add `Scopes` to the `Postgres` declaration and run `go tool nano gen`. Read every scope warning: each is a finder that may cross tenants, or a trusted path to rename `…Internal`.
-2. Declare one repository, embed its base, set it in the constructor, and move its finders onto `r.findOne`, `r.first` and `r.where`, one file at a time.
-3. Every hand-written `LIMIT 1` on columns that are not unique becomes `first` with an order that ends on a unique column. `findOne` on such columns now returns `transactor.ErrMoreThanOneRow` instead of an arbitrary row; handle it with `errors.Is` where the caller can see duplicates.
-4. Keep inserts and statements the helpers do not cover on `r.t` with `r.queryRow` or `r.exec`, which keep `OnUnique` and the transaction.
+2. Declare one repository, embed its base, set it in the constructor, and run `go tool nano gen repo -explain`: it says which methods would derive. Delete the hand-written body of each one that does, one file at a time.
+3. Rename the finders whose names hide a filter: a derived name says every column it filters on (`FindByExternalID` becomes `FindByProductIDAndExternalID`, `TenantID` becomes the column's field, `PlatformTenantID`). A team that wants the short name keeps a one-line hand-written body.
+4. Every hand-written `LIMIT 1` on columns that are not unique becomes `first` with an order that ends on a unique column. `findOne` and the derived single-row finds return `transactor.ErrMoreThanOneRow` instead of an arbitrary row; handle it with `errors.Is` where the caller can see duplicates. A derived `GetBy…` returning `(D, error)` returns `sql.ErrNoRows` on no row.
+5. Keep inserts, upserts and statements the helpers do not cover hand-written on `r.t` with `r.queryRow` or `r.exec`, which keep `OnUnique` and the transaction.
 
 ### How to review it
 
-- **Read the declaration and the hand-written methods**, not the base. The base changes only when a table, a column or a mapper changes.
-- **Read every scope warning** in the run output, and every new `…Internal` name: it states that the path is trusted.
+- **Read the interface and the hand-written methods**, not the generated files. A derived method's name is its contract: it cannot hide a filter.
+- **Read the SQL comment** of each new derived method, or the `-explain` output, and the `Hand-written although the name derives` line above each `var _`: a deleted body there switches the method to the derived query.
+- **Read every scope warning** and every new `…Internal` name: it states that the path is trusted. A derived `Internal` method is a read; a delete across tenants is always hand-written.
 - **Check each `first`** for an order that ends on a unique column.
-- **Do not review `repo_base.gen.go`** beyond its predicate list; `-check` proves it matches the declarations.
+- **Do not review `repo_base.gen.go`** beyond its predicate list; `-check` proves both files match the declarations.
 
 ---
 
 ## 11. Prototypes
 
-Both prototypes live in the workspace `reports/prototypes/derived-repo/`, which another agent is still extending. The excerpts below come from the written report, `reports/prototype-derived-repositories.md`, which is a fixed snapshot. The prototype's current files have moved on; each section says how.
+The search prototype lives in the workspace `reports/prototypes/derived-repo/`, which another agent is still extending. The excerpts below come from the written report, `reports/prototype-derived-repositories.md`, which is a fixed snapshot. The prototype's current files have moved on; each section says how.
 
-### Derived names: `nano gen repo` (PR 8)
+### Derived names: `nano gen repo`
 
-**Status: prototype** for the derived names; the base above is on main. At the time of the report it ran on a copy of anchor and passed `go build`, `go vet`, `-check` and a TimescaleDB test of all 11 derived methods.
-
-**Since the report:** the base above landed, with the scope columns in `Postgres.Scopes` instead of the prototype's `nanorepo.Scope`. PR 8 derives a method of the bound interface from its name when no hand-written method exists, in `<file>_repo.gen.go`, on the helpers of the base.
-
-**What you write.** Method names are the grammar. From the report's "The declaration":
-
-```go
-// ProductUserQueries is derived from its method names by nano gen repo.
-type ProductUserQueries interface {
-	FindByProductIDAndID(ctx context.Context, productID, id string) (functional.Option[user.ProductUser], error)
-	FindByProductID(ctx context.Context, productID string) ([]user.ProductUser, error)
-	FindByProductIDAndExternalID(ctx context.Context, productID, externalID string) (functional.Option[user.ProductUser], error)
-	ExistsByProductIDAndEmail(ctx context.Context, productID, email string) (bool, error)
-	CountByProductIDAndStatus(ctx context.Context, productID string, status user.ProductUserStatus) (int64, error)
-	DeleteByProductIDAndID(ctx context.Context, productID, id string) (bool, error)
-	DeleteByProductIDAndExternalID(ctx context.Context, productID, externalID string) error
-}
-
-func _() {
-	nanorepo.Derive[ProductUserQueries](table.ProductUsers, productUserToDomain)
-}
-```
-
-Prefixes: `FindBy`, `GetBy`, `ExistsBy`, `CountBy`, `DeleteBy`, `FindAll`, `Count`. `And` with equality only. `ctx` first, then one parameter per property in name order.
-
-**What is generated.** At the time of the report, `derived_repo.gen.go`: 134 lines, 2 repositories, 11 methods. From the report's example 1:
-
-```go
-// FindByProductIDAndID runs: SELECT * FROM product_users WHERE product_id = $1 AND id = $2 LIMIT 1
-func (r derivedProductUserQueries) FindByProductIDAndID(ctx context.Context, productID string, id string) (functional.Option[user.ProductUser], error) {
-	stmt := table.ProductUsers.SELECT(table.ProductUsers.AllColumns).
-		WHERE(table.ProductUsers.ProductID.EQ(postgres.String(productID)).
-			AND(table.ProductUsers.ID.EQ(postgres.String(id)))).LIMIT(1)
-	return transactor.QueryOptionalMap(ctx, r.db, stmt, productUserToDomain)
-}
-// … 10 more methods, each with its SQL in the doc comment
-```
-
-Every generated file starts with `// Code generated by nano gen repo. DO NOT EDIT.` and `// PROTOTYPE: reports/prototypes/derived-repo.`
-
-On the two anchor repositories, 181 hand-written lines become 11 declaration lines plus 134 generated lines, and 15 call sites in 8 files are renamed.
-
-**Errors** (from the report's "Errors an agent sees", 3 of 12):
-
-```text
-internal/repository/broken_queries.go:20: FindByTenantIDAndEmail: no column "TenantID" on table platform_users
-  fix: did you mean PlatformTenantID? rename the method FindByPlatformTenantIDAndEmail
-internal/repository/broken_queries.go:22: FindByPlatformTenantIDAndEmailIgnoreCase: operator IgnoreCase on Email is not derived; only equality (And) is
-  fix: write this method by hand; filters with operators belong to nano gen search
-# after a migration renames product_users.external_id to external_ref:
-internal/repository/product_user_queries.go:19: FindByProductIDAndExternalID: no column "ExternalID" on table product_users
-  fix: the columns are ID, ProductID, Email, Name, Status, CreatedAt, UpdatedAt, ExternalRef
-```
-
-**How to review it:**
-
-- **Read the method names.** The name is the contract and cannot hide a filter. The prototype renamed 7 of 9 anchor methods: four hid a product or tenant filter (for example `FindByExternalID`), and three said `TenantID` for the column `PlatformTenantID`.
-- **Check tenant scoping.** In the report nothing enforced it: `ExistsByEmail` on `product_users` was accepted. The current prototype's `Scope` makes a derived name start with the scope column and warns on a hand-written condition without it. Until that lands, check by eye.
-- **Check uniqueness behind `Option[D]`.** `LIMIT 1` on a column that is not unique returns an arbitrary row.
-- **Check shadowing.** A hand-written method with a derived name silently wins.
-- **Do not review the generated file** beyond its SQL comments.
+Landed: see [section 10](#10-repositories-nano-gen-repo). The prototype report, `reports/prototype-derived-repositories.md`, stays as the record of the design's evidence: 55 database tests on anchor's migrations compare each derived method with anchor's own.
 
 ### Search builder: `nano gen search`
 
@@ -1558,7 +1566,7 @@ What changes when the designed pieces land:
 | 3-4 | Upstream chi wrapper, no parameter validation | nano template: `validateParams` runs before the handler (validate) |
 | 6 | `(*AnchorAPI).GetProductUser` on one 31-parameter struct | `productUserHandler.GetProductUser` behind a generated `ProductUserServer` (tag split) |
 | 11 | `(*ProductUserMapper).ToDomain`, wired as a provider | Generated `ProductUserToDomain(model.ProductUsers) (user.ProductUser, error)`, which rejects an unknown status (mapper) |
-| 8 | Hand-written `FindByProductIDAndID` | Derived from its name (prototype) |
+| 8 | Hand-written `FindByProductIDAndID` | Derived from its name (`nano gen repo`, on main) |
 | wire | 23 mapper provider blocks | None: generated mappers are plain functions |
 
 ---
@@ -1576,4 +1584,4 @@ What changes when the designed pieces land:
 | `Config` struct tags and the `CONFIG.md` diff | `config.gen.go`, `.env.example` |
 | `manifest.go`, `module.go`, and the seven-item `wire.gen.go` checklist | `need*` chains, `Overrides`, `Components` |
 | Literal values in `nanogen/project.go` | Headers, orphans, `nanogen.sum` |
-| Method names on derived-query interfaces, and search declarations (prototypes) | The generated repo and search files, beyond their SQL comments |
+| Repository interface method names, `nanorepo.Implement` declarations, hand-written repository methods; search declarations (prototype) | `repo_base.gen.go`, `<file>_repo.gen.go` beyond their SQL comments; the prototype search files |

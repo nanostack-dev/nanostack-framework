@@ -1,8 +1,9 @@
 // Package repotest is the fixture of nano gen repo: repositories declared on
 // the shop schema (migrations/), whose go-jet code nano gen db wrote into
-// db/shop, and the repo_base.gen.go nano gen repo writes for them. The
-// generator's tests check that the committed base is current, and the
-// integration tests run every helper of the base on PostgreSQL.
+// db/shop, and the files nano gen repo writes for them: repo_base.gen.go and
+// repository_repo.gen.go, with the derived methods. The generator's tests
+// check that the committed files are current, and the integration tests run
+// every helper of the base and every derived method on PostgreSQL.
 package repotest
 
 import (
@@ -44,13 +45,34 @@ func itemToDomain(row model.Items) Item {
 	return Item{ID: row.ID, TenantID: row.TenantID, SKU: row.Sku, Name: row.Name, Status: row.Status, Stock: row.Stock}
 }
 
-// ItemRepository reads and writes the items of a tenant.
+// TenantID is a named type over the model type of tenant_id: a derived
+// method converts it.
+type TenantID uuid.UUID
+
+// ItemRepository reads and writes the items of a tenant. The methods whose
+// names derive are generated in repository_repo.gen.go; the others are
+// hand-written below.
 type ItemRepository interface {
-	FindBySKU(ctx context.Context, tenantID uuid.UUID, sku string) (functional.Option[Item], error)
+	// Derived. A single-row find is proven by a key: items_tenant_sku_key
+	// (tenant_id, sku), or items_pkey (id).
+	FindByTenantIDAndSku(ctx context.Context, tenantID uuid.UUID, sku string) (functional.Option[Item], error)
+	FindByTenantIDAndID(ctx context.Context, tenantID uuid.UUID, id string) (functional.Option[Item], error)
+	GetByTenantIDAndID(ctx context.Context, tenantID TenantID, id string) (Item, error)
+	FindByTenantIDAndStatus(ctx context.Context, tenantID uuid.UUID, status model.ItemStatus) ([]Item, error)
+	ExistsByTenantIDAndExternalID(ctx context.Context, tenantID uuid.UUID, externalID string) (bool, error)
+	CountByTenantIDAndActive(ctx context.Context, tenantID uuid.UUID, active bool) (int64, error)
+	DeleteByTenantIDAndID(ctx context.Context, tenantID uuid.UUID, id string) error
+	DeleteByTenantIDAndSku(ctx context.Context, tenantID uuid.UUID, sku string) (bool, error)
+	DeleteByTenantIDAndStatus(ctx context.Context, tenantID uuid.UUID, status model.ItemStatus) (int64, error)
+	FindAllInternal(ctx context.Context) ([]Item, error)
+	CountInternal(ctx context.Context) (int64, error)
+
+	// Hand-written. ExistsByTenantIDAndName also derives, but compares the
+	// name case-insensitively: the hand-written method wins.
+	ExistsByTenantIDAndName(ctx context.Context, tenantID uuid.UUID, name string) (bool, error)
 	ListActive(ctx context.Context, tenantID uuid.UUID) ([]Item, error)
 	Create(ctx context.Context, item model.Items) (Item, error)
 	Archive(ctx context.Context, tenantID uuid.UUID, id string) (bool, error)
-	CountInternal(ctx context.Context) (int64, error)
 }
 
 // AuditLog appends audit events. audit_events has no tenant column.
@@ -73,10 +95,12 @@ func NewItemRepository(db qrm.DB) ItemRepository {
 	return &itemRepositoryImpl{itemsBase: newItemsBase(db)}
 }
 
-func (r *itemRepositoryImpl) FindBySKU(
-	ctx context.Context, tenantID uuid.UUID, sku string,
-) (functional.Option[Item], error) {
-	return r.findOne(ctx, r.where.TenantID(tenantID).AND(r.where.Sku(sku)))
+func (r *itemRepositoryImpl) ExistsByTenantIDAndName(
+	ctx context.Context,
+	tenantID uuid.UUID,
+	name string,
+) (bool, error) {
+	return r.exists(ctx, r.where.TenantID(tenantID).AND(r.where.NameEqualsIgnoreCase(name)))
 }
 
 func (r *itemRepositoryImpl) ListActive(ctx context.Context, tenantID uuid.UUID) ([]Item, error) {
@@ -93,11 +117,6 @@ func (r *itemRepositoryImpl) Archive(ctx context.Context, tenantID uuid.UUID, id
 	n, err := r.updateWhere(ctx, r.where.TenantID(tenantID).AND(r.where.ID(id)),
 		r.t.Status.SET(enum.ItemStatus.Archived))
 	return n > 0, err
-}
-
-// CountInternal counts the items of every tenant: a trusted system path.
-func (r *itemRepositoryImpl) CountInternal(ctx context.Context) (int64, error) {
-	return r.count(ctx, nil)
 }
 
 type auditLogImpl struct {

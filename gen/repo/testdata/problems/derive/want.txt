@@ -1,0 +1,124 @@
+derive.go:29: Items.FindActive: not implemented: no hand-written method on *itemsImpl, and the name does not derive: it does not start with FindBy, GetBy, ExistsBy, CountBy, DeleteBy, FindAll or Count
+  fix: write it by hand on *itemsImpl, in a non-generated file of package derive:
+         func (r *itemsImpl) FindActive(ctx context.Context, tenantID uuid.UUID, status model.ItemStatus) ([]Item, error)
+       or rename it to a derivable name: FindByTenantIDAndStatus
+derive.go:31: Items.Reserve: not implemented: no hand-written method on *itemsImpl, and the name does not derive: it does not start with FindBy, GetBy, ExistsBy, CountBy, DeleteBy, FindAll or Count, and no derived method returns (Item, bool, error)
+  fix: write it by hand on *itemsImpl, in a non-generated file of package derive:
+         func (r *itemsImpl) Reserve(ctx context.Context, tenantID uuid.UUID, sku string) (Item, bool, error)
+derive.go:33: Items.FindByTenantIDAndNameIgnoreCase: not implemented: no hand-written method on *itemsImpl, and the name does not derive: operator IgnoreCase on Name is not derived; only equality (And) is
+  fix: write it by hand on *itemsImpl, in a non-generated file of package derive:
+         func (r *itemsImpl) FindByTenantIDAndNameIgnoreCase(ctx context.Context, tenantID uuid.UUID, name string) (functional.Option[Item], error) {
+             return r.findOne(ctx, r.where.TenantID(tenantID).AND(r.where.NameEqualsIgnoreCase(name)))
+         }
+       or use the search builder
+derive.go:34: Items.FindByTenantIDAndSkuIn: not implemented: no hand-written method on *itemsImpl, and the name does not derive: operator In on Sku is not derived; only equality (And) is
+  fix: write it by hand on *itemsImpl, in a non-generated file of package derive:
+         func (r *itemsImpl) FindByTenantIDAndSkuIn(ctx context.Context, tenantID uuid.UUID, skus []string) ([]Item, error) {
+             return r.findAll(ctx, r.where.TenantID(tenantID).AND(r.where.SkuIn(skus...)))
+         }
+       or use the search builder
+derive.go:35: Items.FindByTenantIDOrderByCreatedAtDesc: not implemented: no hand-written method on *itemsImpl, and the name does not derive: OrderBy is not derived
+  fix: write it by hand on *itemsImpl, in a non-generated file of package derive:
+         func (r *itemsImpl) FindByTenantIDOrderByCreatedAtDesc(ctx context.Context, tenantID uuid.UUID) ([]Item, error) {
+             return r.findAll(ctx, r.where.TenantID(tenantID), r.t.CreatedAt.DESC())
+         }
+       or use the search builder for a client-chosen order
+derive.go:36: Items.FindByTenantIDAndSkuOrName: not implemented: no hand-written method on *itemsImpl, and the name does not derive: Or is not derived; only And is
+  fix: write it by hand on *itemsImpl, in a non-generated file of package derive:
+         func (r *itemsImpl) FindByTenantIDAndSkuOrName(ctx context.Context, tenantID uuid.UUID, sku string, name string) ([]Item, error) {
+             return r.findAll(ctx, r.where.TenantID(tenantID).AND(r.where.Sku(sku).OR(r.where.Name(name))))
+         }
+derive.go:38: Items.FindByTenantIdAndSku: not implemented: no hand-written method on *itemsImpl, and the name does not derive: no column "TenantId" on table items
+  fix: write it by hand on *itemsImpl, in a non-generated file of package derive:
+         func (r *itemsImpl) FindByTenantIdAndSku(ctx context.Context, tenantID uuid.UUID, sku string) (functional.Option[Item], error)
+       or rename it FindByTenantIDAndSku (did you mean TenantID?)
+derive.go:39: Items.CountByTenantIDAndExtID: not implemented: no hand-written method on *itemsImpl, and the name does not derive: no column "ExtID" on table items
+  fix: write it by hand on *itemsImpl, in a non-generated file of package derive:
+         func (r *itemsImpl) CountByTenantIDAndExtID(ctx context.Context, tenantID uuid.UUID, externalID string) (int64, error)
+       or rename it CountByTenantIDAndExternalID (did you mean ExternalID?)
+derive.go:40: Items.CountByTenantIDAndColour: not implemented: no hand-written method on *itemsImpl, and the name does not derive: no column "Colour" on table items
+  fix: write it by hand on *itemsImpl, in a non-generated file of package derive:
+         func (r *itemsImpl) CountByTenantIDAndColour(ctx context.Context, tenantID uuid.UUID, colour string) (int64, error)
+       or rename it with columns of items: ID, TenantID, Sku, Name, Status, Stock, Sold, Rank, Price, Weight, Active, ReleasedOn, LocalAt, OpensAt, CreatedAt, DeletedAt, ExternalID, Tags
+derive.go:41: Items.FindBy: not implemented: no hand-written method on *itemsImpl, and the name does not derive: no property after By
+  fix: write it by hand on *itemsImpl, in a non-generated file of package derive:
+         func (r *itemsImpl) FindBy(ctx context.Context) ([]Item, error)
+       or name at least one column after By, or use FindAll or Count
+derive.go:43: Items.FindByTenantIDAndName: not implemented: no hand-written method on *itemsImpl, and the name does not derive: it returns one row, but (tenant_id, name) covers no unique key; the keys of items are items_pkey (id), items_tenant_sku_key (tenant_id, sku)
+  fix: return []Item; or add a unique index on (tenant_id, name) in a migration and rerun nano gen db;
+       or write it by hand on *itemsImpl, in a non-generated file of package derive:
+         func (r *itemsImpl) FindByTenantIDAndName(ctx context.Context, tenantID uuid.UUID, name string) (functional.Option[Item], error) {
+             return r.first(ctx, r.where.TenantID(tenantID).AND(r.where.Name(name)), r.t.CreatedAt.ASC(), r.t.ID.ASC())
+         }
+derive.go:44: Items.GetByTenantIDAndStatus: not implemented: no hand-written method on *itemsImpl, and the name does not derive: it returns one row, but (tenant_id, status) covers no unique key; the keys of items are items_pkey (id), items_tenant_sku_key (tenant_id, sku)
+  fix: return []Item; or add a unique index on (tenant_id, status) in a migration and rerun nano gen db;
+       or write it by hand on *itemsImpl, in a non-generated file of package derive:
+         func (r *itemsImpl) GetByTenantIDAndStatus(ctx context.Context, tenantID uuid.UUID, status model.ItemStatus) (Item, error)
+derive.go:46: Items.FindByTenantIDAndSkuAndName: not implemented: no hand-written method on *itemsImpl, and the name does not derive: has 2 value parameter(s), the name has 3 properties
+  fix: write it by hand on *itemsImpl, in a non-generated file of package derive:
+         func (r *itemsImpl) FindByTenantIDAndSkuAndName(ctx context.Context, tenantID uuid.UUID, sku string) ([]Item, error)
+       or take one parameter per property, in name order: TenantID, Sku, Name
+derive.go:47: Items.ExistsByTenantIDAndExternalID: not implemented: no hand-written method on *itemsImpl, and the name does not derive: parameter externalID is *string; a derived predicate compares with =, which never matches NULL
+  fix: write it by hand on *itemsImpl, in a non-generated file of package derive:
+         func (r *itemsImpl) ExistsByTenantIDAndExternalID(ctx context.Context, tenantID uuid.UUID, externalID *string) (bool, error)
+       or take a value type (for NULL, the hand-written body uses r.where.ExternalIDIsNull())
+derive.go:48: Items.ExistsByTenantIDAndSkuAndName: not implemented: no hand-written method on *itemsImpl, and the name does not derive: parameter name is bound to sku by its position, but its name says name; the name orders the columns tenant_id, sku, name
+  fix: reorder the parameters to follow the name, or rename the method to follow the parameters;
+       or write it by hand on *itemsImpl, in a non-generated file of package derive:
+         func (r *itemsImpl) ExistsByTenantIDAndSkuAndName(ctx context.Context, tenantID uuid.UUID, name string, sku string) (bool, error)
+derive.go:49: Items.CountByTenantIDAndStock: not implemented: no hand-written method on *itemsImpl, and the name does not derive: parameter stock has type int64; column items.stock is int32
+  fix: write it by hand on *itemsImpl, in a non-generated file of package derive:
+         func (r *itemsImpl) CountByTenantIDAndStock(ctx context.Context, tenantID uuid.UUID, stock int64) (int64, error)
+       or declare stock as int32 (or a named type over it)
+derive.go:50: Items.CountByTenantIDAndTags: not implemented: no hand-written method on *itemsImpl, and the name does not derive: column items.tags has no equality predicate on the base: its model type is pq.StringArray
+  fix: write it by hand on *itemsImpl, in a non-generated file of package derive:
+         func (r *itemsImpl) CountByTenantIDAndTags(ctx context.Context, tenantID uuid.UUID, tags string) (int64, error)
+derive.go:51: Items.FindByTenantIDAndRank: not implemented: no hand-written method on *itemsImpl, and the name does not derive: the first parameter is not context.Context
+  fix: write it by hand on *itemsImpl, in a non-generated file of package derive:
+         func (r *itemsImpl) FindByTenantIDAndRank(tenantID uuid.UUID, rank int16) ([]Item, error)
+       or take ctx context.Context as the first parameter
+derive.go:53: Items.CountByTenantIDAndSku: not implemented: no hand-written method on *itemsImpl, and the name does not derive: a derived count cannot return (bool, error)
+  fix: write it by hand on *itemsImpl, in a non-generated file of package derive:
+         func (r *itemsImpl) CountByTenantIDAndSku(ctx context.Context, tenantID uuid.UUID, sku string) (bool, error)
+       or return (int64, error)
+derive.go:54: Items.ExistsByTenantIDAndName: not implemented: no hand-written method on *itemsImpl, and the name does not derive: a derived exists cannot return (int64, error)
+  fix: write it by hand on *itemsImpl, in a non-generated file of package derive:
+         func (r *itemsImpl) ExistsByTenantIDAndName(ctx context.Context, tenantID uuid.UUID, name string) (int64, error)
+       or return (bool, error)
+derive.go:55: Items.FindByTenantIDAndPrice: not implemented: no hand-written method on *itemsImpl, and the name does not derive: returns Tenant, but the mapper returns Item
+  fix: write it by hand on *itemsImpl, in a non-generated file of package derive:
+         func (r *itemsImpl) FindByTenantIDAndPrice(ctx context.Context, tenantID uuid.UUID, price float64) ([]Tenant, error)
+       or return Item, or bind the mapper that returns Tenant in nanorepo.Implement
+derive.go:56: Items.DeleteByTenantIDAndRank: not implemented: no hand-written method on *itemsImpl, and the name does not derive: a derived delete cannot return (string, error)
+  fix: write it by hand on *itemsImpl, in a non-generated file of package derive:
+         func (r *itemsImpl) DeleteByTenantIDAndRank(ctx context.Context, tenantID uuid.UUID, rank int16) (string, error)
+       or return error, (bool, error) for "a row was deleted", or (int64, error) for the row count
+derive.go:57: Items.FindByTenantIDAndActive: not implemented: no hand-written method on *itemsImpl, and the name does not derive: the last result is not error
+  fix: write it by hand on *itemsImpl, in a non-generated file of package derive:
+         func (r *itemsImpl) FindByTenantIDAndActive(ctx context.Context, tenantID uuid.UUID, active bool) []Item
+       or return error as the last result
+derive.go:59: Items.FindByIDAndTenantID: not implemented: no hand-written method on *itemsImpl, and the name does not derive: table items is scoped by tenant_id, and the name does not filter on it first
+  fix: write it by hand on *itemsImpl, in a non-generated file of package derive:
+         func (r *itemsImpl) FindByIDAndTenantID(ctx context.Context, id string, tenantID uuid.UUID) (functional.Option[Item], error)
+       or move TenantID to the front of the name and of the parameters: FindByTenantIDAndID, or end the name in Internal for a trusted system path
+derive.go:60: Items.ExistsBySku: not implemented: no hand-written method on *itemsImpl, and the name does not derive: table items is scoped by tenant_id, and the name does not filter on it first
+  fix: write it by hand on *itemsImpl, in a non-generated file of package derive:
+         func (r *itemsImpl) ExistsBySku(ctx context.Context, sku string) (bool, error)
+       or filter on TenantID first (ExistsByTenantIDAndSku is already declared), or end the name in Internal for a trusted system path
+derive.go:62: Items.FindAll: not implemented: no hand-written method on *itemsImpl, and the name does not derive: table items is scoped by tenant_id, and the name does not filter on it first
+  fix: write it by hand on *itemsImpl, in a non-generated file of package derive:
+         func (r *itemsImpl) FindAll(ctx context.Context) ([]Item, error)
+       or take tenantID first and rename it FindByTenantID, or end the name in Internal for a trusted system path
+derive.go:63: Items.DeleteBySku: not implemented: no hand-written method on *itemsImpl, and the name does not derive: table items is scoped by tenant_id, and the name does not filter on it first
+  fix: write it by hand on *itemsImpl, in a non-generated file of package derive:
+         func (r *itemsImpl) DeleteBySku(ctx context.Context, sku string) error
+       or take tenantID first and rename it DeleteByTenantIDAndSku
+derive.go:64: Items.DeleteBySkuInternal: not implemented: no hand-written method on *itemsImpl, and the name does not derive: table items is scoped by tenant_id, and a derived delete must filter on it first: Internal skips the scope on derived reads only
+  fix: write it by hand on *itemsImpl, in a non-generated file of package derive:
+         func (r *itemsImpl) DeleteBySkuInternal(ctx context.Context, sku string) (int64, error) {
+             return r.deleteWhere(ctx, r.where.Sku(sku))
+         }
+       or take tenantID first and rename it DeleteByTenantIDAndSku; a delete across tenants is written by hand, where review sees it
+derive_mocks.gen.go:10: Items.Ping: not implemented: no hand-written method on *itemsImpl, and the name does not derive: it does not start with FindBy, GetBy, ExistsBy, CountBy, DeleteBy, FindAll or Count
+  fix: write it by hand on *itemsImpl, in a non-generated file of package derive:
+         func (r *itemsImpl) Ping(ctx context.Context) error
