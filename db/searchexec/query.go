@@ -25,6 +25,9 @@ type Query[T any, Q Builder[T, Q, S, P], S ~string, P comparable] struct {
 	where []jet.BoolExpression
 	sorts []search.Sort[S]
 	page  search.Pagination
+	// err is the first error that a filter recorded, for example search.ErrTooManyValues.
+	// Resolve returns it.
+	err error
 }
 
 // New starts a search of spec for one tenant. scope is the generated scope value: one value,
@@ -80,5 +83,20 @@ func (q Query[T, Q, S, P]) Offset(n int32) Q {
 // when the search runs: Limit(0) is refused, never replaced by the default.
 func (q Query[T, Q, S, P]) Limit(n int32) Q {
 	q.page.Limit = n
+	return Q{q}
+}
+
+// with returns the query with condition added to its filters.
+func (q Query[T, Q, S, P]) with(condition jet.BoolExpression) Q {
+	q.where = append(slices.Clip(q.where), condition)
+	return Q{q}
+}
+
+// fail returns the query with err recorded, when no error is recorded yet. Resolve returns
+// the first recorded error, so the search never runs without the filter that failed.
+func (q Query[T, Q, S, P]) fail(err error) Q {
+	if q.err == nil {
+		q.err = err
+	}
 	return Q{q}
 }

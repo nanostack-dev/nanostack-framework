@@ -41,6 +41,37 @@
 // The generated searches support PostgreSQL. A source of another dialect is
 // keyset.ErrDialect.
 //
+// # Field types
+//
+// Each filter method of a generated builder returns a field of the query, and the method of
+// the field returns the filtered copy:
+//
+//	q.Method().In("GET", "POST").ReceivedAt().Since(t)
+//
+// A field has only the operators that its declaration names:
+//
+//	In         In(v...)        expr IN (v...)
+//	InFold     In(v...)        LOWER(expr) IN (LOWER(v)...), folded in the database
+//	Eq         Eq(v)           expr = v
+//	EqIn       Eq(v), In(v...)
+//	TimeRange  Since(t), Until(t), After(t), Before(t)    >=, <=, >, <
+//	Presence   Present(bool)   expr IS NOT NULL, or expr IS NULL
+//	Flag       Is(bool)        condition, or condition IS NOT TRUE
+//	Text       Contains(term), ContainsAny(terms...)
+//	Exists     In(v...)        EXISTS (SELECT 1 FROM child WHERE correlation AND column IN (v...))
+//
+// From Go, an empty list matches no row: a caller that builds an empty list gets nothing,
+// not everything. The API mapper reads an empty list as no filter and does not call the
+// field. InFold leaves the case of the values to the database, because Go and the
+// database fold some letters differently (the Turkish dotted I under COLLATE "C"); the
+// answer agrees with the column.
+//
+// A field does not return an error. More than search.MaxInValues values
+// (search.ErrTooManyValues), a term longer than search.MaxTermLength characters after the
+// trim (search.ErrTermTooLong), or a child table of another dialect (keyset.ErrDialect)
+// records the error on the query. Resolve returns the first recorded error after the scope
+// checks, so a missing tenant scope still wins, and no statement runs.
+//
 // # Contains
 //
 // Contains is the one substring rule of the framework. A search's full-text filter, each
