@@ -31,3 +31,7 @@ Accepted on 2026-11-08, with the `nano gen` pipeline:
 - [0023: `nano gen` runs every generation step, in a fixed order, from one declaration](0023-nano-gen-pipeline.md)
 - [0024: The api step splits the strict server by OpenAPI tag](0024-api-split-by-tag.md)
 - [0026: `nano gen repo` binds one repository interface to a go-jet table, on a generated base](0026-nano-gen-repo.md)
+
+Accepted on 2026-11-09, with the search design. Number 0025 is reserved for the mapper record (pipeline design, PR 9).
+
+- [0027: Search in the db module](0027-search-in-the-db-module.md)
