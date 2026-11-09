@@ -22,39 +22,63 @@ func derivedFile(file string) string {
 }
 
 // renderDerived returns one <file>_repo.gen.go per declaring file with a
-// binding: its derived methods and the var _ line of each binding (design
-// D7, D14). Each file maps to the bindings it holds, in file order.
-func (l *loaded) renderDerived(res []*resolution) ([]gen.File, map[string][]*resolution, error) {
-	byFile := map[string][]*resolution{}
+// binding or a search: the var _ line and the derived methods of each
+// binding (design D7, D14), then the builder of each search (design 4.2).
+// Each file maps to the bindings and the searches it holds, in file order.
+func (l *loaded) renderDerived(res []*resolution, searches []*searchDecl) ([]gen.File, *rendered, error) {
+	out := &rendered{byFile: map[string][]*resolution{}, searches: map[string][]*searchDecl{}}
 	var names []string
-	for _, r := range res {
-		name := derivedFile(r.b.file)
-		if _, seen := byFile[name]; !seen {
+	add := func(name string) {
+		if _, seen := out.byFile[name]; !seen && !slices.Contains(names, name) {
 			names = append(names, name)
 		}
-		byFile[name] = append(byFile[name], r)
+	}
+	for _, r := range res {
+		name := derivedFile(r.b.file)
+		add(name)
+		out.byFile[name] = append(out.byFile[name], r)
+	}
+	for _, s := range searches {
+		name := derivedFile(s.at.file)
+		add(name)
+		out.searches[name] = append(out.searches[name], s)
 	}
 	slices.Sort(names)
 	files := make([]gen.File, 0, len(names))
 	for _, name := range names {
 		e := &emitter{imp: importset.New(l.pkg.PkgPath), self: l.pkg.PkgPath}
 		e.imp.Block(l.pkg.Types.Scope().Names()...)
-		for _, r := range byFile[name] {
+		for _, r := range out.byFile[name] {
 			e.binding(r)
 		}
-		var out strings.Builder
-		out.WriteString(header)
-		out.WriteString("package " + l.pkg.Name + "\n\n")
-		e.imp.Write(&out)
-		out.WriteString(e.b.String())
-		src, err := format.Source([]byte(out.String()))
+		for _, s := range out.searches[name] {
+			if s.builder != nil && len(s.unbuilt) == 0 {
+				e.searchBuilder(s.builder)
+			}
+		}
+		src, err := e.file(l.pkg.Name, name)
 		if err != nil {
-			return nil, nil, gen.Errorf("", 0, "report this nano gen repo bug with the declaration that caused it",
-				"the generated %s does not parse: %v", name, err)
+			return nil, nil, err
 		}
 		files = append(files, gen.File{Path: filepath.Join(l.dir, name), Data: src})
 	}
-	return files, byFile, nil
+	return files, out, nil
+}
+
+// file renders the header, the package clause, the imports and the code of
+// e, formatted.
+func (e *emitter) file(pkg, name string) ([]byte, error) {
+	var out strings.Builder
+	out.WriteString(header)
+	out.WriteString("package " + pkg + "\n\n")
+	e.imp.Write(&out)
+	out.WriteString(e.b.String())
+	src, err := format.Source([]byte(out.String()))
+	if err != nil {
+		return nil, gen.Errorf("", 0, "report this nano gen repo bug with the declaration that caused it",
+			"the generated %s does not parse: %v", name, err)
+	}
+	return src, nil
 }
 
 // binding writes the var _ line of one binding and its derived methods.

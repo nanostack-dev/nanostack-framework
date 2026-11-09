@@ -213,8 +213,9 @@ func failedImport(pkg *packages.Package, msg string) (path, reason string, ok bo
 // rendered is what one run writes: the base, then one file of derived
 // methods per declaring file with a binding.
 type rendered struct {
-	files  []gen.File
-	byFile map[string][]*resolution // derived file name -> its bindings, in file order
+	files    []gen.File
+	byFile   map[string][]*resolution // derived file name -> its bindings, in file order
+	searches map[string][]*searchDecl // derived file name -> its searches, in file order
 }
 
 // verify type-checks the package with the rendered files and returns it.
@@ -291,6 +292,9 @@ func consequence(msg string, missing []string) bool {
 		return true
 	}
 	for _, m := range missing {
+		if strings.HasPrefix(m, "undefined: ") && strings.HasSuffix(msg, m) {
+			return true
+		}
 		if strings.HasSuffix(msg, "has no field or method "+m+")") {
 			return true
 		}
@@ -306,6 +310,9 @@ func (l *loaded) origin(decls *declarations, out *rendered, file string, src []b
 		return at{t.file, t.line}
 	}
 	res := out.byFile[filepath.Base(file)]
+	if s := searchAtLine(src, line, out.searches[filepath.Base(file)], len(res)); s != nil {
+		return s.at
+	}
 	r := bindingAtLine(src, line, res, func(r *resolution) string { return r.explain.Iface })
 	return at{r.b.file, r.b.line}
 }

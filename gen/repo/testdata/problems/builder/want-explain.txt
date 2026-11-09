@@ -1,0 +1,35 @@
+search OwnRow on items (rows itemRow)
+  read      items; root; nullable weight, released_on, local_at, opens_at, deleted_at, external_id, tags; tenant tenant_id
+  scope     Scope items.tenant_id
+  sort      name: items.name
+  tiebreak  id: the primary key items_pkey (id), by default
+search NoTenant on items (rows model.Items)
+  read      items; root; nullable weight, released_on, local_at, opens_at, deleted_at, external_id, tags; tenant tenant_id
+  scope     Unscoped items.tenant_id: fixture
+  sort      name: items.name
+  tiebreak  id: the primary key items_pkey (id), by default
+search NoSort on items (rows model.Items)
+  read      items; root; nullable weight, released_on, local_at, opens_at, deleted_at, external_id, tags; tenant tenant_id
+  scope     Scope items.tenant_id
+  tiebreak  id: the primary key items_pkey (id), by default
+search Shapes on items (rows model.Items)
+  read      items; root; nullable weight, released_on, local_at, opens_at, deleted_at, external_id, tags; tenant tenant_id
+  scope     Scope items.tenant_id
+  filter    Sku: In, Present on items.sku (text, string)
+  filter    Limit: Eq on lowerName()
+  filter    Name: Eq on items.name (text, string)
+  filter    Name: In on lowerName()
+  filter    TenantsName: In on EXISTS tenants by tenants.id
+  filter    Stock: Range (min_stock, max_stock) on items.stock (int4, int32)
+  filter    Price: Eq on items.price (float8, float64)
+  sort      name: items.name, NullsFirst
+  sort      active: items.active
+  tiebreak  id: the primary key items_pkey (id), by default
+search WrongFrom on items (rows model.Items)
+  from      itemsOf
+  read      items; root; nullable weight, released_on, local_at, opens_at, deleted_at, external_id, tags; tenant tenant_id
+  read      tenants; INNER JOIN; ON table.Tenants.ID.EQ(table.Items.TenantID).AND(table.Tenants.Name.EQ(postgres.String(s.TenantID))); one row by tenants_pkey (id)
+  scope     Scope items.tenant_id
+  scope     Scope items.sku
+  sort      name: items.name
+  tiebreak  id: the primary key items_pkey (id), by default

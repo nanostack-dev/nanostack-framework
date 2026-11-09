@@ -167,8 +167,9 @@ func TestForwardStub(t *testing.T) {
 	stubs := ForwardStubs(mustAbs(t, dir))
 	derived := mustAbs(t, filepath.Join(dir, "repository"+derivedSuffix))
 	stub, ok := stubs[derived]
-	if len(stubs) != 1 || !ok {
-		t.Fatalf("stubs for %v, want %s", stubs, derived)
+	_, search := stubs[mustAbs(t, filepath.Join(dir, "search"+derivedSuffix))]
+	if len(stubs) != 2 || !ok || !search {
+		t.Fatalf("stubs for %d files, want %s and the stub of search.go", len(stubs), derived)
 	}
 	for _, want := range []string{"func (r *itemRepositoryImpl) FindByTenantIDAndName(", "FindAllInternal(",
 		`import uuid "github.com/google/uuid"`} {
