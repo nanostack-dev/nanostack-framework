@@ -36,6 +36,11 @@ func TestKeysetContract(t *testing.T) {
 			return mysql.NewTable(schema, name, "", columns...)
 		},
 		Text: mysql.String,
+		Subquery: func(
+			table keyset.Source, projection postgres.Projection, where postgres.BoolExpression,
+		) postgres.Expression {
+			return table.(mysql.Table).SELECT(projection).WHERE(where)
+		},
 	})
 }
 

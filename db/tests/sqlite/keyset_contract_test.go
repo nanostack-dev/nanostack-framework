@@ -29,5 +29,10 @@ func TestKeysetContract(t *testing.T) {
 			return sqlite.NewTable(schema, name, "", columns...)
 		},
 		Text: sqlite.String,
+		Subquery: func(
+			table keyset.Source, projection postgres.Projection, where postgres.BoolExpression,
+		) postgres.Expression {
+			return table.(sqlite.Table).SELECT(projection).WHERE(where)
+		},
 	})
 }

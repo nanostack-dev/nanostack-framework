@@ -67,6 +67,9 @@ type Config struct {
 	NewTable func(schema, name string, columns ...postgres.Column) keyset.Source
 	// Text is the dialect package's string literal.
 	Text func(string) postgres.StringExpression
+	// Subquery is the dialect package's SELECT projection FROM table WHERE where, for a
+	// correlated subquery of a computed key. table is a table of NewTable.
+	Subquery func(table keyset.Source, projection postgres.Projection, where postgres.BoolExpression) postgres.Expression
 }
 
 // Row is one row of the contract table.
@@ -99,6 +102,8 @@ type contract struct {
 	source  keyset.Source
 	columns []postgres.Projection
 	tenant  postgres.ColumnString
+	idCol   postgres.ColumnString
+	nameCol postgres.ColumnString
 	keys    map[string]keyDef
 	id      keyDef
 	rows    []Row
@@ -126,6 +131,7 @@ func Run(t *testing.T, cfg Config) {
 	t.Run("an enum value that is not a label, and NULL", func(t *testing.T) { c.checkEnumPins(t) })
 	t.Run("a NOT NULL (created, id) walk reads the index in order", func(t *testing.T) { c.checkExplain(t) })
 	t.Run("values that only one dialect stores", func(t *testing.T) { c.checkPins(t) })
+	t.Run("computed keys over a correlated subquery", func(t *testing.T) { c.checkComputed(t) })
 }
 
 func newContract(cfg Config) *contract {
@@ -151,7 +157,9 @@ func newContract(cfg Config) *contract {
 		id, tenant, name, nameCI, note, noteCI, status, statusP, ref, points, pointsP, score, ratio, created, seen,
 		stamp,
 	}
-	c := &contract{cfg: cfg, source: cfg.NewTable(cfg.Schema, "kc_rows", all...), tenant: tenant}
+	c := &contract{
+		cfg: cfg, source: cfg.NewTable(cfg.Schema, "kc_rows", all...), tenant: tenant, idCol: id, nameCol: name,
+	}
 	for _, column := range all {
 		c.columns = append(c.columns, column)
 	}

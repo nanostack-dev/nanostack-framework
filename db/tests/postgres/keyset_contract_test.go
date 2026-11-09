@@ -22,5 +22,10 @@ func TestKeysetContract(t *testing.T) {
 			return postgres.NewTable(schema, name, "", columns...)
 		},
 		Text: postgres.String,
+		Subquery: func(
+			table keyset.Source, projection postgres.Projection, where postgres.BoolExpression,
+		) postgres.Expression {
+			return table.(postgres.Table).SELECT(projection).WHERE(where)
+		},
 	})
 }
