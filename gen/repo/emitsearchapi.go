@@ -47,26 +47,27 @@ func (e *emitter) searchAPI(b *builder, own func(string) string, stub bool) {
 	case "APISort":
 		dir := "(*string)(nil)" // the body has no sort_direction
 		if m.sortDir != nil {
-			dir = m.sortDir.arg("b")
+			dir = m.sortDir.arg()
 		}
-		e.p("\tq = %s(q, q.SortBy, %s, %s, %s, %s)\n", e.sx("APISort"), m.sortBy.arg("b"), dir, dflt,
+		e.p("\tq = %s(q, q.SortBy, %s, %s, %s, %s)\n", e.sx("APISort"), m.sortBy.arg(), dir, dflt,
 			e.ref(searchPath, "search", m.dir))
 	case "APIDirection":
-		e.p("\tq = %s(q, q.SortBy, %s, %s)\n", e.sx("APIDirection"), dflt, m.sortDir.arg("b"))
+		e.p("\tq = %s(q, q.SortBy, %s, %s)\n", e.sx("APIDirection"), dflt, m.sortDir.arg())
 	}
 	if m.page != nil {
-		e.p("\treturn %s(q.Query, %s)\n}\n\n", e.sx("APIPage"), m.page.arg("b"))
+		e.p("\treturn %s(q.Query, %s)\n}\n\n", e.sx("APIPage"), m.page.arg())
 		return
 	}
 	e.p("\treturn q\n}\n\n")
 }
 
-// arg renders the field as the pointer that a searchexec helper takes.
-func (f *apiField) arg(v string) string {
+// arg renders the field of the body b as the pointer that a searchexec
+// helper takes.
+func (f *apiField) arg() string {
 	if f.ptr {
-		return v + "." + f.name
+		return "b." + f.name
 	}
-	return "&" + v + "." + f.name
+	return "&b." + f.name
 }
 
 // filterBinds writes the binds of the filter object.

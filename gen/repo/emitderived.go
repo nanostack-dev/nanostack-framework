@@ -51,14 +51,7 @@ func (l *loaded) renderDerived(res []*resolution, searches []*searchDecl) ([]gen
 		for _, r := range out.byFile[name] {
 			e.binding(r)
 		}
-		for _, s := range out.searches[name] {
-			if s.builder != nil && len(s.unbuilt) == 0 {
-				e.searchBuilder(s.builder)
-				if s.apiMapper != nil && s.apiMapper.home == nil {
-					e.searchAPI(s.builder, func(ident string) string { return ident }, false)
-				}
-			}
-		}
+		e.searches(out.searches[name])
 		src, err := e.file(l.pkg.Name, name)
 		if err != nil {
 			return nil, nil, err
@@ -66,6 +59,20 @@ func (l *loaded) renderDerived(res []*resolution, searches []*searchDecl) ([]gen
 		files = append(files, gen.File{Path: filepath.Join(l.dir, name), Data: src})
 	}
 	return files, out, nil
+}
+
+// searches writes the builder of each search that nano gen repo can write,
+// and its API mapper when the mapper goes in the declaring file.
+func (e *emitter) searches(searches []*searchDecl) {
+	for _, s := range searches {
+		if s.builder == nil || len(s.unbuilt) > 0 {
+			continue
+		}
+		e.searchBuilder(s.builder)
+		if s.apiMapper != nil && s.apiMapper.home == nil {
+			e.searchAPI(s.builder, func(ident string) string { return ident }, false)
+		}
+	}
 }
 
 // file renders the header, the package clause, the imports and the code of

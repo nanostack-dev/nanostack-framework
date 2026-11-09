@@ -81,19 +81,6 @@ func child(n *yaml.Node, key string) *yaml.Node {
 	return nil
 }
 
-// keyLine returns the line of key in the mapping n, or the line of n.
-func keyLine(n *yaml.Node, key string) int {
-	if n == nil {
-		return 0
-	}
-	for i := 0; i+1 < len(n.Content); i += 2 {
-		if n.Content[i].Value == key {
-			return n.Content[i].Line
-		}
-	}
-	return n.Line
-}
-
 // resolve follows the $ref of n to a schema of the spec. It returns nil
 // for a reference that leaves the document or names no schema: the check
 // then reads the property as having no schema.
@@ -117,45 +104,54 @@ func (s *apiSpec) resolve(n *yaml.Node) *yaml.Node {
 // the schema's own. unresolved holds each $ref on the way that names no
 // schema of the document: the properties behind it are unknown.
 func (s *apiSpec) props(n *yaml.Node) (out []apiProp, unresolved []*yaml.Node) {
-	seen := map[string]bool{}
-	var walk func(n *yaml.Node, own bool, depth int)
-	walk = func(n *yaml.Node, own bool, depth int) {
-		if ref := child(n, "$ref"); ref != nil {
-			own = false
-			if s.resolve(n) == nil {
-				unresolved = append(unresolved, ref)
-			}
-		}
-		if n = s.resolve(n); n == nil || depth > 16 {
-			return
-		}
-		var required []string
-		if req := child(n, "required"); req != nil {
-			for _, r := range req.Content {
-				required = append(required, r.Value)
-			}
-		}
-		props := child(n, "properties")
-		for i := 0; props != nil && i+1 < len(props.Content); i += 2 {
-			name := props.Content[i].Value
-			if seen[name] {
-				continue
-			}
-			seen[name] = true
-			out = append(out, apiProp{name: name, schema: s.resolve(props.Content[i+1]), line: props.Content[i].Line,
-				own: own, required: slices.Contains(required, name)})
-		}
-		for i := range out {
-			out[i].required = out[i].required || slices.Contains(required, out[i].name)
-		}
-		if all := child(n, "allOf"); all != nil {
-			for _, part := range all.Content {
-				walk(part, own, depth+1)
-			}
+	w := &propWalk{s: s, seen: map[string]bool{}}
+	w.walk(n, true, 0)
+	return w.out, w.unresolved
+}
+
+// propWalk collects the properties of a schema and its allOf parts.
+type propWalk struct {
+	s          *apiSpec
+	seen       map[string]bool
+	out        []apiProp
+	unresolved []*yaml.Node
+}
+
+func (w *propWalk) walk(n *yaml.Node, own bool, depth int) {
+	if ref := child(n, "$ref"); ref != nil {
+		own = false
+		if w.s.resolve(n) == nil {
+			w.unresolved = append(w.unresolved, ref)
 		}
 	}
-	walk(n, true, 0)
-	return out, unresolved
+	if n = w.s.resolve(n); n == nil || depth > 16 {
+		return
+	}
+	var required []string
+	for _, r := range contentOf(child(n, "required")) {
+		required = append(required, r.Value)
+	}
+	props := contentOf(child(n, "properties"))
+	for i := 0; i+1 < len(props); i += 2 {
+		if name := props[i].Value; !w.seen[name] {
+			w.seen[name] = true
+			w.out = append(w.out, apiProp{name: name, schema: w.s.resolve(props[i+1]), line: props[i].Line, own: own})
+		}
+	}
+	for i := range w.out {
+		w.out[i].required = w.out[i].required || slices.Contains(required, w.out[i].name)
+	}
+	for _, part := range contentOf(child(n, "allOf")) {
+		w.walk(part, own, depth+1)
+	}
+}
+
+// contentOf returns the content of n, nil for a nil node.
+func contentOf(n *yaml.Node) []*yaml.Node {
+	if n == nil {
+		return nil
+	}
+	return n.Content
 }
 
 // prop returns the property name of props, or nil.
@@ -197,8 +193,8 @@ func (s *apiSpec) number(n *yaml.Node, key string) (value int64, line int, ok bo
 		return 0, 0, false
 	}
 	if v := child(n, key); v != nil {
-		value, err := strconv.ParseInt(v.Value, 10, 64)
-		return value, v.Line, err == nil
+		parsed, err := strconv.ParseInt(v.Value, 10, 64)
+		return parsed, v.Line, err == nil
 	}
 	if all := child(n, "allOf"); all != nil {
 		for _, part := range all.Content {

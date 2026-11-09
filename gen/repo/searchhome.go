@@ -102,13 +102,8 @@ func (l *loaded) declaredIn(dir, name string) (file string, line int, found bool
 		if !strings.HasSuffix(p, ".go") || strings.HasSuffix(p, "_test.go") {
 			continue
 		}
-		data, ok := l.overlay[p]
-		if !ok {
-			if data, err = os.ReadFile(filepath.Clean(p)); err != nil {
-				continue
-			}
-		}
-		if bytes.HasPrefix(data, []byte(header)) || !bytes.Contains(data, []byte(name)) {
+		data, ok := l.source(p)
+		if !ok || bytes.HasPrefix(data, []byte(header)) || !bytes.Contains(data, []byte(name)) {
 			continue
 		}
 		f, parseErr := parser.ParseFile(fset, p, data, parser.SkipObjectResolution)
@@ -122,6 +117,16 @@ func (l *loaded) declaredIn(dir, name string) (file string, line int, found bool
 		}
 	}
 	return "", 0, false
+}
+
+// source returns the file at path from the overlay, or from the disk. ok
+// is false for a file that cannot be read: it holds nothing the run sees.
+func (l *loaded) source(path string) (data []byte, ok bool) {
+	if data, ok = l.overlay[path]; ok {
+		return data, true
+	}
+	data, err := os.ReadFile(filepath.Clean(path))
+	return data, err == nil
 }
 
 // relDir names a directory relative to the package, for a message.
@@ -171,8 +176,8 @@ func requestObjects(body *types.Named) []string {
 		if !isStruct {
 			continue
 		}
-		for i := range st.NumFields() {
-			if f := st.Field(i); f.Name() == "Body" && types.Identical(deref(f.Type()), body) {
+		for f := range st.Fields() {
+			if f.Name() == "Body" && types.Identical(deref(f.Type()), body) {
 				ops = append(ops, op)
 			}
 		}
@@ -223,13 +228,8 @@ func (l *loaded) handlerDirs(root string, ops []string) map[string]string {
 		if !strings.HasSuffix(p, ".go") || strings.HasSuffix(p, "_test.go") {
 			return nil
 		}
-		data, ok := l.overlay[p]
-		if !ok {
-			if data, err = os.ReadFile(filepath.Clean(p)); err != nil {
-				return nil //nolint:nilerr // an unreadable file holds no handler that the run can see
-			}
-		}
-		if !slices.ContainsFunc(ops, func(op string) bool { return bytes.Contains(data, []byte(op+"RequestObject")) }) {
+		data, ok := l.source(p)
+		if !ok || !slices.ContainsFunc(ops, func(op string) bool { return bytes.Contains(data, []byte(op+"RequestObject")) }) {
 			return nil
 		}
 		f, parseErr := parser.ParseFile(fset, p, data, parser.SkipObjectResolution)

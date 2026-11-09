@@ -67,14 +67,8 @@ func (l *loaded) readSpec() (spec *apiSpec, first bool, err error) {
 // hasHeader reports whether the file at path, in the overlay or on disk,
 // starts with the header of nano gen repo.
 func (l *loaded) hasHeader(path string) bool {
-	data, ok := l.overlay[path]
-	if !ok {
-		var err error
-		if data, err = os.ReadFile(filepath.Clean(path)); err != nil {
-			return false
-		}
-	}
-	return bytes.HasPrefix(data, []byte(header))
+	data, ok := l.source(path)
+	return ok && bytes.HasPrefix(data, []byte(header))
 }
 
 // mapperOf returns the search whose API mapper is the file at path in
