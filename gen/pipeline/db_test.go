@@ -64,7 +64,9 @@ func TestDBCacheHitKeepsTheModels(t *testing.T) {
 }
 
 // A changed migration needs a database. Without one the run exits 3 with
-// the reason and the fix, deletes no model and still runs the other steps.
+// the reason and the fix, deletes no model, skips repo, which reads the
+// table code, and still runs the other steps. The skipped repo step keeps
+// its base: it is no orphan.
 func TestDBMissWithoutDocker(t *testing.T) {
 	t.Parallel()
 	dir := copyFixtureOf(t, dbFixture)
@@ -73,7 +75,8 @@ func TestDBMissWithoutDocker(t *testing.T) {
 	wantRun(t, "nano gen", code, 3, stdout, "", stderr,
 		"nano gen db: migration 000002_name.up.sql is new since internal/db/gen/app/nanogen.sum, and Docker "+
 			"cannot start postgres:18-alpine: no socket\n"+
-			"  fix: start Docker, or set NANO_GEN_DATABASE_URL\n")
+			"  fix: start Docker, or set NANO_GEN_DATABASE_URL\n"+
+			"nano gen repo: skipped: needs db\n")
 	if _, err := os.Stat(filepath.Join(dir, "internal/db/gen/app/public/table/users.go")); err != nil {
 		t.Fatalf("a failed db step deleted a model: %v", err)
 	}
@@ -87,7 +90,8 @@ func TestDBMissWithoutDocker(t *testing.T) {
 	wantRun(t, "nano gen without nanogen.sum", code, 3, stdout, "", stderr,
 		"nano gen db: internal/db/gen/app/nanogen.sum does not exist, and Docker cannot start "+
 			"postgres:18-alpine: no socket\n"+
-			"  fix: start Docker, or set NANO_GEN_DATABASE_URL\n")
+			"  fix: start Docker, or set NANO_GEN_DATABASE_URL\n"+
+			"nano gen repo: skipped: needs db\n")
 	if _, err := os.Stat(filepath.Join(dir, "internal/db/gen/app/public/table/users.go")); err != nil {
 		t.Fatalf("a failed db step without nanogen.sum deleted a model: %v", err)
 	}
@@ -122,6 +126,11 @@ func TestDBDeclarationErrors(t *testing.T) {
 		{`Postgres: &project.Postgres{Name: "app", Out: "../gen"}`, `nanogen/project.go:7: Postgres.Out ../gen is outside the directory nano gen runs on
   fix: generate under the directory nano gen runs on; a module beside it declares its own nanogen/project.go
 `},
+		{`Postgres: &project.Postgres{Name: "app", Scopes: []string{"TenantID", "tenant_id", "tenant_id"}}`, `nanogen/project.go:7: Postgres.Scopes entry "TenantID" is not a lower-case column name
+  fix: write each scope as the column name, such as "product_id"
+nanogen/project.go:7: Postgres.Scopes lists "tenant_id" twice
+  fix: remove the second "tenant_id"
+`},
 	} {
 		dir := copyFixtureOf(t, dbFixture)
 		edit(t, dir, "nanogen/project.go", `Postgres: &project.Postgres{Name: "app"}`, tc.decl)
@@ -129,6 +138,7 @@ func TestDBDeclarationErrors(t *testing.T) {
 		want := tc.want + "nano gen db: skipped: needs nanogen/project.go\n" +
 			"nano gen api: skipped: needs nanogen/project.go\n" +
 			"nano gen validate: skipped: needs nanogen/project.go\n" +
+			"nano gen repo: skipped: needs nanogen/project.go\n" +
 			"nano gen config: skipped: needs nanogen/project.go\n"
 		if code != 1 || stderr != want {
 			t.Errorf("%s: exit %d, stderr:\n%s\nwant:\n%s", tc.decl, code, stderr, want)

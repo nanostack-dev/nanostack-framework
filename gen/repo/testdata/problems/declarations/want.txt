@@ -1,0 +1,30 @@
+declarations.go:66: table items already has a base with mapper itemToDomain at declarations.go:65; this declaration passes mappers.ItemToDomain
+  fix: pass itemToDomain here too: the declarations of one table in one package share one base
+declarations.go:67: the mapper statefulToDomain is the method ToDomain of cipherMapper, a type with fields: a mapper with state needs dependencies that the base does not have
+  fix: pass a plain function, or nanorepo.NoMapper[model.Items] and map in hand-written methods
+declarations.go:68: the mapper mappers.ItemToDomainVar is a variable of package mappers; nano gen repo checks the value of a variable of the declaring package only
+  fix: pass a function, or declare the variable in package declarations
+declarations.go:69: the mapper (&cipherMapper{}).ToDomain is an expression; nano gen repo calls the mapper by name from the base
+  fix: declare var <name>ToDomain = (&cipherMapper{}).ToDomain in package declarations and pass its name, or pass a function
+declarations.go:70: the mapper variable madeToDomain is set to makeMapper(), which nano gen repo cannot check
+  fix: set madeToDomain to a function, a function literal, or a method value on a type without fields
+declarations.go:71: itemsImpl is already bound to Repo at declarations.go:65
+  fix: keep one nanorepo.Implement per implementation type
+declarations.go:75: table tenants already has a base with rows of model.Tenants at declarations.go:73; this declaration reads model.Items
+  fix: map from model.Tenants, as the declaration at declarations.go:73
+declarations.go:76: genericImpl[string] is generic: nano gen repo binds an implementation type without type parameters
+  fix: bind a non-generic implementation type; to share code between repositories, embed a generic helper in it
+declarations.go:77: the first type argument of nanorepo.Implement is model.Items, not a named interface
+  fix: pass the repository interface as the first type argument
+declarations.go:78: the second type argument of nanorepo.Implement is mappers.Item, not a struct type of package declarations
+  fix: pass the implementation struct, declared in package declarations, as the second type argument
+declarations.go:80: the table argument table.Items.AS("i") is not a table variable
+  fix: pass the table variable of the generated table package, such as table.Users
+declarations.go:81: mysqlItems is a MySQL table; nano gen repo generates bases for PostgreSQL tables only
+  fix: remove the declaration; the repository stays hand-written, with pkg/db/transactor calls on the table
+declarations.go:82: notATable is not a Nanostack DB table
+  fix: pass a table variable that nano gen db generated, such as table.Users
+declarations.go:83: the row type model.Tenants has no field ItemID for column item_id of table audit_events
+  fix: map from the generated model of table audit_events
+declarations.go:84: in call to nanorepo.Implement[Repo, badCallImpl], cannot infer E (declared at <position>)
+  fix: fix the declaration so that it compiles

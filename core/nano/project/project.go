@@ -73,6 +73,12 @@ type Postgres struct {
 	// "timescale/timescaledb:2.23.0-pg18" when the migrations need an
 	// extension. Default "postgres:18-alpine".
 	Image string
+	// Scopes are the tenant columns, such as "platform_tenant_id" or
+	// "product_id". A table is scoped when it has one of them as a NOT NULL
+	// column. nano gen repo warns on a hand-written query of a scoped table,
+	// built on its generated base, that does not filter on the column,
+	// unless the method name ends in Internal. Empty: no table is scoped.
+	Scopes []string
 }
 
 // OpenAPI is the API contract and the Go packages generated from it. nano

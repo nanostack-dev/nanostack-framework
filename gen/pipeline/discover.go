@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"github.com/nanostack-dev/nanostack-framework/gen"
+	genrepo "github.com/nanostack-dev/nanostack-framework/gen/repo"
 )
 
 const (
@@ -44,6 +45,7 @@ var (
 type discovery struct {
 	catalogues []pkgFiles // packages with a //nano:errors declaration
 	manifests  []pkgFiles // packages whose nanogen file calls nano.Manifest
+	repos      []pkgFiles // packages with a nanorepo declaration
 	headers    []header   // files that start with a nano gen header
 	problems   []error    // guards and parse errors
 	// complete is false when a Go file did not parse, or holds an unknown
@@ -73,6 +75,7 @@ func discover(root string) *discovery {
 		fset:       token.NewFileSet(),
 		catalogues: map[string][]string{},
 		manifests:  map[string][]string{},
+		repos:      map[string][]string{},
 	}
 	walkErr := filepath.WalkDir(root, func(path string, e fs.DirEntry, err error) error {
 		if err != nil {
@@ -97,6 +100,7 @@ func discover(root string) *discovery {
 	}
 	d.catalogues = sortedPackages(w.catalogues)
 	d.manifests = sortedPackages(w.manifests)
+	d.repos = sortedPackages(w.repos)
 	return d
 }
 
@@ -106,6 +110,7 @@ type walker struct {
 	fset       *token.FileSet
 	catalogues map[string][]string // package directory -> files with //nano:errors
 	manifests  map[string][]string // package directory -> nanogen files that call nano.Manifest
+	repos      map[string][]string // package directory -> files that call nanorepo.Implement or Base
 }
 
 // visit reads one regular file: its header, and for a Go file its
@@ -135,6 +140,9 @@ func (w *walker) visit(path string) {
 	}
 	if isManifest(f) {
 		w.manifests[dir] = append(w.manifests[dir], path)
+	}
+	if genrepo.Declares(f) {
+		w.repos[dir] = append(w.repos[dir], path)
 	}
 }
 

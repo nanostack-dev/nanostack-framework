@@ -175,11 +175,12 @@ jobs:
             gen/go.sum
       - run: go vet ./...
       - run: go test -count=1 ./...
-      # The db step's tests behind the integration tag start PostgreSQL and TimescaleDB
-      # containers (Docker is on ubuntu-latest): the key rule against a live catalogue,
-      # the goldens, nanogen.sum and the orphans of a dropped table.
-      - name: db step on PostgreSQL (testcontainers)
-        run: go test -tags integration -count=1 ./db/... ./pipeline/...
+      # The tests behind the integration tag start PostgreSQL and TimescaleDB
+      # containers (Docker is on ubuntu-latest): the db step's key rule against a live
+      # catalogue, the goldens, nanogen.sum and the orphans of a dropped table, and
+      # every helper of the generated repository base.
+      - name: db step and repo base on PostgreSQL (testcontainers)
+        run: go test -tags integration -count=1 ./db/... ./pipeline/... ./repo/...
       - name: go.mod and go.sum are tidy
         run: go mod tidy -diff
       - name: Generated lint config is current

@@ -28,6 +28,7 @@ func TestBrokenProjectSkipsItsSteps(t *testing.T) {
 nano gen db: skipped: needs nanogen/project.go
 nano gen api: skipped: needs nanogen/project.go
 nano gen validate: skipped: needs nanogen/project.go
+nano gen repo: skipped: needs nanogen/project.go
 nano gen config: skipped: needs nanogen/project.go
 nano gen wire: skipped: needs config
 `)

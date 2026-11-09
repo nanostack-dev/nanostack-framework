@@ -34,7 +34,7 @@ func TestRun(t *testing.T) {
 		stderr.Reset()
 		code := run(args, &stdout, &stderr)
 		if code != 2 || !strings.Contains(stderr.String(), "usage: nano gen [flags]\n") ||
-			!strings.Contains(stderr.String(), "nano gen {api,config,db,errors,validate,wire} [flags]") {
+			!strings.Contains(stderr.String(), "nano gen {api,config,db,errors,repo,validate,wire} [flags]") {
 			t.Fatalf("run(%q): exit %d stderr %q, want usage and exit 2", args, code, stderr.String())
 		}
 	}

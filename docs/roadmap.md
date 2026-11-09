@@ -23,7 +23,7 @@
 ### Deferred generator outputs
 
 1. `nano gen errors`: an OpenAPI `components/responses` fragment per catalogue, once `http/problem` owns the problem schema it references ([ADR 0022](adr/0022-error-catalogue-from-go-interface.md)).
-2. `nano gen` and `nano gen -check` with no generator name: run every generator in a fixed order. Done for db, api, validate, errors, config and wire, with `nanogen/project.go` as the per-project file ([ADR 0023](adr/0023-nano-gen-pipeline.md)). The repo, mapper and lint steps follow the [pipeline design](design/nano-gen-pipeline.md); its last PR closes this item.
+2. `nano gen` and `nano gen -check` with no generator name: run every generator in a fixed order. Done for db, api, validate, errors, repo (the base; derived names follow), config and wire, with `nanogen/project.go` as the per-project file ([ADR 0023](adr/0023-nano-gen-pipeline.md)). The derived repository names, mapper and lint steps follow the [pipeline design](design/nano-gen-pipeline.md); its last PR closes this item.
 3. ~~Move the generators into their own nested `gen` module with the nested-module split, so `golang.org/x/tools` (needed by `gen/config` and `gen/errors`) leaves the root module that runtime consumers resolve.~~ Done: `gen` is a nested module with the CLI at `gen/cmd/nano`, and services pin it with a `tool` directive ([decision log](decision-log.md#2026-11-08-generators-move-to-a-nested-gen-module)).
 
 ### Deferred runtime features
