@@ -20,13 +20,15 @@ type typedRow struct {
 	Status string
 	Ref    uuid.UUID
 	Score  float64
+	Real   float32
 }
 
 var (
 	colStatus = jet.StringColumn("status")
 	colRef    = jet.StringColumn("ref")
 	colScore  = jet.FloatColumn("score")
-	_         = jet.NewTable("public", "widgets", "", colStatus, colRef, colScore)
+	colReal   = jet.FloatColumn("ratio")
+	_         = jet.NewTable("public", "widgets", "", colStatus, colRef, colScore, colReal)
 )
 
 const (
@@ -34,6 +36,7 @@ const (
 	sortByRef    sortField = "REF"
 	sortByScore  sortField = "SCORE"
 	sortByIP     sortField = "IP"
+	sortByReal   sortField = "REAL"
 )
 
 func typedOrder(t *testing.T, field sortField) keyset.Order[typedRow] {
@@ -49,6 +52,7 @@ func typedOrder(t *testing.T, field sortField) keyset.Order[typedRow] {
 			sortByRef:   keyset.UUIDKey(colRef, func(r typedRow) uuid.UUID { return r.Ref }),
 			sortByScore: keyset.FloatKey(colScore, func(r typedRow) float64 { return r.Score }),
 			sortByIP:    keyset.InetKey(colStatus, func(r typedRow) string { return r.Status }),
+			sortByReal:  keyset.RealKey(colReal, func(r typedRow) float32 { return r.Real }),
 		},
 		keyset.StringKey(colID, func(r typedRow) string { return r.ID }))
 }
@@ -64,6 +68,7 @@ func TestSeekRejectsValuesTheColumnCannotHold(t *testing.T) {
 		"malformed uuid":     {sortByRef, "not-a-uuid"},
 		"unknown float word": {sortByScore, "Lots"},
 		"malformed inet":     {sortByIP, "10.0.0.300"},
+		"real out of range":  {sortByReal, 1e39},
 	} {
 		t.Run(name, func(t *testing.T) {
 			order := typedOrder(t, tc.field)

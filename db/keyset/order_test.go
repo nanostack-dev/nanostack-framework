@@ -197,6 +197,66 @@ func TestSeekRejectsForeignCursors(t *testing.T) {
 	}
 }
 
+// The signature check is the only guard when two orderings decode the same
+// values: the same column in the other direction, or another text column.
+func TestSeekRejectsCursorsOfAnotherSignature(t *testing.T) {
+	byName := mustOrder(t,
+		[]search.Sort[sortField]{{Field: sortByName, Direction: search.SortAscending}},
+		keyColumns(), idKey())
+	token := cursorFor(t, byName, keyRow{ID: "w_1", Name: "a"})
+
+	byNameDesc := mustOrder(t,
+		[]search.Sort[sortField]{{Field: sortByName, Direction: search.SortDescending}},
+		keyColumns(), idKey())
+	if _, err := byNameDesc.Seek(token); !errors.Is(err, search.ErrInvalidCursor) {
+		t.Fatalf("Seek() with the cursor of the other direction = %v, want ErrInvalidCursor", err)
+	}
+	byTenant := mustOrder(t,
+		[]search.Sort[sortField]{{Field: sortByName, Direction: search.SortAscending}},
+		//nolint:exhaustive // a test lists only the sorts it orders by
+		map[sortField]keyset.Key[keyRow]{
+			sortByName: keyset.StringKey(colTenant, func(r keyRow) string { return r.Name }),
+		},
+		idKey())
+	if _, err := byTenant.Seek(token); !errors.Is(err, search.ErrInvalidCursor) {
+		t.Fatalf("Seek() with the cursor of another text column = %v, want ErrInvalidCursor", err)
+	}
+}
+
+// A forged cursor with too few or too many values is ErrInvalidCursor, not a
+// panic on the missing value.
+func TestSeekRejectsAWrongNumberOfValues(t *testing.T) {
+	byName := mustOrder(t,
+		[]search.Sort[sortField]{{Field: sortByName, Direction: search.SortAscending}},
+		keyColumns(), idKey())
+	for _, values := range [][]any{{"a"}, {"a", "w_1", "x"}} {
+		forged, err := search.EncodeCursor(byName.Signature(), values)
+		require.NoError(t, err)
+		if _, err = byName.Seek(forged); !errors.Is(err, search.ErrInvalidCursor) {
+			t.Fatalf("Seek() with %d values = %v, want ErrInvalidCursor", len(values), err)
+		}
+	}
+}
+
+// With a nullable tiebreak, a cursor that is all NULL in ascending order has
+// no row after it. Seek selects nothing: a nil predicate would restart the
+// walk at the first row and never end.
+func TestSeekAfterAnAllNullCursorSelectsNothing(t *testing.T) {
+	order := mustOrder[sortField](t, nil, keyColumns(),
+		keyset.NullableStringKey(colNote, func(r keyRow) *string { return r.Note }))
+	forged, err := search.EncodeCursor(order.Signature(), []any{nil})
+	require.NoError(t, err)
+	seek, err := order.Seek(forged)
+	require.NoError(t, err)
+	if seek == nil {
+		t.Fatal("Seek() = nil, want FALSE")
+	}
+	sql := normalize(jet.SELECT(colID).FROM(testTable).WHERE(seek).DebugSql())
+	if !strings.Contains(sql, "WHERE FALSE") {
+		t.Fatalf("seek SQL = %q, want WHERE FALSE", sql)
+	}
+}
+
 func TestTrim(t *testing.T) {
 	order := mustOrder[sortField](t, nil, keyColumns(), idKey())
 	rows := []keyRow{{ID: "a"}, {ID: "b"}, {ID: "c"}}
@@ -210,6 +270,12 @@ func TestTrim(t *testing.T) {
 	}
 	if last, end, _ := order.Trim(rows[:2], 2); len(last) != 2 || end != "" {
 		t.Fatalf("Trim(2 rows, 2) = %d rows, %q, want the last page", len(last), end)
+	}
+	// A transactor caller does not call CheckPage, so a zero limit reaches
+	// Trim. It keeps the rows and gives no cursor.
+	kept, none, err := order.Trim(rows[:1], 0)
+	if err != nil || none != "" || len(kept) != 1 {
+		t.Fatalf("Trim(1 row, 0) = %d rows, %q, %v; want the rows unchanged and no cursor", len(kept), none, err)
 	}
 }
 

@@ -52,8 +52,10 @@ func typedFloat(v float64) jet.FloatExpression {
 
 // RealKey orders on a NOT NULL real column. A real compared with a double
 // literal is promoted, and 0.1 stored as real is not 0.1 as double, so the
-// boundary row would match itself and repeat. The key compares as real, and
-// refuses a cursor value outside real's range before the cast could fail.
+// boundary row would match itself and repeat. The key compares as real. It
+// refuses a finite cursor value outside real's range with ErrInvalidCursor:
+// the conversion to float32 would turn it into an infinity, and the page
+// would jump to the end.
 func RealKey[T any](column jet.ColumnFloat, value func(T) float32) Key[T] {
 	return realKey(column, false, ptrOf(value))
 }

@@ -9,7 +9,8 @@ import (
 
 // Seek returns the predicate that selects the rows strictly after cursor in
 // this ordering, or nil for an empty cursor. A cursor issued for another
-// ordering, or one that does not decode, is search.ErrInvalidCursor.
+// ordering, or one that does not decode, is search.ErrInvalidCursor. The
+// predicate is PostgreSQL SQL: use it only in a db/postgres statement.
 func (o Order[T]) Seek(cursor string) (jet.BoolExpression, error) {
 	if cursor == "" {
 		return nil, nil

@@ -3,9 +3,10 @@ package keyset
 import "errors"
 
 var (
-	// ErrDialect reports a key or a source that this dialect does not support.
-	// It is a programming error, not a client error.
-	ErrDialect = errors.New("keyset: the dialect does not support this source or key")
+	// ErrDialect reports a source that this dialect does not support. It is a
+	// programming error, not a client error. A key cannot report it, because a
+	// column does not carry its dialect.
+	ErrDialect = errors.New("keyset: the dialect does not support this source")
 
 	// ErrPageSourceMissing reports a page that runs without From.
 	ErrPageSourceMissing = errors.New("keyset: paginated query has no FROM")

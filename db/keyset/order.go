@@ -21,6 +21,9 @@ type orderedKey[T any] struct {
 //
 // Build one with OrderOf and give it to PageBuilder.Keyset. A repository whose
 // query does not fit PageBuilder uses OrderBy, Seek and Trim directly.
+//
+// Seek and OrderBy write PostgreSQL SQL. Use them only in a db/postgres
+// statement. PageBuilder refuses any other source with ErrDialect.
 type Order[T any] struct {
 	keys      []orderedKey[T]
 	signature string
@@ -130,7 +133,8 @@ func (o Order[T]) Signature() string {
 // OrderBy returns the ORDER BY clauses, tiebreak included. The PostgreSQL
 // defaults apply to NULLs, unless a key asks for NullsFirst or NullsLast:
 // last when ascending, first when descending. Seek relies on exactly that
-// placement.
+// placement. The clauses are PostgreSQL SQL: use them only in a db/postgres
+// statement.
 func (o Order[T]) OrderBy() []jet.OrderByClause {
 	clauses := make([]jet.OrderByClause, len(o.keys))
 	for i, k := range o.keys {
