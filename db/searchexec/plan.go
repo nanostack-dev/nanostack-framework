@@ -133,7 +133,7 @@ var errUnresolved = fmt.Errorf("%w: the plan was not returned by Resolve", searc
 //   - a context scope that returns nil (search.ErrUnscoped);
 //   - the first error that a filter recorded: more than search.MaxInValues values
 //     (search.ErrTooManyValues), a term longer than search.MaxTermLength characters
-//     (search.ErrTermTooLong), or a child table of another dialect (keyset.ErrDialect);
+//     (search.ErrTermTooLong), or an Exists child that is not a table (keyset.ErrDialect);
 //   - a sort direction other than ASC or DESC (search.ErrInvalidSortDirection);
 //   - a page that search.CheckPage refuses (search.ErrInvalidLimit, search.ErrInvalidOffset,
 //     search.ErrInvalidCursor, search.ErrCursorWithOffset);

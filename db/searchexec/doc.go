@@ -87,7 +87,7 @@
 //
 // A field does not return an error. More than search.MaxInValues values
 // (search.ErrTooManyValues), a term longer than search.MaxTermLength characters after the
-// trim (search.ErrTermTooLong), or a child table of another dialect (keyset.ErrDialect)
+// trim (search.ErrTermTooLong), or an Exists child that is not a table (keyset.ErrDialect)
 // records the error on the query. Resolve returns the first recorded error after the scope
 // checks, so a missing tenant scope still wins, and no statement runs.
 //
