@@ -45,10 +45,12 @@ var (
 // with a unique tiebreak, which makes the order total, and lets Run return a
 // NextCursor and accept one back:
 //
-//	Keyset(transactor.Keys(input.Sort, map[workspace.SortField]transactor.Key[model.Workspaces]{
-//		workspace.SortFieldCreatedAt: transactor.TimeKey(table.Workspaces.CreatedAt,
+//	order, err := keyset.OrderOf(input.Sort, map[workspace.SortField]keyset.Key[model.Workspaces]{
+//		workspace.SortFieldCreatedAt: keyset.TimeKey(table.Workspaces.CreatedAt,
 //			func(m model.Workspaces) time.Time { return m.CreatedAt }),
-//	}, transactor.StringKey(table.Workspaces.ID, func(m model.Workspaces) string { return m.ID })))
+//	}, keyset.StringKey(table.Workspaces.ID, func(m model.Workspaces) string { return m.ID }))
+//	...
+//	Keyset(order)
 //
 // Both type parameters are inferred from mapFunc; neither is spelled at a call
 // site.
@@ -88,9 +90,9 @@ func (b *PageBuilder[T, R]) OrderBy(clauses ...jet.OrderByClause) *PageBuilder[T
 	return b
 }
 
-// Keyset orders the page by a total keyset ordering built with Keys or
-// StrictKeys. It replaces OrderBy, and enables cursor pagination: Run accepts
-// Pagination.Cursor and fills Result.NextCursor. See keyset.PageBuilder.Keyset
+// Keyset orders the page by a total keyset ordering built with
+// keyset.OrderOf or StrictKeys. It replaces OrderBy, and enables cursor
+// pagination: Run accepts Pagination.Cursor and fills Result.NextCursor. See keyset.PageBuilder.Keyset
 // for the rows T may hold.
 func (b *PageBuilder[T, R]) Keyset(order Order[T]) *PageBuilder[T, R] {
 	b.keyset = &order

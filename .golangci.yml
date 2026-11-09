@@ -103,15 +103,6 @@ linters:
           deny:
             - pkg: log$
               desc: Use log/slog with a context (slog.InfoContext); nanostack-framework/core/log wires the handler
-        # pkg/search holds aliases of db/search and will be removed. The
-        # framework itself uses db/search; products move one search at a time.
-        search contract is db/search:
-          files:
-            - $all
-            - "!**/pkg/search/*.go"
-          deny:
-            - pkg: github.com/nanostack-dev/nanostack-framework/pkg/search$
-              desc: Use github.com/nanostack-dev/nanostack-framework/db/search; pkg/search holds its aliases and will be removed
         # The layers of plan section 06: core, then the integrations (http, pg,
         # redis, otel), then gen. A package imports only its own layer and the
         # layers below it. gen is its own module with its own rules
@@ -373,7 +364,6 @@ linters:
       - {linters: [govet], path: ^modules/migrations/migrator\.go$} # shadow: err
       - {linters: [govet], path: ^modules/pglock/pglock\.go$} # shadow: err x3
       - {linters: [govet], path: ^modules/postgres/postgres\.go$} # shadow: err
-      - {linters: [govet], path: ^pkg/search/cursor_test\.go$} # shadow: err
       - {linters: [govet], path: ^pkg/secrets/versioned_cipher\.go$} # shadow: err
       - {linters: [govet], path: ^pkg/testkit/searchtest/mutations\.go$} # shadow: err x2
       - {linters: [govet], path: ^pkg/testkit/searchtest/searchtest\.go$} # shadow: err x5

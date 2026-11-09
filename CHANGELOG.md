@@ -2,6 +2,14 @@
 
 One section per module and version, newest first. Each section uses Added, Changed, Deprecated, Removed and Fixed. [RELEASING.md](RELEASING.md) gives the release steps and the upgrade notes.
 
+## v0.23.0-beta.5
+
+The root module drops `pkg/search` and `transactor.Keys`. It requires `db/v0.23.0-beta.4` and `pkg/functional/v0.23.0-beta.1`, which do not change. `gen/v0.23.0-beta.8` works with it unchanged. Upgrade with [RELEASING.md](RELEASING.md#upgrade-from-v0230-beta4).
+
+### Removed
+- **Breaking:** `pkg/search`. It held aliases of `db/search` since `v0.23.0-beta.4`. Import `github.com/nanostack-dev/nanostack-framework/db/search` instead: the types, errors, error texts and cursors are the same, so the change touches only import paths.
+- **Breaking:** `transactor.Keys`. It dropped a requested sort field that had no key and ordered by the rest, so a client got an order other than the one it asked for. Use `transactor.StrictKeys` or `keyset.OrderOf`, which return `search.ErrUnknownSort` for such a field. The key constructors (`transactor.StringKey` and the others), `transactor.Key`, `transactor.Order` and `transactor.StrictKeys` stay.
+
 ## gen/v0.23.0-beta.8
 
 A fix release of `gen` only. It requires root `v0.23.0-beta.4`, `db/v0.23.0-beta.4` and `pkg/functional/v0.23.0-beta.1`, which do not change. `gen/v0.23.0-beta.7` is retracted: upgrade straight to this release ([RELEASING.md](RELEASING.md#upgrade-to-the-nanostack-cli)).
