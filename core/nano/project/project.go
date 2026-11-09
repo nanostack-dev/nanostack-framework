@@ -108,6 +108,18 @@ type Postgres struct {
 	// table that has it, or nanostack gen repo refuses the derived Create and
 	// Upsert of that table. Empty: derived writes set every column.
 	DatabaseColumns []string
+	// ScopeImplies maps a tenant column of Scopes to the tenant column that
+	// it determines in the data: {"organization_id": "product_id",
+	// "product_id": "platform_tenant_id"} says that an organization has one
+	// product, which has one platform tenant. A derived repository method
+	// must name every scope column of its table; a column it names stands
+	// for the columns it implies, transitively, so FindByOrgAndID is legal
+	// on a table with all three. Declare only what the schema guarantees,
+	// such as a foreign key chain: a wrong entry lets a derived method omit
+	// a tenant filter. Both sides are columns of Scopes, neither is a
+	// context column, and the map has no cycle. Empty: every scope column of
+	// a table is named.
+	ScopeImplies map[string]string
 }
 
 // ContextScope registers the function that scopes one context tenant

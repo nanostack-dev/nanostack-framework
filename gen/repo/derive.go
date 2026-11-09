@@ -1,7 +1,6 @@
 package genrepo
 
 import (
-	"cmp"
 	"fmt"
 	"go/types"
 	"slices"
@@ -75,6 +74,7 @@ type derivedMethod struct {
 	internal bool       // the name ends in Internal
 	unscoped bool       // Internal skipped the tenant scope (a read)
 	skipped  []string   // the scope fields an unscoped method does not filter on
+	cross    []string   // the context scope columns the name gives by their Go field: the value is a parameter, not ctx
 	preds    []string   // Go fields of the properties that bind a parameter, in name order
 	terms    []term     // every property, in name order: preds and the context scopes named by short name
 	params   []param    // one per entry of preds; a write adds its value last
@@ -102,6 +102,13 @@ type refusal struct {
 // nothing: a hand-written method of the same name wins, so the caller
 // decides what a refusal means.
 func (r *resolver) derive(fn *types.Func) (*derivedMethod, *refusal) {
+	if r.t.view {
+		return nil, &refusal{grammar: false,
+			msg: "table " + r.t.sqlName + " is a view: nanostack gen db types every view column as nullable, so " +
+				"no tenant column of a view can be trusted as a scope, and a derived delete on an updatable view " +
+				"would reach the rows of every tenant",
+			alt: "write it by hand, with the tenant filter in its condition, or bind the base table of the view"}
+	}
 	m, fail := r.parseName(fn)
 	if fail != nil {
 		return nil, fail
@@ -138,27 +145,25 @@ func (r *resolver) parseName(fn *types.Func) (*derivedMethod, *refusal) {
 		return nil, &refusal{msg: "no property after By",
 			alt: "name at least one column after By, or use FindAll or Count"}
 	}
-	if before, after, ok := strings.Cut(rest, "OrderBy"); ok {
-		return nil, r.orderByRefusal(fn, before, after)
-	}
 	if rest != "" {
 		toks, ok := splitTerms(rest, r.words())
+		// A name that splits into columns as it is, such as one with a column
+		// order_by, is no OrderBy operator.
+		if before, after, found := strings.Cut(rest, "OrderBy"); found && !ok {
+			return nil, r.orderByRefusal(fn, before, after)
+		}
 		if !ok {
 			return nil, r.badName(fn, rest)
 		}
 		m.terms = r.termsOf(toks)
-		for i, t := range m.terms {
-			switch {
-			case t.ctx != nil:
-			case m.op.isWrite() && !slices.Contains(r.allScope, t.field):
-				m.terms[i].fromRow = true // a key column: the write reads it from its value
-			default:
-				m.preds = append(m.preds, t.field)
-			}
-		}
+		r.collectPreds(m)
 	}
-	if fail := r.scopeRules(fn, m, base); fail != nil {
-		return nil, fail
+	// A table that no derived write can scope (a nullable scope column, no hard
+	// scope) gets the write refusal, which says so, before the read rule.
+	if !r.writeUnscopable(m) {
+		if fail := r.scopeRules(fn, m, base); fail != nil {
+			return nil, fail
+		}
 	}
 	if fail := r.writeScopeRule(m, base); fail != nil {
 		return nil, fail
@@ -166,28 +171,41 @@ func (r *resolver) parseName(fn *types.Func) (*derivedMethod, *refusal) {
 	return m, nil
 }
 
-// scopeRules applies the scope rules to the terms of m: the name starts with
-// a scope column, and names every context scope. Internal skips both on a
-// read, which marks m unscoped; it returns the refusal otherwise.
+// collectPreds records the parameter-bound predicates of m, and the context
+// columns a name binds from a parameter (m.cross).
+func (r *resolver) collectPreds(m *derivedMethod) {
+	for i, t := range m.terms {
+		switch {
+		case t.ctx != nil:
+		case m.op.isWrite() && !slices.Contains(r.allScope, t.field):
+			m.terms[i].fromRow = true // a key column: the write reads it from its value
+		default:
+			m.preds = append(m.preds, t.field)
+			if c := r.ctxOf(t.field); c != nil {
+				m.cross = append(m.cross, c.col)
+			}
+		}
+	}
+}
+
+// scopeRules applies the scope rules to the terms of m: the name gives every
+// scope column of the table, hard or context, nullable or not (a column it
+// names stands for the ones it implies, Postgres.ScopeImplies), and the scope
+// words come first. Internal skips the missing columns on a read, which marks
+// m unscoped; it returns the refusal otherwise.
 func (r *resolver) scopeRules(fn *types.Func, m *derivedMethod, base string) *refusal {
-	hardFail := len(r.scope) > 0 && (len(m.terms) == 0 || !r.isHardScope(m.terms[0]))
-	missing := r.missingCtx(m.terms)
-	if !hardFail && len(missing) == 0 {
+	missing := r.missingFor(m)
+	misordered := r.misordered(m.terms)
+	if len(missing) == 0 && !misordered {
 		return nil
 	}
 	if m.internal && m.op != opDelete && !m.op.isWrite() {
-		m.unscoped = true
-		if hardFail {
-			m.skipped = slices.Clone(r.scope)
-		}
-		for _, c := range missing {
-			if !slices.Contains(m.skipped, c.field) {
-				m.skipped = append(m.skipped, c.field)
-			}
+		if len(missing) > 0 {
+			m.unscoped, m.skipped = true, missing
 		}
 		return nil
 	}
-	return r.scopeRefusal(fn, m, base, hardFail, missing)
+	return r.scopeRefusal(fn, m, base, missing)
 }
 
 // endsInColumn reports whether the properties of name split into columns
@@ -247,109 +265,89 @@ func (r *resolver) orderByRefusal(fn *types.Func, before, after string) *refusal
 	}
 	fail := &refusal{msg: "OrderBy is not derived", alt: "use the search builder for a client-chosen order"}
 	if _, isCol := r.t.column(col); isCol {
-		segs := splitAnd(before)
-		cond := condFor(fn, segs, func(_ int, seg, p string) string { return "r.where." + seg + "(" + p + ")" })
+		// The properties before OrderBy, as terms: a short name of a scope column is its field, and a
+		// context scope is its function, which binds no parameter.
+		cond := ""
+		if toks, ok := splitTerms(before, r.words()); ok {
+			cond = r.condOf(fn, r.termsOf(toks))
+		} else {
+			cond = r.condSegs(fn, splitAnd(before), -1, nil)
+		}
 		fail.body = bodyFor(fn, cond, "r.t."+col+order)
 	}
 	return fail
 }
 
-// scopeRefusal is the refusal of a name on a scoped table that does not
-// filter on a scope column first (design D25), or does not name a context
-// scope column (ADR 0026). Internal skips the scope on reads only: a
-// scope-free write is hand-written, where review sees it.
-func (r *resolver) scopeRefusal(fn *types.Func, m *derivedMethod, base string, hardFail bool,
-	missing []ctxScope) *refusal {
-	names := r.scopeOrder(m.terms)
-	scoped := suggestNamed(base, names)
-	hard := names[0]
-	var required []string
-	if hardFail {
-		required = append(required, hard)
+// scopeRefusal is the refusal of a name on a scoped table that does not name
+// every scope column (design D25, ADR 0026), or names one after a column that
+// is no scope column. Internal skips the scope on reads only: a scope-free
+// write is hand-written, where review sees it.
+func (r *resolver) scopeRefusal(fn *types.Func, m *derivedMethod, base string, missing []string) *refusal {
+	scoped := suggestNamed(base, r.scopeOrder(m.terms, missing))
+	cols := make([]string, len(r.allScope))
+	for i, f := range r.allScope {
+		cols[i] = r.sqlName(f)
 	}
-	for _, c := range missing {
-		if word := cmp.Or(c.short, c.field); !slices.Contains(required, word) {
-			required = append(required, word)
+	what := fmt.Sprintf("table %s is scoped by %s (Postgres.Scopes), and ", r.t.sqlName, strings.Join(cols, ", "))
+	var words, newParams []string
+	for _, f := range missing {
+		c := r.ctxOf(f)
+		switch {
+		case c != nil && c.short != "":
+			words = append(words, c.short)
+		default:
+			words = append(words, r.display(f))
+			newParams = append(newParams, lowerFirst(f))
 		}
 	}
 	var fix string
-	hardWord := r.fieldOf(hard)
 	switch {
+	case len(missing) == 0:
+		what += "the name has a column before a scope column: the scope words come first"
+		fix = "move the scope words to the front of the name and of the parameters: " + scoped
 	case r.taken(fn, scoped):
-		fix = "filter on " + strings.Join(required, " and ") + " first (" + scoped + " is already declared)"
-	case hardFail && r.ctxOf(hardWord) != nil:
-		fix = "rename it " + scoped
-	case hardFail && !slices.ContainsFunc(m.terms, func(t term) bool { return r.display(t.field) == hard }):
-		fix = "take " + lowerFirst(hardWord) + " first and rename it " + scoped
-	case hardFail:
-		fix = "move " + hard + " to the front of the name and of the parameters: " + scoped
+		what += "the name does not name " + strings.Join(r.columnsOf(missing), " or ")
+		fix = "name " + strings.Join(words, " and ") + " first (" + scoped + " is already declared)"
 	default:
+		what += "the name does not name " + strings.Join(r.columnsOf(missing), " or ")
 		fix = "rename it " + scoped
+		if len(newParams) > 0 {
+			fix += ", with " + strings.Join(newParams, " and ") + " as parameter, scope words first"
+		}
 	}
-	for _, c := range missing {
-		switch {
+	for _, f := range missing {
+		switch c := r.ctxOf(f); {
+		case c == nil:
 		case c.short != "":
 			fix += "; " + c.short + " binds no parameter: it applies " + funcWord(c.fn) + " to " + c.col
 		default:
 			fix += "; " + c.field + " takes a parameter, and a short name from Postgres.ScopeNames binds none"
 		}
 	}
-	var what string
-	if hardFail {
-		cols := make([]string, len(r.scope))
-		for i, f := range r.scope {
-			cols[i] = r.sqlName(f)
-		}
-		what = fmt.Sprintf("table %s is scoped by %s", r.t.sqlName, strings.Join(cols, " or "))
-	} else {
-		cols := make([]string, len(missing))
-		for i, c := range missing {
-			cols[i] = c.col
-		}
-		what = fmt.Sprintf("table %s has the context scope %s (Postgres.ContextScopes)", r.t.sqlName,
-			strings.Join(cols, " and "))
-	}
-	verb, verb2 := "filter on it first", "filter on it first"
-	if !hardFail {
-		verb, verb2 = "name it", "name it"
+	hardMissing := slices.ContainsFunc(missing, func(f string) bool { return r.ctxOf(f) == nil })
+	namesScope := slices.ContainsFunc(m.terms, func(t term) bool { return slices.Contains(r.allScope, t.field) })
+	if hardMissing && namesScope && !m.op.isWrite() {
+		fix += "; if a column the name has determines the others in the schema, declare it in Postgres.ScopeImplies"
 	}
 	if m.op == opDelete && m.internal {
-		cond := condFor(fn, m.preds, func(_ int, seg, p string) string { return "r.where." + seg + "(" + p + ")" })
 		return &refusal{
-			msg:  what + ", and a derived delete must " + verb + ": Internal skips the scope on derived reads only",
+			msg:  what + ": Internal skips the scope on derived reads only",
 			alt:  fix + "; a delete across tenants is written by hand, where review sees it",
-			body: bodyFor(fn, cond),
+			body: bodyFor(fn, r.condOf(fn, m.terms)),
 		}
 	}
-	if m.op.changesRows() {
-		return writeScopeRefusal(m, what, verb2, fix, scoped, required, hardFail)
-	}
-	return &refusal{msg: what + ", and the name does not " + verb2,
-		alt: fix + ", or end the name in Internal for a trusted system path"}
-}
-
-// writeScopeRefusal is the scope refusal of a delete or a write. A Create
-// takes its scope from its name; an upsert whose name lacks the scope would
-// conflict on a key that could reach the row of another tenant.
-func writeScopeRefusal(m *derivedMethod, what, verb, fix, scoped string, required []string,
-	hardFail bool) *refusal {
 	switch {
+	case m.op == opDelete:
+		return &refusal{msg: what, alt: fix}
 	case m.op == opCreate:
-		return &refusal{msg: what + ", and a derived Create takes " + strings.Join(required, " and ") +
-			" from the name: " + scoped, alt: "rename it " + scoped}
-	case m.op == opUpsert && hardFail:
-		return &refusal{msg: what + ", and the name does not " + verb + ": a conflict key without the scope " +
-			"could reach the row of another tenant", alt: fix}
+		return &refusal{msg: what + ": a derived Create takes its scope from the name, never from the value", alt: fix}
+	case m.op == opUpsert:
+		return &refusal{msg: what + ": a conflict key without the scope could reach the row of another tenant",
+			alt: fix}
+	case m.op.isWrite():
+		return &refusal{msg: what, alt: fix}
 	}
-	return &refusal{msg: what + ", and the name does not " + verb, alt: fix}
-}
-
-// fieldOf returns the Go field that a displayed column name stands for.
-func (r *resolver) fieldOf(word string) string {
-	if f, ok := r.short[word]; ok {
-		return f
-	}
-	return word
+	return &refusal{msg: what, alt: fix + ", or end the name in Internal for a trusted system path"}
 }
 
 // splitTerms resolves "ProductIDAndExternalID" against the tokens of the

@@ -97,28 +97,28 @@ derive.go:57: Items.FindByTenantIDAndActive: not implemented: no hand-written me
   fix: write it by hand on *itemsImpl, in a non-generated file of package derive:
          func (r *itemsImpl) FindByTenantIDAndActive(ctx context.Context, tenantID uuid.UUID, active bool) []Item
        or return error as the last result
-derive.go:59: Items.FindByIDAndTenantID: not implemented: no hand-written method on *itemsImpl, and the name does not derive: table items is scoped by tenant_id, and the name does not filter on it first
+derive.go:59: Items.FindByIDAndTenantID: not implemented: no hand-written method on *itemsImpl, and the name does not derive: table items is scoped by tenant_id (Postgres.Scopes), and the name has a column before a scope column: the scope words come first
   fix: write it by hand on *itemsImpl, in a non-generated file of package derive:
          func (r *itemsImpl) FindByIDAndTenantID(ctx context.Context, id string, tenantID uuid.UUID) (functional.Option[Item], error)
-       or move TenantID to the front of the name and of the parameters: FindByTenantIDAndID, or end the name in Internal for a trusted system path
-derive.go:60: Items.ExistsBySku: not implemented: no hand-written method on *itemsImpl, and the name does not derive: table items is scoped by tenant_id, and the name does not filter on it first
+       or move the scope words to the front of the name and of the parameters: FindByTenantIDAndID, or end the name in Internal for a trusted system path
+derive.go:60: Items.ExistsBySku: not implemented: no hand-written method on *itemsImpl, and the name does not derive: table items is scoped by tenant_id (Postgres.Scopes), and the name does not name tenant_id
   fix: write it by hand on *itemsImpl, in a non-generated file of package derive:
          func (r *itemsImpl) ExistsBySku(ctx context.Context, sku string) (bool, error)
-       or filter on TenantID first (ExistsByTenantIDAndSku is already declared), or end the name in Internal for a trusted system path
-derive.go:62: Items.FindAll: not implemented: no hand-written method on *itemsImpl, and the name does not derive: table items is scoped by tenant_id, and the name does not filter on it first
+       or name TenantID first (ExistsByTenantIDAndSku is already declared), or end the name in Internal for a trusted system path
+derive.go:62: Items.FindAll: not implemented: no hand-written method on *itemsImpl, and the name does not derive: table items is scoped by tenant_id (Postgres.Scopes), and the name does not name tenant_id
   fix: write it by hand on *itemsImpl, in a non-generated file of package derive:
          func (r *itemsImpl) FindAll(ctx context.Context) ([]Item, error)
-       or take tenantID first and rename it FindByTenantID, or end the name in Internal for a trusted system path
-derive.go:63: Items.DeleteBySku: not implemented: no hand-written method on *itemsImpl, and the name does not derive: table items is scoped by tenant_id, and the name does not filter on it first
+       or rename it FindByTenantID, with tenantID as parameter, scope words first, or end the name in Internal for a trusted system path
+derive.go:63: Items.DeleteBySku: not implemented: no hand-written method on *itemsImpl, and the name does not derive: table items is scoped by tenant_id (Postgres.Scopes), and the name does not name tenant_id
   fix: write it by hand on *itemsImpl, in a non-generated file of package derive:
          func (r *itemsImpl) DeleteBySku(ctx context.Context, sku string) error
-       or take tenantID first and rename it DeleteByTenantIDAndSku
-derive.go:64: Items.DeleteBySkuInternal: not implemented: no hand-written method on *itemsImpl, and the name does not derive: table items is scoped by tenant_id, and a derived delete must filter on it first: Internal skips the scope on derived reads only
+       or rename it DeleteByTenantIDAndSku, with tenantID as parameter, scope words first
+derive.go:64: Items.DeleteBySkuInternal: not implemented: no hand-written method on *itemsImpl, and the name does not derive: table items is scoped by tenant_id (Postgres.Scopes), and the name does not name tenant_id: Internal skips the scope on derived reads only
   fix: write it by hand on *itemsImpl, in a non-generated file of package derive:
          func (r *itemsImpl) DeleteBySkuInternal(ctx context.Context, sku string) (int64, error) {
              return r.deleteWhere(ctx, r.where.Sku(sku))
          }
-       or take tenantID first and rename it DeleteByTenantIDAndSku; a delete across tenants is written by hand, where review sees it
+       or rename it DeleteByTenantIDAndSku, with tenantID as parameter, scope words first; a delete across tenants is written by hand, where review sees it
 derive.go:78: AuditLog.CountByClient: not implemented: no hand-written method on *auditLogImpl, and the name does not derive: column audit_events.client has no equality predicate on the base: its catalogue type is inet, which does not compare with a text value
   fix: write it by hand on *auditLogImpl, in a non-generated file of package derive:
          func (r *auditLogImpl) CountByClient(ctx context.Context, client string) (int64, error)

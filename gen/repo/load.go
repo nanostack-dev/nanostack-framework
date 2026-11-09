@@ -47,6 +47,7 @@ type loaded struct {
 	// the columns that derived writes never set (Postgres.DatabaseColumns).
 	contextStamps   map[string]string
 	databaseColumns []string
+	scopeImplies  map[string]string // column -> the column it determines, Postgres.ScopeImplies
 
 	specPath        string   // the OpenAPI spec, absolute; "" without one
 	spec            *apiSpec // read on the first search that declares API

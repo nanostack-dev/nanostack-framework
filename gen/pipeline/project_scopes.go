@@ -101,6 +101,42 @@ func (c *projectCheck) scopeNames(scopes []string, names map[string]string) {
 	}
 }
 
+// scopeImplies checks Postgres.ScopeImplies: both sides in Scopes, neither a
+// context column, no cycle.
+func (c *projectCheck) scopeImplies(scopes []string, ctx []project.ContextScope, implies map[string]string) {
+	cols := make([]string, 0, len(implies))
+	for col := range implies {
+		cols = append(cols, col)
+	}
+	slices.Sort(cols)
+	isCtx := func(col string) bool {
+		return slices.ContainsFunc(ctx, func(cs project.ContextScope) bool { return cs.Column == col })
+	}
+	at := c.at("Postgres.ScopeImplies")
+	for _, col := range cols {
+		to := implies[col]
+		for _, side := range []string{col, to} {
+			switch {
+			case !slices.Contains(scopes, side):
+				c.add(at, "add "+strconv.Quote(side)+" to Postgres.Scopes, or remove the entry",
+					"Postgres.ScopeImplies names %q, which is not in Postgres.Scopes", side)
+			case isCtx(side):
+				c.add(at, "remove the entry: a context scope is named in every derived method, and implies nothing",
+					"Postgres.ScopeImplies names %q, a context column (Postgres.ContextScopes)", side)
+			}
+		}
+		seen := map[string]bool{}
+		for next, ok := to, true; ok && !seen[next]; next, ok = implies[next] {
+			if next == col {
+				c.add(at, "break the cycle: a column cannot determine itself",
+					"Postgres.ScopeImplies has a cycle through %q", col)
+				break
+			}
+			seen[next] = true
+		}
+	}
+}
+
 // funcPath reports whether s is an import path, a dot and an identifier:
 // example.com/app/scope.Filter.
 func funcPath(s string) bool {

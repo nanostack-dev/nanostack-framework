@@ -173,6 +173,19 @@ nanogen/project.go:7: Postgres.DatabaseColumns lists "created_at" twice
 nanogen/project.go:7: Postgres.DatabaseColumns lists the scope column "organization_id"
   fix: remove "organization_id": a derived write sets the scope
 `},
+		{`Postgres: &project.Postgres{Name: "app", Scopes: []string{"organization_id", "product_id", "workspace_id"}, ` +
+			`ContextScopes: []project.ContextScope{{Column: "workspace_id", Func: "example.com/app/scope.Filter"}}, ` +
+			`ScopeImplies: map[string]string{"organization_id": "product_id", "product_id": "organization_id", ` +
+			`"workspace_id": "organization_id", "team_id": "product_id"}}`,
+			`nanogen/project.go:7: Postgres.ScopeImplies has a cycle through "organization_id"
+  fix: break the cycle: a column cannot determine itself
+nanogen/project.go:7: Postgres.ScopeImplies has a cycle through "product_id"
+  fix: break the cycle: a column cannot determine itself
+nanogen/project.go:7: Postgres.ScopeImplies names "team_id", which is not in Postgres.Scopes
+  fix: add "team_id" to Postgres.Scopes, or remove the entry
+nanogen/project.go:7: Postgres.ScopeImplies names "workspace_id", a context column (Postgres.ContextScopes)
+  fix: remove the entry: a context scope is named in every derived method, and implies nothing
+`},
 	} {
 		dir := copyFixtureOf(t, dbFixture)
 		edit(t, dir, "nanogen/project.go", `Postgres: &project.Postgres{Name: "app"}`, tc.decl)

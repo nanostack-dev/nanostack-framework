@@ -117,6 +117,11 @@ func (e *emitter) binding(r *resolution) {
 	rs := &resolver{t: t}
 	for _, m := range r.derived {
 		e.p("// %s is derived from its name:\n//\n//\t%s\n", m.fn.Name(), rs.methodSQL(m))
+		for _, col := range m.cross {
+			word := strings.TrimSuffix(col, "_id")
+			e.p("//\n// CROSS-%s: %s from a parameter, not from ctx: the registered function is not applied.\n",
+				strings.ToUpper(word), word)
+		}
 		if m.unscoped {
 			cols := make([]string, len(m.skipped))
 			for i, f := range m.skipped {

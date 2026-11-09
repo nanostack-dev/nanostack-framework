@@ -372,3 +372,19 @@ func TestInputChange(t *testing.T) {
 		t.Errorf("unreachable wraps a plain error as %q", got)
 	}
 }
+
+// Two columns whose names differ only in case give one Go field in go-jet's
+// model, which would not compile: the step refuses them, and says which field.
+func TestDuplicateModelFields(t *testing.T) {
+	t.Parallel()
+	for name, tc := range map[string]struct{ src, want string }{
+		"id and Id":   {"package model\n\ntype User struct {\n\tID string\n\tName string\n\tID *string\n}\n", "ID"},
+		"distinct":    {"package model\n\ntype User struct {\n\tID string\n\tName string\n}\n", ""},
+		"two structs": {"package model\n\ntype A struct{ ID string }\ntype B struct{ ID string }\n", ""},
+		"embedded":    {"package model\n\ntype A struct {\n\tB\n\tID string\n}\n", ""},
+	} {
+		if got := duplicateFields([]byte(tc.src)); got != tc.want {
+			t.Errorf("%s: %q, want %q", name, got, tc.want)
+		}
+	}
+}

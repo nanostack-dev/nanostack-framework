@@ -84,6 +84,16 @@ func (r *resolver) writeScopeRule(m *derivedMethod, base string) *refusal {
 		alt: "rename it " + suggestNamed(base, names)}
 }
 
+// writeUnscopable reports whether m is a write on a table that no derived
+// write can scope: writeScopeRule refuses it with the reason.
+func (r *resolver) writeUnscopable(m *derivedMethod) bool {
+	if !m.op.isWrite() || len(r.l.scopes) == 0 {
+		return false
+	}
+	hard, _, _, fail := r.writeScopes()
+	return fail != nil || len(hard) == 0
+}
+
 // writeScopes sorts the scope columns of the table into hard and context
 // ones, with every column name; a nullable one is a refusal.
 func (r *resolver) writeScopes() (hard, ctxs, all []string, fail *refusal) {

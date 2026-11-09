@@ -1,4 +1,4 @@
-Projects on *projectsImpl (table projects, scope tenant_id (Tenant))
+Projects on *projectsImpl (table projects, scope tenant_id (Tenant), workspace_id (Workspace))
   FindByTenantAndWorkspaceAndID      derived: SELECT * FROM projects WHERE tenant_id = $1 AND workspacescope.Filter(ctx, workspace_id) AND id = $2 LIMIT 2 -- at most one row: projects_pkey (id); a second row is ErrMoreThanOneRow
   FindByTenantAndWorkspace           derived: SELECT * FROM projects WHERE tenant_id = $1 AND workspacescope.Filter(ctx, workspace_id)
   CountByTenantAndWorkspaceAndName   derived: SELECT COUNT(*) FROM projects WHERE tenant_id = $1 AND workspacescope.Filter(ctx, workspace_id) AND name = $2

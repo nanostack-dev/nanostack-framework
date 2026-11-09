@@ -19,8 +19,8 @@ type tableBase struct {
 	sqlName   string     // product_users, as the table file names it
 	columns   []column   // in the table type's order
 	keys      []uniqueKey
+	notKeys   []string          // unique indexes that are not keys: "user_handle_live: partial index WHERE (...)"
 	keysFound bool              // the table type has a UniqueKeys method
-	notKeys   []string          // the other unique indexes, which UniqueKeys lists as "Not a key"
 	defaults  map[string]bool   // column name -> it has a default in the catalogue
 	catalog   map[string]string // column name -> catalogue type, from the ColumnTypes method
 	catalogOK bool              // the table type has a ColumnTypes method

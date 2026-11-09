@@ -56,6 +56,8 @@ func (r *projectsImpl) FindByTenantIDAndWorkspaceAndName(ctx context.Context, te
 // FindByTenantAndWorkspaceIDAndName is derived from its name:
 //
 //	SELECT * FROM projects WHERE tenant_id = $1 AND workspace_id = $2 AND name = $3
+//
+// CROSS-WORKSPACE: workspace from a parameter, not from ctx: the registered function is not applied.
 func (r *projectsImpl) FindByTenantAndWorkspaceIDAndName(ctx context.Context, tenantID uuid.UUID, workspaceID string, name string) ([]Project, error) {
 	return r.findAll(ctx, r.where.TenantID(tenantID).AND(r.where.WorkspaceID(workspaceID)).AND(r.where.Name(name)))
 }
@@ -86,6 +88,8 @@ func (r *boardsImpl) FindByWorkspaceAndID(ctx context.Context, id string) (funct
 // FindByWorkspaceIDAndID is derived from its name:
 //
 //	SELECT * FROM boards WHERE workspace_id = $1 AND id = $2 LIMIT 2 -- at most one row: boards_pkey (id); a second row is ErrMoreThanOneRow
+//
+// CROSS-WORKSPACE: workspace from a parameter, not from ctx: the registered function is not applied.
 func (r *boardsImpl) FindByWorkspaceIDAndID(ctx context.Context, workspaceID string, id string) (functional.Option[Board], error) {
 	return r.findOne(ctx, r.where.WorkspaceID(workspaceID).AND(r.where.ID(id)))
 }

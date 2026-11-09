@@ -240,6 +240,8 @@ Review the migration. Then confirm that the generated diff matches it.
 6. **Types.** `VARCHAR`/`TEXT` → `string`/`ColumnString`. `TIMESTAMPTZ` → `time.Time`/`ColumnTimestampz`. A one-dimensional `text[]` → `pq.StringArray` by the fork's default; `useArray` never fires, because the catalogue names an array column by its element type (`text`). An enum-like `VARCHAR` stays `string`; the mapper converts it.
 7. **New unique or foreign-key constraints.** Check that the repository maps them with `OnUnique` or `OnForeignKey`. With the db step, a unique index added or dropped changes `UniqueKeys` of its table: a dropped key, or one that became partial, is a single-row derived method that loses its proof.
 
+8. **Names that collide.** Two columns whose names differ only in case or punctuation (`id` and `"Id"`) give one Go field, and a model that does not compile. With the db step, the run refuses it: `the generated public/model/<t>.go declares the field ID twice`. Rename one column in the migration.
+
 **Do not review by hand:** the alias helpers, `EXCLUDED`, the struct literal in `new<T>TableImpl`, `*_use_schema.go`, and `view/` files whose view did not change.
 
 **With the db step (on main, unused):** `go tool nanostack gen -check -fresh` reports every stale, missing or orphaned file under `internal/db/gen`. Without Docker it exits 3 with `fix: start Docker, or set NANO_GEN_DATABASE_URL`. Checks 1 and 5 become automatic. The step renders in memory (`template.Render`), so a failed run writes nothing; the fork's `ProcessSchema`, which the `jet` command and `dbgen.go` call, still deletes its output directory first.
@@ -1391,7 +1393,7 @@ func (r *itemRepositoryImpl) ListActive(ctx context.Context, tenantID uuid.UUID)
 }
 ```
 
-The grammar of reads: `FindBy`, `GetBy`, `ExistsBy`, `CountBy`, `DeleteBy`, `FindAll`, `Count`; columns by their Go field name joined by `And`, equality only; `ctx` first, then one parameter per column in name order. A single-row find derives only when its columns cover a key in `UniqueKeys()`. On a scoped table the name starts with a scope column, or ends in `Internal` on a read. A scope column may use the short name of `Postgres.ScopeNames`, and a context scope must be named: see [Tenant scopes](#tenant-scopes) and [Derived names](#derived-names-and-tenant-scopes). Writes (`Create`, `CreateIn`, `UpdateBy`, `UpsertBy`) derive with `nanorepo.ToRow`: see [Derived writes](#derived-writes).
+The grammar: `FindBy`, `GetBy`, `ExistsBy`, `CountBy`, `DeleteBy`, `FindAll`, `Count`; columns by their Go field name joined by `And`, equality only; `ctx` first, then one parameter per column in name order. A single-row find derives only when its columns cover a key in `UniqueKeys()`. On a scoped table the name gives **every** scope column of the table, scope words first, or ends in `Internal` on a read; a column that `Postgres.ScopeImplies` says another one determines stands for it. A scope column may use the short name of `Postgres.ScopeNames`: see [Tenant scopes](#tenant-scopes) and [Derived names](#derived-names-and-tenant-scopes). Writes (`Create`, `CreateIn`, `UpdateBy`, `UpsertBy`) derive with `nanorepo.ToRow`, and name every scope column themselves, `ScopeImplies` or not: see [Derived writes](#derived-writes).
 
 ### What is generated
 
@@ -1617,7 +1619,7 @@ Postgres: &project.Postgres{
 | Code | Which columns count | Effect |
 |---|---|---|
 | A search (`nanorepo.Search`) | Every column of `Scopes` on every table instance the search reads, **nullable or not** | Each one must be covered, or `nanostack gen` fails (E9, E10). |
-| Derived methods on the base | A **NOT NULL** column of `Scopes` must come first; a **context** column of `ContextScopes`, nullable or not, must be named | A derived read or delete names the hard scope first and every context scope, or a read ends in `Internal`. A delete has no `Internal`. |
+| Derived methods on the base | **Every** column of `Scopes`, hard or context, nullable or not, must be named, scope words first; a column it implies (`ScopeImplies`) need not | A derived read or delete names every scope column, or a read ends in `Internal`. A delete has no `Internal`. |
 | Hand-written queries on the base | Only **NOT NULL** columns of `Scopes` | A query that does not filter on the column is a warning, not an error. |
 
 A nullable `workspace_id` changes nothing for hand-written finders. A derived method must name it, because the registered function returns TRUE when the request carries no workspace, so it is safe on a nullable column.
@@ -1630,7 +1632,9 @@ With `ScopeNames` above, a derived name reads `FindByOrgAndWorkspaceAndID(ctx, o
 - The short name of a **hard** scope binds a parameter like its field: `Org` is `orgID`, plain equality.
 - The short name of a **context** scope (`Workspace`) binds **no parameter**. The generated condition ANDs the registered function: `workspacescope.Filter(ctx, r.t.WorkspaceID)`. The other words bind parameters by position. Its Go field (`WorkspaceID`) keeps an explicit parameter and plain equality.
 - A table with a context scope column needs every derived read and delete to name it, in either form. The refusal suggests the short-name rename; for a read it also offers `Internal`, which skips the context scope and marks the method `UNSCOPED`. A derived delete without it is refused: a scope-free write is hand-written.
-- The first word still names a scope column. A context scope satisfies that rule only when it is the table's one scope.
+- **Every scope column is named**, in any order among themselves, before the other columns. A column that `Postgres.ScopeImplies` says another determines (`{"organization_id": "product_id", "product_id": "platform_tenant_id"}`, transitively) stands for it: `FindByOrgAndID` is legal on a table with all three. Declare only what the schema guarantees, such as a foreign key chain; a wrong entry lets a derived method omit a filter. A nullable hard scope is named too, with equality, so a row with no value matches no name. Searches already cover every tenant column of a table: the two rules agree.
+- **The Go field of a context scope (`WorkspaceID`) is a deliberate cross-workspace read.** The value is a parameter, not `ctx`, and the registered function is not applied. It is allowed, and the generated comment says `CROSS-WORKSPACE: workspace from a parameter, not from ctx`. It is no way to skip another scope column.
+- **A view takes no derived method.** Every view column is nullable to the generator, so no tenant column of a view is trusted; hand-write it, or bind the base table.
 - A short name that is the Go field of a *different* column of a table is refused where the table is bound.
 
 From the fixture ([`project.go`](../gen/repo/internal/repotest/project.go), tenant a hard scope, workspace a nullable context scope):
@@ -1643,6 +1647,20 @@ func (r *projectRepositoryImpl) FindByTenantAndWorkspaceAndID(ctx context.Contex
 	return r.findOne(ctx, r.where.TenantID(tenantID).AND(workspacescope.Filter(ctx, r.t.WorkspaceID)).AND(r.where.ID(id)))
 }
 ```
+
+**What a derived method does and does not do.** The torture fixture ([`gen/repo/internal/torture`](../gen/repo/internal/torture): reserved-word tables, odd columns, every kind of key and scope) runs every derived method on PostgreSQL against two orgs, two products, two sites and three workspaces, and reads the table afterwards to see which rows a delete took. What it pins, and a service must know:
+
+- **The name is the whole filter, and it gives every scope column.** A table with `org_id` and `product_id` needs both in the name (or `ScopeImplies`); `FindByOrgAndName` is refused.
+- **`Internal` after a scope is no escape.** `FindByOrgAndNameInternal` still filters `org_id`; the suffix skips only what the name leaves out, on a read, and marks it `UNSCOPED`.
+- **A nullable tenant column in `Scopes` is a scope.** A name gives it, with equality: a row with no value matches no name, and only an `Internal` read sees it. A delete without it is refused.
+- **A context scope with no workspace in `ctx` keeps every row**, those with a NULL workspace included. With a workspace in `ctx`, a row with a NULL workspace is not returned. On a table whose only scope is the context column, no workspace reads the whole table.
+- **Equality only, so NULL is out of reach.** `= NULL` never matches: a derived method cannot find, count or delete the rows where a column is NULL, a pointer parameter is refused, and `""` is not NULL. A unique key on a nullable column proves a single row for a value, and no value reaches the NULL rows.
+- **Soft delete is not filtered.** No derived find, count, exists or delete filters `deleted_at`. A service that soft-deletes writes those methods by hand, or filters the result.
+- **A string predicate compares as text**, also on a `citext` column: `FindByEmail("A@X")` does not find `a@x`.
+- **A partial or an expression unique index is not a key.** A single-row find on its columns is refused, and the refusal lists the indexes that are not keys.
+- **A context scope in its short name does not prove a key.** If a key holds `workspace_id`, name `WorkspaceID`, which takes the value, or return a slice.
+- **Row locks:** finds take `transactor.ForUpdate`; `exists` and `count` fail in PostgreSQL (`0A000`); a delete refuses it.
+- **No equality predicate**, so a refusal: `numeric`, `inet`, `jsonb`, `bytea` and arrays.
 
 **How each column is covered.**
 

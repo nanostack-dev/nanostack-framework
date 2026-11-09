@@ -35,7 +35,7 @@ type word struct{ text, field string }
 // setupScopes reads the scope columns of the table of r: every scope column
 // (nullable or not), the context ones, and the short names.
 func (r *resolver) setupScopes(scopes []string) {
-	r.short, r.shortOf = map[string]string{}, map[string]string{}
+	r.short, r.shortOf, r.implied = map[string]string{}, map[string]string{}, map[string][]string{}
 	var cols []column
 	for _, c := range r.t.columns {
 		if slices.Contains(scopes, c.sqlName) {
@@ -59,6 +59,9 @@ func (r *resolver) setupScopes(scopes []string) {
 			continue
 		}
 		r.short[short], r.shortOf[c.field] = c.field, short
+	}
+	for _, f := range r.allScope {
+		r.implied[f] = r.impliedOf(f)
 	}
 	for _, c := range cols {
 		if fn, ok := r.l.contextScopes[c.sqlName]; ok {
@@ -119,24 +122,81 @@ func (r *resolver) ctxOf(field string) *ctxScope {
 	return nil
 }
 
-// isHardScope reports whether t satisfies the rule that a name starts with a
-// scope column. A context term does so only when its column is the table's
-// one scope: a context scope can return TRUE, so it never stands for a
-// tenant that the caller passes.
-func (r *resolver) isHardScope(t term) bool {
-	return slices.Contains(r.scope, t.field) && (t.ctx == nil || len(r.allScope) == 1)
-}
-
-// missingCtx returns the context scope columns of the table that the terms
-// do not name, by either form.
-func (r *resolver) missingCtx(terms []term) []ctxScope {
-	var out []ctxScope
-	for _, c := range r.ctx {
-		if !slices.ContainsFunc(terms, func(t term) bool { return t.field == c.field }) {
-			out = append(out, c)
+// covered returns the scope fields that the terms of a name stand for: each
+// scope column it names, in either form, and the columns that these imply.
+func (r *resolver) covered(terms []term, implied bool) map[string]bool {
+	out := map[string]bool{}
+	for _, t := range terms {
+		if !slices.Contains(r.allScope, t.field) {
+			continue
+		}
+		out[t.field] = true
+		if !implied {
+			continue
+		}
+		for _, f := range r.implied[t.field] {
+			out[f] = true
 		}
 	}
 	return out
+}
+
+// missingScopes returns the scope columns of the table that the terms do
+// not stand for, in the table's column order: every scope column must be
+// named, hard or context, nullable or not, unless a named column implies it
+// (Postgres.ScopeImplies).
+func (r *resolver) missingScopes(terms []term) []string { return r.missingOf(terms, true) }
+
+// missingFor is missingScopes for the method m: a write never relaxes the
+// rule with Postgres.ScopeImplies, so its name gives every scope column
+// itself and none comes from the value.
+func (r *resolver) missingFor(m *derivedMethod) []string { return r.missingOf(m.terms, !m.op.isWrite()) }
+
+func (r *resolver) missingOf(terms []term, implied bool) []string {
+	have := r.covered(terms, implied)
+	var out []string
+	for _, f := range r.allScope {
+		if !have[f] {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+// misordered reports whether a column that is no scope column comes before a
+// scope column: the scope words come first, so that the parameters of the
+// tenant lead.
+func (r *resolver) misordered(terms []term) bool {
+	other := false
+	for _, t := range terms {
+		if !slices.Contains(r.allScope, t.field) {
+			other = true
+		} else if other {
+			return true
+		}
+	}
+	return false
+}
+
+// impliedOf returns the scope fields that field implies, transitively, from
+// Postgres.ScopeImplies, limited to the scope columns of the table.
+func (r *resolver) impliedOf(field string) []string {
+	var out []string
+	seen := map[string]bool{field: true}
+	col := r.sqlName(field)
+	for {
+		next, ok := r.l.scopeImplies[col]
+		if !ok || seen[next] {
+			return out
+		}
+		seen[next] = true
+		col = next
+		for _, f := range r.allScope {
+			if r.sqlName(f) == next {
+				out = append(out, f)
+			}
+		}
+	}
 }
 
 // display is the name of a column in a suggested method name: its short
@@ -160,49 +220,32 @@ func (r *resolver) displayTerm(t term) string {
 	return r.display(t.field)
 }
 
-// scopeOrder puts the terms of a name in the order the scope rules ask for:
-// the hard scope first, then the context scopes, then the rest. A context
-// scope the name lacks joins by its short name when it has one, else by its
-// field, which takes a parameter.
-func (r *resolver) scopeOrder(terms []term) []string {
+// scopeOrder is the words of a suggested name: the scope columns the name
+// has, then each one it lacks, hard ones before context ones, then the other
+// columns. A context scope the name lacks joins by its short name when it has
+// one, else by its field, which takes a parameter.
+func (r *resolver) scopeOrder(terms []term, missing []string) []string {
 	var out []string
-	used := map[string]bool{}
-	add := func(field, word string) {
-		if !used[field] {
-			used[field] = true
-			out = append(out, word)
-		}
-	}
-	hard := ""
 	for _, t := range terms {
-		if slices.Contains(r.scope, t.field) && r.ctxOf(t.field) == nil {
-			hard = t.field
-			break
+		if slices.Contains(r.allScope, t.field) {
+			out = append(out, r.displayTerm(t))
 		}
 	}
-	if hard == "" {
-		for _, f := range r.scope {
-			if r.ctxOf(f) == nil {
-				hard = f
-				break
+	for _, ctx := range []bool{false, true} {
+		for _, f := range missing {
+			switch c := r.ctxOf(f); {
+			case (c != nil) != ctx:
+			case c != nil && c.short != "":
+				out = append(out, c.short)
+			default:
+				out = append(out, r.display(f))
 			}
 		}
 	}
-	if hard != "" {
-		add(hard, r.display(hard))
-	}
-	for _, c := range r.ctx {
-		switch at := slices.IndexFunc(terms, func(t term) bool { return t.field == c.field }); {
-		case at >= 0:
-			add(c.field, r.displayTerm(terms[at]))
-		case c.short != "":
-			add(c.field, c.short)
-		default:
-			add(c.field, c.field)
-		}
-	}
 	for _, t := range terms {
-		add(t.field, r.displayTerm(t))
+		if !slices.Contains(r.allScope, t.field) {
+			out = append(out, r.displayTerm(t))
+		}
 	}
 	return out
 }
