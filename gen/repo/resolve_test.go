@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -187,5 +188,42 @@ func TestForwardStub(t *testing.T) {
 	}
 	for _, e := range pkgs[0].Errors {
 		t.Errorf("with the stub: %v", e)
+	}
+}
+
+// The pipeline plans a derived file for every file that calls
+// nanorepo.Implement, whatever its type arguments: an interface of another
+// package binds as one of the declaring package does. A file with only
+// nanorepo.Base gets none.
+func TestPlanned(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	files := map[string]string{
+		"local.go": "package p\n\nimport \"github.com/nanostack-dev/nanostack-framework/db/nanorepo\"\n\n" +
+			"func _() { nanorepo.Implement[Repo, impl](table.X, toDomain) }\n",
+		"qualified.go": "package p\n\nimport nr \"github.com/nanostack-dev/nanostack-framework/db/nanorepo\"\n\n" +
+			"func _() { nr.Implement[domain.Repo, impl](table.X, toDomain) }\n",
+		"generic.go": "package p\n\nimport \"github.com/nanostack-dev/nanostack-framework/db/nanorepo\"\n\n" +
+			"func _() { nanorepo.Implement[Repo[model.X], impl](table.X, toDomain) }\n",
+		"base.go": "package p\n\nimport \"github.com/nanostack-dev/nanostack-framework/db/nanorepo\"\n\n" +
+			"func _() { nanorepo.Base[model.X](table.X) }\n",
+	}
+	var paths []string
+	for name, src := range files {
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, []byte(src), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		paths = append(paths, path)
+	}
+	got := Planned(dir, paths)
+	want := []string{FileName, "generic_repo.gen.go", "local_repo.gen.go", "qualified_repo.gen.go"}
+	names := make([]string, len(got))
+	for i, p := range got {
+		names[i] = filepath.Base(p)
+	}
+	slices.Sort(names[1:])
+	if !slices.Equal(names, want) {
+		t.Fatalf("Planned = %v, want %v", names, want)
 	}
 }

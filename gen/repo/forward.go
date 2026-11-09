@@ -27,7 +27,7 @@ func Planned(dir string, files []string) []string {
 	fset := token.NewFileSet()
 	for _, path := range files {
 		f, err := parser.ParseFile(fset, path, nil, parser.SkipObjectResolution)
-		if err == nil && len(implementCalls(f)) > 0 {
+		if err == nil && callsImplement(f) {
 			out = append(out, filepath.Join(dir, derivedFile(path)))
 		}
 	}
@@ -166,6 +166,23 @@ func (p *parsedPackage) readMethod(d *ast.FuncDecl) {
 func ownRepo(f *ast.File) bool {
 	return len(f.Comments) > 0 && f.Comments[0].Pos() < f.Package &&
 		strings.HasPrefix(f.Comments[0].List[0].Text, strings.TrimSpace(strings.SplitN(header, "\n", 2)[0]))
+}
+
+// callsImplement reports whether f calls nanorepo.Implement[...], whatever
+// its type arguments: an interface of another package or an instantiated
+// generic interface binds too.
+func callsImplement(f *ast.File) bool {
+	name := nanorepoName(f)
+	found := false
+	ast.Inspect(f, func(n ast.Node) bool {
+		if ix, ok := n.(*ast.IndexListExpr); ok && name != "" {
+			sel, isSel := ix.X.(*ast.SelectorExpr)
+			found = found || isSel && sel.Sel.Name == "Implement" && identOf(sel.X) != nil &&
+				identOf(sel.X).Name == name
+		}
+		return !found
+	})
+	return found
 }
 
 // implementCalls returns the (interface, implementation) type names of the
