@@ -8,8 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nanostack-dev/nanostack-framework/gen/repo/internal/repotest"
 	"golang.org/x/tools/go/packages"
+
+	"github.com/nanostack-dev/nanostack-framework/gen/repo/internal/repotest"
 )
 
 // A method promoted from a newly embedded field wins over the derived copy
