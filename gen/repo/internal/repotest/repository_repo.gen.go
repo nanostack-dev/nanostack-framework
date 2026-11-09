@@ -145,6 +145,16 @@ func (r *itemRepositoryImpl) SearchCountedItems(ctx context.Context, q CountedIt
 	return r.search(ctx, countedItemSearch, q.Query, func(row itemWithEvents) itemWithEvents { return row })
 }
 
+// SearchProjectsInWorkspace runs a ProjectInWorkspaceSearch: *itemRepositoryImpl has no hand-written SearchProjectsInWorkspace.
+func (r *itemRepositoryImpl) SearchProjectsInWorkspace(ctx context.Context, q ProjectInWorkspaceSearch) (search.Result[model.Projects], error) {
+	return r.search(ctx, projectInWorkspaceSearch, q.Query, func(row model.Projects) model.Projects { return row })
+}
+
+// SearchProjectsOrgWide runs a ProjectOrgWideSearch: *itemRepositoryImpl has no hand-written SearchProjectsOrgWide.
+func (r *itemRepositoryImpl) SearchProjectsOrgWide(ctx context.Context, q ProjectOrgWideSearch) (search.Result[model.Projects], error) {
+	return r.search(ctx, projectOrgWideSearch, q.Query, func(row model.Projects) model.Projects { return row })
+}
+
 // AuditLog on *auditLogImpl: 0 derived methods on table audit_events; the other methods are
 // hand-written (nano gen repo -explain lists each one).
 //

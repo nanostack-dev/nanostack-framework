@@ -3,3 +3,4 @@
 # Review each line that a change adds.
 search ManagedLabel: ScopeNull labels.tenant_id
 search AssignableLabel: ScopeOrNull labels.tenant_id
+search ProjectOrgWide: Unscoped projects.workspace_id: an organization-wide list reads every workspace of the tenant

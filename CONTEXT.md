@@ -48,7 +48,11 @@ The framework owns reusable service infrastructure shared by Nanostack applicati
 
 **Derived method:** A method of a bound repository interface that the implementation does not have and whose name follows the grammar (`FindByTenantIDAndSku`), so `nano gen repo` generates it into `<file>_repo.gen.go`. A hand-written method of the same name wins. Do not call it a query method or a magic finder.
 
-**Scope column:** A tenant column named in `Postgres.Scopes`. A table with one as a `NOT NULL` column is scoped, and a query on it without that column may read another tenant's rows.
+**Scope column:** A tenant column named in `Postgres.Scopes`, once per project, by column name. For derived and hand-written methods, a table with one as a `NOT NULL` column is scoped, and a query on it without that column may read another tenant's rows. A search must cover every scope column it reads, nullable or not.
+
+**Hard scope:** A scope column that is not in `Postgres.ContextScopes` (`organization_id`). Its value comes only from the caller, as the scope value of a search; no function supplies it.
+
+**Context scope:** A scope column in `Postgres.ContextScopes` (`workspace_id`). The one function registered for it reads the value from the request context, and may return TRUE for a read across the column. A search covers it only with `ScopeFunc` and that function.
 
 **Hand-written method:** A repository method a person writes on the implementation, usually on the generated base. The scope check warns on one that touches a scoped table without its scope column, unless its name ends in `Internal`.
 

@@ -7,6 +7,7 @@ import (
 	"github.com/nanostack-dev/nanostack-framework/db/postgres"
 	"github.com/nanostack-dev/nanostack-framework/gen/repo/internal/repotest/db/shop/public/model"
 	"github.com/nanostack-dev/nanostack-framework/gen/repo/internal/repotest/db/shop/public/table"
+	"github.com/nanostack-dev/nanostack-framework/gen/repo/internal/repotest/workspacescope"
 )
 
 // This file declares the searches of the tenant rules that need more than
@@ -77,6 +78,23 @@ func _() {
 		nanorepo.Sort(table.Items.Name),
 		nanorepo.SortExpr("EventCount", eventCount),
 		nanorepo.DefaultSortExpr("EventCount", nanorepo.Desc),
+	)
+
+	// Shaped like echopoint's webhooks: a hard tenant column and a nullable
+	// context one. With a workspace in ctx, the rows of that workspace;
+	// with none, every row of the tenant, NULL workspaces included.
+	nanorepo.Search[model.Projects]("ProjectInWorkspace", table.Projects,
+		nanorepo.Scope(table.Projects.TenantID),
+		nanorepo.ScopeFunc(workspacescope.Filter, table.Projects.WorkspaceID),
+		nanorepo.Sort(table.Projects.Name),
+	)
+
+	// The organization-wide read: every row of the tenant, whatever the
+	// workspace of ctx.
+	nanorepo.Search[model.Projects]("ProjectOrgWide", table.Projects,
+		nanorepo.Scope(table.Projects.TenantID),
+		nanorepo.Unscoped(table.Projects.WorkspaceID, "an organization-wide list reads every workspace of the tenant"),
+		nanorepo.Sort(table.Projects.Name),
 	)
 }
 

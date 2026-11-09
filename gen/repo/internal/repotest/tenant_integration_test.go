@@ -15,7 +15,9 @@ import (
 	"github.com/nanostack-dev/nanostack-framework/db/postgres"
 	"github.com/nanostack-dev/nanostack-framework/db/qrm"
 	"github.com/nanostack-dev/nanostack-framework/db/search"
+	"github.com/nanostack-dev/nanostack-framework/gen/repo/internal/repotest/db/shop/public/model"
 	"github.com/nanostack-dev/nanostack-framework/gen/repo/internal/repotest/db/shop/public/table"
+	"github.com/nanostack-dev/nanostack-framework/gen/repo/internal/repotest/workspacescope"
 )
 
 // These tests run the searches of tenant.go through the methods of
@@ -257,4 +259,75 @@ func counts(rows []itemWithEvents) string {
 		out[i] = fmt.Sprintf("%s:%d", r.ID, r.EventCount)
 	}
 	return strings.Join(out, " ")
+}
+
+// seedProjects adds the projects of both tenants: one in each of w1 and
+// w2 and one with no workspace for the tenant, and one in w1 and one with
+// no workspace for the other tenant.
+func seedProjects(t *testing.T, f *fixture) {
+	t.Helper()
+	stmt := fmt.Sprintf(`INSERT INTO projects (id, tenant_id, workspace_id, name) VALUES
+		('p1', '%[1]s', 'w1', 'one'), ('p2', '%[1]s', 'w2', 'two'), ('p3', '%[1]s', NULL, 'three'),
+		('q1', '%[2]s', 'w1', 'other one'), ('q2', '%[2]s', NULL, 'other none')`, f.tenant, f.other)
+	if _, err := f.db.ExecContext(context.Background(), stmt); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+}
+
+func projectIDs(res search.Result[model.Projects], err error) (string, error) {
+	ids := make([]string, len(res.Items))
+	for i, p := range res.Items {
+		ids[i] = p.ID
+	}
+	slices.Sort(ids)
+	return strings.Join(ids, ","), err
+}
+
+// Shaped like echopoint's webhooks: a hard tenant column and a nullable
+// context one. The ScopeFunc keeps the workspace of ctx, or every row of
+// the tenant when ctx carries none; Unscoped on the context column reads
+// every row of the tenant whatever ctx carries. No search reads another
+// tenant's rows.
+func TestHardAndNullableContextScope(t *testing.T) {
+	f := newFixture(t)
+	seedProjects(t, f)
+	bare := context.Background()
+	w1 := workspacescope.With(bare, "w1")
+	for name, run := range map[string]func() (string, error){
+		"in workspace, w1": func() (string, error) {
+			return projectIDs(f.repo.SearchProjectsInWorkspace(w1, NewProjectInWorkspaceSearch(f.tenant)))
+		},
+		"in workspace, w2": func() (string, error) {
+			return projectIDs(f.repo.SearchProjectsInWorkspace(workspacescope.With(bare, "w2"),
+				NewProjectInWorkspaceSearch(f.tenant)))
+		},
+		"in workspace, no workspace": func() (string, error) {
+			return projectIDs(f.repo.SearchProjectsInWorkspace(bare, NewProjectInWorkspaceSearch(f.tenant)))
+		},
+		"in workspace, other tenant, no workspace": func() (string, error) {
+			return projectIDs(f.repo.SearchProjectsInWorkspace(bare, NewProjectInWorkspaceSearch(f.other)))
+		},
+		"in workspace, other tenant, w1": func() (string, error) {
+			return projectIDs(f.repo.SearchProjectsInWorkspace(w1, NewProjectInWorkspaceSearch(f.other)))
+		},
+		"org-wide, w1": func() (string, error) {
+			return projectIDs(f.repo.SearchProjectsOrgWide(w1, NewProjectOrgWideSearch(f.tenant)))
+		},
+		"org-wide, no workspace": func() (string, error) {
+			return projectIDs(f.repo.SearchProjectsOrgWide(bare, NewProjectOrgWideSearch(f.tenant)))
+		},
+		"org-wide, other tenant, w1": func() (string, error) {
+			return projectIDs(f.repo.SearchProjectsOrgWide(w1, NewProjectOrgWideSearch(f.other)))
+		},
+	} {
+		want := map[string]string{
+			"in workspace, w1": "p1", "in workspace, w2": "p2", "in workspace, no workspace": "p1,p2,p3",
+			"in workspace, other tenant, no workspace": "q1,q2", "in workspace, other tenant, w1": "q1",
+			"org-wide, w1": "p1,p2,p3", "org-wide, no workspace": "p1,p2,p3", "org-wide, other tenant, w1": "q1,q2",
+		}[name]
+		got, err := run()
+		if err != nil || got != want {
+			t.Errorf("%s: got %q, %v; want %q", name, got, err, want)
+		}
+	}
 }

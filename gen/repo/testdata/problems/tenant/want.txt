@@ -1,8 +1,8 @@
 tenant.go:29: search JoinOnTrue: eventsJoinedOnTrue joins items ON table.Items.ID.EQ(table.AuditEvents.ItemID).OR(postgres.Bool(true)), which equates no unique key of items: a row of audit_events can repeat
   fix: join to one row: equate every column of a key that orders every row (its keys are items_pkey (id), items_tenant_sku_key (tenant_id, sku)), or filter on the child rows with nanorepo.FilterExists(...)
-tenant.go:152: search WrongOnColumn: audit_events has no tenant column, and no INNER JOIN on a declared foreign key links it to a covered table
+tenant.go:167: search WrongOnColumn: audit_events has no tenant column, and no INNER JOIN on a declared foreign key links it to a covered table
   fix: join items in the From function on audit_events_item_id_fkey, and scope items.tenant_id
-tenant.go:156: search SecondAlias: other.tenant_id is a tenant column and no rule covers it: it would read every tenant's rows
+tenant.go:171: search SecondAlias: other.tenant_id is a tenant column and no rule covers it: it would read every tenant's rows
   fix: nanorepo.Scope(table.Items.AS("other").TenantID), or nanorepo.Unscoped(table.Items.AS("other").TenantID, "<why>") when another tenant column of other is scoped
 tenant.go:52: search FuncOnHard: ScopeFunc(everyRow, table.Items.TenantID): tenant_id is a hard tenant column: its value comes from the scope value, never from a function, which could return TRUE
   fix: nanorepo.Scope(table.Items.TenantID), whose value the caller passes
@@ -10,11 +10,11 @@ tenant.go:58: search UnregisteredFunc: ScopeFunc(everyRow, table.Boards.Workspac
   fix: nanorepo.ScopeFunc(workspacescope.Filter, table.Boards.WorkspaceID)
 tenant.go:64: search ScopeOnContext: Scope(table.Boards.WorkspaceID): workspace_id is a context tenant column (Postgres.ContextScopes): only its registered ScopeFunc scopes it
   fix: nanorepo.ScopeFunc(workspacescope.Filter, table.Boards.WorkspaceID)
-tenant.go:160: Flag HasEvents eventsByName: the subquery on item_events is not correlated on a declared foreign key to a covered instance of search WrongCorrelation (it equates item_id with items.name)
+tenant.go:175: Flag HasEvents eventsByName: the subquery on item_events is not correlated on a declared foreign key to a covered instance of search WrongCorrelation (it equates item_id with items.name)
   fix: correlate it on its foreign key: WHERE(table.ItemEvents.ItemID.EQ(table.Items.ID))
-tenant.go:165: Flag HasTwin twinItem: the subquery reads items, which has the name of an instance of search SameNameInner: SQL binds a correlation on it to the inner row, so it compares the row with itself
+tenant.go:180: Flag HasTwin twinItem: the subquery reads items, which has the name of an instance of search SameNameInner: SQL binds a correlation on it to the inner row, so it compares the row with itself
   fix: give it an alias: table.Items.AS("inner_items")
-tenant.go:170: search OrInOn: item_licenses.tenant_id is a tenant column and no rule covers it: it would read every tenant's rows
+tenant.go:185: search OrInOn: item_licenses.tenant_id is a tenant column and no rule covers it: it would read every tenant's rows
   fix: nanorepo.Scope(table.ItemLicenses.TenantID), or nanorepo.Unscoped(table.ItemLicenses.TenantID, "<why>") when another tenant column of item_licenses is scoped
 tenant.go:97: search TwoFieldsOneName: Scope(table.Items.TenantID) and Scope(table.ItemLicenses.TenantID) both make the field TenantID
   fix: nanorepo.Scope(table.Items.TenantID, table.ItemLicenses.TenantID) gives one value to both
@@ -26,5 +26,9 @@ tenant.go:116: search NoScope: labels.tenant_id is a tenant column and no rule c
   fix: nanorepo.Scope(table.Labels.TenantID), or nanorepo.Unscoped(table.Labels.TenantID, "<why>") when another tenant column of labels is scoped
 tenant.go:123: search ExistsNotLinked: FilterExists(label_uses, table.LabelUses.Kind, ...): label_uses.kind is not the column of a declared foreign key to labels, so the subquery is not correlated on the searched row
   fix: link on the column of a foreign key to labels: LabelUses.LabelID (label_uses_label_id_fkey)
-tenant.go:143: PairScope{...} has unkeyed fields: two values of one type can change places
+tenant.go:129: search ProjectTenantOnly: projects.workspace_id is a tenant column and no rule covers it: it would read every tenant's rows
+  fix: nanorepo.ScopeFunc(workspacescope.Filter, table.Projects.WorkspaceID)
+tenant.go:137: search ProjectUnscopedTenant: Unscoped(table.Projects.TenantID) leaves projects with no other covered hard tenant column
+  fix: remove Unscoped: a search is never unscoped as a whole
+tenant.go:158: PairScope{...} has unkeyed fields: two values of one type can change places
   fix: PairScope{TenantID: ..., Sku: ...}
