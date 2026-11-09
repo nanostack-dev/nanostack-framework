@@ -19,8 +19,8 @@ require (
 	github.com/lib/pq v1.12.3
 	github.com/moby/moby/api v1.56.1
 	github.com/moby/moby/client v0.6.2
-	github.com/nanostack-dev/nanostack-framework/db v0.0.0
-	github.com/nanostack-dev/nanostack-framework/pkg/functional v0.0.0
+	github.com/nanostack-dev/nanostack-framework/db v0.23.0-beta.4
+	github.com/nanostack-dev/nanostack-framework/pkg/functional v0.23.0-beta.1
 	github.com/oapi-codegen/nethttp-middleware v1.2.0
 	github.com/oapi-codegen/runtime v1.8.0
 	github.com/quasilyte/go-ruleguard/dsl v0.3.23
@@ -105,11 +105,4 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260928230214-8a89bd6388cc // indirect
 	google.golang.org/grpc v1.83.2 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
-)
-
-// db and pkg/functional are nested modules. Until they are tagged, the root module
-// uses the copies in this repository. The release removes these lines (RELEASING.md).
-replace (
-	github.com/nanostack-dev/nanostack-framework/db => ./db
-	github.com/nanostack-dev/nanostack-framework/pkg/functional => ./pkg/functional
 )
