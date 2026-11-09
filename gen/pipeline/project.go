@@ -371,6 +371,10 @@ func (c *projectCheck) api(api *project.OpenAPI) {
 	for i, cl := range api.Clients {
 		c.client(fmt.Sprintf("API.Clients[%d]", i), cl, outputs)
 	}
+	if d := api.SortByDirection; d != "" && d != "ASC" && d != "DESC" {
+		c.add(c.at("API.SortByDirection"), `set API.SortByDirection to "ASC" or "DESC", as the spec describes `+
+			"a sort_by sent without a sort_direction", "API.SortByDirection %q is not ASC or DESC", d)
+	}
 }
 
 // postgres checks the database declaration: a name that is one directory,

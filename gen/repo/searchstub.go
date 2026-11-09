@@ -17,6 +17,24 @@ import (
 type stubSearches struct {
 	l      *loaded
 	byFile map[string][]*searchDecl // absolute path of the declaring file -> its searches
+	all    []*searchDecl
+}
+
+// mappers returns the stub of each API mapper that goes into another
+// package, next to its handler, by absolute path.
+func (t *stubSearches) mappers() map[string][]byte {
+	if t == nil {
+		return nil
+	}
+	files, err := t.l.renderMappers(t.all, true)
+	if err != nil {
+		return nil
+	}
+	out := make(map[string][]byte, len(files))
+	for _, f := range files {
+		out[f.Path] = f.Data
+	}
+	return out
 }
 
 // stubCache keeps the searches of each package between the calls of one
@@ -65,6 +83,7 @@ func readSearches(dir string) (*stubSearches, []string) {
 	if err != nil {
 		return nil, dirs
 	}
+	l.stub = true
 	decls, err := l.declarations()
 	for path := range l.files {
 		for name := range l.files[path] {
@@ -80,7 +99,7 @@ func readSearches(dir string) (*stubSearches, []string) {
 	if err != nil {
 		return nil, dirs
 	}
-	out := &stubSearches{l: l, byFile: map[string][]*searchDecl{}}
+	out := &stubSearches{l: l, byFile: map[string][]*searchDecl{}, all: decls.searches}
 	for _, s := range decls.searches {
 		path := filepath.Join(l.dir, s.at.file)
 		out.byFile[path] = append(out.byFile[path], s)
@@ -149,6 +168,9 @@ func (t *stubSearches) stub(pkg string, imports map[string]string, methods []byt
 			continue
 		}
 		e.searchBuilder(s.builder)
+		if s.apiMapper != nil && s.apiMapper.home == nil {
+			e.searchAPI(s.builder, func(ident string) string { return ident }, true)
+		}
 	}
 	src, err := e.file(pkg, "the forward stub")
 	return src, err == nil

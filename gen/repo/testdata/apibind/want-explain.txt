@@ -1,0 +1,37 @@
+search Route on items (rows model.Items)
+  read      items; root; nullable weight, released_on, local_at, opens_at, deleted_at, external_id, tags; tenant tenant_id
+  tenant    items: tenant_id by Scope
+  scope     Scope items.tenant_id
+  filter    Sku: InFold on items.sku (text, string)
+  filter    Name: ContainsAny on items.name (text, string)
+  sort      route_name: items.sku
+  sort      name, resource: items.name
+  sort      weight: items.weight, nullable, NullsLast
+  default   items.name ASC
+  tiebreak  id: the primary key items_pkey (id), by default
+  api       apigen.RouteSearchRequest
+  api       RouteSearchFromAPI in apibind_repo.gen.go
+  api       IgnoresFullText: the product decides the columns
+search Window on items (rows model.Items)
+  read      items; root; nullable weight, released_on, local_at, opens_at, deleted_at, external_id, tags; tenant tenant_id
+  tenant    items: tenant_id by Scope
+  scope     Scope items.tenant_id
+  filter    CreatedAt: Range.HalfOpen (created_from, created_to) on items.created_at (timestamptz, time.Time)
+  filter    DeletedAt: Range.Exclusive (deleted_after, deleted_before) on items.deleted_at (timestamptz, time.Time)
+  filter    ExternalID: Eq on items.external_id (text, string), Go only
+  sort      created_at: items.created_at
+  default   items.created_at DESC
+  tiebreak  id: the primary key items_pkey (id), by default
+  api       apigen.WindowSearchRequest
+  api       WindowSearchFromAPI in handler/window_search_api.gen.go
+  api       APIHandWritten folder_id
+search Recent on items (rows model.Items)
+  read      items; root; nullable weight, released_on, local_at, opens_at, deleted_at, external_id, tags; tenant tenant_id
+  tenant    items: tenant_id by Scope
+  scope     Scope items.tenant_id
+  filter    CreatedAt: Range (since) on items.created_at (timestamptz, time.Time)
+  fulltext  items.name (text)
+  sort      created_at: items.created_at
+  tiebreak  id: the primary key items_pkey (id), by default
+  api       apigen.RecentSearchRequest
+  api       RecentSearchFromAPI in apibind_repo.gen.go

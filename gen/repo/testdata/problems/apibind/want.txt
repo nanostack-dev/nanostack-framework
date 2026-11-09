@@ -1,0 +1,26 @@
+openapi.yaml:58: BadSortRequest.sort_by: value "ip_address" has no sort in search BadSort
+  fix: add a sort with the API name ip_address to search BadSort, or remove ip_address from the enum
+apibind.go:21: sort created_at is not a value of BadSortRequest.sort_by: API clients cannot ask for it
+  fix: add created_at to the sort_by enum of BadSortRequest, or remove the sort
+openapi.yaml:45: BadSortRequest.pagination.limit: the spec default is 50, the search default is 20
+  fix: make the two defaults equal: nanorepo.DefaultLimit(n) in the search, or the default of BadSortRequest.pagination.limit
+openapi.yaml:46: BadSortRequest.pagination.limit: maximum 5000 is above search.MaxLimit (1000)
+  fix: set the maximum of BadSortRequest.pagination.limit to 1000 (search.MaxLimit) or less
+openapi.yaml:59: BadSortRequest.extra is accepted and never read
+  fix: bind it in search BadSort, or name it with nanorepo.APIHandWritten("extra")
+openapi.yaml:77: BadFilterRequest.filter.ids: maxItems 5000 is above search.MaxInValues (1000)
+  fix: set maxItems of BadFilterRequest.filter.ids to 1000 (search.MaxInValues) or less
+apibind.go:29: Name.Eq binds API filter property "signature_status", which BadFilterRequest.filter does not have
+  fix: add signature_status to BadFilterRequest.filter, or wrap the filter in nanorepo.GoOnly(...)
+apibind.go:32: BadFilterRequest: API filter property "ip_addresses" has no filter in search BadFilter
+  fix: bind it with an operator, such as nanorepo.In.API("ip_addresses"), or name it with nanorepo.APIHandWritten("ip_addresses") when the service resolves it
+apibind.go:32: BadFilterRequest accepts full_text_search but search BadFilter has no FullText: the term would be ignored
+  fix: nanorepo.FullText(<columns>), or nanorepo.IgnoresFullText("<why>") while the product decides
+apibind.go:40: no operation of the OpenAPI spec takes OwnTextRequest as its request body
+  fix: reference OwnTextRequest from the JSON requestBody of the search operation
+apibind.go:41: search OwnText: OwnTextRequest declares full_text_search in its own schema, and IgnoresFullText ignores it: the endpoint offers a term that it never reads
+  fix: declare nanorepo.FullText(<columns>): only an inherited full_text_search may be ignored
+apibind.go:49: search NoText has FullText, and NoTextRequest has no full_text_search: API clients cannot use it
+  fix: add full_text_search to NoTextRequest, or wrap FullText in nanorepo.GoOnly(...)
+apibind.go:55: Filter(table.Items.TenantID, nanorepo.InFold): column tenant_id (uuid) is not a text column
+  fix: use nanorepo.Range(...), Eq or In, or nanorepo.FullTextExpr on a typed expression (CAST(...).AS_TEXT(), host(...))

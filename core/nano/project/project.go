@@ -123,6 +123,13 @@ type OpenAPI struct {
 	Server Package
 	// Clients are the Go clients generated from Spec, after the server.
 	Clients []Client
+	// SortByDirection is the direction of a search request that sends a
+	// sort_by and no sort_direction, as the API contract states it: "ASC"
+	// or "DESC". APIs differ here, so there is no default. nano gen repo
+	// writes it into each generated API mapper (<Name>SearchFromAPI). It is
+	// required when the request body of a nanorepo.Search that declares API
+	// has a sort_by property.
+	SortByDirection string
 }
 
 // Package is a Go package directory and the file generated into it.

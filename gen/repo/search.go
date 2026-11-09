@@ -45,8 +45,14 @@ type searchDecl struct {
 	defaultSort     *defaultSort
 	defaultLimit    int32 // 0 when absent
 	api             types.Type
+	apiNode         ast.Node // the API call, nil without API
 	ignoresFullText string
+	ignoresNode     ast.Node // the IgnoresFullText call
 	apiHandWritten  []string
+	handNode        ast.Node // the first APIHandWritten call
+	// mapper is the API mapper that nano gen repo writes, nil without API
+	// or after a problem of the binding.
+	apiMapper *apiMapper
 
 	// builder is what nano gen repo writes for the search; unbuilt holds the
 	// problems of a shape it cannot write, which do not hide the search
@@ -252,6 +258,7 @@ func (c *collector) searchCall(call *ast.CallExpr, inst types.Instance, typed bo
 		return
 	}
 	c.planBuilder(s)
+	c.planAPI(s)
 	c.d.searches = append(c.d.searches, s)
 }
 

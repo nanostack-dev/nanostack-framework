@@ -1,0 +1,2 @@
+apinospec.go:18: search Schedule declares API[NoTextRequest], and nanogen/project.go has no API: the sort_by values and the page size cannot be checked
+  fix: set API.Spec in nanogen/project.go, or run nano gen repo with -spec <openapi file>

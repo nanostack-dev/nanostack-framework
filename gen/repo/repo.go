@@ -129,6 +129,14 @@ type Options struct {
 	// scopes it, written as its import path, a dot and its name:
 	// Postgres.ContextScopes of nanogen/project.go.
 	ContextScopes map[string]string
+	// Spec is the OpenAPI document, API.Spec of nanogen/project.go. A
+	// search that declares nanorepo.API is checked against it both ways,
+	// and gets its API mapper. Empty: such a search is an error (A7).
+	Spec string
+	// SortByDirection is API.SortByDirection of nanogen/project.go: the
+	// direction, ASC or DESC, of a request that sends a sort_by and no
+	// sort_direction. Required when a request body has a sort_by.
+	SortByDirection string
 	// Check compares instead of writing and returns an error wrapping
 	// gen.ErrStale on drift.
 	Check bool
@@ -171,7 +179,12 @@ func Generate(opts Options) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	l.scopes, l.contextScopes = opts.Scopes, opts.ContextScopes
+	l.scopes, l.contextScopes, l.sortByDirection = opts.Scopes, opts.ContextScopes, opts.SortByDirection
+	if opts.Spec != "" {
+		if l.specPath, err = filepath.Abs(opts.Spec); err != nil {
+			return nil, gen.EnvErrorf("pass -spec with a path that exists", "resolve %s: %v", opts.Spec, err)
+		}
+	}
 	decls, err := l.declarations()
 	if err != nil {
 		return nil, err
@@ -226,7 +239,11 @@ func (l *loaded) renderAll(decls *declarations, res []*resolution) (*rendered, e
 	if err != nil {
 		return nil, err
 	}
-	out.files = append([]gen.File{{Path: l.outPath, Data: base}}, derived...)
+	mappers, err := l.renderMappers(decls.searches, false)
+	if err != nil {
+		return nil, err
+	}
+	out.files = append(append([]gen.File{{Path: l.outPath, Data: base}}, derived...), mappers...)
 	return out, nil
 }
 
@@ -235,7 +252,7 @@ func (l *loaded) renderAll(decls *declarations, res []*resolution) (*rendered, e
 func (l *loaded) checkTargets(decls *declarations, out *rendered) []error {
 	var problems []error
 	for _, f := range out.files {
-		if l.isOwn(f.Path) {
+		if l.isOwn(f.Path) || (filepath.Dir(f.Path) != l.dir && l.hasHeader(f.Path)) {
 			continue
 		}
 		if _, inOverlay := l.overlay[f.Path]; !inOverlay {
@@ -249,6 +266,8 @@ func (l *loaded) checkTargets(decls *declarations, out *rendered) []error {
 			o, what = at{res[0].b.file, res[0].b.line}, "the declarations in "+res[0].b.file
 		} else if searches := out.searches[filepath.Base(f.Path)]; len(searches) > 0 {
 			o, what = searches[0].at, "the declarations in "+searches[0].at.file
+		} else if s := mapperOf(decls.searches, f.Path); s != nil {
+			o, what = s.at, "search "+s.name
 		}
 		problems = append(problems, gen.Errorf(o.file, o.line,
 			"rename that file: nano gen repo writes "+filepath.Base(f.Path)+" for "+what,
@@ -353,6 +372,10 @@ func Main(args []string, stdout, stderr io.Writer) int {
 		"comma-separated tenant columns, as Postgres.Scopes in nanogen/project.go (nano gen passes them)")
 	fs.StringVar(&contextScopes, "context-scopes", "",
 		"comma-separated column=importpath.Func pairs, as Postgres.ContextScopes in nanogen/project.go")
+	fs.StringVar(&opts.Spec, "spec", "",
+		"the OpenAPI document, as API.Spec in nanogen/project.go (nano gen passes it)")
+	fs.StringVar(&opts.SortByDirection, "sort-by-direction", "",
+		"ASC or DESC: the direction of a sort_by sent alone, as API.SortByDirection (nano gen passes it)")
 	fs.BoolVar(&opts.Check, "check", false, "write nothing; exit 1 when an output is stale or orphaned")
 	fs.BoolVar(&explain, "explain", false,
 		"print how each method of each bound interface resolves and what each search reads; "+
