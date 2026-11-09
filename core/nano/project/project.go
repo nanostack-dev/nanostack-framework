@@ -55,9 +55,10 @@ type Project struct {
 // applies the migrations to an empty database, on a container it starts or
 // on the server NANO_GEN_DATABASE_URL names, and writes the go-jet code of
 // Schema to <Out>/<Name>/<Schema>/{model,table,view,enum}, with
-// <Out>/<Name>/nanogen.sum. Each table type also gets a UniqueKeys method:
-// the keys that match at most one row. While the migrations, the image and
-// every generated file match nanogen.sum, a run needs no database.
+// <Out>/<Name>/nanogen.sum. Each table type also gets the methods
+// UniqueKeys (the keys that match at most one row), ColumnTypes (the
+// catalogue type of each column) and ForeignKeys. While the migrations, the
+// image and every generated file match nanogen.sum, a run needs no database.
 type Postgres struct {
 	// Name is the directory under Out, by convention the database name:
 	// "anchor" writes internal/db/gen/anchor. Required.

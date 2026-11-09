@@ -12,6 +12,8 @@ type Column struct {
 	HasDefault   bool
 	DataType     DataType
 	Comment      string
+	// CatalogType is the type name of the column in the catalogue (Nanostack, see catalog.go).
+	CatalogType string
 }
 
 // DataTypeKind is database type kind(base, enum, user-defined, array)

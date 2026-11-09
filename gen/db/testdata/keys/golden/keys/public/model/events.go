@@ -3,10 +3,20 @@
 package model
 
 import (
+	"github.com/lib/pq"
+	"github.com/shopspring/decimal"
 	"time"
 )
 
 type Events struct {
-	At      time.Time
-	Payload *string
+	At           time.Time
+	Payload      *string
+	Source       *string
+	Amount       *decimal.Decimal
+	TenantID     *string
+	UserEmail    *string
+	BackupEmail  *string
+	Emails       *pq.StringArray
+	LedgerStatus *UserStatus
+	Route        *Path
 }

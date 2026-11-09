@@ -101,7 +101,7 @@ func new{{tableTemplate.TypeName}}Impl(schemaName, tableName, alias string) {{st
 		DefaultColumns: defaultColumns,
 	}
 }
-{{uniqueKeys}}
+{{uniqueKeys}}{{columnTypes}}{{foreignKeys}}
 `
 
 var tableSqlBuilderSetSchemaTemplate = `package {{package}}

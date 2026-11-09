@@ -1,11 +1,30 @@
--- One table per unique-index shape that nano gen db must classify.
+-- One table per unique-index shape that nano gen db must classify, and one
+-- foreign key and one column type per shape that ForeignKeys and ColumnTypes
+-- must report.
 CREATE COLLATION case_insensitive (provider = icu, locale = 'und-u-ks-level2', deterministic = false);
 
 CREATE TYPE user_status AS ENUM ('ACTIVE', 'DISABLED');
 
+-- ColumnTypes gives the base type of a domain column, also through a domain
+-- of a domain, and the array type of the base for an array of a domain.
+CREATE DOMAIN email_address AS text;
+CREATE DOMAIN work_email AS email_address;
+
+-- ColumnTypes gives "public.path": the type has the name of a pg_catalog type.
+CREATE TYPE public.path AS ENUM ('DIRECT', 'RELAY');
+
+-- A table of another schema: a key to it names that schema.
+CREATE SCHEMA ledger;
+CREATE TABLE ledger.accounts (
+    id text PRIMARY KEY
+);
+-- ColumnTypes gives "ledger.user_status": public has an enum of that name.
+CREATE TYPE ledger.user_status AS ENUM ('OPEN', 'CLOSED');
+
 CREATE TABLE tenants (
-    id   text PRIMARY KEY,
-    name text NOT NULL UNIQUE
+    id         text PRIMARY KEY,
+    name       text NOT NULL UNIQUE,
+    account_id text REFERENCES ledger.accounts (id)
 );
 
 CREATE TABLE users (
@@ -19,6 +38,8 @@ CREATE TABLE users (
     tags        text[],
     deleted_at  timestamptz,
     created_at  timestamptz NOT NULL DEFAULT now(),
+    -- A key to its own table.
+    invited_by  text REFERENCES users (id),
     CONSTRAINT users_tenant_email_key UNIQUE (tenant_id, email),
     CONSTRAINT users_tenant_name_deferrable UNIQUE (tenant_id, name) DEFERRABLE INITIALLY IMMEDIATE
 );
@@ -41,8 +62,38 @@ CREATE UNIQUE INDEX idx_users_handle_c ON users (tenant_id, handle COLLATE "C");
 
 -- No unique index at all.
 CREATE TABLE events (
-    at      timestamptz NOT NULL,
-    payload jsonb
+    at         timestamptz NOT NULL,
+    payload    jsonb,
+    source     inet,
+    amount     numeric(12, 2),
+    tenant_id  text,
+    user_email email_address,
+    backup_email work_email,
+    emails     email_address[],
+    ledger_status ledger.user_status,
+    route      public.path,
+    -- Two keys to one table. The composite key lists its columns in another
+    -- order than the unique constraint it references.
+    CONSTRAINT events_user_fkey FOREIGN KEY (user_email, tenant_id) REFERENCES users (email, tenant_id),
+    CONSTRAINT events_tenant_fkey FOREIGN KEY (tenant_id) REFERENCES tenants (id)
 );
 
 CREATE VIEW active_users AS SELECT id, tenant_id FROM users WHERE status = 'ACTIVE';
+
+-- A key between two partitioned tables. PostgreSQL also adds one copy of the
+-- key per partition of regions to sites (and to sites_1), which ForeignKeys
+-- leaves out, and the key that sites_1 inherits, which it keeps.
+CREATE TABLE regions (
+    id   int,
+    part int,
+    PRIMARY KEY (id, part)
+) PARTITION BY LIST (part);
+CREATE TABLE regions_1 PARTITION OF regions FOR VALUES IN (1);
+CREATE TABLE sites (
+    id        int,
+    part      int,
+    region_id int,
+    PRIMARY KEY (id, part),
+    CONSTRAINT sites_region_fkey FOREIGN KEY (region_id, part) REFERENCES regions (id, part)
+) PARTITION BY LIST (part);
+CREATE TABLE sites_1 PARTITION OF sites FOR VALUES IN (1);

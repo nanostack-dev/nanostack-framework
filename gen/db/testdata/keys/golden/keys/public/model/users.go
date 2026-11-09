@@ -18,4 +18,5 @@ type Users struct {
 	Tags       *pq.StringArray
 	DeletedAt  *time.Time
 	CreatedAt  time.Time
+	InvitedBy  *string
 }

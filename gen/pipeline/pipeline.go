@@ -20,7 +20,8 @@
 //     wire.gen.go into the package;
 //   - db: the Project's Postgres, when it declares one: the migrations run
 //     on an empty database and go-jet writes the models and the table
-//     types, each with a UniqueKeys method (package gen/db). nanogen.sum
+//     types, each with the methods UniqueKeys, ColumnTypes and ForeignKeys
+//     (package gen/db). nanogen.sum
 //     lets a run skip the database while nothing changed; -fresh ignores
 //     it. The runner starts the database server on the first unit that
 //     needs one, a container or the server NANO_GEN_DATABASE_URL names,

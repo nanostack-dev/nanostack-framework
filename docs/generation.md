@@ -156,6 +156,33 @@ func (UsersTable) UniqueKeys() map[string][]string {
 
 A unique index is a key when equality on its key columns, with values that are not NULL, matches at most one row: it is valid and not deferrable, it has no expression key, its predicate is absent or only `<key column> IS NOT NULL`, and no key column compares under a nondeterministic collation that the index does not use. `INCLUDE` columns are not key columns. Every other unique index is a `Not a key` line with its reason. A column named `unique_keys` is an error, because the method would hide its field. [`gen/db/testdata/keys`](../gen/db/testdata/keys) has one index of each shape and its generated code.
 
+**`ColumnTypes` and `ForeignKeys`.** Each table type gets two more methods after `UniqueKeys`. `nano gen repo` reads them with `go/parser` too. `ColumnTypes` gives the catalogue type of each column, by column name, in column order: The type name from `pg_type`: the base type at the end of a chain of domains, `_text` for a `text[]` column or an array of a text domain, the name of an enum, and `schema.name` for a type of another schema or a type that has the name of a `pg_catalog` type (`billing.status`, `public.path`). The column kind of the table type cannot tell `text` from `inet`, `jsonb` or `uuid`, which all are `ColumnString`. `ForeignKeys` gives the foreign keys of the table, in constraint name order, with the referencing and the referenced columns in key order. `ReferencedSchema` is set only for a key to a table of another schema:
+
+```go
+func (EventsTable) ColumnTypes() map[string]string {
+	return map[string]string{
+		"at":         "timestamptz",
+		"payload":    "jsonb",
+		"source":     "inet",
+		"tenant_id":  "text",
+		"user_email": "text",
+	}
+}
+
+func (EventsTable) ForeignKeys() []postgres.ForeignKey {
+	return []postgres.ForeignKey{
+		{
+			Name:              "events_user_fkey",
+			Columns:           []string{"user_email", "tenant_id"},
+			References:        "users",
+			ReferencedColumns: []string{"email", "tenant_id"},
+		},
+	}
+}
+```
+
+A column named `column_types` or `foreign_keys` is an error, for the same reason as `unique_keys`. `postgres.ForeignKey` (`mysql.ForeignKey`, `sqlite.ForeignKey`) is the type of the element; nothing reads the method at run time.
+
 **`nanogen.sum`.** `<Out>/<Name>/nanogen.sum` records every input (the image, the schema, the versions of the `gen` and `db` modules, and the sha256 of each migration file) and the sha256 of every output. While each input matches, each listed output matches its hash and no other `nano gen db` file is under `<Out>/<Name>`, a run reads no database: it keeps the committed files. So `go tool nano gen` after a handler change needs no Docker. When something differs, the run needs a database, and says why:
 
 ```text
