@@ -3,6 +3,7 @@ package mysql
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -18,6 +19,8 @@ var hostileNames = []string{
 	`\" UNION SELECT 99 #`,
 	`x\" , 'INJECTED' AS q; #`,
 	`\" FROM dual WHERE 1=0 UNION SELECT 42 #`,
+	`a'b`,
+	`x\', (SELECT @@version), 'k', 1) #`,
 }
 
 type queryer interface {
@@ -53,6 +56,7 @@ func TestHostileAliasStaysOneName(t *testing.T) {
 				sub := SELECT(Int(1).AS(name)).AsTable("sub")
 				requireOneNamedValue(t, tx, SELECT(Int(1).AS(name)), name)
 				requireOneNamedValue(t, tx, SELECT(IntegerColumn(name).From(sub)).FROM(sub), name)
+				requireOneJSONKey(t, tx, SELECT_JSON_OBJ(Int(1).AS(name)), name)
 			}
 		})
 	}
@@ -93,4 +97,26 @@ func requireOneNamedValue(t *testing.T, q queryer, stmt Statement, name string) 
 	}
 	require.NoError(t, rows.Err())
 	require.Equal(t, []int64{1}, values, query)
+}
+
+// requireOneJSONKey checks that the statement returns one JSON object, whose only key is
+// the alias and whose value is 1.
+func requireOneJSONKey(t *testing.T, q queryer, stmt Statement, name string) {
+	t.Helper()
+
+	query, args := stmt.Sql()
+	rows, err := q.QueryContext(context.Background(), query, args...)
+	require.NoError(t, err, query)
+	defer rows.Close()
+
+	var objects []map[string]int64
+	for rows.Next() {
+		var raw []byte
+		require.NoError(t, rows.Scan(&raw))
+		var object map[string]int64
+		require.NoError(t, json.Unmarshal(raw, &object), string(raw))
+		objects = append(objects, object)
+	}
+	require.NoError(t, rows.Err())
+	require.Equal(t, []map[string]int64{{name: 1}}, objects, query)
 }

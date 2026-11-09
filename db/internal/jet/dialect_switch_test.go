@@ -319,6 +319,48 @@ func TestWriteAliasKeepsTheAliasOneQuotedName(t *testing.T) {
 	}
 }
 
+func TestWriteJsonObjKeyBindsAKeyWithABackslash(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		alias    string
+		wantSQL  string
+		wantArgs []any
+	}{
+		{
+			// A key without a backslash stays a literal, with the single quote doubled.
+			name:     "single quote",
+			alias:    "author's name",
+			wantSQL:  "\nSELECT JSON_OBJECT(\n          'author''s name', ?\n     ) AS \"json\";\n",
+			wantArgs: []any{int64(1)},
+		},
+		{
+			name:     "trailing backslash",
+			alias:    `x\`,
+			wantSQL:  "\nSELECT JSON_OBJECT(\n          ?, ?\n     ) AS \"json\";\n",
+			wantArgs: []any{`x\`, int64(1)},
+		},
+		{
+			// In a literal, \' ends the key and the rest is read as SQL.
+			name:     "backslash before a quote",
+			alias:    `x\', (SELECT @@version), 'k', 1) #`,
+			wantSQL:  "\nSELECT JSON_OBJECT(\n          ?, ?\n     ) AS \"json\";\n",
+			wantArgs: []any{`x\', (SELECT @@version), 'k', 1) #`, int64(1)},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			query, args := mysql.SELECT_JSON_OBJ(mysql.Int(1).AS(tc.alias)).Sql()
+			require.Equal(t, tc.wantSQL, query)
+			require.Equal(t, tc.wantArgs, args)
+		})
+	}
+}
+
 func TestWriteIdentifierEscapesTheQuoteCharacter(t *testing.T) {
 	t.Parallel()
 

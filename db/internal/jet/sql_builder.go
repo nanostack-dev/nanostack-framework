@@ -120,9 +120,16 @@ func (s *SQLBuilder) WriteString(str string) {
 	s.write([]byte(str))
 }
 
-// WriteJsonObjKey serializes json object key
+// WriteJsonObjKey serializes json object key. A key that contains a backslash is sent as a
+// bound argument, not as a string literal: MySQL and MariaDB read a backslash in a string
+// literal as an escape, so `\'` would end the literal. A doubled single quote is read the
+// same in every dialect and sql_mode, so a key without a backslash stays a literal.
 func (s *SQLBuilder) WriteJsonObjKey(key string) {
-	s.WriteString(stringQuote(key))
+	if strings.Contains(key, `\`) {
+		s.insertParametrizedArgument(key)
+	} else {
+		s.WriteString(stringQuote(key))
+	}
 	s.WriteString(", ")
 }
 
