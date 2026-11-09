@@ -125,6 +125,8 @@ gh release create v0.23.0-beta.1 --prerelease --verify-tag --notes-file <notes>
 
 The CHANGELOG.md entries land on `main` before the release, in the pull requests that make the changes.
 
+At the root release commit, `go test ./...` fails in `internal/layers` (`TestNoUpwardImports`) with `go: updates to go.mod needed`. The test runs `go list` in `gen`, and `gen/go.mod` is still in the development form: it requires `db` at `v0.0.0`, and the root now requires the `db` tag. This is expected. The test passes again after the `gen` commit of step 4. Every other package must pass.
+
 ### 4. gen
 
 One more commit puts `gen/go.mod` in the release form. It drops the three `replace` lines and requires the root tag. `go mod tidy` then requires `db` and `pkg/functional` at their tags where `gen` needs them. Review the `go.mod` diff before you commit. `gen` must require a root tag that has no `gen/` directory, the root tag of step 3. The real `v0.23.0-beta.1` root tag and older ones still hold the `gen/...` packages, and a consumer that resolves both modules fails with `ambiguous import`; the consumer build of `release.yml` fails the same way. So `gen`'s first tag is `gen/v0.23.0-beta.2`, with root `v0.23.0-beta.2`. The example keeps the version of the other steps:
@@ -148,6 +150,19 @@ git ls-remote --exit-code --tags origin refs/tags/gen/v0.23.0-beta.1
 ```
 
 `release.yml` builds a scratch consumer that pins `gen/cmd/nano` with `go get -tool` and runs `go tool nano`, as a service does.
+
+At the `gen` release commit, `go test ./...` in `gen` fails in `gen/pipeline` and `gen/repo`. Their fixture modules (`pipeline/testdata/app`, `pipeline/testdata/dbapp`, `repo/testdata/problems/module`) replace the root with the repository directory and require `db` at `v0.0.0`, but the root and `gen` are now in the release form. The committed `nanogen.sum` of a fixture also records the development versions. This is expected, and CI on `main` runs these tests in the development form. Every other package must pass. Before you tag `gen`, check the release form with a consumer outside the repository instead:
+
+```sh
+cp -R gen/pipeline/testdata/dbapp "$scratch" && cd "$scratch" && rm go.sum
+# go.mod: require the root and db tags of this release, and
+# replace github.com/nanostack-dev/nanostack-framework/gen => <repository>/gen
+go get -tool github.com/nanostack-dev/nanostack-framework/gen/cmd/nano@<version> && go mod tidy
+go build ./... && go vet ./...
+go tool nano gen && go tool nano gen -check -fresh   # needs Docker or NANO_GEN_DATABASE_URL
+```
+
+The first `nano gen` rewrites only `nanogen.sum` (its version lines). `-check -fresh` must then pass.
 
 ### 5. Verify
 

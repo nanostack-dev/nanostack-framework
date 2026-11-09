@@ -21,6 +21,10 @@ One section per module and version, newest first. Each section uses Added, Chang
 ### Changed
 - `pkg/db/transactor`: the keyset pager moves to `db/keyset`. `Key` and `Order` are aliases of the `db/keyset` types; `StringKey`, `TimeKey` and the other key constructors, `Keys` and `StrictKeys` call `db/keyset`; `Page(...).Run` runs `keyset.Page` with `Executor(ctx, db)`. The key constructors and `Keys` say in their doc to use `db/keyset`. The behaviour and the cursors do not change, apart from `ErrRowLockSearch`, the `EnumKey` type name check and the `InetKey` zone refusal (see the db section). `ErrPageSourceMissing` and `ErrPageOrderConflict` are the values of `db/keyset`, and their messages start with `keyset:`. The statements of a page now run through `db/query`, so a database error is wrapped once (`query.Count: ...`, `query.All[...]: ...`); `errors.Is`, `errors.As` and the `On*` translations still find the driver's error.
 
+### Fixed
+- RELEASING.md, steps 3 and 4: at the release commits, `internal/layers` and the fixture tests of `gen/pipeline` and `gen/repo` fail because they need the development form. The runbook says so, and gives a consumer check outside the repository for the `gen` release form.
+
+
 ## gen/v0.23.0-beta.3
 
 Codegen part 1: the db step and the repo step of `nano gen`. It requires root `v0.23.0-beta.3` and `db/v0.23.0-beta.3`. Pin the CLI with `go get -tool github.com/nanostack-dev/nanostack-framework/gen/cmd/nano@v0.23.0-beta.3`. [RELEASING.md](RELEASING.md#upgrade-from-v0230-beta2) gives the upgrade steps.
