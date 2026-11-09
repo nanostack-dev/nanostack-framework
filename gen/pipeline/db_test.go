@@ -43,7 +43,7 @@ func noDatabase(t *testing.T) func(context.Context) (*sql.DB, func(), error) {
 
 // noDocker is what the run's server reports on a machine without Docker.
 func noDocker(context.Context) (*sql.DB, func(), error) {
-	return nil, nil, &gen.Error{Msg: "no Docker daemon is reachable to start postgres:18-alpine: no socket",
+	return nil, nil, &gen.Error{Msg: "Docker cannot start postgres:18-alpine: no socket",
 		Fix: "start Docker, or set NANO_GEN_DATABASE_URL", Err: gen.ErrEnvironment}
 }
 
@@ -71,8 +71,8 @@ func TestDBMissWithoutDocker(t *testing.T) {
 	write(t, dir, "migrations/000002_name.up.sql", "ALTER TABLE users ADD COLUMN name text;\n")
 	stdout, stderr, code := runDBFixture(t, dir, Options{}, noDocker)
 	wantRun(t, "nano gen", code, 3, stdout, "", stderr,
-		"nano gen db: migration 000002_name.up.sql is new since internal/db/gen/app/nanogen.sum, and no Docker "+
-			"daemon is reachable to start postgres:18-alpine: no socket\n"+
+		"nano gen db: migration 000002_name.up.sql is new since internal/db/gen/app/nanogen.sum, and Docker "+
+			"cannot start postgres:18-alpine: no socket\n"+
 			"  fix: start Docker, or set NANO_GEN_DATABASE_URL\n")
 	if _, err := os.Stat(filepath.Join(dir, "internal/db/gen/app/public/table/users.go")); err != nil {
 		t.Fatalf("a failed db step deleted a model: %v", err)
@@ -85,7 +85,7 @@ func TestDBMissWithoutDocker(t *testing.T) {
 	}
 	stdout, stderr, code = runDBFixture(t, dir, Options{}, noDocker)
 	wantRun(t, "nano gen without nanogen.sum", code, 3, stdout, "", stderr,
-		"nano gen db: internal/db/gen/app/nanogen.sum does not exist, and no Docker daemon is reachable to start "+
+		"nano gen db: internal/db/gen/app/nanogen.sum does not exist, and Docker cannot start "+
 			"postgres:18-alpine: no socket\n"+
 			"  fix: start Docker, or set NANO_GEN_DATABASE_URL\n")
 	if _, err := os.Stat(filepath.Join(dir, "internal/db/gen/app/public/table/users.go")); err != nil {
@@ -98,7 +98,7 @@ func TestDBFreshNeedsADatabase(t *testing.T) {
 	t.Parallel()
 	dir := copyFixtureOf(t, dbFixture)
 	_, stderr, code := runDBFixture(t, dir, Options{Check: true, Fresh: true}, noDocker)
-	if code != 3 || !strings.HasPrefix(stderr, "nano gen db: -fresh ignores nanogen.sum, and no Docker daemon") {
+	if code != 3 || !strings.HasPrefix(stderr, "nano gen db: -fresh ignores nanogen.sum, and Docker cannot start") {
 		t.Fatalf("exit %d, stderr:\n%s", code, stderr)
 	}
 	_, stderr, code = runDBFixture(t, dir, Options{Check: true, Fresh: true, Skip: []string{"db"}}, noDatabase(t))

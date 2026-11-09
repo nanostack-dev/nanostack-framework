@@ -133,8 +133,9 @@ func readSum(out string) (sumFile, error) {
 			s.inputs = append(s.inputs, line{kind: kind, key: rest[:i], value: value})
 		case "output":
 			hash, path, ok := strings.Cut(rest, " ")
-			if !ok || len(hash) != sha256.Size*2 || path == "" {
-				return sumFile{}, fmt.Errorf("line %d: an output is \"output <sha256> <path>\"", n)
+			if !ok || len(hash) != sha256.Size*2 || !filepath.IsLocal(filepath.FromSlash(path)) {
+				return sumFile{}, fmt.Errorf("line %d: an output is \"output <sha256> <path>\", "+
+					"with a path under the directory of nanogen.sum", n)
 			}
 			s.outputs = append(s.outputs, line{kind: kind, path: path, hash: hash})
 		default:

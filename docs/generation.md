@@ -159,7 +159,7 @@ A unique index is a key when equality on its key columns, with values that are n
 **`nanogen.sum`.** `<Out>/<Name>/nanogen.sum` records every input (the image, the schema, the versions of the `gen` and `db` modules, and the sha256 of each migration file) and the sha256 of every output. While each input matches, each listed output matches its hash and no other `nano gen db` file is under `<Out>/<Name>`, a run reads no database: it keeps the committed files. So `go tool nano gen` after a handler change needs no Docker. When something differs, the run needs a database, and says why:
 
 ```text
-nano gen db: migration 000042_add_notes.up.sql is new since internal/db/gen/anchor/nanogen.sum, and no Docker daemon is reachable to start timescale/timescaledb:2.23.0-pg18: [...]
+nano gen db: migration 000042_add_notes.up.sql is new since internal/db/gen/anchor/nanogen.sum, and Docker cannot start timescale/timescaledb:2.23.0-pg18: [...]
   fix: start Docker, or set NANO_GEN_DATABASE_URL
 ```
 

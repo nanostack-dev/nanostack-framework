@@ -204,7 +204,9 @@ func generate(l layout, opts Options, inputs []line, reason string) ([]gen.File,
 	cfg.BasePath = l.migrations
 	cfg.Validate = false
 	if err = nanomigrate.NewMigrator(cfg, db, slog.New(slog.DiscardHandler)).Migrate(ctx); err != nil {
-		return nil, gen.Errorf(l.rel(l.migrations), 0, "fix the migration, then run nano gen again",
+		return nil, gen.Errorf(l.rel(l.migrations), 0,
+			"fix the migration, or set Postgres.Image to an image that has the extensions it needs, "+
+				"then run nano gen again",
 			"the migrations fail on an empty database: %v", err)
 	}
 	schema, err := jetpostgres.ReadSchema(db, l.p.Schema)
@@ -280,7 +282,9 @@ func readMigrations(l layout) ([]migration, error) {
 	}
 	var out []migration
 	for _, e := range entries {
-		if !e.Type().IsRegular() || !migrationName.MatchString(e.Name()) {
+		// golang-migrate applies every entry that is not a directory, a
+		// symbolic link included, so each one is an input of nanogen.sum.
+		if e.IsDir() || !migrationName.MatchString(e.Name()) {
 			continue
 		}
 		data, readErr := os.ReadFile(filepath.Join(l.migrations, e.Name()))

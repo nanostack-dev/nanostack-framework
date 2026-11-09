@@ -108,8 +108,16 @@ func (s *Server) start(ctx context.Context) error {
 	}
 	container, err := recovered(func() (testcontainers.Container, error) { return s.run(ctx, s.image) })
 	if err != nil {
+		// testcontainers returns the container it created when the wait
+		// fails; Close never sees it, so remove it here rather than leave
+		// it to Ryuk.
+		if container != nil {
+			_ = testcontainers.TerminateContainer(container)
+		}
+		// The cause is in err: no daemon, an image that cannot be pulled,
+		// or a server that never logged ready.
 		return &gen.Error{
-			Msg: fmt.Sprintf("no Docker daemon is reachable to start %s: %v", s.image, err),
+			Msg: fmt.Sprintf("Docker cannot start %s: %v", s.image, err),
 			Fix: "start Docker, or set " + EnvDatabaseURL,
 			Err: gen.ErrEnvironment,
 		}
