@@ -1,7 +1,6 @@
 package genrepo
 
 import (
-	"bytes"
 	"cmp"
 	"errors"
 	"go/ast"
@@ -68,7 +67,7 @@ func (l *loaded) readSpec() (spec *apiSpec, first bool, err error) {
 // starts with the header of nanostack gen repo.
 func (l *loaded) hasHeader(path string) bool {
 	data, ok := l.source(path)
-	return ok && bytes.HasPrefix(data, []byte(header))
+	return ok && hasOwnHeader(data)
 }
 
 // mapperOf returns the search whose API mapper is the file at path in
@@ -144,7 +143,7 @@ func (l *loaded) findOwn() {
 				continue
 			}
 		}
-		if bytes.HasPrefix(data, []byte(header)) {
+		if hasOwnHeader(data) {
 			l.own = append(l.own, path)
 			if path == l.outPath {
 				l.oldBase = data
