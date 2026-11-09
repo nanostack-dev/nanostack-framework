@@ -9,8 +9,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/nanostack-dev/nanostack-framework/db/internal/jet"
-	"github.com/nanostack-dev/nanostack-framework/db/mysql"
 	"github.com/nanostack-dev/nanostack-framework/db/keyset"
+	"github.com/nanostack-dev/nanostack-framework/db/mysql"
 	"github.com/nanostack-dev/nanostack-framework/db/postgres"
 	"github.com/nanostack-dev/nanostack-framework/db/search"
 	"github.com/nanostack-dev/nanostack-framework/db/searchexec"

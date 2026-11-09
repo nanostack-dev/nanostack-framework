@@ -114,8 +114,8 @@ func (b *PageBuilder[T, R]) OrderBy(clauses ...jet.OrderByClause) *PageBuilder[T
 // cursor reads. The count does not select them. To fill a computed field on
 // every order, put Key.Projection in the columns: the page then does not
 // select it twice. Another column with the alias of a computed key is an
-// error, before any statement runs. A computed key is PostgreSQL only: on
-// MySQL and SQLite it is ErrDialect.
+// error, before any statement runs. The time computed keys are PostgreSQL
+// only: on MySQL and SQLite they are ErrDialect.
 func (b *PageBuilder[T, R]) Keyset(order Order[T]) *PageBuilder[T, R] {
 	b.keyset = &order
 	return b

@@ -34,8 +34,9 @@ type Spec[T any, S ~string, P comparable] struct {
 // the declaration.
 type SpecDef[T any, S ~string, P comparable] struct {
 	// From returns the table or the join the search reads. It gets the scope value, so a
-	// tenant value can go into an ON clause. The source must be a db/postgres table or join;
-	// any other source is keyset.ErrDialect when the search runs.
+	// tenant value can go into an ON clause. The source must be a table or join of
+	// db/postgres, db/mysql or db/sqlite; any other source is keyset.ErrDialect when the
+	// search runs.
 	From func(P) keyset.Source
 	// Columns is the projection that fills a row of T: a table's AllColumns, or a
 	// ProjectionList.

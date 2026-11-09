@@ -64,12 +64,21 @@
 // (with a pointer field) when NULL must sort apart from the zero value.
 //
 // The integer, float and time forms cast the expression to the SQL type of
-// their cursor value (bigint, double precision, timestamp with time zone), so
-// the order, the seek and the select share one type and the scan always fits
-// the field. PostgreSQL drops a cast to the type the expression already has.
-// The text forms do not cast: a cast to text would change the order of a
-// citext or collated expression.
+// their cursor value, so the order, the seek and the select share one type and
+// the scan always fits the field. The statement's dialect selects the cast
+// when it is serialized:
 //
-// A computed key writes PostgreSQL SQL. A page with a source of another
-// dialect is ErrDialect.
+//	           integer   float             time
+//	PostgreSQL bigint    double precision  timestamp with time zone
+//	MySQL      SIGNED    DOUBLE            (ErrDialect)
+//	SQLite     INTEGER   REAL              (ErrDialect)
+//
+// PostgreSQL drops a cast to the type the expression already has. The text
+// forms do not cast: a cast to text would change the order of a citext or
+// collated expression. The time forms are PostgreSQL only, as TimeKey is:
+// MySQL and SQLite have no timestamp with time zone, so a page with a time
+// computed key and a source of another dialect is ErrDialect.
+//
+// The expression is SQL of the page's dialect: build a subquery with the
+// SELECT of the dialect package of the page's source.
 package keyset
