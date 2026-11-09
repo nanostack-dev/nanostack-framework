@@ -149,29 +149,7 @@ func (r *resolver) searchMapper(fn *types.Func, s *searchDecl, m *searchMethod) 
 	}
 	sel, isSel := e.(*ast.SelectorExpr)
 	if selection := info.Selections[sel]; isSel && selection != nil && selection.Kind() == types.MethodExpr {
-		recv := selection.Recv()
-		var fields []string
-		if st, ok := r.b.impl.Underlying().(*types.Struct); ok {
-			for f := range st.Fields() {
-				if types.Identical(f.Type(), recv) {
-					fields = append(fields, f.Name())
-				}
-			}
-		}
-		if len(fields) != 1 {
-			what := "no field"
-			if len(fields) > 1 {
-				what = "two fields (" + strings.Join(fields, ", ") + ")"
-			}
-			r.fail(s.mapper.fn.Pos(), fn, fmt.Sprintf("give %s one field of type %s, set in the constructor",
-				r.b.impl.Obj().Name(), r.qualified(recv)),
-				"Map(%s): %s has %s of type %s, so %s cannot call the mapper", types.ExprString(s.mapper.fn),
-				r.b.impl.Obj().Name(), what, r.qualified(recv), fn.Name())
-			r.line(fn, "ERROR: the Map receiver is not one field of the implementation", "")
-			return nil, false
-		}
-		m.mapper = "r." + fields[0] + "." + sel.Sel.Name
-		return dom, true
+		return dom, r.mapperField(fn, s, m, sel, selection.Recv())
 	}
 	obj, _ := info.Uses[tableIdent(e)].(*types.Func)
 	if obj == nil {
@@ -179,6 +157,35 @@ func (r *resolver) searchMapper(fn *types.Func, s *searchDecl, m *searchMethod) 
 	}
 	m.mapFunc = obj
 	return dom, true
+}
+
+// mapperField sets the mapper of a method expression to the one field of
+// the implementation of its receiver type (E22).
+func (r *resolver) mapperField(fn *types.Func, s *searchDecl, m *searchMethod, sel *ast.SelectorExpr,
+	recv types.Type,
+) bool {
+	var fields []string
+	if st, ok := r.b.impl.Underlying().(*types.Struct); ok {
+		for f := range st.Fields() {
+			if types.Identical(f.Type(), recv) {
+				fields = append(fields, f.Name())
+			}
+		}
+	}
+	if len(fields) != 1 {
+		what := "no field"
+		if len(fields) > 1 {
+			what = "two fields (" + strings.Join(fields, ", ") + ")"
+		}
+		r.fail(s.mapper.fn.Pos(), fn, fmt.Sprintf("give %s one field of type %s, set in the constructor",
+			r.b.impl.Obj().Name(), r.qualified(recv)),
+			"Map(%s): %s has %s of type %s, so %s cannot call the mapper", types.ExprString(s.mapper.fn),
+			r.b.impl.Obj().Name(), what, r.qualified(recv), fn.Name())
+		r.line(fn, "ERROR: the Map receiver is not one field of the implementation", "")
+		return false
+	}
+	m.mapper = "r." + fields[0] + "." + sel.Sel.Name
+	return true
 }
 
 // searchResult renders search.Result[dom].
@@ -329,6 +336,26 @@ func (l *loaded) unusedSearches(d *declarations, res []*resolution) []error {
 	if len(d.bindings) == 0 || len(res) == 0 {
 		return nil
 	}
+	taken := l.takenTypes(res)
+	var out []error
+	iface := res[0].explain.Iface
+	for _, s := range d.searches {
+		q := s.name + "Search"
+		if taken[q] || s.builder == nil || len(s.unbuilt) > 0 {
+			continue
+		}
+		dom := l.searchDomain(s)
+		out = append(out, gen.Errorf(s.at.file, s.at.line,
+			fmt.Sprintf("add Search%s(ctx context.Context, q %s) (search.Result[%s], error) to %s, or remove "+
+				"the declaration", pluralName(s.name), q, dom, iface),
+			"search %s is declared, and no method takes %s %s", s.name, article(q), q))
+	}
+	return out
+}
+
+// takenTypes are the parameter type names of the methods of the bound
+// interfaces and of the hand-written methods of the package.
+func (l *loaded) takenTypes(res []*resolution) map[string]bool {
 	taken := map[string]bool{}
 	for _, r := range res {
 		for _, name := range r.takes {
@@ -340,39 +367,35 @@ func (l *loaded) unusedSearches(d *declarations, res []*resolution) []error {
 			continue
 		}
 		for _, decl := range f.Decls {
-			if fd, ok := decl.(*ast.FuncDecl); ok && fd.Recv != nil {
-				for i := range fd.Type.Params.NumFields() {
-					if id, isIdent := nthParam(fd.Type, i).(*ast.Ident); isIdent {
-						taken[id.Name] = true
-					}
+			fd, ok := decl.(*ast.FuncDecl)
+			if !ok || fd.Recv == nil {
+				continue
+			}
+			for i := range fd.Type.Params.NumFields() {
+				if id, isIdent := nthParam(fd.Type, i).(*ast.Ident); isIdent {
+					taken[id.Name] = true
 				}
 			}
 		}
 	}
-	var out []error
-	iface := res[0].explain.Iface
-	for _, s := range d.searches {
-		q := s.name + "Search"
-		if taken[q] || s.builder == nil || len(s.unbuilt) > 0 {
-			continue
-		}
-		dom := "<Domain>"
-		if s.mapper == nil {
-			dom = types.TypeString(s.row, l.qualifier())
-		} else if sig, ok := types.Unalias(l.pkg.TypesInfo.TypeOf(s.mapper.fn)).(*types.Signature); ok &&
-			sig.Results().Len() > 0 {
-			t := sig.Results().At(0).Type()
-			if sl, isSlice := types.Unalias(t).(*types.Slice); isSlice && s.mapper.page {
-				t = sl.Elem()
-			}
-			dom = types.TypeString(t, l.qualifier())
-		}
-		out = append(out, gen.Errorf(s.at.file, s.at.line,
-			fmt.Sprintf("add Search%s(ctx context.Context, q %s) (search.Result[%s], error) to %s, or remove "+
-				"the declaration", pluralName(s.name), q, dom, iface),
-			"search %s is declared, and no method takes %s %s", s.name, article(q), q))
+	return taken
+}
+
+// searchDomain renders the domain type of a search's rows: the output of
+// its mapper, or its Row.
+func (l *loaded) searchDomain(s *searchDecl) string {
+	if s.mapper == nil {
+		return types.TypeString(s.row, l.qualifier())
 	}
-	return out
+	sig, ok := types.Unalias(l.pkg.TypesInfo.TypeOf(s.mapper.fn)).(*types.Signature)
+	if !ok || sig.Results().Len() == 0 {
+		return "<Domain>"
+	}
+	t := sig.Results().At(0).Type()
+	if sl, isSlice := types.Unalias(t).(*types.Slice); isSlice && s.mapper.page {
+		t = sl.Elem()
+	}
+	return types.TypeString(t, l.qualifier())
 }
 
 // qualifier names the types of other packages by their package name.

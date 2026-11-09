@@ -32,7 +32,7 @@ const maxSearchLines = 80
 // fields, and two embedded models.
 func TestBuilderGolden(t *testing.T) {
 	t.Parallel()
-	res, err := Generate(Options{Dir: "testdata/builder", Scopes: repotest.Scopes, ContextScopes: repotest.ContextScopes})
+	res, err := Generate(builderOptions("testdata/builder"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +49,7 @@ func TestBuilderGolden(t *testing.T) {
 // files, and its hand-written code uses the builders.
 func TestBuilderBuildsAndVets(t *testing.T) {
 	t.Parallel()
-	res, err := Generate(Options{Dir: "testdata/builder", Scopes: repotest.Scopes, ContextScopes: repotest.ContextScopes})
+	res, err := Generate(builderOptions("testdata/builder"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -293,7 +293,7 @@ func TestBuilderCheckAndOrphan(t *testing.T) {
 	if err := os.Remove(filepath.Join(dir, "use.go")); err != nil {
 		t.Fatal(err)
 	}
-	opts := Options{Dir: dir, Scopes: repotest.Scopes, ContextScopes: repotest.ContextScopes}
+	opts := builderOptions(dir)
 	if _, err := Run(opts); err != nil {
 		t.Fatal(err)
 	}
@@ -351,4 +351,9 @@ func TestNullableKeyConversion(t *testing.T) {
 	if got := e.key(k, "model.Items"); got != want {
 		t.Errorf("key =\n%s\nwant\n%s", got, want)
 	}
+}
+
+// builderOptions runs on dir with the tenant columns of the fixture.
+func builderOptions(dir string) Options {
+	return Options{Dir: dir, Scopes: repotest.Scopes, ContextScopes: repotest.ContextScopes}
 }

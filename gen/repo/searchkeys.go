@@ -81,8 +81,9 @@ func defaultConst(b *builder) *sortConst {
 			}
 			continue
 		}
-		if sort.key != nil && sort.key.col != nil && sort.key.col.table == d.col.table && sort.key.col.alias == d.col.alias &&
-			sort.key.col.col.field == d.col.col.field {
+		k := sort.key
+		if k != nil && k.col != nil && k.col.table == d.col.table && k.col.alias == d.col.alias &&
+			k.col.col.field == d.col.col.field {
 			return &b.sorts[i]
 		}
 	}

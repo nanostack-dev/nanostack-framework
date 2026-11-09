@@ -323,18 +323,7 @@ func (t *tenantCheck) explainNode(n *tenantNode) string {
 // refuses one only in another package, and two values of one type could
 // change places.
 func (c *collector) checkUnkeyedScopes() {
-	scopeTypes := map[string]*searchDecl{}
-	for _, s := range c.d.searches {
-		fields := 0
-		for _, sc := range s.scopes {
-			if sc.kind != "ScopeNull" {
-				fields++
-			}
-		}
-		if fields > 1 {
-			scopeTypes[s.name+"Scope"] = s
-		}
-	}
+	scopeTypes := c.scopeStructs()
 	if len(scopeTypes) == 0 {
 		return
 	}
@@ -359,6 +348,24 @@ func (c *collector) checkUnkeyedScopes() {
 			return true
 		})
 	}
+}
+
+// scopeStructs maps the name of each generated scope struct (two fields
+// or more) to its search.
+func (c *collector) scopeStructs() map[string]*searchDecl {
+	out := map[string]*searchDecl{}
+	for _, s := range c.d.searches {
+		fields := 0
+		for _, sc := range s.scopes {
+			if sc.kind != "ScopeNull" {
+				fields++
+			}
+		}
+		if fields > 1 {
+			out[s.name+"Scope"] = s
+		}
+	}
+	return out
 }
 
 // keyedFix is the keyed literal of the scope type of s.

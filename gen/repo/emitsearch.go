@@ -3,7 +3,6 @@ package genrepo
 import (
 	"go/token"
 	"go/types"
-	"slices"
 	"strconv"
 	"strings"
 )
@@ -148,15 +147,7 @@ func (e *emitter) scopeStruct(b *builder) {
 // package starts.
 func (e *emitter) spec(b *builder, row, sortT, p string) {
 	s := b.s
-	for _, k := range computedKeys(b) {
-		e.p("// %s orders on %s(), and the Row selects it as %s.\n", keyVar(b, k), e.fn(k.expr), k.computed)
-		e.p("var %s = %s(%s, %s(), func(r %s) %s { return r.%s })", keyVar(b, k), e.ks(k.ctor),
-			strconv.Quote(k.computed), e.fn(k.expr), row, e.typ(k.value), k.field)
-		if k.nulls != "" {
-			e.p(".%s()", k.nulls)
-		}
-		e.p("\n\n")
-	}
+	e.computedVars(b, row)
 	e.p("var %s = %s(%s[%s, %s, %s]{\n", specVar(s), e.sx("DefineSpec"), e.sx("SpecDef"), row, sortT, p)
 	from := e.ref(s.root.table.pkgPath, s.root.table.pkgName, s.root.table.goName)
 	switch {
@@ -346,7 +337,8 @@ func (e *emitter) accessors(b *builder, q string) {
 			corr := e.column(f.f.link) + ".EQ(" + e.column(f.f.ref) + ")"
 			typ = e.sx("Exists") + "[" + q + ", " + e.typ(f.value) + "]"
 			if f.kind == "Exists" {
-				call = e.sx("NewExists") + "(q.Query, " + child + ", " + corr + ", " + target + ", " + e.literal(f) + ")"
+				call = e.sx("NewExists") + "(q.Query, " + child + ", " + corr + ", " + target + ", " +
+					e.literal(f) + ")"
 			} else {
 				call = e.sx("NewExistsFold") + "[" + e.typ(f.value) + "](q.Query, " + child + ", " + corr + ", " +
 					target + ")"
@@ -429,18 +421,3 @@ func article(name string) string {
 	}
 	return "a"
 }
-
-// computedKeys are the SortExpr keys of b, in sort order.
-func computedKeys(b *builder) []*sortKey {
-	var out []*sortKey
-	for _, sort := range b.sorts {
-		if sort.key != nil && sort.key.expr != nil && !slices.Contains(out, sort.key) {
-			out = append(out, sort.key)
-		}
-	}
-	return out
-}
-
-// keyVar is the package variable of a SortExpr key: the spec's Keys and
-// Columns name it, so the select list holds the key's own projection.
-func keyVar(_ *builder, k *sortKey) string { return k.varName }

@@ -34,16 +34,16 @@ func (n *tenantNode) covered() bool {
 	if len(n.tenant) == 0 {
 		return n.linked != ""
 	}
-	any := false
+	some := false
 	for _, col := range n.tenant {
 		switch {
 		case n.how[col] != "":
-			any = true
+			some = true
 		case n.exempt[col] == "":
 			return false
 		}
 	}
-	return any
+	return some
 }
 
 // tenantSide is one side of an equality: a column of an instance, or a
@@ -71,6 +71,7 @@ type tenantCheck struct {
 	// declared foreign key, not from Go source.
 	links    []tenantEq
 	linkRefs []*colRef
+	seen     map[*tenantNode]map[string]string // node -> column -> the scope option that names it
 }
 
 // checkTenant checks the tenant coverage of a search (design S6): the kind
@@ -90,7 +91,8 @@ func (c *collector) checkTenant(s *searchDecl) {
 		return
 	}
 	t.readEqualities()
-	for t.step() || t.rule3() {
+	for changed := true; changed; {
+		changed = t.step() || t.rule3()
 	}
 	t.checkUnscoped()
 	t.checkCovered()
@@ -166,20 +168,7 @@ func (t *tenantCheck) isContext(col string) bool {
 // and the exempted ones.
 func (t *tenantCheck) checkScopes() {
 	s, c := t.s, t.c
-	seen := map[*tenantNode]map[string]string{} // node -> column -> the option that names it
-	name := func(n *tenantNode, col *colRef, option string) bool {
-		if seen[n] == nil {
-			seen[n] = map[string]string{}
-		}
-		if first := seen[n][col.col.sqlName]; first != "" {
-			c.errorf(col.expr, "name each column in one scope option",
-				"search %s: %s(%s) names %s.%s, which %s names already", s.name, option, col, n.inst.name(),
-				col.col.sqlName, first)
-			return false
-		}
-		seen[n][col.col.sqlName] = option
-		return true
-	}
+	t.seen = map[*tenantNode]map[string]string{}
 	fields := map[string]*colRef{}
 	for _, sc := range s.scopes {
 		t.checkScopeTypes(sc)
@@ -187,23 +176,12 @@ func (t *tenantCheck) checkScopes() {
 			t.checkFieldName(sc, fields)
 		}
 		for _, col := range sc.cols {
-			n := t.outerNode(col)
-			if !t.direct(n, col, sc.kind) || !name(n, col, sc.kind) {
-				continue
-			}
-			switch {
-			case t.isContext(col.col.sqlName):
-				c.errorf(col.expr, "nanorepo.ScopeFunc("+t.registeredName(col.col.sqlName)+", "+col.String()+")",
-					"search %s: %s(%s): %s is a context tenant column (Postgres.ContextScopes): only its "+
-						"registered ScopeFunc scopes it", s.name, sc.kind, col, col.col.sqlName)
-			case slices.Contains(n.tenant, col.col.sqlName):
-				n.how[col.col.sqlName] = sc.kind
-			}
+			t.markScope(sc.kind, col)
 		}
 	}
 	for _, sf := range s.scopeFuncs {
 		n := t.outerNode(sf.col)
-		if t.direct(n, sf.col, "ScopeFunc") && name(n, sf.col, "ScopeFunc") && t.checkScopeFunc(sf) {
+		if t.direct(n, sf.col, "ScopeFunc") && t.name(n, sf.col, "ScopeFunc") && t.checkScopeFunc(sf) {
 			n.how[sf.col.col.sqlName] = "ScopeFunc " + c.source(sf.fn)
 		}
 	}
@@ -215,9 +193,42 @@ func (t *tenantCheck) checkScopes() {
 				u.col.col.sqlName)
 			continue
 		}
-		if name(n, u.col, "Unscoped") {
+		if t.name(n, u.col, "Unscoped") {
 			n.exempt[u.col.col.sqlName] = u.why
 		}
+	}
+}
+
+// name records that option names col of n, and refuses a column that a
+// scope option named already (E12).
+func (t *tenantCheck) name(n *tenantNode, col *colRef, option string) bool {
+	if t.seen[n] == nil {
+		t.seen[n] = map[string]string{}
+	}
+	if first := t.seen[n][col.col.sqlName]; first != "" {
+		t.c.errorf(col.expr, "name each column in one scope option",
+			"search %s: %s(%s) names %s.%s, which %s names already", t.s.name, option, col, n.inst.name(),
+			col.col.sqlName, first)
+		return false
+	}
+	t.seen[n][col.col.sqlName] = option
+	return true
+}
+
+// markScope covers the column of a Scope, ScopeOrNull or ScopeNull (rule
+// 1), and refuses it on a context column, which only its ScopeFunc scopes.
+func (t *tenantCheck) markScope(kind string, col *colRef) {
+	n := t.outerNode(col)
+	if !t.direct(n, col, kind) || !t.name(n, col, kind) {
+		return
+	}
+	switch {
+	case t.isContext(col.col.sqlName):
+		t.c.errorf(col.expr, "nanorepo.ScopeFunc("+t.registeredName(col.col.sqlName)+", "+col.String()+")",
+			"search %s: %s(%s): %s is a context tenant column (Postgres.ContextScopes): only its "+
+				"registered ScopeFunc scopes it", t.s.name, kind, col, col.col.sqlName)
+	case slices.Contains(n.tenant, col.col.sqlName):
+		n.how[col.col.sqlName] = kind
 	}
 }
 
@@ -321,218 +332,4 @@ func (t *tenantCheck) checkInnerNames() {
 				"correlation on it to the inner row, so it compares the row with itself", n.role, n.inst.name(),
 			t.s.name)
 	}
-}
-
-// readEqualities reads the top-level AND conjuncts a.EQ(b) of each ON
-// condition and correlated WHERE. A conjunct under an OR counts for nothing.
-func (t *tenantCheck) readEqualities() {
-	for i, eq := range t.links {
-		eq.b.node = t.outerNode(t.linkRefs[i])
-		t.eqs = append(t.eqs, eq)
-	}
-	for _, n := range t.nodes {
-		if n.cond == nil {
-			continue
-		}
-		var scope []*tenantNode // the instances a column of the condition can name, inner first
-		for _, m := range t.nodes {
-			if m.level == n.level && m.level > 0 {
-				scope = append(scope, m)
-			}
-		}
-		for _, m := range t.nodes {
-			if m.level == 0 {
-				scope = append(scope, m)
-			}
-		}
-		for _, conj := range t.c.conjuncts(n.cond) {
-			call, isCall := ast.Unparen(conj).(*ast.CallExpr)
-			if !isCall || len(call.Args) != 1 {
-				continue
-			}
-			sel, isSel := ast.Unparen(call.Fun).(*ast.SelectorExpr)
-			if !isSel || sel.Sel.Name != "EQ" || !t.c.dbMethod(sel) {
-				continue
-			}
-			a, b := t.side(sel.X, scope, n), t.side(call.Args[0], scope, n)
-			if (a.node != nil || a.field != "") && (b.node != nil || b.field != "") {
-				t.eqs = append(t.eqs, tenantEq{a: a, b: b, in: n})
-			}
-		}
-	}
-}
-
-// side resolves one side of an equality to a column of an instance, or to
-// a field of the scope value in the ON clause of a From function.
-func (t *tenantCheck) side(e ast.Expr, scope []*tenantNode, in *tenantNode) tenantSide {
-	insts := make([]*instance, len(scope))
-	for i, n := range scope {
-		insts[i] = n.inst
-	}
-	if inst, col := t.c.onColumn(e, insts); inst != nil {
-		return tenantSide{node: scope[slices.Index(insts, inst)], col: col}
-	}
-	if in.level == 0 && t.s.from != nil && t.c.scopeField(t.s, e) {
-		if field, isSel := ast.Unparen(ast.Unparen(e).(*ast.CallExpr).Args[0]).(*ast.SelectorExpr); isSel {
-			return tenantSide{field: field.Sel.Name}
-		}
-		return tenantSide{field: singleField(t.s)}
-	}
-	return tenantSide{}
-}
-
-// can reports whether an equality in the condition of in can cover target:
-// a condition covers its own instance, and an INNER JOIN or a subquery's
-// WHERE also covers the other instances of its level (rule 5).
-func can(target, in *tenantNode) bool {
-	return target == in || (in.filters && target.level == in.level)
-}
-
-// step applies rules 2 and 4 once to every equality and every pair of
-// instances, and reports whether a column or an instance became covered.
-func (t *tenantCheck) step() bool {
-	changed := false
-	for _, eq := range t.eqs {
-		for _, p := range [][2]tenantSide{{eq.a, eq.b}, {eq.b, eq.a}} {
-			src, dst := p[0], p[1]
-			if dst.node == nil || !can(dst.node, eq.in) || !slices.Contains(dst.node.tenant, dst.col) ||
-				dst.node.how[dst.col] != "" {
-				continue
-			}
-			switch {
-			case src.node != nil && src.col == dst.col && src.node.how[src.col] != "":
-				dst.node.how[dst.col] = "equated with " + src.node.inst.name() + "." + src.col
-				changed = true
-			case src.field != "" && t.fieldCovers(src.field, dst.col):
-				dst.node.how[dst.col] = "equated with the scope field " + src.field
-				changed = true
-			}
-		}
-	}
-	t.eachPair(func(x, y, in *tenantNode) {
-		if !x.covered() || !can(y, in) {
-			return
-		}
-		if k, ok := t.fkMatch(y, x, in); ok { // rule 2: y references the covered x by its tenant column
-			for _, col := range k.columns {
-				if slices.Contains(y.tenant, col) && y.how[col] == "" {
-					y.how[col] = "references " + x.inst.name() + " by " + k.name
-					changed = true
-				}
-			}
-		}
-		if len(y.tenant) > 0 || y.linked != "" { // rule 4
-			return
-		}
-		k, ok := t.fkMatch(y, x, in)
-		if !ok {
-			k, ok = t.fkMatch(x, y, in)
-		}
-		if ok {
-			y.linked = "linked to " + x.inst.name() + " by " + k.name
-			changed = true
-		}
-	})
-	return changed
-}
-
-// rule3 covers every tenant column of one instance that a covered instance
-// references by a declared foreign key: the covered row's own data. It runs
-// only when rules 2 and 4 cover nothing more, so the exemption file lists
-// only the coverage that needs it.
-func (t *tenantCheck) rule3() bool {
-	changed := false
-	t.eachPair(func(x, y, in *tenantNode) {
-		if changed || len(y.tenant) == 0 || y.covered() || !x.covered() || !can(y, in) {
-			return
-		}
-		k, ok := t.fkMatch(x, y, in)
-		if !ok {
-			return
-		}
-		y.rule3 = x.inst.name() + " references it by " + k.name
-		for _, col := range y.tenant {
-			if y.how[col] == "" && y.exempt[col] == "" {
-				y.how[col] = "rule 3: " + y.rule3
-			}
-		}
-		changed = true
-	})
-	return changed
-}
-
-// eachPair calls fn for each ordered pair of distinct instances that an
-// equality of one condition links, with that condition's instance.
-func (t *tenantCheck) eachPair(fn func(x, y, in *tenantNode)) {
-	for _, in := range t.nodes {
-		var linked []*tenantNode
-		for _, eq := range t.eqs {
-			if eq.in != in {
-				continue
-			}
-			for _, side := range []tenantSide{eq.a, eq.b} {
-				if side.node != nil && !slices.Contains(linked, side.node) {
-					linked = append(linked, side.node)
-				}
-			}
-		}
-		for _, x := range linked {
-			for _, y := range linked {
-				if x != y {
-					fn(x, y, in)
-				}
-			}
-		}
-	}
-}
-
-// fkMatch returns a foreign key of from to to whose every column pair an
-// equality of the condition of in equates.
-func (t *tenantCheck) fkMatch(from, to, in *tenantNode) (foreignKey, bool) {
-	for _, k := range from.inst.table.foreignKeys {
-		if k.references != to.inst.table.sqlName || (k.refSchema != "" && k.refSchema != to.inst.table.schema) ||
-			len(k.columns) == 0 {
-			continue
-		}
-		all := true
-		for i, col := range k.columns {
-			all = all && t.equates(in, from, col, to, k.refColumns[i])
-		}
-		if all {
-			return k, true
-		}
-	}
-	return foreignKey{}, false
-}
-
-// equates reports whether an equality of the condition of in equates
-// a.colA with b.colB.
-func (t *tenantCheck) equates(in, a *tenantNode, colA string, b *tenantNode, colB string) bool {
-	for _, eq := range t.eqs {
-		if eq.in != in {
-			continue
-		}
-		if (eq.a.node == a && eq.a.col == colA && eq.b.node == b && eq.b.col == colB) ||
-			(eq.b.node == a && eq.b.col == colA && eq.a.node == b && eq.a.col == colB) {
-			return true
-		}
-	}
-	return false
-}
-
-// fieldCovers reports whether the scope field field is the field of a
-// Scope that names a column col: a tenant column equated with a field of
-// another column is not covered.
-func (t *tenantCheck) fieldCovers(field, col string) bool {
-	for _, sc := range t.s.scopes {
-		if sc.kind == "ScopeNull" || len(sc.cols) == 0 || sc.cols[0].col.field != field {
-			continue
-		}
-		for _, c := range sc.cols {
-			if c.col.sqlName == col {
-				return true
-			}
-		}
-	}
-	return false
 }
