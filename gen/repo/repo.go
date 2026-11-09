@@ -63,7 +63,10 @@
 // the column's model type or a named type over it. A single-row find derives
 // only when its columns cover a key of the table's UniqueKeys. On a scoped
 // table a name filters on a scope column first; Internal skips the rule on a
-// read only. <file>_repo.gen.go holds the derived methods, each one helper
+// read only. A scope column may use its short name from ScopeNames, and a
+// derived read or delete on a table with a context scope column must name it:
+// its short name binds no parameter and applies the registered function
+// (ADR 0026). <file>_repo.gen.go holds the derived methods, each one helper
 // call of the base with its SQL in the comment, and var _ Iface = (*impl)(nil)
 // per binding, so a deleted hand-written method fails the build.
 //
@@ -104,6 +107,7 @@ import (
 	"flag"
 	"fmt"
 	"go/ast"
+	"go/token"
 	"io"
 	"os"
 	"path/filepath"
@@ -141,6 +145,9 @@ type Options struct {
 	// scopes it, written as its import path, a dot and its name:
 	// Postgres.ContextScopes of nanogen/project.go.
 	ContextScopes map[string]string
+	// ScopeNames maps a tenant column to the short Go name that a derived
+	// method may use for it: Postgres.ScopeNames of nanogen/project.go.
+	ScopeNames map[string]string
 	// Spec is the OpenAPI document, API.Spec of nanogen/project.go. A
 	// search that declares nanorepo.API is checked against it both ways,
 	// and gets its API mapper. Empty: such a search is an error (A7).
@@ -192,6 +199,7 @@ func Generate(opts Options) (*Result, error) {
 		return nil, err
 	}
 	l.scopes, l.contextScopes, l.sortByDirection = opts.Scopes, opts.ContextScopes, opts.SortByDirection
+	l.scopeNames = opts.ScopeNames
 	if opts.Spec != "" {
 		if l.specPath, err = filepath.Abs(opts.Spec); err != nil {
 			return nil, gen.EnvErrorf("pass -spec with a path that exists", "resolve %s: %v", opts.Spec, err)
@@ -373,7 +381,39 @@ func orphans(opts Options, files []gen.File) ([]string, error) {
 	return deleted, errors.Join(problems...)
 }
 
-// Main runs `nanostack gen repo [-dir d] [-scopes a,b] [-context-scopes c=pkg.F] [-check] [-explain
+// parseScopePairs reads the -context-scopes pairs, column=importpath.Func,
+// and the -scope-names pairs, column=Name, into opts.
+func parseScopePairs(opts *Options, contextScopes, scopeNames string) error {
+	for pair := range strings.SplitSeq(contextScopes, ",") {
+		if pair = strings.TrimSpace(pair); pair == "" {
+			continue
+		}
+		col, fn, ok := strings.Cut(pair, "=")
+		if !ok || col == "" || fn == "" {
+			return fmt.Errorf("-context-scopes entry %q is not column=importpath.Func", pair)
+		}
+		if opts.ContextScopes == nil {
+			opts.ContextScopes = map[string]string{}
+		}
+		opts.ContextScopes[col] = fn
+	}
+	for pair := range strings.SplitSeq(scopeNames, ",") {
+		if pair = strings.TrimSpace(pair); pair == "" {
+			continue
+		}
+		col, name, ok := strings.Cut(pair, "=")
+		if !ok || col == "" || !token.IsExported(name) || !token.IsIdentifier(name) {
+			return fmt.Errorf("-scope-names entry %q is not column=ExportedName", pair)
+		}
+		if opts.ScopeNames == nil {
+			opts.ScopeNames = map[string]string{}
+		}
+		opts.ScopeNames[col] = name
+	}
+	return nil
+}
+
+// Main runs `nanostack gen repo [-dir d] [-scopes a,b] [-context-scopes c=pkg.F] [-scope-names c=Name] [-check] [-explain
 // [Iface|Search...]]` and returns the process exit code: 0 on success, also with
 // warnings, 1 on stale output or a declaration error, 2 on bad flags, 3 when
 // the environment fails; -h prints the flags and returns 0. Warnings print to
@@ -384,13 +424,15 @@ func Main(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("nanostack gen repo", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	var opts Options
-	var scopes, contextScopes string
+	var scopes, contextScopes, scopeNames string
 	var explain bool
 	fs.StringVar(&opts.Dir, "dir", ".", "package directory holding the nanorepo declarations")
 	fs.StringVar(&scopes, "scopes", "",
 		"comma-separated tenant columns, as Postgres.Scopes in nanogen/project.go (nanostack gen passes them)")
 	fs.StringVar(&contextScopes, "context-scopes", "",
 		"comma-separated column=importpath.Func pairs, as Postgres.ContextScopes in nanogen/project.go")
+	fs.StringVar(&scopeNames, "scope-names", "",
+		"comma-separated column=Name pairs, as Postgres.ScopeNames in nanogen/project.go")
 	fs.StringVar(&opts.Spec, "spec", "",
 		"the OpenAPI document, as API.Spec in nanogen/project.go (nanostack gen passes it)")
 	fs.StringVar(&opts.SortByDirection, "sort-by-direction", "",
@@ -413,23 +455,9 @@ func Main(args []string, stdout, stderr io.Writer) int {
 			opts.Scopes = append(opts.Scopes, s)
 		}
 	}
-	for pair := range strings.SplitSeq(contextScopes, ",") {
-		if pair = strings.TrimSpace(pair); pair == "" {
-			continue
-		}
-		col, fn, ok := strings.Cut(pair, "=")
-		if !ok || col == "" || fn == "" {
-			_, _ = fmt.Fprintf(
-				stderr,
-				"nanostack gen repo: -context-scopes entry %q is not column=importpath.Func\n",
-				pair,
-			)
-			return 2
-		}
-		if opts.ContextScopes == nil {
-			opts.ContextScopes = map[string]string{}
-		}
-		opts.ContextScopes[col] = fn
+	if err := parseScopePairs(&opts, contextScopes, scopeNames); err != nil {
+		_, _ = fmt.Fprintf(stderr, "nanostack gen repo: %v\n", err)
+		return 2
 	}
 	if explain {
 		return mainExplain(opts, fs.Args(), stdout, stderr)

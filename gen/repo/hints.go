@@ -17,7 +17,7 @@ import (
 func (r *resolver) badName(fn *types.Func, rest string) *refusal {
 	segs := splitAnd(rest)
 	for bad, seg := range segs {
-		if _, isCol := r.t.column(seg); isCol {
+		if _, isCol := r.t.column(seg); isCol || r.short[seg] != "" {
 			continue
 		}
 		if fail := r.operatorRefusal(fn, segs, bad); fail != nil {
@@ -26,8 +26,9 @@ func (r *resolver) badName(fn *types.Func, rest string) *refusal {
 		if a, b, ok := strings.Cut(seg, "Or"); ok && r.isColumn(a) && r.isColumn(b) {
 			return &refusal{msg: "Or is not derived; only And is", body: bodyFor(fn, orCond(fn, segs, bad, a, b))}
 		}
-		alt := "rename it with columns of " + r.t.sqlName + ": " + strings.Join(r.t.fields(), ", ")
-		if s := suggest(seg, r.t.fields()); s != "" {
+		names := r.nameWords()
+		alt := "rename it with columns of " + r.t.sqlName + ": " + strings.Join(names, ", ")
+		if s := suggest(seg, names); s != "" {
 			if name := strings.Replace(fn.Name(), seg, s, 1); r.renameOK(fn, name) {
 				alt = "rename it " + name + " (did you mean " + s + "?)"
 			}
@@ -46,7 +47,19 @@ func (r *resolver) badName(fn *types.Func, rest string) *refusal {
 
 func (r *resolver) isColumn(field string) bool {
 	_, ok := r.t.column(field)
-	return ok
+	return ok || r.short[field] != ""
+}
+
+// nameWords are the words a derived name may use for the columns of the
+// table: the Go fields, then the short names of its scope columns.
+func (r *resolver) nameWords() []string {
+	out := r.t.fields()
+	for _, w := range r.words() {
+		if w.text != w.field {
+			out = append(out, w.text)
+		}
+	}
+	return out
 }
 
 // operatorRefusal explains segment bad of segs when it is a column followed
@@ -162,8 +175,8 @@ func (r *resolver) renameHint(fn *types.Func) (hint string, fits bool) {
 		}
 		cols = append(cols, col)
 	}
-	name := prefix + strings.Join(cols, "And")
-	if len(cols) == 0 {
+	name := prefix + strings.Join(r.hintWords(cols), "And")
+	if len(cols) == 0 && len(r.ctx) == 0 {
 		name = map[string]string{"FindBy": "FindAll", "CountBy": "Count"}[prefix]
 	}
 	if name == "" || !r.renameOK(fn, name) {
@@ -177,32 +190,6 @@ func (r *resolver) renameHint(fn *types.Func) (hint string, fits bool) {
 func (r *resolver) isDomainResult(t types.Type) bool {
 	row, _ := rowOf(t)
 	return types.Identical(row, r.t.domain)
-}
-
-// suggestScoped puts the scope first: FindByEmail -> FindByProductIDAndEmail,
-// FindByIDAndProductID (preds ID, ProductID) -> FindByProductIDAndID, FindAll
-// -> FindByProductID.
-func suggestScoped(name, scope string, preds ...string) string {
-	for _, p := range prefixes {
-		rest, ok := strings.CutPrefix(name, p.name)
-		if !ok {
-			continue
-		}
-		if len(preds) == 0 {
-			return p.name + scope + "And" + rest
-		}
-		parts := []string{scope}
-		for _, pred := range preds {
-			if pred != scope {
-				parts = append(parts, pred)
-			}
-		}
-		return p.name + strings.Join(parts, "And")
-	}
-	if name == "Count" {
-		return "CountBy" + scope
-	}
-	return strings.Replace(name, "All", "By"+scope, 1)
 }
 
 // suggest returns the column the developer most likely meant, or "".
@@ -371,3 +358,38 @@ const (
 	bodyBreak  = "\n             "
 	orIndent   = "\n       or "
 )
+
+// hintWords are the words of a suggested name for the columns cols, taken
+// from the parameters: a scope column by its short name, and each context
+// scope that cols lack, by its short name, after the leading scope columns.
+func (r *resolver) hintWords(cols []string) []string {
+	var words []string
+	for _, c := range cols {
+		if r.ctxOf(c) != nil {
+			words = append(words, c) // a parameter names it: the field form
+		} else {
+			words = append(words, r.display(c))
+		}
+	}
+	at := 0
+	for at < len(cols) && slices.Contains(r.scope, cols[at]) && r.ctxOf(cols[at]) == nil {
+		at++
+	}
+	for _, c := range r.missingCtx(termsOfFields(cols)) {
+		if c.short == "" {
+			continue
+		}
+		words = slices.Insert(words, at, c.short)
+		at++
+	}
+	return words
+}
+
+// termsOfFields reads fields as terms that bind a parameter each.
+func termsOfFields(fields []string) []term {
+	out := make([]term, len(fields))
+	for i, f := range fields {
+		out[i] = term{field: f}
+	}
+	return out
+}

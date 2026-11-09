@@ -41,6 +41,7 @@ type loaded struct {
 	// contextScopes maps each context tenant column to its registered
 	// function, import path and name: Postgres.ContextScopes.
 	contextScopes map[string]string
+	scopeNames    map[string]string // column -> short Go name, Postgres.ScopeNames
 
 	specPath        string   // the OpenAPI spec, absolute; "" without one
 	spec            *apiSpec // read on the first search that declares API

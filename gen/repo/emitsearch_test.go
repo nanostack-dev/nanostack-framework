@@ -16,7 +16,6 @@ import (
 
 	"github.com/nanostack-dev/nanostack-framework/gen"
 	"github.com/nanostack-dev/nanostack-framework/gen/internal/importset"
-	"github.com/nanostack-dev/nanostack-framework/gen/repo/internal/repotest"
 )
 
 // maxSearchLines is the most non-blank lines one fixture search may own in
@@ -355,7 +354,7 @@ func TestNullableKeyConversion(t *testing.T) {
 
 // builderOptions runs on dir with the tenant columns of the fixture.
 func builderOptions(dir string) Options {
-	return Options{Dir: dir, Scopes: repotest.Scopes, ContextScopes: repotest.ContextScopes}
+	return fixtureOptions(dir)
 }
 
 // apiOptions are the options of a run of testdata/apibind: the spec next

@@ -1,0 +1,19 @@
+Projects on *projectsImpl (table projects, scope tenant_id (Tenant))
+  FindByTenantAndID              ERROR: not implemented
+                                 note: table projects has the context scope workspace_id (Postgres.ContextScopes), and the name does not name it
+  FindByTenantIDAndName          ERROR: not implemented
+                                 note: table projects has the context scope workspace_id (Postgres.ContextScopes), and the name does not name it
+  ListByName                     ERROR: not implemented
+                                 note: it does not start with FindBy, GetBy, ExistsBy, CountBy, DeleteBy, FindAll or Count
+  DeleteByTenantAndID            ERROR: not implemented
+                                 note: table projects has the context scope workspace_id (Postgres.ContextScopes), and the name does not name it
+  DeleteByTenantAndIDInternal    ERROR: not implemented
+                                 note: table projects has the context scope workspace_id (Postgres.ContextScopes), and a derived delete must name it: Internal skips the scope on derived reads only
+  FindByWorkspaceAndTenantAndID  ERROR: not implemented
+                                 note: table projects is scoped by tenant_id, and the name does not filter on it first
+  FindByIDAndTenantAndWorkspace  ERROR: not implemented
+                                 note: table projects is scoped by tenant_id, and the name does not filter on it first
+Boards on *boardsImpl (table boards, scope workspace_id (Workspace))
+  FindByID          ERROR: not implemented
+                    note: table boards is scoped by workspace_id, and the name does not filter on it first
+  FindByIDInternal  derived, UNSCOPED (Internal): SELECT * FROM boards WHERE id = $1 LIMIT 2 -- at most one row: boards_pkey (id); a second row is ErrMoreThanOneRow

@@ -145,6 +145,20 @@ nanogen/project.go:7: Postgres.ContextScopes names "workspace_id" twice
 nanogen/project.go:7: Postgres.ContextScopes: the function of "organization_id" is "app/scope.1Filter", not an import path, a dot and a function name
   fix: write the function as "example.com/app/internal/db/workspacescope.Filter"
 `},
+		{`Postgres: &project.Postgres{Name: "app", Scopes: []string{"organization_id", "workspace_id"}, ` +
+			`ScopeNames: map[string]string{"team_id": "Team", "organization_id": "org", "workspace_id": "1Workspace"}}`,
+			`nanogen/project.go:7: Postgres.ScopeNames: the name of "organization_id" is "org", not an exported Go identifier
+  fix: write an exported Go identifier, such as "Org"
+nanogen/project.go:7: Postgres.ScopeNames names "team_id", which is not in Postgres.Scopes
+  fix: add "team_id" to Postgres.Scopes, or remove its name
+nanogen/project.go:7: Postgres.ScopeNames: the name of "workspace_id" is "1Workspace", not an exported Go identifier
+  fix: write an exported Go identifier, such as "Org"
+`},
+		{`Postgres: &project.Postgres{Name: "app", Scopes: []string{"organization_id", "workspace_id"}, ` +
+			`ScopeNames: map[string]string{"organization_id": "Org", "workspace_id": "Org"}}`,
+			`nanogen/project.go:7: Postgres.ScopeNames: "organization_id" and "workspace_id" share the name "Org"
+  fix: give each column its own name
+`},
 	} {
 		dir := copyFixtureOf(t, dbFixture)
 		edit(t, dir, "nanogen/project.go", `Postgres: &project.Postgres{Name: "app"}`, tc.decl)

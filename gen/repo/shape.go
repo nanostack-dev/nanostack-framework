@@ -234,10 +234,16 @@ func (r *resolver) checkUnique(fn *types.Func, m *derivedMethod) *refusal {
 // -explain.
 func (r *resolver) methodSQL(m *derivedMethod) string {
 	where := ""
-	if len(m.preds) > 0 {
-		parts := make([]string, len(m.preds))
-		for i, p := range m.preds {
-			parts[i] = r.sqlName(p) + " = $" + strconv.Itoa(i+1)
+	if len(m.terms) > 0 {
+		parts := make([]string, len(m.terms))
+		next := 0
+		for i, t := range m.terms {
+			if t.ctx != nil {
+				parts[i] = funcWord(t.ctx.fn) + "(ctx, " + t.ctx.col + ")"
+				continue
+			}
+			next++
+			parts[i] = r.sqlName(t.field) + " = $" + strconv.Itoa(next)
 		}
 		where = " WHERE " + strings.Join(parts, " AND ")
 	}

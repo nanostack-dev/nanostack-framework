@@ -974,6 +974,279 @@ func (itemsWhere) ExternalIDIsNull() postgres.BoolExpression { return table.Item
 // TagsIsNull is tags IS NULL.
 func (itemsWhere) TagsIsNull() postgres.BoolExpression { return table.Items.Tags.IS_NULL() }
 
+// projectsBase is the generated base of table projects. It holds the table (t),
+// typed predicates (where), helpers that run in the context transaction and
+// map each row with projectToDomain, and the pkg/db/transactor functions as methods.
+// Embed it in the implementation and set it with newProjectsBase(db).
+type projectsBase struct {
+	db    qrm.DB
+	t     *table.ProjectsTable
+	where projectsWhere
+}
+
+// newProjectsBase returns the base of table projects. It runs its statements on the
+// transaction of the context, and on db outside one.
+func newProjectsBase(db qrm.DB) projectsBase {
+	return projectsBase{db: db, t: table.Projects}
+}
+
+// findOne returns the row matching cond: absent when none does, and
+// transactor.ErrMoreThanOneRow when two do. It reads LIMIT 2, so a key that
+// stopped being unique is an error, never a silent first row. To pick one of
+// several rows, use first with an order.
+func (b projectsBase) findOne(ctx context.Context, cond postgres.BoolExpression) (functional.Option[Project], error) {
+	stmt := b.t.SELECT(b.t.AllColumns)
+	if cond != nil {
+		stmt = stmt.WHERE(cond)
+	}
+	rows, err := b.queryRows(ctx, stmt.LIMIT(2)).Value()
+	switch {
+	case err != nil:
+		return functional.None[Project](), err
+	case len(rows) > 1:
+		return functional.None[Project](), fmt.Errorf("%w: projects", transactor.ErrMoreThanOneRow)
+	case len(rows) == 0:
+		return functional.None[Project](), nil
+	}
+	return functional.Some(rows[0]), nil
+}
+
+// first returns the first row matching cond in the given order, absent when
+// none does. End the order with a unique column, such as the primary key, so
+// the row it picks is stable.
+func (b projectsBase) first(ctx context.Context, cond postgres.BoolExpression, order postgres.OrderByClause, more ...postgres.OrderByClause) (functional.Option[Project], error) {
+	stmt := b.t.SELECT(b.t.AllColumns)
+	if cond != nil {
+		stmt = stmt.WHERE(cond)
+	}
+	return b.queryRowOptional(ctx, stmt.ORDER_BY(append([]postgres.OrderByClause{order}, more...)...).LIMIT(1))
+}
+
+// findAll returns every row matching cond, every row when cond is nil, in the
+// given order.
+func (b projectsBase) findAll(ctx context.Context, cond postgres.BoolExpression, order ...postgres.OrderByClause) ([]Project, error) {
+	stmt := b.t.SELECT(b.t.AllColumns)
+	if cond != nil {
+		stmt = stmt.WHERE(cond)
+	}
+	if len(order) > 0 {
+		stmt = stmt.ORDER_BY(order...)
+	}
+	return b.queryRows(ctx, stmt).Value()
+}
+
+// exists reports whether a row matches cond, or whether the table has a row
+// when cond is nil. PostgreSQL refuses a row lock on it, which aggregates.
+func (b projectsBase) exists(ctx context.Context, cond postgres.BoolExpression) (bool, error) {
+	found := b.t.SELECT(postgres.Int32(1))
+	if cond != nil {
+		found = found.WHERE(cond)
+	}
+	n, err := b.queryCount(ctx, postgres.SELECT(postgres.COUNT(postgres.STAR)).FROM(found.LIMIT(1).AsTable("found"))).Value()
+	return n > 0, err
+}
+
+// count counts the rows matching cond, every row when cond is nil.
+// PostgreSQL refuses a row lock on it, which aggregates.
+func (b projectsBase) count(ctx context.Context, cond postgres.BoolExpression) (int64, error) {
+	stmt := b.t.SELECT(postgres.COUNT(postgres.STAR))
+	if cond != nil {
+		stmt = stmt.WHERE(cond)
+	}
+	return b.queryCount(ctx, stmt).Value()
+}
+
+// deleteWhere deletes the rows matching cond and returns how many it deleted.
+// It refuses a nil cond. A locked context returns transactor.ErrRowLockNotSelect
+// or ErrRowLockOutsideTx without running the DELETE.
+func (b projectsBase) deleteWhere(ctx context.Context, cond postgres.BoolExpression) (int64, error) {
+	if cond == nil {
+		return 0, errors.New("projects: deleteWhere needs a condition")
+	}
+	return b.execAffected(ctx, b.t.DELETE().WHERE(cond)).Value()
+}
+
+// updateWhere applies the assignments, such as b.t.Name.SET(postgres.String(v)),
+// to the rows matching cond and returns how many it updated. It refuses a nil
+// cond, and a locked context, as deleteWhere does.
+func (b projectsBase) updateWhere(ctx context.Context, cond postgres.BoolExpression, set postgres.ColumnAssigment, more ...postgres.ColumnAssigment) (int64, error) {
+	if cond == nil {
+		return 0, errors.New("projects: updateWhere needs a condition")
+	}
+	values := make([]any, len(more))
+	for i, m := range more {
+		values[i] = m
+	}
+	return b.execAffected(ctx, b.t.UPDATE().SET(set, values...).WHERE(cond)).Value()
+}
+
+// query runs stmt and scans its rows into T: a model row, a slice, or a struct
+// of aliased columns. Chain OnUnique, OnForeignKey or OnNoRows before Value.
+func (b projectsBase) query[T any](ctx context.Context, stmt postgres.Statement) transactor.Result[T] {
+	return transactor.Query[T](ctx, b.db, stmt)
+}
+
+// queryOptional runs stmt, which may match no row: then the Option is absent
+// and the error nil.
+func (b projectsBase) queryOptional[T any](ctx context.Context, stmt postgres.Statement) (functional.Option[T], error) {
+	return transactor.QueryOptional[T](ctx, b.db, stmt)
+}
+
+// queryMap runs stmt, scans one T and maps it with mapFunc.
+func (b projectsBase) queryMap[T, R any](ctx context.Context, stmt postgres.Statement, mapFunc func(T) R) transactor.Result[R] {
+	return transactor.QueryMap(ctx, b.db, stmt, mapFunc)
+}
+
+// queryOptionalMap is queryOptional, then mapFunc on the row when there is one.
+func (b projectsBase) queryOptionalMap[T, R any](ctx context.Context, stmt postgres.Statement, mapFunc func(T) R) (functional.Option[R], error) {
+	return transactor.QueryOptionalMap(ctx, b.db, stmt, mapFunc)
+}
+
+// queryMapSlice runs stmt and maps every row with mapFunc.
+func (b projectsBase) queryMapSlice[T, R any](ctx context.Context, stmt postgres.Statement, mapFunc func(T) R) transactor.Result[[]R] {
+	return transactor.QueryMapSlice(ctx, b.db, stmt, mapFunc)
+}
+
+// queryCount runs a SELECT COUNT statement.
+func (b projectsBase) queryCount(ctx context.Context, stmt postgres.Statement) transactor.Result[int64] {
+	return transactor.QueryCount(ctx, b.db, stmt)
+}
+
+// exec runs a statement that returns no rows. Unwrap it with Err.
+func (b projectsBase) exec(ctx context.Context, stmt postgres.Statement) transactor.Result[struct{}] {
+	return transactor.Exec(ctx, b.db, stmt)
+}
+
+// execAffected runs a statement and returns the number of rows it changed.
+func (b projectsBase) execAffected(ctx context.Context, stmt postgres.Statement) transactor.Result[int64] {
+	return transactor.ExecAffected(ctx, b.db, stmt)
+}
+
+// page starts a paginated query of rows T mapped to R; both come from mapFunc.
+func (b projectsBase) page[T, R any](mapFunc func(T) R, columns ...postgres.Projection) *transactor.PageBuilder[T, R] {
+	return transactor.Page(b.db, mapFunc, columns...)
+}
+
+// search runs a declared search in the context transaction and maps each row
+// with toDomain.
+func (b projectsBase) search[T any, Q searchexec.Builder[T, Q, S, P], S ~string, P comparable, R any](
+	ctx context.Context, spec *searchexec.Spec[T, S, P], q searchexec.Query[T, Q, S, P], toDomain func(T) R,
+) (search.Result[R], error) {
+	return transactor.Search(ctx, b.db, spec, q, toDomain).Value()
+}
+
+// searchPage is search with a mapper that maps the whole page in one call.
+func (b projectsBase) searchPage[T any, Q searchexec.Builder[T, Q, S, P], S ~string, P comparable, R any](
+	ctx context.Context, spec *searchexec.Spec[T, S, P], q searchexec.Query[T, Q, S, P], toDomain func(context.Context, []T) ([]R, error),
+) (search.Result[R], error) {
+	return transactor.SearchPage(ctx, b.db, spec, q, toDomain).Value()
+}
+
+// queryRow runs stmt, which returns one projects row, such as an INSERT or
+// UPDATE ... RETURNING(b.t.AllColumns), and maps it with projectToDomain.
+func (b projectsBase) queryRow(ctx context.Context, stmt postgres.Statement) transactor.Result[Project] {
+	return b.queryMap(ctx, stmt, projectToDomain)
+}
+
+// queryRowOptional is queryRow for a statement that may return no row.
+func (b projectsBase) queryRowOptional(ctx context.Context, stmt postgres.Statement) (functional.Option[Project], error) {
+	return b.queryOptionalMap(ctx, stmt, projectToDomain)
+}
+
+// queryRows is queryRow for every row stmt returns; no row is an empty slice.
+func (b projectsBase) queryRows(ctx context.Context, stmt postgres.Statement) transactor.Result[[]Project] {
+	return b.queryMapSlice(ctx, stmt, projectToDomain)
+}
+
+// projectsWhere builds predicates on the columns of projects. A string predicate
+// compares as text. Contains is searchexec.Contains: it trims the term,
+// matches a substring without case, and % _ ! in the term match
+// themselves. A blank term matches every row.
+type projectsWhere struct{}
+
+// ID is id = v.
+func (projectsWhere) ID(v string) postgres.BoolExpression {
+	return table.Projects.ID.EQ(postgres.String(v))
+}
+
+// IDIn is id IN (vs...); no value matches no row.
+func (projectsWhere) IDIn(vs ...string) postgres.BoolExpression {
+	if len(vs) == 0 {
+		return postgres.Bool(false)
+	}
+	exprs := make([]postgres.Expression, len(vs))
+	for i, v := range vs {
+		exprs[i] = postgres.String(v)
+	}
+	return table.Projects.ID.IN(exprs...)
+}
+
+// TenantID is tenant_id = v.
+func (projectsWhere) TenantID(v uuid.UUID) postgres.BoolExpression {
+	return table.Projects.TenantID.EQ(postgres.UUID(v))
+}
+
+// TenantIDIn is tenant_id IN (vs...); no value matches no row.
+func (projectsWhere) TenantIDIn(vs ...uuid.UUID) postgres.BoolExpression {
+	if len(vs) == 0 {
+		return postgres.Bool(false)
+	}
+	exprs := make([]postgres.Expression, len(vs))
+	for i, v := range vs {
+		exprs[i] = postgres.UUID(v)
+	}
+	return table.Projects.TenantID.IN(exprs...)
+}
+
+// WorkspaceID is workspace_id = v.
+func (projectsWhere) WorkspaceID(v string) postgres.BoolExpression {
+	return table.Projects.WorkspaceID.EQ(postgres.String(v))
+}
+
+// WorkspaceIDIn is workspace_id IN (vs...); no value matches no row.
+func (projectsWhere) WorkspaceIDIn(vs ...string) postgres.BoolExpression {
+	if len(vs) == 0 {
+		return postgres.Bool(false)
+	}
+	exprs := make([]postgres.Expression, len(vs))
+	for i, v := range vs {
+		exprs[i] = postgres.String(v)
+	}
+	return table.Projects.WorkspaceID.IN(exprs...)
+}
+
+// WorkspaceIDIsNull is workspace_id IS NULL.
+func (projectsWhere) WorkspaceIDIsNull() postgres.BoolExpression {
+	return table.Projects.WorkspaceID.IS_NULL()
+}
+
+// Name is name = v.
+func (projectsWhere) Name(v string) postgres.BoolExpression {
+	return table.Projects.Name.EQ(postgres.String(v))
+}
+
+// NameIn is name IN (vs...); no value matches no row.
+func (projectsWhere) NameIn(vs ...string) postgres.BoolExpression {
+	if len(vs) == 0 {
+		return postgres.Bool(false)
+	}
+	exprs := make([]postgres.Expression, len(vs))
+	for i, v := range vs {
+		exprs[i] = postgres.String(v)
+	}
+	return table.Projects.Name.IN(exprs...)
+}
+
+// NameContains matches name that contain term, ignoring case.
+func (projectsWhere) NameContains(term string) postgres.BoolExpression {
+	return searchexec.Contains(term, table.Projects.Name)
+}
+
+// NameEqualsIgnoreCase is lower(name) = lower(v).
+func (projectsWhere) NameEqualsIgnoreCase(v string) postgres.BoolExpression {
+	return postgres.LOWER(table.Projects.Name).EQ(postgres.LOWER(postgres.String(v)))
+}
+
 // tenantsBase is the generated base of table tenants. It holds the table (t),
 // typed predicates (where), helpers that run in the context transaction and
 // return the model rows, and the pkg/db/transactor functions as methods.

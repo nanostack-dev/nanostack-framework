@@ -60,13 +60,22 @@ type ExplainedMethod struct {
 
 // resolver resolves the methods of one binding.
 type resolver struct {
-	l      *loaded
-	b      *binding
-	t      *tableBase
-	scope  []string        // Go fields of the table's scope columns
-	old    map[string]bool // where-type methods of the base on disk, "itemsWhere.Email"
-	nested bool            // inside a rename check: no nested suggestions
-	res    *resolution
+	l     *loaded
+	b     *binding
+	t     *tableBase
+	scope []string // Go fields of the table's NOT NULL scope columns
+	// allScope holds the Go fields of every scope column, nullable or not; ctx
+	// the context ones; short and shortOf the Postgres.ScopeNames of the
+	// table (short name to Go field, and back); clashes the short names the
+	// table cannot use.
+	allScope []string
+	ctx      []ctxScope
+	short    map[string]string
+	shortOf  map[string]string
+	clashes  []string
+	old      map[string]bool // where-type methods of the base on disk, "itemsWhere.Email"
+	nested   bool            // inside a rename check: no nested suggestions
+	res      *resolution
 }
 
 // resolve resolves every binding of d.
@@ -76,6 +85,7 @@ func (l *loaded) resolve(d *declarations, scopes []string) []*resolution {
 	for _, b := range d.bindings {
 		r := &resolver{l: l, b: b, t: b.table, scope: b.table.scopeFields(scopes), old: old,
 			res: &resolution{b: b, via: "r."}}
+		r.setupScopes(scopes)
 		r.run(d)
 		out = append(out, r.res)
 	}
@@ -88,7 +98,11 @@ func (r *resolver) run(d *declarations) {
 	cols := make([]string, len(r.scope))
 	for i, f := range r.scope {
 		cols[i] = r.sqlName(f)
+		if s := r.shortOf[f]; s != "" {
+			cols[i] += " (" + s + ")"
+		}
 	}
+	r.res.problems = append(r.res.problems, r.clashProblems()...)
 	r.res.explain = Explanation{Iface: r.qualified(r.b.iface), Impl: r.b.impl.Obj().Name(), Table: r.t.sqlName,
 		Scope: strings.Join(cols, ", ")}
 	hand, ptr, val := r.handWritten()
