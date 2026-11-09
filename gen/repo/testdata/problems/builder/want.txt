@@ -1,0 +1,36 @@
+builder.go:28: search OwnRow: the Row is itemRow, not the model of items, and nano gen repo selects only the columns of the model yet
+  fix: search model.Items, the model of items, until nano gen repo selects the columns of a Row of its own
+builder.go:31: search OwnRow: weight is nullable, and its Row field is float32, not a pointer
+  fix: make the Row field a pointer, as nano gen db does in a model for a NULL column
+builder.go:36: search NoTenant has no tenant condition (no Scope, ScopeOrNull, ScopeNull or ScopeFunc): searchexec.DefineSpec refuses it when the package starts
+  fix: scope the search: nanorepo.Scope(table.Items.TenantID)
+builder.go:42: search NoSort declares no sort with a key (SortHandWritten adds none): searchexec.DefineSpec needs at least one key
+  fix: add nanorepo.Sort(...) with the columns an API client may sort on, such as nanorepo.Sort(table.Items.ID)
+builder.go:52: search Shapes: the operators of Sku make more than one field type
+  fix: split the operators: Eq and In share a field, and Contains and ContainsAny do; give the others a nanorepo.FilterExpr of their own
+builder.go:53: search Shapes: the filter Limit would hide the method Limit of the builder
+  fix: filter through nanorepo.FilterExpr with another name, such as "LimitValue"
+builder.go:55: search Shapes: two filters make the accessor Name
+  fix: merge the two filters, or name one with nanorepo.FilterExpr
+builder.go:56: search Shapes: FilterExists is read, and nano gen repo does not generate it yet
+  fix: write the filter by hand on searchexec.NewExists, in a method on the builder
+builder.go:57: search Shapes: Range on Stock needs a postgres.TimestampzExpression, and stock is a postgres.IntegerExpression
+  fix: use another operator, or a FilterExpr whose function returns postgres.TimestampzExpression
+builder.go:58: search Shapes: nano gen repo has no literal for float64 values of price
+  fix: filter through a FilterExpr whose function returns a string, integer or bool expression, such as postgres.CAST(...).AS_TEXT()
+builder.go:59: search Shapes: NullsFirst on name, which is NOT NULL
+  fix: remove .NullsFirst(): a NOT NULL column has no NULL to place
+builder.go:60: search Shapes: nano gen repo has no keyset key for active (bool, Go bool)
+  fix: sort on another column, or write the method by hand on searchexec.Resolve
+builder.go:66: search WrongFrom: From itemsOf takes otherScope, and the scope value of the search is WrongFromScope
+  fix: declare itemsOf as func(s WrongFromScope) with the scope value of the search
+builder.go:75: search HandOnly declares no sort with a key (SortHandWritten adds none): searchexec.DefineSpec needs at least one key
+  fix: add nanorepo.Sort(...) with the columns an API client may sort on, such as nanorepo.Sort(table.Items.ID)
+builder.go:81: search TwiceKey: the sort_by value "name" is given twice
+  fix: remove one of the two sorts, or give one another API name with SortKey(...).API(...)
+builder.go:88: search TwiceHand: the sort_by value "name" is given twice
+  fix: remove one of the two sorts, or give one another API name with SortKey(...).API(...)
+builder.go:95: search OneConst: the sorts "created-at" and "created_at" both make the constant OneConstSortCreatedAt
+  fix: give one of the two sorts another API name with SortKey(...).API(...)
+builder.go:105: search Client: nano gen repo has no literal for string values of client
+  fix: filter through a FilterExpr whose function returns a string, integer or bool expression, such as postgres.CAST(...).AS_TEXT()

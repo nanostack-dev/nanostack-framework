@@ -111,6 +111,7 @@ func (l *loaded) declarations() (*declarations, error) {
 	}
 	if len(c.problems) == 0 {
 		c.problems = append(c.problems, l.checkNames(d)...)
+		c.problems = append(c.problems, l.checkBuilderNames(d)...)
 	}
 	if len(c.problems) > 0 {
 		return nil, errors.Join(c.problems...)

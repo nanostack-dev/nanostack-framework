@@ -39,6 +39,11 @@ func (q itemSearch) NameFold() searchexec.InFold[itemSearch, string] {
 	return searchexec.NewInFold[string](q.Query, itemName)
 }
 
+// Kind reads the name column as a native enum with the labels "a" and "b".
+func (q itemSearch) Kind() searchexec.EqIn[itemSearch, string] {
+	return searchexec.NewEqIn(q.Query, itemName, searchexec.EnumLit[string]("a", "b"))
+}
+
 func (q itemSearch) Rank() searchexec.EqIn[itemSearch, int64] {
 	return searchexec.NewEqIn(q.Query, itemRank, searchexec.IntLit[int64])
 }
@@ -112,6 +117,15 @@ func TestFieldsSQL(t *testing.T) {
 		"InFold, only values no column holds": {q.NameFold().In("a\x00", "\xc3"), "FALSE", []any{}},
 		"In, a value no column holds": {
 			q.Name().In("a", "b\x00", "\xff"), "(items.name IN ($6, NULL, NULL))", []any{"a"},
+		},
+		"Enum In": {
+			q.Kind().In("a", "b"), "(items.name IN ($6, $7))", []any{"a", "b"},
+		},
+		"Enum In, a value that is not a label": {
+			q.Kind().In("a", "bogus", "A"), "(items.name IN ($6, NULL, NULL))", []any{"a"},
+		},
+		"Enum Eq, a value that is not a label": {
+			q.Kind().Eq("bogus"), "(items.name = NULL)", []any{},
 		},
 		"EqIn Eq": {q.Rank().Eq(3), "(items.rank = $6)", []any{int64(3)}},
 		"EqIn In": {q.Rank().In(1, 2), "(items.rank IN ($6, $7))", []any{int64(1), int64(2)}},

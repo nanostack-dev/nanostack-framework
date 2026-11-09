@@ -31,10 +31,9 @@ func (c *collector) checkSearch(s *searchDecl) {
 	c.order(s)
 }
 
-// checkFilter checks the text operators and the value type of one filter.
-// The operators of FilterExists apply to its child column, so they get the
-// same check. InFold and ContainsAny get the same check with their field
-// types (G11).
+// checkFilter checks the text operators (Contains, ContainsAny, InFold)
+// and the value type of one filter. The operators of FilterExists apply to
+// its child column, so they get the same check.
 func (c *collector) checkFilter(f *searchFilter) {
 	if f.col == nil {
 		return
@@ -48,7 +47,7 @@ func (c *collector) checkFilter(f *searchFilter) {
 	}
 	typ := f.col.table.catalog[f.col.col.sqlName]
 	for _, op := range f.ops {
-		if op.name == "Contains" && !textType(typ) {
+		if (op.name == "Contains" || op.name == "ContainsAny" || op.name == "InFold") && !textType(typ) {
 			c.errorf(op.node, textFix, "%s(%s, %s): column %s (%s) is not a text column", f.kind, f.col,
 				c.source(op.node), f.col.col.sqlName, typ)
 		}

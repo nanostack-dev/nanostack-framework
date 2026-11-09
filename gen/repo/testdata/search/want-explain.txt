@@ -13,6 +13,7 @@ search ItemBySku on items (rows model.Items)
   limit      50
 search ItemByTenantSku on items (rows model.Items)
   read       items; root; nullable weight, released_on, local_at, opens_at, deleted_at, external_id, tags; tenant tenant_id
+  sort       name: items.name
   tiebreak   tenant_id, sku, id: covers items_pkey (id)
 search ItemWithTenant on items (rows model.Items)
   from       itemsWithTheirTenant
@@ -55,10 +56,12 @@ search ItemAliasedTenant on items (rows model.Items)
 search ItemOfNamedTenant on items (rows model.Items)
   from       itemsOfNamedTenant
   read       items; root; nullable weight, released_on, local_at, opens_at, deleted_at, external_id, tags; tenant tenant_id
-  read       tenants; INNER JOIN; ON table.Tenants.Name.EQ(postgres.String(s.TenantName)); one row by tenants_name_key (name)
+  read       tenants; INNER JOIN; ON table.Tenants.Name.EQ(postgres.String(s.Name)); one row by tenants_name_key (name)
   subquery   SortExpr Siblings siblingCount reads items AS sibling; WHERE table.Items.AS("sibling").TenantID.EQ(table.Items.TenantID)
   subquery   Flag HasSiblings hasSiblings reads items AS sibling; WHERE table.Items.AS("sibling").TenantID.EQ(table.Items.TenantID).AND(table.Items.AS("sibling").ID.NOT_EQ(table.Items.ID))
   subquery   Flag HasSiblings hasSiblings reads tenants AS sibling_tenant; INNER JOIN; ON table.Tenants.AS("sibling_tenant").ID.EQ(table.Items.AS("sibling").TenantID)
+  scope      Scope items.tenant_id
+  scope      Scope tenants.name
   filter     HasSiblings: Is on hasSiblings()
   filter     LowerName: Eq on lowerName()
   fulltext   skuText()

@@ -1,0 +1,4 @@
+textops.go:16: Filter(table.Items.TenantID, nanorepo.InFold): column tenant_id (uuid) is not a text column
+  fix: use nanorepo.Range(...), Eq or In, or nanorepo.FullTextExpr on a typed expression (CAST(...).AS_TEXT(), host(...))
+textops.go:17: Filter(table.Items.Status, nanorepo.ContainsAny): column status (item_status) is not a text column
+  fix: use nanorepo.Range(...), Eq or In, or nanorepo.FullTextExpr on a typed expression (CAST(...).AS_TEXT(), host(...))

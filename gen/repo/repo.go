@@ -68,12 +68,22 @@
 // per binding, so a deleted hand-written method fails the build.
 //
 // A nanorepo.Search declares a search (ADR 0027). nano gen repo reads it and
-// checks it, and generates nothing for it yet: the tables it reads (the
-// table, or each table of its From function with its join kind, every column
-// of a LEFT JOIN table nullable), their ColumnTypes, ForeignKeys, UniqueKeys
-// and models, its options, and its tiebreak (the primary key, or a Tiebreak
-// that covers a unique key that orders every row). -explain prints what it
-// read.
+// checks it: the tables it reads (the table, or each table of its From
+// function with its join kind, every column of a LEFT JOIN table nullable),
+// their ColumnTypes, ForeignKeys, UniqueKeys and models, its options, and its
+// tiebreak (the primary key, or a Tiebreak that covers a unique key that
+// orders every row). -explain prints what it read. Then it writes the
+// builder of the search into <file>_repo.gen.go of the declaring file, after
+// the code of the bindings (design 4.2): the builder type <Name>Search, its
+// scope value (the type of the one Scope field, the struct <Name>Scope for
+// two or more, struct{} for none), the sort enum <Name>Sort and one constant
+// per sort_by value, the spec variable <name>Search built with
+// searchexec.DefineSpec (From, the columns of the model, the tenant
+// conditions, the conditions, a keyset key per sort and the tiebreak, the
+// default sort and limit), New<Name>Search, one accessor per filter, and
+// FullText. A shape it cannot write yet (a Row other than the model of the
+// table, a sort on a joined column, SortExpr, FilterExists) is a problem of
+// the run, and -explain still prints the search.
 //
 // Generation loads the package with every file nano gen repo wrote replaced
 // by an empty file, so a stale output never blocks a run and a method a
@@ -81,7 +91,8 @@
 // then type-checks the package with the new files: a compile error that
 // remains is reported at its line, beside the methods that do not resolve,
 // and nothing is written. ForwardStubs gives the pipeline steps before repo
-// a stub of each derived file, built by parsing alone.
+// a stub of each derived file: its methods by parsing alone, and the
+// builders of its searches as a run writes them.
 package genrepo
 
 import (
@@ -166,6 +177,15 @@ func Generate(opts Options) (*Result, error) {
 		missing = append(missing, r.missing...)
 		failing = failing || r.incomplete || len(r.problems) > 0
 	}
+	for _, s := range decls.searches {
+		if len(s.unbuilt) > 0 {
+			problems = append(problems, s.unbuilt...)
+			failing = true
+			for _, name := range s.builder.names() {
+				missing = append(missing, "undefined: "+name)
+			}
+		}
+	}
 	out, err := l.renderAll(decls, res)
 	if err != nil {
 		return result, err
@@ -191,11 +211,12 @@ func (l *loaded) renderAll(decls *declarations, res []*resolution) (*rendered, e
 	if err != nil {
 		return nil, err
 	}
-	derived, byFile, err := l.renderDerived(res)
+	derived, out, err := l.renderDerived(res, decls.searches)
 	if err != nil {
 		return nil, err
 	}
-	return &rendered{files: append([]gen.File{{Path: l.outPath, Data: base}}, derived...), byFile: byFile}, nil
+	out.files = append([]gen.File{{Path: l.outPath, Data: base}}, derived...)
+	return out, nil
 }
 
 // checkTargets refuses to replace a file that nano gen repo did not write,
@@ -215,6 +236,8 @@ func (l *loaded) checkTargets(decls *declarations, out *rendered) []error {
 		what := "the declarations of this package"
 		if res := out.byFile[filepath.Base(f.Path)]; len(res) > 0 {
 			o, what = at{res[0].b.file, res[0].b.line}, "the declarations in "+res[0].b.file
+		} else if searches := out.searches[filepath.Base(f.Path)]; len(searches) > 0 {
+			o, what = searches[0].at, "the declarations in "+searches[0].at.file
 		}
 		problems = append(problems, gen.Errorf(o.file, o.line,
 			"rename that file: nano gen repo writes "+filepath.Base(f.Path)+" for "+what,

@@ -27,6 +27,7 @@ type tableBase struct {
 	foreignKeys []foreignKey // from ForeignKeys, in its order
 	fksFound    bool         // the table type has a ForeignKeys method
 
+	model  types.Type // the model a search reads, nil until a search reads the table
 	row    types.Type // the generated model, E
 	domain types.Type // what the row helpers return, D
 	mapper *mapperRef // nil: rows are returned as the model

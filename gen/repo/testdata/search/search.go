@@ -52,6 +52,7 @@ func _() {
 	// A Tiebreak that covers items_tenant_sku_key and items_pkey names the
 	// primary key, whatever the order of the key names.
 	nanorepo.Search[model.Items]("ItemByTenantSku", table.Items,
+		nanorepo.Sort(table.Items.Name),
 		nanorepo.Tiebreak(table.Items.TenantID, table.Items.Sku, table.Items.ID),
 	)
 
@@ -100,9 +101,13 @@ func _() {
 	// with Func, CAST, DATE_TRUNC with a constant time zone, and subqueries
 	// whose instances have an alias. The join links no column of items to
 	// tenants: the tenant check refuses this shape, and only the one-row
-	// rule is shown here.
+	// rule is shown here. The From function takes the scope value that nano
+	// gen repo generates, ItemOfNamedTenantScope: the first load of the
+	// package does not have it yet.
 	nanorepo.Search[model.Items]("ItemOfNamedTenant", table.Items,
 		nanorepo.From(itemsOfNamedTenant),
+		nanorepo.Scope(table.Items.TenantID),
+		nanorepo.Scope(table.Tenants.Name),
 		nanorepo.SortExpr("Siblings", siblingCount),
 		nanorepo.SortExpr("CreatedDay", createdDay),
 		nanorepo.Flag("HasSiblings", hasSiblings),
@@ -111,13 +116,10 @@ func _() {
 	)
 }
 
-// namedTenantScope stands for the scope value that nano gen repo generates.
-type namedTenantScope struct{ TenantName string }
+func itemsOfNamedTenant(s ItemOfNamedTenantScope) postgres.ReadableTable { return joinNamedTenant(s) }
 
-func itemsOfNamedTenant(s namedTenantScope) postgres.ReadableTable { return joinNamedTenant(s) }
-
-func joinNamedTenant(s namedTenantScope) postgres.ReadableTable {
-	return table.Items.INNER_JOIN(table.Tenants, table.Tenants.Name.EQ(postgres.String(s.TenantName)))
+func joinNamedTenant(s ItemOfNamedTenantScope) postgres.ReadableTable {
+	return table.Items.INNER_JOIN(table.Tenants, table.Tenants.Name.EQ(postgres.String(s.Name)))
 }
 
 func siblingCount() postgres.IntegerExpression {

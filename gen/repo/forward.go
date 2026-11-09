@@ -19,15 +19,15 @@ import (
 
 // Planned returns the files nano gen repo writes for the package in dir,
 // whose declaring files are files: repo_base.gen.go, and one
-// <file>_repo.gen.go per file that calls nanorepo.Implement. It reads the
-// files by parsing alone, as the pipeline plans on a tree that may not
-// compile.
+// <file>_repo.gen.go per file that calls nanorepo.Implement or
+// nanorepo.Search. It reads the files by parsing alone, as the pipeline
+// plans on a tree that may not compile.
 func Planned(dir string, files []string) []string {
 	out := []string{filepath.Join(dir, FileName)}
 	fset := token.NewFileSet()
 	for _, path := range files {
 		f, err := parser.ParseFile(fset, path, nil, parser.SkipObjectResolution)
-		if err == nil && callsImplement(f) {
+		if err == nil && (callsImplement(f) || callsSearch(f)) {
 			out = append(out, filepath.Join(dir, derivedFile(path)))
 		}
 	}
@@ -45,20 +45,33 @@ func Planned(dir string, files []string) []string {
 // body-stripped stub of the last output can do neither. A declaring file
 // whose bindings lack no method gets a stub with no method.
 //
-// It parses the package and type-checks nothing. The methods of an
-// interface it cannot read from the package's own files, an interface of
-// another package or one embedded from another package, are taken from the
-// last output on disk, minus those the implementation now has: the step
-// sees them as the last run left them.
+// The methods come from parsing alone. The methods of an interface it
+// cannot read from the package's own files, an interface of another package
+// or one embedded from another package, are taken from the last output on
+// disk, minus those the implementation now has: the step sees them as the
+// last run left them.
+//
+// A file that declares searches also gets their builders (design S10): the
+// scope type first, then the builder, its sort enum, its spec and its
+// accessors, as a run writes them. They come from the declarations and the
+// types of the packages they import; the hand-written code that uses the
+// builders need not type-check. A search that nano gen repo cannot write
+// gets its scope type only, so a From function that takes it still
+// type-checks. When the declarations have a problem, the stub has no
+// builder, and the repo step reports the problem.
 func ForwardStubs(dir string) map[string][]byte {
 	p := parsePackage(dir)
 	if p == nil {
 		return nil
 	}
+	var typed *stubSearches
+	if len(p.searching) > 0 {
+		typed = typedSearches(dir)
+	}
 	out := map[string][]byte{}
 	for _, file := range p.declaring {
 		path := filepath.Join(dir, derivedFile(file.path))
-		out[path] = p.stub(file, p.own[path])
+		out[path] = p.stub(file, p.own[path], typed)
 	}
 	return out
 }
@@ -76,7 +89,8 @@ type parsedPackage struct {
 	ifaces     map[string]ifaceDecl       // interface type name -> declaration
 	methods    map[string]map[string]bool // receiver type -> method names, outside nano gen repo files
 	ptr, val   map[string]bool            // receiver type -> its methods use a pointer, a value receiver
-	declaring  []parsedFile               // files with nanorepo.Implement calls
+	declaring  []parsedFile               // files with nanorepo.Implement or nanorepo.Search calls
+	searching  map[string]bool            // declaring file -> it calls nanorepo.Search
 	implements map[string][][2]string     // declaring file -> (interface, implementation) names; "" for an interface of another package
 	own        map[string]*ast.File       // path -> a file nano gen repo wrote
 }
@@ -96,7 +110,7 @@ func parsePackage(dir string) *parsedPackage {
 	}
 	p := &parsedPackage{fset: token.NewFileSet(), ifaces: map[string]ifaceDecl{},
 		methods: map[string]map[string]bool{}, ptr: map[string]bool{}, val: map[string]bool{},
-		implements: map[string][][2]string{}, own: map[string]*ast.File{}}
+		implements: map[string][][2]string{}, own: map[string]*ast.File{}, searching: map[string]bool{}}
 	for _, e := range entries {
 		name := e.Name()
 		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
@@ -135,9 +149,11 @@ func (p *parsedPackage) read(path string, f *ast.File) {
 			p.readMethod(d)
 		}
 	}
-	if pairs := implementCalls(f); len(pairs) > 0 {
+	pairs, searches := implementCalls(f), callsSearch(f)
+	if len(pairs) > 0 || searches {
 		p.declaring = append(p.declaring, parsedFile{path: path, f: f})
 		p.implements[path] = pairs
+		p.searching[path] = searches
 	}
 }
 
@@ -169,6 +185,21 @@ func (p *parsedPackage) readMethod(d *ast.FuncDecl) {
 func ownRepo(f *ast.File) bool {
 	return len(f.Comments) > 0 && f.Comments[0].Pos() < f.Package &&
 		strings.HasPrefix(f.Comments[0].List[0].Text, strings.TrimSpace(strings.SplitN(header, "\n", 2)[0]))
+}
+
+// callsSearch reports whether f calls nanorepo.Search[...].
+func callsSearch(f *ast.File) bool {
+	name := nanorepoName(f)
+	found := false
+	ast.Inspect(f, func(n ast.Node) bool {
+		if ix, ok := n.(*ast.IndexExpr); ok && name != "" {
+			sel, isSel := ix.X.(*ast.SelectorExpr)
+			found = found || isSel && sel.Sel.Name == "Search" && identOf(sel.X) != nil &&
+				identOf(sel.X).Name == name
+		}
+		return !found
+	})
+	return found
 }
 
 // callsImplement reports whether f calls nanorepo.Implement[...], whatever
@@ -250,8 +281,9 @@ type stubMethod struct {
 
 // stub renders the forward stub of one declaring file. last is the derived
 // file on disk, nil when there is none: the methods of an interface the
-// package does not declare are taken from it.
-func (p *parsedPackage) stub(file parsedFile, last *ast.File) []byte {
+// package does not declare are taken from it. typed holds the builders of
+// the package's searches, nil when it has none or they do not read.
+func (p *parsedPackage) stub(file parsedFile, last *ast.File, typed *stubSearches) []byte {
 	var body bytes.Buffer
 	imports := map[string]string{} // name -> path
 	for _, pair := range p.implements[file.path] {
@@ -274,6 +306,11 @@ func (p *parsedPackage) stub(file parsedFile, last *ast.File) []byte {
 				continue
 			}
 			body.WriteString("func (" + recv + ") " + m.name + sig + " { panic(\"nano gen stub\") }\n\n")
+		}
+	}
+	if searches := typed.of(file.path); len(searches) > 0 {
+		if src, ok := typed.stub(p.name, imports, body.Bytes(), searches); ok {
+			return src
 		}
 	}
 	var out bytes.Buffer

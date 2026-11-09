@@ -13,8 +13,8 @@ import (
 )
 
 // searchDecl is one nanorepo.Search declaration (ADR 0027): the table
-// instances the search reads and every option, as later steps generate them.
-// nano gen repo reads and checks the declaration; it generates nothing yet.
+// instances the search reads and every option. nano gen repo reads and
+// checks the declaration, then writes its builder (design 4.2).
 type searchDecl struct {
 	name      string
 	at        at
@@ -47,6 +47,12 @@ type searchDecl struct {
 	api             types.Type
 	ignoresFullText string
 	apiHandWritten  []string
+
+	// builder is what nano gen repo writes for the search; unbuilt holds the
+	// problems of a shape it cannot write, which do not hide the search
+	// from -explain.
+	builder *builder
+	unbuilt []error
 
 	given   map[string]at       // options that a search takes once, by group -> where
 	givenAs map[string]string   // the group of a once-option -> the option given, such as MapPage
@@ -238,6 +244,7 @@ func (c *collector) searchCall(call *ast.CallExpr, inst types.Instance, typed bo
 	if len(c.problems) > before {
 		return
 	}
+	c.planBuilder(s)
 	c.d.searches = append(c.d.searches, s)
 }
 
@@ -345,6 +352,7 @@ func (c *collector) searchModel(arg ast.Expr, t *tableBase) bool {
 			"the model package %s has no struct %s for table %s", modelPath, t.goName, t.sqlName)
 		return false
 	}
+	t.model = model
 	if col := c.applyModel(t, model, st); col != nil {
 		c.errorf(arg, "regenerate the models with nano gen db",
 			"the model %s.%s has no field %s for column %s of table %s", pkg.Name(), t.goName, col.field,
