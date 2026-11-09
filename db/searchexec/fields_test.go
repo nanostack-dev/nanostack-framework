@@ -36,7 +36,7 @@ func (q itemSearch) Name() searchexec.In[itemSearch, string] {
 }
 
 func (q itemSearch) NameFold() searchexec.InFold[itemSearch, string] {
-	return searchexec.NewInFold(q.Query, itemName, searchexec.StringLit[string])
+	return searchexec.NewInFold[string](q.Query, itemName)
 }
 
 func (q itemSearch) Rank() searchexec.EqIn[itemSearch, int64] {
@@ -75,7 +75,7 @@ func (q itemSearch) Permission() searchexec.Exists[itemSearch, string] {
 }
 
 func (q itemSearch) PermissionFold() searchexec.Exists[itemSearch, string] {
-	return searchexec.NewExistsFold(q.Query, perms, permCorrelation, permName, searchexec.StringLit[string])
+	return searchexec.NewExistsFold[string](q.Query, perms, permCorrelation, permName)
 }
 
 // filterSQL runs q and returns the part of the count statement after the scopes and the
@@ -99,16 +99,37 @@ func TestFieldsSQL(t *testing.T) {
 		sql  string
 		args []any
 	}{
-		"In":            {q.Name().In("a", "b"), "(items.name IN ($6, $7))", []any{"a", "b"}},
-		"InFold":        {q.NameFold().In("A", "b"), "(LOWER(items.name) IN (LOWER($6), LOWER($7)))", []any{"A", "b"}},
-		"EqIn Eq":       {q.Rank().Eq(3), "(items.rank = $6)", []any{int64(3)}},
-		"EqIn In":       {q.Rank().In(1, 2), "(items.rank IN ($6, $7))", []any{int64(1), int64(2)}},
-		"UUID":          {q.ID().In(id), "(items.id IN ($6::uuid))", []any{id.String()}},
-		"Eq":            {q.Deleted().Eq(true), "(items.deleted = $6)", []any{true}},
-		"Since":         {q.At().Since(at), "(events.at >= $6)", []any{at}},
-		"Until":         {q.At().Until(at), "(events.at <= $6)", []any{at}},
-		"After":         {q.At().After(at), "(events.at > $6)", []any{at}},
-		"Before":        {q.At().Before(at), "(events.at < $6)", []any{at}},
+		"In": {q.Name().In("a", "b"), "(items.name IN ($6, $7))", []any{"a", "b"}},
+		"InFold": {
+			q.NameFold().In("A", "b_%!"),
+			"( (items.name ILIKE $6 ESCAPE '!') OR (items.name ILIKE $7 ESCAPE '!') )",
+			[]any{"A", "b!_!%!!"},
+		},
+		"InFold one value": {q.NameFold().In(" A "), "(items.name ILIKE $6 ESCAPE '!')", []any{" A "}},
+		"InFold, a value no column holds": {
+			q.NameFold().In("a\x00", "b", "\xff"), "(items.name ILIKE $6 ESCAPE '!')", []any{"b"},
+		},
+		"InFold, only values no column holds": {q.NameFold().In("a\x00", "\xc3"), "FALSE", []any{}},
+		"In, a value no column holds": {
+			q.Name().In("a", "b\x00", "\xff"), "(items.name IN ($6, NULL, NULL))", []any{"a"},
+		},
+		"EqIn Eq": {q.Rank().Eq(3), "(items.rank = $6)", []any{int64(3)}},
+		"EqIn In": {q.Rank().In(1, 2), "(items.rank IN ($6, $7))", []any{int64(1), int64(2)}},
+		"UUID":    {q.ID().In(id), "(items.id IN ($6::uuid))", []any{id.String()}},
+		"Eq":      {q.Deleted().Eq(true), "(items.deleted = $6)", []any{true}},
+		"Since":   {q.At().Since(at), "(events.at >= $6)", []any{at}},
+		"Until":   {q.At().Until(at), "(events.at <= $6)", []any{at}},
+		"After":   {q.At().After(at), "(events.at > $6)", []any{at}},
+		"Before":  {q.At().Before(at), "(events.at < $6)", []any{at}},
+		// A bound with nanoseconds moves to the microsecond that keeps its meaning.
+		"Since +1ns":  {q.At().Since(at.Add(time.Nanosecond)), "(events.at >= $6)", []any{at.Add(time.Microsecond)}},
+		"Until +1ns":  {q.At().Until(at.Add(time.Nanosecond)), "(events.at <= $6)", []any{at}},
+		"After +1ns":  {q.At().After(at.Add(time.Nanosecond)), "(events.at > $6)", []any{at}},
+		"Before +1ns": {q.At().Before(at.Add(time.Nanosecond)), "(events.at < $6)", []any{at.Add(time.Microsecond)}},
+		"Since -1ns":  {q.At().Since(at.Add(-time.Nanosecond)), "(events.at >= $6)", []any{at}},
+		"Until -1ns": {
+			q.At().Until(at.Add(-time.Nanosecond)), "(events.at <= $6)", []any{at.Add(-time.Microsecond)},
+		},
 		"Present true":  {q.Owner().Present(true), "(items.owner IS NOT NULL)", []any{}},
 		"Present false": {q.Owner().Present(false), "(items.owner IS NULL)", []any{}},
 		"Is true":       {q.Ranked().Is(true), "(items.rank > $6)", []any{int64(1)}},
@@ -130,10 +151,16 @@ func TestFieldsSQL(t *testing.T) {
 				"AND (perms.name IN ($6)) ) ))",
 			[]any{"read"},
 		},
+		"Exists, a value no column holds": {
+			q.Permission().In("r\x00"),
+			"(EXISTS ( SELECT 1 FROM public.perms WHERE ( ((perms.item_id = items.id) AND (perms.org = items.org)) " +
+				"AND (perms.name IN (NULL)) ) ))",
+			[]any{},
+		},
 		"Exists fold": {
 			q.PermissionFold().In("Read"),
 			"(EXISTS ( SELECT 1 FROM public.perms WHERE ( ((perms.item_id = items.id) AND (perms.org = items.org)) " +
-				"AND (LOWER(perms.name) IN (LOWER($6))) ) ))",
+				"AND (perms.name ILIKE $6 ESCAPE '!') ) ))",
 			[]any{"Read"},
 		},
 		"two fields": {
@@ -381,11 +408,8 @@ func TestFieldConstructorsPanic(t *testing.T) {
 			"searchexec: NewIn: the literal function is nil",
 		},
 		"InFold nil expression": {
-			func() { searchexec.NewInFold(q, nil, lit) },
+			func() { searchexec.NewInFold[string](q, nil) },
 			"searchexec: NewInFold: the expression is nil",
-		},
-		"InFold nil literal": {
-			func() { searchexec.NewInFold(q, itemName, nilLit) }, "searchexec: NewInFold: the literal function is nil",
 		},
 		"Eq nil expression":   {func() { searchexec.NewEq(q, nil, lit) }, "searchexec: NewEq: the expression is nil"},
 		"EqIn nil expression": {func() { searchexec.NewEqIn(q, nil, lit) }, "searchexec: NewEq: the expression is nil"},
@@ -414,9 +438,9 @@ func TestFieldConstructorsPanic(t *testing.T) {
 			func() { searchexec.NewExists(q, perms, permCorrelation, nil, lit) },
 			"searchexec: NewExists: the expression is nil",
 		},
-		"ExistsFold nil literal": {
-			func() { searchexec.NewExistsFold(q, perms, permCorrelation, permName, nilLit) },
-			"searchexec: NewExistsFold: the literal function is nil",
+		"ExistsFold nil column": {
+			func() { searchexec.NewExistsFold[string](q, perms, permCorrelation, nil) },
+			"searchexec: NewExistsFold: the expression is nil",
 		},
 	}
 	for name, tc := range cases {

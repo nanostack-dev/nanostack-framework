@@ -3,7 +3,6 @@ package searchexec
 import (
 	"fmt"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/nanostack-dev/nanostack-framework/db/internal/jet"
 	"github.com/nanostack-dev/nanostack-framework/db/postgres"
@@ -28,8 +27,8 @@ var escapeLike = strings.NewReplacer("!", "!!", "%", "!%", "_", "!_")
 // A term that is not valid UTF-8, or that holds a NUL character, returns the literal
 // FALSE. A UTF-8 text column cannot hold such a value, and PostgreSQL text cannot hold NUL,
 // so no row can match. Without this rule PostgreSQL refuses the statement (SQLSTATE 22021)
-// and MySQL can match every row, so the answer is the same on every dialect. The search
-// field types pass such a term to Contains, so it matches no row there too.
+// and MySQL can match every row, so the answer is the same on every dialect. The other
+// search field types have the same rule for such a value (see StringLit and InFold).
 //
 // Contains does not limit the length of term. The search field types refuse a term longer
 // than search.MaxTermLength before they call it.
@@ -52,7 +51,7 @@ func Contains(term string, exprs ...jet.StringExpression) jet.BoolExpression {
 		return sqlTrue()
 	}
 
-	if !utf8.ValidString(trimmed) || strings.IndexByte(trimmed, 0) >= 0 {
+	if !storableText(trimmed) {
 		return sqlFalse()
 	}
 

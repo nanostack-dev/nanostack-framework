@@ -93,22 +93,30 @@ func (f In[Q, V]) In(vs ...V) Q {
 }
 
 // InFold is a field that keeps the rows whose text value is one of a list, without case.
-type InFold[Q, V any] struct {
+type InFold[Q any, V ~string] struct {
 	b    binding[Q]
 	expr jet.StringExpression
-	lit  func(V) jet.StringExpression
 }
 
-// NewInFold binds an InFold field to q: LOWER(expr) IN (LOWER(lit(v1)), ...). The database
-// folds both sides by the rule of the column's collation, so the answer agrees with the
-// column also for letters where Go and the database fold differently (the Turkish dotted
-// I, the final sigma). expr must be a text expression.
-func NewInFold[T any, Q Builder[T, Q, S, P], S ~string, P comparable, V any, E jet.StringExpression](
-	q Query[T, Q, S, P], expr jet.StringExpression, lit func(V) E,
+// NewInFold binds an InFold field to q. On PostgreSQL each value is an exact match without
+// case, expr ILIKE $1 ESCAPE '!', with the LIKE wildcards of the value escaped; several
+// values are joined with OR. ILIKE folds both sides by the rule of the collation of expr, so
+// the answer agrees with the column also for letters where Go and the database fold
+// differently (the Turkish dotted I, the final sigma), and also on a column whose collation
+// is not the default one ("C"). LOWER(expr) IN (LOWER($1), ...) does not: LOWER($1) folds
+// the value by the default collation. The other dialects get LOWER(expr) LIKE LOWER($1)
+// ESCAPE '!', as in Contains. expr must be a text expression.
+//
+// A trigram index on the column (gin_trgm_ops) serves the ILIKE, as it serves Contains. A
+// btree index on lower(column) does not.
+//
+// V comes first, so a caller names it and the other type arguments are inferred:
+// searchexec.NewInFold[Role](q.Query, table.Users.Role).
+func NewInFold[V ~string, T any, Q Builder[T, Q, S, P], S ~string, P comparable](
+	q Query[T, Q, S, P], expr jet.StringExpression,
 ) InFold[Q, V] {
 	mustExpr("NewInFold", expr)
-	lit = mustLit("NewInFold", lit)
-	return InFold[Q, V]{b: bind(q), expr: expr, lit: func(v V) jet.StringExpression { return lit(v) }}
+	return InFold[Q, V]{b: bind(q), expr: expr}
 }
 
 // In keeps the rows whose value is one of vs without case. No values match no row. More
@@ -117,7 +125,7 @@ func (f InFold[Q, V]) In(vs ...V) Q {
 	if err := checkValues(vs, f.expr); err != nil {
 		return f.b.refuse(err)
 	}
-	return f.b.add(func() jet.BoolExpression { return inFold(f.expr, vs, f.lit) })
+	return f.b.add(func() jet.BoolExpression { return inFold(f.expr, vs) })
 }
 
 // Eq is a field that keeps the rows whose value equals one value.
@@ -174,24 +182,38 @@ func NewTimeRange[T any, Q Builder[T, Q, S, P], S ~string, P comparable](
 	return TimeRange[Q]{b: bind(q), expr: expr}
 }
 
-// Since keeps the rows at t or later: expr >= t.
+// The four bounds move t to a whole microsecond, the precision of timestamptz, in the
+// direction that keeps the meaning of the bound for every stored value. The drivers do not
+// agree on a bound with nanoseconds: lib/pq sends them and PostgreSQL rounds them, pgx
+// truncates them. So t+600ns is the next microsecond for one driver and t for the other.
+
+// Since keeps the rows at t or later: expr >= t, with t rounded up to a microsecond.
 func (f TimeRange[Q]) Since(t time.Time) Q {
-	return f.b.add(func() jet.BoolExpression { return f.expr.GT_EQ(jet.TimestampzT(t)) })
+	return f.b.add(func() jet.BoolExpression { return f.expr.GT_EQ(jet.TimestampzT(ceilMicro(t))) })
 }
 
-// Until keeps the rows at t or earlier: expr <= t.
+// Until keeps the rows at t or earlier: expr <= t, with t rounded down to a microsecond.
 func (f TimeRange[Q]) Until(t time.Time) Q {
-	return f.b.add(func() jet.BoolExpression { return f.expr.LT_EQ(jet.TimestampzT(t)) })
+	return f.b.add(func() jet.BoolExpression { return f.expr.LT_EQ(jet.TimestampzT(t.Truncate(time.Microsecond))) })
 }
 
-// After keeps the rows later than t: expr > t.
+// After keeps the rows later than t: expr > t, with t rounded down to a microsecond.
 func (f TimeRange[Q]) After(t time.Time) Q {
-	return f.b.add(func() jet.BoolExpression { return f.expr.GT(jet.TimestampzT(t)) })
+	return f.b.add(func() jet.BoolExpression { return f.expr.GT(jet.TimestampzT(t.Truncate(time.Microsecond))) })
 }
 
-// Before keeps the rows earlier than t: expr < t.
+// Before keeps the rows earlier than t: expr < t, with t rounded up to a microsecond.
 func (f TimeRange[Q]) Before(t time.Time) Q {
-	return f.b.add(func() jet.BoolExpression { return f.expr.LT(jet.TimestampzT(t)) })
+	return f.b.add(func() jet.BoolExpression { return f.expr.LT(jet.TimestampzT(ceilMicro(t))) })
+}
+
+// ceilMicro rounds t up to a whole microsecond.
+func ceilMicro(t time.Time) time.Time {
+	u := t.Truncate(time.Microsecond)
+	if u.Before(t) {
+		u = u.Add(time.Microsecond)
+	}
+	return u
 }
 
 // Presence is a field that keeps the rows where a nullable value is set, or not set.
@@ -319,18 +341,16 @@ func NewExists[T any, Q Builder[T, Q, S, P], S ~string, P comparable, V any, E j
 	}
 }
 
-// NewExistsFold is NewExists with the case folded on both sides, as InFold does:
-// LOWER(column) IN (LOWER(lit(v1)), ...). column must be a text column of child.
-func NewExistsFold[T any, Q Builder[T, Q, S, P], S ~string, P comparable, V any, E jet.StringExpression](
+// NewExistsFold is NewExists with the values matched without case, as InFold matches them:
+// column ILIKE $1 ESCAPE '!' OR ... on PostgreSQL, by the collation of column. column must
+// be a text column of child. V comes first, as in NewInFold.
+func NewExistsFold[V ~string, T any, Q Builder[T, Q, S, P], S ~string, P comparable](
 	q Query[T, Q, S, P], child keyset.Source, correlation jet.BoolExpression, column jet.StringExpression,
-	lit func(V) E,
 ) Exists[Q, V] {
 	mustExists("NewExistsFold", child, correlation, column)
-	lit = mustLit("NewExistsFold", lit)
-	l := func(v V) jet.StringExpression { return lit(v) }
 	return Exists[Q, V]{
 		b: bind(q), child: child, correlation: correlation, expr: column,
-		match: func(vs []V) jet.BoolExpression { return inFold(column, vs, l) },
+		match: func(vs []V) jet.BoolExpression { return inFold(column, vs) },
 	}
 }
 
@@ -364,7 +384,19 @@ func (f Exists[Q, V]) In(vs ...V) Q {
 }
 
 // StringLit is the literal of a string or of a named string type, for a text column.
-func StringLit[V ~string](v V) jet.StringExpression { return jet.String(string(v)) }
+//
+// A value that is not valid UTF-8, or that holds a NUL character, is SQL NULL. No text
+// column can hold such a value, so it matches no row: expr = NULL and expr IN (..., NULL)
+// are never true, and the other values of a list still match. This is the rule of
+// Contains, which gives FALSE for such a term. Without it PostgreSQL refuses the statement
+// (SQLSTATE 22021), and a client value gives a server error.
+func StringLit[V ~string](v V) jet.StringExpression {
+	s := string(v)
+	if !storableText(s) {
+		return jet.StringExp(jet.NULL)
+	}
+	return jet.String(s)
+}
 
 // BoolLit is the literal of a bool or of a named bool type.
 func BoolLit[V ~bool](v V) jet.BoolExpression { return jet.Bool(bool(v)) }
@@ -372,7 +404,7 @@ func BoolLit[V ~bool](v V) jet.BoolExpression { return jet.Bool(bool(v)) }
 // IntLit is the literal of an integer, for an integer column.
 func IntLit[V ~int | ~int32 | ~int64](v V) jet.IntegerExpression { return jet.Int(int64(v)) }
 
-// UUIDLit is the literal of a UUID. PostgreSQL gets a uuid (CAST($1 AS uuid)), so it
+// UUIDLit is the literal of a UUID. PostgreSQL gets a uuid ($1::uuid), so it
 // compares with a uuid column; MySQL, MariaDB and SQLite get the lower-case canonical text,
 // as their UUID columns store it.
 func UUIDLit(v uuid.UUID) jet.StringExpression {
@@ -396,16 +428,30 @@ func in[V any](expr jet.Expression, vs []V, lit func(V) jet.Expression) jet.Bool
 	return expr.IN(literals...)
 }
 
-// inFold is LOWER(expr) IN (LOWER(lit(v))...), or FALSE for no values.
-func inFold[V any](expr jet.StringExpression, vs []V, lit func(V) jet.StringExpression) jet.BoolExpression {
-	if len(vs) == 0 {
+// inFold is an exact match without case of expr and each value (likeFold with the LIKE
+// wildcards of the value escaped), joined with OR. A value that no text column can hold
+// matches no row, as in StringLit. No values, or no value that a column can hold, give
+// FALSE.
+func inFold[V ~string](expr jet.StringExpression, vs []V) jet.BoolExpression {
+	matches := make([]jet.BoolExpression, 0, len(vs))
+	for _, v := range vs {
+		if s := string(v); storableText(s) {
+			matches = append(matches, likeFold(expr, escapeLike.Replace(s)))
+		}
+	}
+	switch len(matches) {
+	case 0:
 		return sqlFalse()
+	case 1:
+		return matches[0]
 	}
-	literals := make([]jet.Expression, len(vs))
-	for i, v := range vs {
-		literals[i] = jet.LOWER(lit(v))
-	}
-	return jet.LOWER(expr).IN(literals...)
+	return jet.OR(matches...)
+}
+
+// storableText reports whether a text column can hold s: s is valid UTF-8 and holds no NUL
+// character.
+func storableText(s string) bool {
+	return utf8.ValidString(s) && strings.IndexByte(s, 0) < 0
 }
 
 // checkValues refuses more than search.MaxInValues values. The error names the expression

@@ -218,7 +218,8 @@ func Run[T any, Q Builder[T, Q, S, P], S ~string, P comparable, R any](
 	return plan.Run(ctx, db, order, toDomain)
 }
 
-// RunPage is Run with a mapper that maps the whole page in one call.//
+// RunPage is Run with a mapper that maps the whole page in one call.
+//
 // It runs on db as given: it does not read the context transaction and does not refuse a
 // row lock. Repository code runs searches through the transactor forwarders
 // (transactor.Search, SearchPage, RunPlan and RunPlanPage, in a later release), which use

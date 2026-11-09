@@ -70,7 +70,8 @@ func sfUID(id int64) uuid.UUID {
 }
 
 // sfPerms are the child rows: (org, item, name). The org-b permission on item 2 is a row of
-// another tenant on an org-a item: only the tenant part of the correlation drops it.
+// another tenant on an org-a item: only the tenant part of the correlation drops it. The
+// permission "İ" tests the fold of a child column in "C".
 var sfPerms = []struct {
 	org  string
 	item int64
@@ -80,6 +81,7 @@ var sfPerms = []struct {
 	{"org-a", 3, "Write"},
 	{"org-b", 2, "write"},
 	{"org-b", 101, "read"},
+	{"org-a", 4, "İ"},
 }
 
 type sfFixture struct {
@@ -89,7 +91,7 @@ type sfFixture struct {
 	id, n, score, permItem           ColumnInteger
 	org, name, nameC, kind, note     ColumnString
 	uid                              ColumnString
-	permOrg, permName                ColumnString
+	permOrg, permName, permNameC     ColumnString
 	active                           ColumnBool
 	at                               ColumnTimestampz
 	spec                             *searchexec.Spec[sfRow, sfSort, string]
@@ -126,7 +128,8 @@ func newSfFixture(t *testing.T) *sfFixture {
 		"CREATE TABLE test_sample." + permsName + ` (
 			org TEXT NOT NULL,
 			item_id BIGINT NOT NULL REFERENCES test_sample.` + f.itemsName + ` (id),
-			name TEXT NOT NULL
+			name TEXT NOT NULL,
+			name_c TEXT` + cCollate + ` NOT NULL
 		)`,
 	} {
 		_, err := db.ExecContext(ctx, stmt)
@@ -146,8 +149,8 @@ func newSfFixture(t *testing.T) *sfFixture {
 		require.NoError(t, err)
 	}
 	for _, p := range sfPerms {
-		_, err := db.ExecContext(ctx, "INSERT INTO test_sample."+permsName+" (org, item_id, name) VALUES ($1, $2, $3)",
-			p.org, p.item, p.name)
+		_, err := db.ExecContext(ctx, "INSERT INTO test_sample."+permsName+
+			" (org, item_id, name, name_c) VALUES ($1, $2, $3, $3)", p.org, p.item, p.name)
 		require.NoError(t, err)
 	}
 
@@ -157,8 +160,9 @@ func newSfFixture(t *testing.T) *sfFixture {
 	f.active, f.at = BoolColumn("active"), TimestampzColumn("at")
 	f.items = NewTable("test_sample", f.itemsName, "",
 		f.id, f.org, f.name, f.nameC, f.kind, f.uid, f.n, f.active, f.at, f.note, f.score)
-	f.permOrg, f.permItem, f.permName = StringColumn("org"), IntegerColumn("item_id"), StringColumn("name")
-	f.perms = NewTable("test_sample", permsName, "", f.permOrg, f.permItem, f.permName)
+	f.permOrg, f.permItem = StringColumn("org"), IntegerColumn("item_id")
+	f.permName, f.permNameC = StringColumn("name"), StringColumn("name_c")
+	f.perms = NewTable("test_sample", permsName, "", f.permOrg, f.permItem, f.permName, f.permNameC)
 	f.correlationNoTenant = f.permItem.EQ(f.id)
 	f.correlation = f.correlationNoTenant.AND(f.permOrg.EQ(f.org))
 
@@ -200,6 +204,8 @@ func TestSearchexecFieldsBothWays(t *testing.T) {
 	uid := searchexec.NewIn(q.Query, f.uid, searchexec.UUIDLit)
 	active := searchexec.NewEq(q.Query, f.active, searchexec.BoolLit[bool])
 	name := searchexec.NewIn(q.Query, f.name, searchexec.StringLit[string])
+	nameFold := searchexec.NewInFold[string](q.Query, f.name)
+	perm := searchexec.NewExists(q.Query, f.perms, f.correlation, f.permName, searchexec.StringLit[string])
 	at := searchexec.NewTimeRange(q.Query, f.at)
 	note := searchexec.NewPresence(q.Query, f.note)
 	ranked := searchexec.NewFlag(q.Query, f.score.GT(Int(1)))
@@ -227,19 +233,32 @@ func TestSearchexecFieldsBothWays(t *testing.T) {
 		"Since and Before": {
 			searchexec.NewTimeRange(at.Since(sfT0).Query, f.at).Before(sfT0.Add(2 * time.Second)), []int64{2, 3, 4},
 		},
-		"Present true":              {note.Present(true), []int64{1, 3, 4, 5}},
-		"Present false":             {note.Present(false), []int64{2}},
-		"Is true":                   {ranked.Is(true), []int64{3, 4}},
-		"Is false, NULL included":   {ranked.Is(false), []int64{1, 2, 5}},
-		"Contains":                  {text.Contains("WÖRLD_"), []int64{3}},
-		"Contains wildcards":        {text.Contains("_%"), []int64{3}},
-		"Contains the escape":       {text.Contains("!"), []int64{5}},
-		"Contains drops":            {text.Contains("zzz"), []int64{}},
-		"Contains blank":            {text.Contains("  "), sfAllA},
-		"ContainsAny":               {text.ContainsAny("paris", "HELLO"), []int64{1, 5}},
-		"ContainsAny drops":         {text.ContainsAny("zzz", "yyy"), []int64{}},
-		"ContainsAny of no term":    {text.ContainsAny(), []int64{}},
-		"ContainsAny, a blank term": {text.ContainsAny("zzz", " "), sfAllA},
+		// A bound with nanoseconds: the same answer with lib/pq and pgx.
+		"Since t0+600ns":  {at.Since(sfT0.Add(600 * time.Nanosecond)), []int64{3, 5}},
+		"Since t0+400ns":  {at.Since(sfT0.Add(400 * time.Nanosecond)), []int64{3, 5}},
+		"Before t0+400ns": {at.Before(sfT0.Add(400 * time.Nanosecond)), []int64{1, 2, 4}},
+		"Until t0-400ns":  {at.Until(sfT0.Add(-400 * time.Nanosecond)), []int64{1}},
+		"After t0-600ns":  {at.After(sfT0.Add(-600 * time.Nanosecond)), []int64{2, 3, 4, 5}},
+		// A value that no text column holds matches no row, and gives no error.
+		"In, NUL":                        {name.In("a\x00b"), []int64{}},
+		"In, invalid UTF-8 and a value":  {name.In("Paris", "\xff"), []int64{5}},
+		"Eq, NUL":                        {kind.Eq("x\x00"), []int64{}},
+		"InFold, NUL":                    {nameFold.In("a\x00"), []int64{}},
+		"InFold, invalid UTF-8, a value": {nameFold.In("paris", "\xc3"), []int64{5}},
+		"Exists, NUL":                    {perm.In("read\x00"), []int64{}},
+		"Present true":                   {note.Present(true), []int64{1, 3, 4, 5}},
+		"Present false":                  {note.Present(false), []int64{2}},
+		"Is true":                        {ranked.Is(true), []int64{3, 4}},
+		"Is false, NULL included":        {ranked.Is(false), []int64{1, 2, 5}},
+		"Contains":                       {text.Contains("WÖRLD_"), []int64{3}},
+		"Contains wildcards":             {text.Contains("_%"), []int64{3}},
+		"Contains the escape":            {text.Contains("!"), []int64{5}},
+		"Contains drops":                 {text.Contains("zzz"), []int64{}},
+		"Contains blank":                 {text.Contains("  "), sfAllA},
+		"ContainsAny":                    {text.ContainsAny("paris", "HELLO"), []int64{1, 5}},
+		"ContainsAny drops":              {text.ContainsAny("zzz", "yyy"), []int64{}},
+		"ContainsAny of no term":         {text.ContainsAny(), []int64{}},
+		"ContainsAny, a blank term":      {text.ContainsAny("zzz", " "), sfAllA},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -250,19 +269,28 @@ func TestSearchexecFieldsBothWays(t *testing.T) {
 
 // InFold folds both sides in the database, by the rule of the column's collation. Go's
 // strings.ToLower and the database's LOWER differ on the Turkish dotted I under COLLATE
-// "C", so a fold in Go would give another answer there.
+// "C", so a fold in Go would give another answer there. LOWER($1) alone would fold the value
+// by the default collation, not the column's, so the C column would not find its own rows.
 func TestSearchexecInFoldAgreesWithTheColumn(t *testing.T) {
 	f := newSfFixture(t)
-	terms := []string{"İSTANBUL", "istanbul", "ISTANBUL", "ıstanbul", "i̇stanbul", "PARIS"}
 	columns := map[string]ColumnString{"name": f.name, "name_c": f.nameC}
+	inFold := func(expr ColumnString, term string) []int64 {
+		return f.ids(t, searchexec.NewInFold[string](f.search("org-a").Query, expr).In(term))
+	}
+
+	t.Run("each row finds itself", func(t *testing.T) {
+		for _, it := range sfItems[:5] {
+			for column, expr := range columns {
+				assert.Contains(t, inFold(expr, it.name), it.id, "%s %s", column, it.name)
+			}
+		}
+	})
+
+	terms := []string{"İSTANBUL", "istanbul", "ISTANBUL", "ıstanbul", "i̇stanbul", "PARIS", "İ%", "_stanbul"}
 	for column, expr := range columns {
 		for _, term := range terms {
 			t.Run(column+" "+term, func(t *testing.T) {
-				got := f.ids(
-					t,
-					searchexec.NewInFold(f.search("org-a").Query, expr, searchexec.StringLit[string]).In(term),
-				)
-				assert.Equal(t, f.lowerEquals(t, column, term), got)
+				assert.Equal(t, f.lowerEquals(t, column, term), inFold(expr, term))
 			})
 		}
 	}
@@ -272,26 +300,39 @@ func TestSearchexecInFoldAgreesWithTheColumn(t *testing.T) {
 			t.Skip("CockroachDB has no C collation")
 		}
 		require.Equal(t, "istanbul", strings.ToLower("İSTANBUL"), "Go folds the dotted I")
-		got := f.ids(
-			t,
-			searchexec.NewInFold(f.search("org-a").Query, f.nameC, searchexec.StringLit[string]).In("istanbul"),
-		)
-		assert.Equal(t, []int64{2, 3}, got, "the database does not, under C")
+		assert.Equal(t, []int64{2, 3}, inFold(f.nameC, "istanbul"), "the database does not, under C")
+		assert.Equal(t, []int64{1}, inFold(f.nameC, "İSTANBUL"), "the value folds by C too")
 	})
 
 	t.Run("Exists fold", func(t *testing.T) {
-		got := f.ids(t, searchexec.NewExistsFold(f.search("org-a").Query, f.perms, f.correlation, f.permName,
-			searchexec.StringLit[string]).In("WRITE", "READ"))
+		got := f.ids(t, searchexec.NewExistsFold[string](f.search("org-a").Query, f.perms, f.correlation, f.permName).
+			In("WRITE", "READ"))
 		assert.Equal(t, []int64{1, 3}, got)
+	})
+
+	t.Run(`Exists fold, a child column in "C"`, func(t *testing.T) {
+		exists := func(term string) []int64 {
+			return f.ids(t, searchexec.NewExistsFold[string](f.search("org-a").Query, f.perms, f.correlation,
+				f.permNameC).In(term))
+		}
+		assert.Equal(t, []int64{4}, exists("İ"))
+		if f.cCollation {
+			assert.Equal(t, []int64{}, exists("i"), "C does not fold the dotted I")
+		}
 	})
 }
 
 // lowerEquals returns the org-a ids where LOWER(column) = LOWER(term), from a statement
-// written by hand.
+// written by hand. The term takes the collation of the column, so both sides fold by the
+// same rule.
 func (f *sfFixture) lowerEquals(t *testing.T, column, term string) []int64 {
 	t.Helper()
+	value := "$1::text"
+	if column == "name_c" && f.cCollation {
+		value = `$1::text COLLATE "C"`
+	}
 	rows, err := db.QueryContext(ctx, "SELECT id FROM test_sample."+f.itemsName+
-		" WHERE org = 'org-a' AND LOWER("+column+") = LOWER($1) ORDER BY id", term)
+		" WHERE org = 'org-a' AND LOWER("+column+") = LOWER("+value+") ORDER BY id", term)
 	require.NoError(t, err)
 	defer rows.Close()
 	ids := []int64{}
@@ -343,7 +384,7 @@ func TestSearchexecFieldLimits(t *testing.T) {
 	names[0] = "Paris"
 	term := strings.Repeat("é", search.MaxTermLength)
 	in := searchexec.NewIn(q.Query, f.name, searchexec.StringLit[string])
-	inFold := searchexec.NewInFold(q.Query, f.name, searchexec.StringLit[string])
+	inFold := searchexec.NewInFold[string](q.Query, f.name)
 	text := searchexec.NewText(q.Query, f.name)
 
 	t.Run("at the limit, the statement runs", func(t *testing.T) {

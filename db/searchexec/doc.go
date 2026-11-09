@@ -51,7 +51,7 @@
 // A field has only the operators that its declaration names:
 //
 //	In         In(v...)        expr IN (v...)
-//	InFold     In(v...)        LOWER(expr) IN (LOWER(v)...), folded in the database
+//	InFold     In(v...)        expr ILIKE v OR ..., v escaped: exact, folded in the database
 //	Eq         Eq(v)           expr = v
 //	EqIn       Eq(v), In(v...)
 //	TimeRange  Since(t), Until(t), After(t), Before(t)    >=, <=, >, <
@@ -59,12 +59,20 @@
 //	Flag       Is(bool)        condition, or condition IS NOT TRUE
 //	Text       Contains(term), ContainsAny(terms...)
 //	Exists     In(v...)        EXISTS (SELECT 1 FROM child WHERE correlation AND column IN (v...))
+//	                           (NewExistsFold: column ILIKE v OR ..., as InFold)
 //
 // From Go, an empty list matches no row: a caller that builds an empty list gets nothing,
 // not everything. The API mapper reads an empty list as no filter and does not call the
 // field. InFold leaves the case of the values to the database, because Go and the
-// database fold some letters differently (the Turkish dotted I under COLLATE "C"); the
-// answer agrees with the column.
+// database fold some letters differently (the Turkish dotted I under COLLATE "C"). ILIKE
+// folds the value by the collation of the column, so the answer agrees with the column
+// also when its collation is not the default one. LOWER($1) would fold the value by the
+// default collation. On the other dialects InFold is LOWER(expr) LIKE LOWER(?) ESCAPE '!'.
+//
+// A string value that no text column can hold (not valid UTF-8, or holding NUL) matches no
+// row in every field, as in Contains: StringLit makes it NULL and InFold drops it. A
+// TimeRange bound moves to a whole microsecond, the precision of timestamptz, in the
+// direction that keeps its meaning, so lib/pq and pgx give the same rows.
 //
 // A field does not return an error. More than search.MaxInValues values
 // (search.ErrTooManyValues), a term longer than search.MaxTermLength characters after the
