@@ -18,12 +18,12 @@ import (
 // StringKey orders on a NOT NULL text column. The order and the matching
 // follow the column's collation.
 func StringKey[T any](column jet.ColumnString, value func(T) string) Key[T] {
-	return stringKey(column, false, ptrOf(value))
+	return stringKey(columnTarget(column), false, ptrOf(value))
 }
 
 // NullableStringKey orders on a nullable text column.
 func NullableStringKey[T any](column jet.ColumnString, value func(T) *string) Key[T] {
-	return stringKey(column, true, value)
+	return stringKey(columnTarget(column), true, value)
 }
 
 // textCodec refuses a NUL byte on PostgreSQL, whose text cannot hold it:
@@ -55,8 +55,8 @@ func textLiteral(d dialect, v string) ijet.Expression {
 	return ijet.String(v)
 }
 
-func stringKey[T any](column jet.ColumnString, nullable bool, value func(T) *string) Key[T] {
-	return newKey(column, nullable, value, textCodec(), literalBound(column, textLiteral))
+func stringKey[T any](target keyTarget, nullable bool, value func(T) *string) Key[T] {
+	return newTargetKey(target, nullable, value, textCodec(), literalBound(target.expression, textLiteral))
 }
 
 // EnumKey orders on a NOT NULL enum column, in the declaration order of its

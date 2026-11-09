@@ -64,7 +64,7 @@ func (o Order[T]) rowSeek(d dialect, bounds []keyBound) jet.BoolExpression {
 		if k.key.nullable || k.direction != direction || !k.key.comparesInOrder(d) {
 			return nil
 		}
-		columns[i] = k.key.column
+		columns[i] = k.key.expression
 		literals[i] = bounds[i].literal
 	}
 	row := jet.ROW
@@ -107,7 +107,7 @@ func (o Order[T]) expandedSeek(d dialect, bounds []keyBound) jet.BoolExpression 
 }
 
 func afterBound[T any](k orderedKey[T], bound keyBound) jet.BoolExpression {
-	column := k.key.column
+	column := k.key.expression
 	nullsAfter := k.key.nullsAfter(k.direction)
 	if bound.isNull {
 		if nullsAfter {

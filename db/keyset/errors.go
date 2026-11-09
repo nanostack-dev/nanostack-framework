@@ -6,9 +6,9 @@ var (
 	// ErrDialect reports a source that is not a table or join of db/postgres,
 	// db/mysql or db/sqlite, or a key whose column type the source's dialect
 	// lacks (TimeKey and InetKey off PostgreSQL, MySQLTimestampKey and
-	// MariaDBTimestampKey off MySQL, RealKey on SQLite).
-	// Page reports it before any statement runs. It is a programming error,
-	// not a client error.
+	// MariaDBTimestampKey off MySQL, RealKey on SQLite, a computed key off
+	// PostgreSQL). Page reports it before any statement runs. It is a
+	// programming error, not a client error.
 	ErrDialect = errors.New("keyset: the dialect does not support this source or key")
 
 	// ErrNoProgress reports a page after a cursor whose last row is the cursor

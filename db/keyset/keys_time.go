@@ -16,12 +16,12 @@ import (
 // columns to a timestamp without time zone): Page returns ErrDialect there.
 // Use LocalTimeKey or MySQLTimestampKey.
 func TimeKey[T any](column jet.ColumnTimestampz, value func(T) time.Time) Key[T] {
-	return timeKey(column, false, ptrOf(value))
+	return timeKey(columnTarget(column), false, ptrOf(value))
 }
 
 // NullableTimeKey orders on a nullable timestamptz column.
 func NullableTimeKey[T any](column jet.ColumnTimestampz, value func(T) *time.Time) Key[T] {
-	return timeKey(column, true, value)
+	return timeKey(columnTarget(column), true, value)
 }
 
 // The ranges of the time columns, at microsecond precision.
@@ -105,13 +105,13 @@ func acceptMicros(v time.Time) error {
 	return nil
 }
 
-func timeKey[T any](column jet.ColumnTimestampz, nullable bool, value func(T) *time.Time) Key[T] {
-	key := newKey(
-		column,
+func timeKey[T any](target keyTarget, nullable bool, value func(T) *time.Time) Key[T] {
+	key := newTargetKey(
+		target,
 		nullable,
 		value,
 		microsCodec(false),
-		literalBound(column, func(_ dialect, v time.Time) ijet.Expression {
+		literalBound(target.expression, func(_ dialect, v time.Time) ijet.Expression {
 			return jet.TimestampzT(v)
 		}),
 	)
@@ -201,7 +201,7 @@ func mysqlTimestampKey[T any](
 // other key. The layout comes from code, never from a request.
 func (k Key[T]) SQLiteLayout(layout string) Key[T] {
 	if k.withSQLiteLayout == nil {
-		panic(fmt.Sprintf("keyset: SQLiteLayout on column %s, which is not a LocalTimeKey", k.column.Name()))
+		panic(fmt.Sprintf("keyset: SQLiteLayout on %s, which is not a LocalTimeKey", k.label()))
 	}
 	if !strings.HasPrefix(layout, "2006-01-02 15:04:05") && !strings.HasPrefix(layout, "2006-01-02T15:04:05") {
 		panic(fmt.Sprintf("keyset: SQLite layout %q does not sort in time order", layout))

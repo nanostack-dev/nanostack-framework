@@ -34,4 +34,42 @@
 // statement that does not fit Page.
 //
 // A cursor is position, not authority: see db/search.Cursor.
+//
+// # Computed keys
+//
+// A computed key (IntExprKey, FloatExprKey, TimeExprKey, StringExprKey and
+// their Nullable forms) orders on an expression, not on a column: for example
+// a correlated count of a widget's requests, or the time of its last request.
+//
+// The first argument is the key's name: its name in the cursor signature and
+// its select alias. It must be a row.field alias that matches
+// ^[a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*$, for example
+// "widget_row.request_count" for the RequestCount field of a WidgetRow, or
+// the constructor panics. The scan maps only this form to a field. The name
+// must not be the name of another key of the search (OrderOf returns an
+// error) or the alias of a selected column (Page returns an error).
+//
+// Page selects each computed key of the order AS its name (Order.Projections),
+// so the scan fills the field that the next cursor reads. To fill the field on
+// every order, put Key.Projection in the columns of the page: Page does not
+// select it twice. A hand-written query that uses Order.OrderBy or Order.Seek
+// selects Order.Projections itself. Select a computed value only through
+// Key.Projection or Order.Projections, never with your own AS.
+//
+// An expression can be NULL even when it reads only NOT NULL columns: a
+// scalar subquery that finds no row, such as the MAX of a widget with no
+// requests. A non-nullable form reads NULL as the zero value of its type (0,
+// the zero time.Time, the empty string): it wraps the expression in COALESCE,
+// so the order, the seek and the field always agree. Use the Nullable form
+// (with a pointer field) when NULL must sort apart from the zero value.
+//
+// The integer, float and time forms cast the expression to the SQL type of
+// their cursor value (bigint, double precision, timestamp with time zone), so
+// the order, the seek and the select share one type and the scan always fits
+// the field. PostgreSQL drops a cast to the type the expression already has.
+// The text forms do not cast: a cast to text would change the order of a
+// citext or collated expression.
+//
+// A computed key writes PostgreSQL SQL. A page with a source of another
+// dialect is ErrDialect.
 package keyset

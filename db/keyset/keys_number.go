@@ -13,12 +13,12 @@ import (
 
 // IntKey orders on a NOT NULL integer column.
 func IntKey[T any](column jet.ColumnInteger, value func(T) int64) Key[T] {
-	return intKey(column, false, ptrOf(value))
+	return intKey(columnTarget(column), false, ptrOf(value))
 }
 
 // NullableIntKey orders on a nullable integer column.
 func NullableIntKey[T any](column jet.ColumnInteger, value func(T) *int64) Key[T] {
-	return intKey(column, true, value)
+	return intKey(columnTarget(column), true, value)
 }
 
 // intLiteral casts the literal to a 64-bit integer where a bare parameter
@@ -39,8 +39,8 @@ func intLiteral(d dialect, v int64) ijet.Expression {
 	return ijet.Int(v)
 }
 
-func intKey[T any](column jet.ColumnInteger, nullable bool, value func(T) *int64) Key[T] {
-	return newKey(column, nullable, value, jsonCodec[int64](), literalBound(column, intLiteral))
+func intKey[T any](target keyTarget, nullable bool, value func(T) *int64) Key[T] {
+	return newTargetKey(target, nullable, value, jsonCodec[int64](), literalBound(target.expression, intLiteral))
 }
 
 // FloatKey orders on a NOT NULL double precision column. It does not fit
@@ -52,12 +52,12 @@ func intKey[T any](column jet.ColumnInteger, nullable bool, value func(T) *int64
 // as NULL, so a cursor that carries one is refused there with
 // search.ErrInvalidCursor.
 func FloatKey[T any](column jet.ColumnFloat, value func(T) float64) Key[T] {
-	return floatKey(column, false, ptrOf(value))
+	return floatKey(columnTarget(column), false, ptrOf(value))
 }
 
 // NullableFloatKey orders on a nullable double precision column.
 func NullableFloatKey[T any](column jet.ColumnFloat, value func(T) *float64) Key[T] {
-	return floatKey(column, true, value)
+	return floatKey(columnTarget(column), true, value)
 }
 
 // floatLiteral casts the literal to double precision on PostgreSQL. MySQL and
@@ -171,6 +171,6 @@ func floatCodec() keyCodec[float64] {
 	}
 }
 
-func floatKey[T any](column jet.ColumnFloat, nullable bool, value func(T) *float64) Key[T] {
-	return newKey(column, nullable, value, floatCodec(), literalBound(column, floatLiteral))
+func floatKey[T any](target keyTarget, nullable bool, value func(T) *float64) Key[T] {
+	return newTargetKey(target, nullable, value, floatCodec(), literalBound(target.expression, floatLiteral))
 }

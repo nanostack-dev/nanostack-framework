@@ -18,7 +18,11 @@ func (b *PageBuilder[T, R]) PageStatementForTest(page search.Pagination) jet.Sta
 }
 
 func (b *PageBuilder[T, R]) KeysetStatementForTest(page search.Pagination, seek jet.BoolExpression) jet.Statement {
-	return b.keysetStatement(b.mustSource(), page, seek)
+	computed, err := b.computedColumns()
+	if err != nil {
+		panic(err)
+	}
+	return b.keysetStatement(b.mustSource(), page, seek, computed)
 }
 
 func (b *PageBuilder[T, R]) mustSource() pageSource {
@@ -39,5 +43,9 @@ func (b *PageBuilder[T, R]) StatementsForTest(page search.Pagination) (jet.State
 	if b.keyset == nil {
 		return source.count(b.where), b.pageStatement(source, page), nil
 	}
-	return source.count(b.where), b.keysetStatement(source, page, seek), nil
+	computed, err := b.computedColumns()
+	if err != nil {
+		return nil, nil, err
+	}
+	return source.count(b.where), b.keysetStatement(source, page, seek, computed), nil
 }

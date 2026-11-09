@@ -3,6 +3,8 @@ package keyset
 import (
 	"context"
 	"fmt"
+	"slices"
+	"strings"
 
 	jet "github.com/nanostack-dev/nanostack-framework/db/postgres"
 	"github.com/nanostack-dev/nanostack-framework/db/query"
@@ -106,6 +108,14 @@ func (b *PageBuilder[T, R]) OrderBy(clauses ...jet.OrderByClause) *PageBuilder[T
 // (a model with a nested slice of joined children), or a join that repeats a
 // parent, would cut pages short and end the walk early. Page the parent rows
 // flat, then load the children of the page in a second statement (PageOf).
+//
+// The page selects the computed keys of the ordering (Order.Projections)
+// after the columns of Page, so the scan fills the row fields that the next
+// cursor reads. The count does not select them. To fill a computed field on
+// every order, put Key.Projection in the columns: the page then does not
+// select it twice. Another column with the alias of a computed key is an
+// error, before any statement runs. A computed key is PostgreSQL only: on
+// MySQL and SQLite it is ErrDialect.
 func (b *PageBuilder[T, R]) Keyset(order Order[T]) *PageBuilder[T, R] {
 	b.keyset = &order
 	return b
@@ -134,6 +144,10 @@ func (b *PageBuilder[T, R]) Run(ctx context.Context, page search.Pagination) (se
 	if err != nil {
 		return search.Result[R]{}, err
 	}
+	computed, err := b.computedColumns()
+	if err != nil {
+		return search.Result[R]{}, err
+	}
 	total, err := query.Count(ctx, b.db, source.count(b.where))
 	if err != nil {
 		return search.Result[R]{}, err
@@ -141,7 +155,7 @@ func (b *PageBuilder[T, R]) Run(ctx context.Context, page search.Pagination) (se
 	if total == 0 {
 		return search.Result[R]{Items: []R{}}, nil
 	}
-	rows, next, err := b.fetch(ctx, source, page, seek)
+	rows, next, err := b.fetch(ctx, source, page, seek, computed)
 	if err != nil {
 		return search.Result[R]{}, err
 	}
@@ -189,12 +203,13 @@ func (b *PageBuilder[T, R]) prepare(page search.Pagination) (pageSource, jet.Boo
 // fetch reads the page rows and, with a keyset, the next cursor.
 func (b *PageBuilder[T, R]) fetch(
 	ctx context.Context, source pageSource, page search.Pagination, seek jet.BoolExpression,
+	computed []jet.Projection,
 ) ([]T, string, error) {
 	if b.keyset == nil {
 		rows, err := query.All[T](ctx, b.db, b.pageStatement(source, page))
 		return rows, "", err
 	}
-	rows, err := query.All[T](ctx, b.db, b.keysetStatement(source, page, seek))
+	rows, err := query.All[T](ctx, b.db, b.keysetStatement(source, page, seek, computed))
 	if err != nil {
 		return nil, "", err
 	}
@@ -225,13 +240,57 @@ func (b *PageBuilder[T, R]) pageStatement(source pageSource, page search.Paginat
 // keysetStatement fetches one row past the page, so Trim can tell whether
 // another page follows without a second query.
 func (b *PageBuilder[T, R]) keysetStatement(
-	source pageSource, page search.Pagination, seek jet.BoolExpression,
+	source pageSource, page search.Pagination, seek jet.BoolExpression, computed []jet.Projection,
 ) jet.Statement {
 	offset := int64(-1)
 	if page.Offset > 0 {
 		offset = int64(page.Offset)
 	}
-	return source.rows(
-		b.columns, and(b.where, seek), b.keyset.orderBy(source.dialect()), int64(page.Limit)+1, offset,
-	)
+	columns := slices.Concat(b.columns, computed)
+	return source.rows(columns, and(b.where, seek), b.keyset.orderBy(source.dialect()), int64(page.Limit)+1, offset)
+}
+
+// computedColumns returns the computed keys of the keyset that the columns do
+// not select yet, so the scan fills the row fields that the next cursor
+// reads. A computed key that the columns already select with its own
+// projection is not selected twice: the scan refuses a repeated alias under
+// StrictScan. Another column with the alias of a computed key would put a
+// second value into the field, so it is an error.
+func (b *PageBuilder[T, R]) computedColumns() ([]jet.Projection, error) {
+	if b.keyset == nil {
+		return nil, nil
+	}
+	projections := b.keyset.Projections()
+	if len(projections) == 0 {
+		return nil, nil
+	}
+	selected := selectList(b.columns...)
+	var computed []jet.Projection
+	for _, projection := range projections {
+		own := selectList(projection)
+		// The name holds no quote, so the closing quote ends the match.
+		alias := own[strings.LastIndex(own, ` AS "`):]
+		switch {
+		case strings.Contains(selected, own):
+		case strings.Contains(selected, alias):
+			return nil, fmt.Errorf(
+				"keyset: a column has the alias of the computed key%s: select Key.Projection, or rename the key",
+				strings.TrimPrefix(alias, " AS"),
+			)
+		default:
+			computed = append(computed, projection)
+		}
+	}
+	return computed, nil
+}
+
+// selectList renders the select list of projections as PostgreSQL SQL.
+func selectList(projections ...jet.Projection) string {
+	if len(projections) == 0 {
+		return ""
+	}
+	sql := jet.SELECT(projections[0], projections[1:]...).DebugSql()
+	sql = strings.TrimSpace(sql)
+	sql = strings.TrimSuffix(sql, ";")
+	return strings.TrimPrefix(sql, "SELECT ")
 }
