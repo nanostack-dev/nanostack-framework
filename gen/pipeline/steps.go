@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"path/filepath"
+	"slices"
 
 	"github.com/nanostack-dev/nanostack-framework/core/nano/project"
 	"github.com/nanostack-dev/nanostack-framework/gen"
@@ -133,7 +134,11 @@ func (r *runner) dbUnits(s *step) []*unit {
 func (r *runner) repoUnits(s *step) []*unit {
 	units := make([]*unit, 0, len(r.found.repos))
 	for _, p := range r.found.repos {
-		units = append(units, &unit{step: s, dir: p.dir, inputs: p.files, outputs: genrepo.Planned(p.dir, p.files)})
+		inputs := p.files
+		if api := r.proj.API; api != nil && api.Spec != "" {
+			inputs = append(slices.Clone(inputs), r.abs(api.Spec))
+		}
+		units = append(units, &unit{step: s, dir: p.dir, inputs: inputs, outputs: genrepo.Planned(p.dir, p.files)})
 	}
 	return units
 }
@@ -194,7 +199,9 @@ func runErrors(_ *runner, u *unit, overlay map[string][]byte) (output, error) {
 }
 
 // runRepo writes the repository bases of one package. The scope columns
-// come from the Postgres declaration; without one, no table is scoped.
+// come from the Postgres declaration; without one, no table is scoped. The
+// spec of the API declaration is what a search with nanorepo.API is checked
+// against; its API mapper may go into the package of its handler.
 func runRepo(r *runner, u *unit, overlay map[string][]byte) (output, error) {
 	opts := genrepo.Options{Dir: u.dir, Overlay: overlay}
 	if p := r.proj.Postgres; p != nil {
@@ -205,6 +212,9 @@ func runRepo(r *runner, u *unit, overlay map[string][]byte) (output, error) {
 			}
 			opts.ContextScopes[cs.Column] = cs.Func
 		}
+	}
+	if api := r.proj.API; api != nil {
+		opts.Spec, opts.SortByDirection = r.abs(api.Spec), api.SortByDirection
 	}
 	res, err := genrepo.Generate(opts)
 	if err != nil {

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go/ast"
 	"io"
+	"path/filepath"
 	"slices"
 	"strings"
 )
@@ -240,6 +241,13 @@ func (c *collector) explainSort(s *searchDecl, sort *searchSort) string {
 func (c *collector) explainAPI(s *searchDecl, add func(label, format string, args ...any)) {
 	if s.api != nil {
 		add("api", "%s", c.qualified(s.api))
+	}
+	if m := s.apiMapper; m != nil && !c.l.stub {
+		file := derivedFile(s.at.file)
+		if m.home != nil {
+			file = filepath.ToSlash(c.l.relDir(m.home.file))
+		}
+		add("api", "%s in %s", mapperName(s), file)
 	}
 	if s.ignoresFullText != "" {
 		add("api", "IgnoresFullText: %s", s.ignoresFullText)

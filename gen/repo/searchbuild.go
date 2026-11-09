@@ -236,6 +236,9 @@ func (b *builder) names() []string {
 	for _, sort := range b.sorts {
 		out = append(out, s.name+"Sort"+sort.name)
 	}
+	if s.api != nil && (s.apiMapper == nil || s.apiMapper.home == nil) {
+		out = append(out, mapperName(s)) // a mapper in another package is checked there
+	}
 	return slices.Compact(out)
 }
 

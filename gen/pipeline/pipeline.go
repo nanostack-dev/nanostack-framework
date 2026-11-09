@@ -456,15 +456,17 @@ func (r *runner) runUnit(i int, u *unit) {
 		return
 	}
 	if u.step.readsOutputs {
-		// The guess goes; what the run produced is planned, so the file of
-		// a dropped table is an orphan and the committed models are not.
+		// The guess goes, so the file of a dropped table is an orphan and
+		// the committed models are not.
 		for _, o := range u.outputs {
 			delete(r.planned, o)
 		}
-		for _, f := range out.files {
-			if abs, absErr := filepath.Abs(f.Path); absErr == nil {
-				r.planned[abs] = true
-			}
+	}
+	// What the run produced is planned: the db models, and an API mapper
+	// that repo writes next to a handler in another package.
+	for _, f := range out.files {
+		if abs, absErr := filepath.Abs(f.Path); absErr == nil {
+			r.planned[abs] = true
 		}
 	}
 	for _, f := range out.files {

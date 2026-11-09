@@ -202,7 +202,8 @@ func report(warnings []*gen.Error, err error) []byte {
 var declaredAt = regexp.MustCompile(`\(declared at [^)]*\)`)
 
 // Each package under testdata/problems prints the errors and warnings of
-// want.txt: one per rule, all in one run, each with a fix. A package whose
+// want.txt: one per rule, all in one run, each with a fix. A package with
+// an openapi.yaml is checked against it. A package whose
 // declarations resolve also prints the -explain of want-explain.txt.
 func TestProblems(t *testing.T) {
 	t.Parallel()
@@ -213,7 +214,11 @@ func TestProblems(t *testing.T) {
 	for _, dir := range dirs {
 		t.Run(filepath.Base(dir), func(t *testing.T) {
 			t.Parallel()
-			res, genErr := Generate(Options{Dir: dir, Scopes: repotest.Scopes, ContextScopes: repotest.ContextScopes})
+			opts := Options{Dir: dir, Scopes: repotest.Scopes, ContextScopes: repotest.ContextScopes}
+			if _, statErr := os.Stat(filepath.Join(dir, "openapi.yaml")); statErr == nil {
+				opts = apiOptions(dir)
+			}
+			res, genErr := Generate(opts)
 			var warnings []*gen.Error
 			if genErr != nil {
 				gentest.Problems(t, genErr)

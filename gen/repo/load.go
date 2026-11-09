@@ -42,6 +42,50 @@ type loaded struct {
 	// contextScopes maps each context tenant column to its registered
 	// function, import path and name: Postgres.ContextScopes.
 	contextScopes map[string]string
+
+	specPath        string   // the OpenAPI spec, absolute; "" without one
+	spec            *apiSpec // read on the first search that declares API
+	specErr         error    // the problem of reading it, reported once
+	sortByDirection string   // API.SortByDirection: ASC or DESC
+	stub            bool     // the declarations are read for a forward stub: no API check
+}
+
+// readSpec reads the spec on first use. first is true on that use, so
+// that the problem of reading it is reported once.
+func (l *loaded) readSpec() (spec *apiSpec, first bool, err error) {
+	if l.spec == nil && l.specErr == nil {
+		rel, relErr := filepath.Rel(l.dir, l.specPath)
+		if relErr != nil {
+			rel = l.specPath
+		}
+		l.spec, l.specErr = loadSpec(l.specPath, filepath.ToSlash(rel))
+		return l.spec, true, l.specErr
+	}
+	return l.spec, false, l.specErr
+}
+
+// hasHeader reports whether the file at path, in the overlay or on disk,
+// starts with the header of nano gen repo.
+func (l *loaded) hasHeader(path string) bool {
+	data, ok := l.overlay[path]
+	if !ok {
+		var err error
+		if data, err = os.ReadFile(filepath.Clean(path)); err != nil {
+			return false
+		}
+	}
+	return bytes.HasPrefix(data, []byte(header))
+}
+
+// mapperOf returns the search whose API mapper is the file at path in
+// another package, or nil.
+func mapperOf(searches []*searchDecl, path string) *searchDecl {
+	for _, s := range searches {
+		if s.apiMapper != nil && s.apiMapper.home != nil && s.apiMapper.home.file == path {
+			return s
+		}
+	}
+	return nil
 }
 
 // loadPackage type-checks the package with repo_base.gen.go and every

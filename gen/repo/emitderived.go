@@ -54,6 +54,9 @@ func (l *loaded) renderDerived(res []*resolution, searches []*searchDecl) ([]gen
 		for _, s := range out.searches[name] {
 			if s.builder != nil && len(s.unbuilt) == 0 {
 				e.searchBuilder(s.builder)
+				if s.apiMapper != nil && s.apiMapper.home == nil {
+					e.searchAPI(s.builder, func(ident string) string { return ident }, false)
+				}
 			}
 		}
 		src, err := e.file(l.pkg.Name, name)

@@ -357,3 +357,71 @@ func TestNullableKeyConversion(t *testing.T) {
 func builderOptions(dir string) Options {
 	return Options{Dir: dir, Scopes: repotest.Scopes, ContextScopes: repotest.ContextScopes}
 }
+
+// apiOptions are the options of a run of testdata/apibind: the spec next
+// to the package, and an API whose sort_by sent alone sorts DESC.
+func apiOptions(dir string) Options {
+	return Options{Dir: dir, Scopes: []string{"tenant_id"}, Spec: filepath.Join(dir, "openapi.yaml"),
+		SortByDirection: "DESC"}
+}
+
+// The searches of testdata/apibind bind their request bodies both ways
+// (design S13): the mapper of Route and Recent goes in the declaring file,
+// the mapper of Window next to its handler in testdata/apibind/handler.
+// The goldens hold the API sort names, InFold, ContainsAny, the three range
+// kinds, APIDirection, IgnoresFullText and APIHandWritten.
+func TestAPIGolden(t *testing.T) {
+	t.Parallel()
+	res, err := Generate(apiOptions("testdata/apibind"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"testdata/apibind/repo_base.gen.go", "testdata/apibind/apibind_repo.gen.go",
+		"testdata/apibind/handler/window_search_api.gen.go"}
+	var got []string
+	for _, f := range res.Files {
+		rel, relErr := filepath.Rel(mustAbs(t, "."), mustAbs(t, f.Path))
+		if relErr != nil {
+			t.Fatal(relErr)
+		}
+		got = append(got, filepath.ToSlash(rel))
+		golden(t, rel+".golden", f.Data)
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("files: %v, want %v", got, want)
+	}
+	var b bytes.Buffer
+	WriteSearchExplain(&b, res.Searches)
+	golden(t, "testdata/apibind/want-explain.txt", b.Bytes())
+}
+
+// The declaring package and the handler package build and vet with the
+// generated files: the mapper in another package names the builder of the
+// declaring package.
+func TestAPIBuildsAndVets(t *testing.T) {
+	t.Parallel()
+	res, err := Generate(apiOptions("testdata/apibind"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	overlay := writeOverlay(t, res.Files)
+	for _, cmd := range []string{"build", "vet"} {
+		out, cmdErr := exec.CommandContext(t.Context(), "go", cmd, "-overlay="+overlay, "./testdata/apibind/...").
+			CombinedOutput()
+		if cmdErr != nil {
+			t.Errorf("go %s: %v\n%s", cmd, cmdErr, out)
+		}
+	}
+}
+
+// The forward stub of testdata/apibind holds the mapper of Window in the
+// handler package, so that package type-checks before nano gen repo runs.
+func TestAPIForwardStub(t *testing.T) {
+	t.Parallel()
+	stubs := ForwardStubs(mustAbs(t, "testdata/apibind"))
+	got := string(stubs[mustAbs(t, "testdata/apibind/handler/window_search_api.gen.go")])
+	if !strings.Contains(got, "func WindowSearchFromAPI(tenantID uuid.UUID, body *apigen.WindowSearchRequest) "+
+		"apibind.WindowSearch {") || !strings.Contains(got, `panic("nano gen stub")`) {
+		t.Errorf("the stub of the handler package has no WindowSearchFromAPI that panics:\n%s", got)
+	}
+}

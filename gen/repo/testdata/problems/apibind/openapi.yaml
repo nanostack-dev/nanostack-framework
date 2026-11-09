@@ -1,0 +1,93 @@
+openapi: 3.0.3
+info:
+  title: problems
+  version: "1"
+paths:
+  /sort:
+    post:
+      operationId: BadSort
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BadSortRequest"
+  /filter:
+    post:
+      operationId: BadFilter
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BadFilterRequest"
+  /notext:
+    post:
+      operationId: NoText
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NoTextRequest"
+components:
+  schemas:
+    SearchRequest:
+      type: object
+      properties:
+        full_text_search:
+          type: string
+        sort_direction:
+          type: string
+          enum: [ASC, DESC]
+    Pagination:
+      type: object
+      properties:
+        limit:
+          type: integer
+          default: 50
+          maximum: 5000
+        offset:
+          type: integer
+        cursor:
+          type: string
+    BadSortRequest:
+      allOf:
+        - $ref: "#/components/schemas/SearchRequest"
+        - type: object
+          properties:
+            sort_by:
+              type: string
+              enum: [name, ip_address]
+            extra:
+              type: string
+            pagination:
+              $ref: "#/components/schemas/Pagination"
+    BadFilterRequest:
+      allOf:
+        - $ref: "#/components/schemas/SearchRequest"
+        - type: object
+          properties:
+            filter:
+              type: object
+              properties:
+                ip_addresses:
+                  type: array
+                  items:
+                    type: string
+                ids:
+                  type: array
+                  maxItems: 5000
+                  items:
+                    type: string
+    OwnTextRequest:
+      type: object
+      properties:
+        full_text_search:
+          type: string
+    NoTextRequest:
+      type: object
+      properties:
+        pagination:
+          type: object
+          properties:
+            limit:
+              type: integer
+              default: 20

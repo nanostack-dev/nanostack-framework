@@ -68,7 +68,10 @@ func ForwardStubs(dir string) map[string][]byte {
 	if len(p.searching) > 0 {
 		typed = typedSearches(dir)
 	}
-	out := map[string][]byte{}
+	out := typed.mappers()
+	if out == nil {
+		out = map[string][]byte{}
+	}
 	for _, file := range p.declaring {
 		path := filepath.Join(dir, derivedFile(file.path))
 		out[path] = p.stub(file, p.own[path], typed)

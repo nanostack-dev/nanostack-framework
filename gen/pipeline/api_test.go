@@ -161,6 +161,11 @@ func TestAPIDeclarationErrors(t *testing.T) {
 			"nanogen/project.go:13: API.Clients[0].Dir nested/client is in the nested module nested, " +
 				"which runs its own nano gen\n" +
 				"  fix: declare the output in nested/nanogen/project.go and run nano gen there\n"},
+		{"sort_by direction", `Server: project.Package{Dir: "api"},
+		SortByDirection: "desc",`,
+			"nanogen/project.go:13: API.SortByDirection \"desc\" is not ASC or DESC\n" +
+				"  fix: set API.SortByDirection to \"ASC\" or \"DESC\", as the spec describes a sort_by sent " +
+				"without a sort_direction\n"},
 		{"file name", `Server: project.Package{Dir: "api", File: "gen/api.go"},`,
 			"nanogen/project.go:12: API.Server.File gen/api.go is not a .go file name\n" +
 				"  fix: set API.Server.File to a file name such as api.gen.go\n"},

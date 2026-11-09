@@ -181,11 +181,15 @@ func (c *collector) limitsAndAPI(s *searchDecl, name string, call *ast.CallExpr)
 		s.defaultLimit = int32(n) // 1 to search.MaxLimit
 	case "API":
 		if inst, ok := c.l.pkg.TypesInfo.Instances[c.funcIdent(call)]; ok && inst.TypeArgs.Len() == 1 {
-			s.api = inst.TypeArgs.At(0)
+			s.api, s.apiNode = inst.TypeArgs.At(0), call
 		}
 	case "IgnoresFullText":
 		s.ignoresFullText, _ = c.reason(s, name, call.Args[0])
+		s.ignoresNode = call
 	case "APIHandWritten":
+		if s.handNode == nil {
+			s.handNode = call
+		}
 		for _, a := range call.Args {
 			if prop, ok := c.constString(s, a); ok {
 				s.apiHandWritten = append(s.apiHandWritten, prop)
