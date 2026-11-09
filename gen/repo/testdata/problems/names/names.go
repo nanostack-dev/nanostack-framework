@@ -11,8 +11,6 @@ type itemsBase struct{}
 
 func newItemsBase() itemsBase { return itemsBase{} }
 
-func nanoContainsPattern(term string) string { return term }
-
 func _() {
 	nanorepo.Base[model.Items](table.Items)
 }

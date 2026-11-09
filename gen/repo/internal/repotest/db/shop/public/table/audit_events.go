@@ -12,10 +12,13 @@ type auditEventsTable struct {
 	postgres.Table
 
 	// Columns
-	ID     postgres.ColumnInteger
-	ItemID postgres.ColumnString
-	Action postgres.ColumnString
-	At     postgres.ColumnTimestampz
+	ID      postgres.ColumnInteger
+	ItemID  postgres.ColumnString
+	Action  postgres.ColumnString
+	At      postgres.ColumnTimestampz
+	Note    postgres.ColumnString
+	Client  postgres.ColumnString
+	Payload postgres.ColumnString
 
 	AllColumns     postgres.ColumnList
 	MutableColumns postgres.ColumnList
@@ -61,8 +64,11 @@ func newAuditEventsTableImpl(schemaName, tableName, alias string) auditEventsTab
 		ItemIDColumn   = postgres.StringColumn("item_id")
 		ActionColumn   = postgres.StringColumn("action")
 		AtColumn       = postgres.TimestampzColumn("at")
-		allColumns     = postgres.ColumnList{IDColumn, ItemIDColumn, ActionColumn, AtColumn}
-		mutableColumns = postgres.ColumnList{ItemIDColumn, ActionColumn, AtColumn}
+		NoteColumn     = postgres.StringColumn("note")
+		ClientColumn   = postgres.StringColumn("client")
+		PayloadColumn  = postgres.StringColumn("payload")
+		allColumns     = postgres.ColumnList{IDColumn, ItemIDColumn, ActionColumn, AtColumn, NoteColumn, ClientColumn, PayloadColumn}
+		mutableColumns = postgres.ColumnList{ItemIDColumn, ActionColumn, AtColumn, NoteColumn, ClientColumn, PayloadColumn}
 		defaultColumns = postgres.ColumnList{IDColumn, AtColumn}
 	)
 
@@ -70,10 +76,13 @@ func newAuditEventsTableImpl(schemaName, tableName, alias string) auditEventsTab
 		Table: postgres.NewTable(schemaName, tableName, alias, allColumns...),
 
 		//Columns
-		ID:     IDColumn,
-		ItemID: ItemIDColumn,
-		Action: ActionColumn,
-		At:     AtColumn,
+		ID:      IDColumn,
+		ItemID:  ItemIDColumn,
+		Action:  ActionColumn,
+		At:      AtColumn,
+		Note:    NoteColumn,
+		Client:  ClientColumn,
+		Payload: PayloadColumn,
 
 		AllColumns:     allColumns,
 		MutableColumns: mutableColumns,
@@ -105,6 +114,9 @@ func (AuditEventsTable) ColumnTypes() map[string]string {
 		"item_id": "text",
 		"action":  "text",
 		"at":      "timestamptz",
+		"note":    "varchar",
+		"client":  "inet",
+		"payload": "jsonb",
 	}
 }
 

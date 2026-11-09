@@ -5,7 +5,6 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
-	"slices"
 	"strconv"
 	"strings"
 
@@ -19,6 +18,7 @@ const (
 	dbPath         = "github.com/nanostack-dev/nanostack-framework/db"
 	postgresPath   = dbPath + "/postgres"
 	qrmPath        = dbPath + "/qrm"
+	searchexecPath = dbPath + "/searchexec"
 	functionalPath = "github.com/nanostack-dev/nanostack-framework/pkg/functional"
 	transactorPath = "github.com/nanostack-dev/nanostack-framework/pkg/db/transactor"
 	uuidPath       = "github.com/google/uuid"
@@ -452,12 +452,6 @@ func (l *loaded) checkNames(d *declarations) []error {
 					name, FileName, t.sqlName))
 			}
 		}
-	}
-	if obj := scope.Lookup(containsHelper); obj != nil && obj.Pos().IsValid() && slices.ContainsFunc(d.tables,
-		func(t *tableBase) bool { return t.hasContains() }) {
-		file, line := l.position(l.pkg.Fset, obj.Pos())
-		problems = append(problems, gen.Errorf(file, line, "rename it",
-			"%s is declared here, and nano gen repo declares it in %s", containsHelper, FileName))
 	}
 	return problems
 }

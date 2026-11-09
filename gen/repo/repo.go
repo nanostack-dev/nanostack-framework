@@ -17,8 +17,9 @@
 // holds:
 //
 //   - t, the table, and where, typed predicates on its columns:
-//     where.Email(v), EmailIn(vs...), EmailContains(term) (case-insensitive,
-//     LIKE wildcards escaped), EmailEqualsIgnoreCase(v), CreatedAtAfter(v),
+//     where.Email(v), EmailIn(vs...), EmailContains(term)
+//     (searchexec.Contains: a substring without case, on a column whose
+//     ColumnTypes type is text), EmailEqualsIgnoreCase(v), CreatedAtAfter(v),
 //     CreatedAtBefore(v), ExternalIDIsNull();
 //   - helpers on a condition, which map rows with the declaration's mapper:
 //     findOne (LIMIT 2: a second row is transactor.ErrMoreThanOneRow),

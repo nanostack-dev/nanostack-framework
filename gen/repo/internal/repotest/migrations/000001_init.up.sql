@@ -1,6 +1,8 @@
 -- The schema of the nano gen repo fixture: one column per kind the base's
 -- predicates branch on, a tenant column for the scope check, and a unique
--- key for the OnUnique test.
+-- key for the OnUnique test. audit_events also has columns that the model
+-- reads as a string but that are not text (inet, jsonb), which get no
+-- Contains, and a varchar column, which does.
 CREATE TYPE item_status AS ENUM ('ACTIVE', 'ARCHIVED');
 
 CREATE TABLE tenants (
@@ -34,5 +36,8 @@ CREATE TABLE audit_events (
     id      bigserial PRIMARY KEY,
     item_id text,
     action  text        NOT NULL,
-    at      timestamptz NOT NULL DEFAULT now()
+    at      timestamptz NOT NULL DEFAULT now(),
+    note    varchar(200),
+    client  inet,
+    payload jsonb
 );

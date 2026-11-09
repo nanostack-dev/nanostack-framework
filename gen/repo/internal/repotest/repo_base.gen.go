@@ -6,12 +6,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/nanostack-dev/nanostack-framework/db/postgres"
 	"github.com/nanostack-dev/nanostack-framework/db/qrm"
+	"github.com/nanostack-dev/nanostack-framework/db/searchexec"
 	"github.com/nanostack-dev/nanostack-framework/gen/repo/internal/repotest/db/shop/public/model"
 	"github.com/nanostack-dev/nanostack-framework/gen/repo/internal/repotest/db/shop/public/table"
 	"github.com/nanostack-dev/nanostack-framework/pkg/db/transactor"
@@ -188,8 +188,11 @@ func (b auditEventsBase) queryRows(ctx context.Context, stmt postgres.Statement)
 }
 
 // auditEventsWhere builds predicates on the columns of audit_events. A string predicate
-// compares as text. Contains matches a substring case-insensitively and
-// escapes % _ \ in the term, so input never becomes a wildcard.
+// compares as text. Contains is searchexec.Contains: it trims the term,
+// matches a substring without case, and % _ ! in the term match
+// themselves. A blank term matches every row.
+//
+// No equality predicate on client, payload: compare on b.t.
 type auditEventsWhere struct{}
 
 // ID is id = v.
@@ -260,7 +263,7 @@ func (auditEventsWhere) ActionIn(vs ...string) postgres.BoolExpression {
 
 // ActionContains matches action that contain term, ignoring case.
 func (auditEventsWhere) ActionContains(term string) postgres.BoolExpression {
-	return postgres.LOWER(table.AuditEvents.Action).LIKE(postgres.String(nanoContainsPattern(term)))
+	return searchexec.Contains(term, table.AuditEvents.Action)
 }
 
 // ActionEqualsIgnoreCase is lower(action) = lower(v).
@@ -293,6 +296,46 @@ func (auditEventsWhere) AtAfter(v time.Time) postgres.BoolExpression {
 // AtBefore is at < v.
 func (auditEventsWhere) AtBefore(v time.Time) postgres.BoolExpression {
 	return table.AuditEvents.At.LT(postgres.TimestampzT(v))
+}
+
+// Note is note = v.
+func (auditEventsWhere) Note(v string) postgres.BoolExpression {
+	return table.AuditEvents.Note.EQ(postgres.String(v))
+}
+
+// NoteIn is note IN (vs...); no value matches no row.
+func (auditEventsWhere) NoteIn(vs ...string) postgres.BoolExpression {
+	if len(vs) == 0 {
+		return postgres.Bool(false)
+	}
+	exprs := make([]postgres.Expression, len(vs))
+	for i, v := range vs {
+		exprs[i] = postgres.String(v)
+	}
+	return table.AuditEvents.Note.IN(exprs...)
+}
+
+// NoteContains matches note that contain term, ignoring case.
+func (auditEventsWhere) NoteContains(term string) postgres.BoolExpression {
+	return searchexec.Contains(term, table.AuditEvents.Note)
+}
+
+// NoteEqualsIgnoreCase is lower(note) = lower(v).
+func (auditEventsWhere) NoteEqualsIgnoreCase(v string) postgres.BoolExpression {
+	return postgres.LOWER(table.AuditEvents.Note).EQ(postgres.LOWER(postgres.String(v)))
+}
+
+// NoteIsNull is note IS NULL.
+func (auditEventsWhere) NoteIsNull() postgres.BoolExpression { return table.AuditEvents.Note.IS_NULL() }
+
+// ClientIsNull is client IS NULL.
+func (auditEventsWhere) ClientIsNull() postgres.BoolExpression {
+	return table.AuditEvents.Client.IS_NULL()
+}
+
+// PayloadIsNull is payload IS NULL.
+func (auditEventsWhere) PayloadIsNull() postgres.BoolExpression {
+	return table.AuditEvents.Payload.IS_NULL()
 }
 
 // itemsBase is the generated base of table items. It holds the table (t),
@@ -465,8 +508,9 @@ func (b itemsBase) queryRows(ctx context.Context, stmt postgres.Statement) trans
 }
 
 // itemsWhere builds predicates on the columns of items. A string predicate
-// compares as text. Contains matches a substring case-insensitively and
-// escapes % _ \ in the term, so input never becomes a wildcard.
+// compares as text. Contains is searchexec.Contains: it trims the term,
+// matches a substring without case, and % _ ! in the term match
+// themselves. A blank term matches every row.
 //
 // No equality predicate on tags: compare on b.t.
 type itemsWhere struct{}
@@ -522,7 +566,7 @@ func (itemsWhere) SkuIn(vs ...string) postgres.BoolExpression {
 
 // SkuContains matches sku that contain term, ignoring case.
 func (itemsWhere) SkuContains(term string) postgres.BoolExpression {
-	return postgres.LOWER(table.Items.Sku).LIKE(postgres.String(nanoContainsPattern(term)))
+	return searchexec.Contains(term, table.Items.Sku)
 }
 
 // SkuEqualsIgnoreCase is lower(sku) = lower(v).
@@ -549,7 +593,7 @@ func (itemsWhere) NameIn(vs ...string) postgres.BoolExpression {
 
 // NameContains matches name that contain term, ignoring case.
 func (itemsWhere) NameContains(term string) postgres.BoolExpression {
-	return postgres.LOWER(table.Items.Name).LIKE(postgres.String(nanoContainsPattern(term)))
+	return searchexec.Contains(term, table.Items.Name)
 }
 
 // NameEqualsIgnoreCase is lower(name) = lower(v).
@@ -1069,8 +1113,9 @@ func (b tenantsBase) queryRows(ctx context.Context, stmt postgres.Statement) tra
 }
 
 // tenantsWhere builds predicates on the columns of tenants. A string predicate
-// compares as text. Contains matches a substring case-insensitively and
-// escapes % _ \ in the term, so input never becomes a wildcard.
+// compares as text. Contains is searchexec.Contains: it trims the term,
+// matches a substring without case, and % _ ! in the term match
+// themselves. A blank term matches every row.
 type tenantsWhere struct{}
 
 // ID is id = v.
@@ -1109,16 +1154,10 @@ func (tenantsWhere) NameIn(vs ...string) postgres.BoolExpression {
 
 // NameContains matches name that contain term, ignoring case.
 func (tenantsWhere) NameContains(term string) postgres.BoolExpression {
-	return postgres.LOWER(table.Tenants.Name).LIKE(postgres.String(nanoContainsPattern(term)))
+	return searchexec.Contains(term, table.Tenants.Name)
 }
 
 // NameEqualsIgnoreCase is lower(name) = lower(v).
 func (tenantsWhere) NameEqualsIgnoreCase(v string) postgres.BoolExpression {
 	return postgres.LOWER(table.Tenants.Name).EQ(postgres.LOWER(postgres.String(v)))
-}
-
-// nanoContainsPattern builds a case-insensitive substring LIKE pattern: % _ and \
-// match themselves under PostgreSQL's default LIKE escape character.
-func nanoContainsPattern(term string) string {
-	return "%" + strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(strings.ToLower(term)) + "%"
 }
