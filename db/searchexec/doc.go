@@ -2,6 +2,36 @@
 // generated code and hand-written repositories call it; the package is not a query
 // language of its own, and every statement stays a Nanostack DB (go-jet) statement.
 //
+// # Generated searches
+//
+// nano gen repo writes three things per declared search: a Spec, a builder and the
+// repository method that runs it.
+//
+//   - The Spec is a package variable that DefineSpec returns. It holds the source (From), the
+//     projection, the tenant scope, the fixed conditions, the sort keys, the tiebreak, the
+//     default sort and the default limit. DefineSpec panics at package init when the search
+//     has no source, no key, no tiebreak or no tenant scope.
+//   - The builder is a struct that embeds Query and nothing else. Query gives it Scope,
+//     SortBy, After, Offset and Limit. Every method returns a changed copy, so a builder is
+//     immutable. The scope is a typed value P: one value, or a generated scope struct whose
+//     fields must be named. A zero scope field refuses the search.
+//   - The repository method runs the builder with Run or RunPage. A hand-written method
+//     starts from Resolve, which returns an opaque Plan: the method can narrow it with
+//     Plan.And, add the keys of its hand-written sorts with Plan.Order, and run it.
+//
+// Resolve, Run and RunPage take the spec as an argument and refuse a query whose spec is
+// another one, a struct literal of the builder, a zero scope value and a context scope that
+// returns nil, all with search.ErrUnscoped. They also refuse a page that search.CheckPage
+// refuses. No statement runs before these checks pass, and the page always runs with
+// keyset.PageBuilder.RequireWhere.
+//
+// The tenant conditions are ScopeEq (col = $1, for one or more columns), ScopeOrNull
+// ((col = $1 OR col IS NULL), for rows that every tenant shares), ScopeNull (col IS NULL)
+// and ScopeFunc (a condition that the context carries, such as the workspace).
+//
+// The generated searches support PostgreSQL. A source of another dialect is
+// keyset.ErrDialect.
+//
 // # Contains
 //
 // Contains is the one substring rule of the framework. A search's full-text filter, each
