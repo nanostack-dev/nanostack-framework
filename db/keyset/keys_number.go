@@ -6,56 +6,98 @@ import (
 	"fmt"
 	"math"
 
+	ijet "github.com/nanostack-dev/nanostack-framework/db/internal/jet"
+	"github.com/nanostack-dev/nanostack-framework/db/mysql"
 	jet "github.com/nanostack-dev/nanostack-framework/db/postgres"
 )
 
 // IntKey orders on a NOT NULL integer column.
 func IntKey[T any](column jet.ColumnInteger, value func(T) int64) Key[T] {
-	return intKey(columnTarget(column), column, false, ptrOf(value))
+	return intKey(columnTarget(column), false, ptrOf(value))
 }
 
 // NullableIntKey orders on a nullable integer column.
 func NullableIntKey[T any](column jet.ColumnInteger, value func(T) *int64) Key[T] {
-	return intKey(columnTarget(column), column, true, value)
+	return intKey(columnTarget(column), true, value)
 }
 
-func intKey[T any](target keyTarget, column jet.IntegerExpression, nullable bool, value func(T) *int64) Key[T] {
-	// The literal is cast to bigint: a bare parameter would take the column's
-	// type, and a forged value past smallint or integer would fail to bind.
-	// PostgreSQL compares integer widths across one btree family, so an index
-	// on the column still serves the comparison.
-	typed := func(v int64) jet.IntegerExpression { return jet.IntExp(jet.CAST(jet.Int(v)).AS_BIGINT()) }
-	return newTargetKey(target, nullable, value, jsonCodec[int64](),
-		func(v int64) jet.Expression { return typed(v) },
-		func(v int64) (jet.BoolExpression, jet.BoolExpression, jet.BoolExpression) {
-			return column.GT(typed(v)), column.LT(typed(v)), column.EQ(typed(v))
-		})
+// intLiteral casts the literal to a 64-bit integer where a bare parameter
+// could take a narrower type. On PostgreSQL a bare parameter takes the
+// column's type, so a forged value past smallint or integer would fail to
+// bind. PostgreSQL compares integer widths across one btree family, so an
+// index on the column still serves the comparison. MySQL gets CAST(? AS
+// SIGNED). SQLite integers are 64-bit, and a cast there would only hide the
+// column's affinity.
+func intLiteral(d dialect, v int64) ijet.Expression {
+	switch d {
+	case dialectPostgres:
+		return jet.CAST(jet.Int(v)).AS_BIGINT()
+	case dialectMySQL:
+		return mysql.CAST(mysql.Int(v)).AS_SIGNED()
+	case dialectSQLite:
+	}
+	return ijet.Int(v)
+}
+
+func intKey[T any](target keyTarget, nullable bool, value func(T) *int64) Key[T] {
+	return newTargetKey(target, nullable, value, jsonCodec[int64](), literalBound(target.expression, intLiteral))
 }
 
 // FloatKey orders on a NOT NULL double precision column. It does not fit
-// numeric, where float64 rounding would repeat a row forever, nor real, which
-// takes RealKey. NaN and the infinities, which PostgreSQL orders above every
-// number, round-trip exactly.
+// numeric or decimal, where float64 rounding would repeat a row forever, nor
+// real (MySQL FLOAT), which takes RealKey.
+//
+// NaN and the infinities round-trip exactly on PostgreSQL, which orders them
+// above every number. MySQL's DOUBLE holds none of them, and SQLite stores NaN
+// as NULL, so a cursor that carries one is refused there with
+// search.ErrInvalidCursor.
 func FloatKey[T any](column jet.ColumnFloat, value func(T) float64) Key[T] {
-	return floatKey(columnTarget(column), column, false, ptrOf(value))
+	return floatKey(columnTarget(column), false, ptrOf(value))
 }
 
 // NullableFloatKey orders on a nullable double precision column.
 func NullableFloatKey[T any](column jet.ColumnFloat, value func(T) *float64) Key[T] {
-	return floatKey(columnTarget(column), column, true, value)
+	return floatKey(columnTarget(column), true, value)
 }
 
-// typedFloat casts the literal to double precision explicitly.
-func typedFloat(v float64) jet.FloatExpression {
-	return jet.FloatExp(jet.CAST(jet.Float(v)).AS_DOUBLE())
+// floatLiteral casts the literal to double precision on PostgreSQL. MySQL and
+// SQLite bind a float64 as a double.
+func floatLiteral(d dialect, v float64) ijet.Expression {
+	if d == dialectPostgres {
+		return jet.CAST(jet.Float(v)).AS_DOUBLE()
+	}
+	return ijet.Float(v)
 }
 
-// RealKey orders on a NOT NULL real column. A real compared with a double
-// literal is promoted, and 0.1 stored as real is not 0.1 as double, so the
-// boundary row would match itself and repeat. The key compares as real. It
-// refuses a finite cursor value outside real's range with ErrInvalidCursor:
-// the conversion to float32 would turn it into an infinity, and the page
-// would jump to the end.
+// acceptFloat refuses the values a dialect's floating-point column cannot
+// hold: NaN and the infinities on MySQL, NaN on SQLite.
+func acceptFloat(d dialect, v float64) error {
+	switch d {
+	case dialectMySQL:
+		if math.IsNaN(v) || math.IsInf(v, 0) {
+			return errors.New("MySQL holds no NaN or infinity")
+		}
+	case dialectSQLite:
+		if math.IsNaN(v) {
+			return errors.New("SQLite holds no NaN")
+		}
+	case dialectPostgres:
+	}
+	return nil
+}
+
+// RealKey orders on a NOT NULL single-precision column: a PostgreSQL real or
+// a MySQL FLOAT. A real compared with a double literal is promoted, and 0.1
+// stored as real is not 0.1 as double, so the boundary row would match itself
+// and repeat. The key compares as real: with a cast on PostgreSQL, and with
+// the float64 of the float32 value on MySQL, which equals the promoted column
+// value. It refuses a finite cursor value outside real's range with
+// ErrInvalidCursor: the conversion to float32 would turn it into an infinity,
+// and the page would jump to the end. NaN and the infinities follow FloatKey's
+// rules per dialect.
+//
+// SQLite REAL is a double, which a float32 cursor cannot hold exactly: Page
+// returns ErrDialect there. Use FloatKey on SQLite.
 func RealKey[T any](column jet.ColumnFloat, value func(T) float32) Key[T] {
 	return realKey(column, false, ptrOf(value))
 }
@@ -79,15 +121,16 @@ func realKey[T any](column jet.ColumnFloat, nullable bool, value func(T) *float3
 			}
 			return float32(v), nil
 		},
+		accept: func(d dialect, v float32) error { return acceptFloat(d, float64(v)) },
 	}
-	typed := func(v float32) jet.FloatExpression {
-		return jet.FloatExp(jet.CAST(jet.Float(float64(v))).AS_REAL())
-	}
-	return newCodecKey(column, nullable, value, codec,
-		func(v float32) jet.Expression { return typed(v) },
-		func(v float32) (jet.BoolExpression, jet.BoolExpression, jet.BoolExpression) {
-			return column.GT(typed(v)), column.LT(typed(v)), column.EQ(typed(v))
-		})
+	key := newKey(column, nullable, value, codec, literalBound(column, func(d dialect, v float32) ijet.Expression {
+		if d == dialectPostgres {
+			return jet.CAST(jet.Float(float64(v))).AS_REAL()
+		}
+		return ijet.Float(float64(v))
+	}))
+	key.only = dialects(dialectPostgres | dialectMySQL)
+	return key
 }
 
 // floatCodec writes NaN and the infinities as words, which JSON numbers
@@ -124,13 +167,10 @@ func floatCodec() keyCodec[float64] {
 			err := json.Unmarshal(raw, &v)
 			return v, err
 		},
+		accept: acceptFloat,
 	}
 }
 
-func floatKey[T any](target keyTarget, column jet.FloatExpression, nullable bool, value func(T) *float64) Key[T] {
-	return newTargetKey(target, nullable, value, floatCodec(),
-		func(v float64) jet.Expression { return typedFloat(v) },
-		func(v float64) (jet.BoolExpression, jet.BoolExpression, jet.BoolExpression) {
-			return column.GT(typedFloat(v)), column.LT(typedFloat(v)), column.EQ(typedFloat(v))
-		})
+func floatKey[T any](target keyTarget, nullable bool, value func(T) *float64) Key[T] {
+	return newTargetKey(target, nullable, value, floatCodec(), literalBound(target.expression, floatLiteral))
 }

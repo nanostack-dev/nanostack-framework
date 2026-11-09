@@ -19,12 +19,20 @@ func NullableIntExprKey[T any](name string, expression jet.IntegerExpression, va
 	return intExprKey(name, expression, true, value)
 }
 
+// postgresOnly marks a computed key as PostgreSQL only: its expression is
+// PostgreSQL SQL (casts and COALESCE through db/postgres), so Page returns
+// ErrDialect on MySQL and SQLite.
+func postgresOnly[T any](key Key[T]) Key[T] {
+	key.only = dialects(dialectPostgres)
+	return key
+}
+
 func intExprKey[T any](name string, expression jet.IntegerExpression, nullable bool, value func(T) *int64) Key[T] {
 	cast := jet.IntExp(jet.CAST(expression).AS_BIGINT())
 	if !nullable {
 		cast = jet.IntExp(jet.COALESCE(cast, jet.Int(0)))
 	}
-	return intKey(computedTarget(name, cast), cast, nullable, value)
+	return postgresOnly(intKey(computedTarget(name, cast), nullable, value))
 }
 
 // FloatExprKey orders on a double precision expression. It reads NULL as 0.
@@ -44,7 +52,7 @@ func floatExprKey[T any](name string, expression jet.FloatExpression, nullable b
 	if !nullable {
 		cast = jet.FloatExp(jet.COALESCE(cast, jet.Float(0)))
 	}
-	return floatKey(computedTarget(name, cast), cast, nullable, value)
+	return postgresOnly(floatKey(computedTarget(name, cast), nullable, value))
 }
 
 // TimeExprKey orders on a timestamptz expression. It reads NULL as the zero
@@ -68,7 +76,7 @@ func timeExprKey[T any](
 	if !nullable {
 		cast = jet.TimestampzExp(jet.COALESCE(cast, jet.TimestampzT(time.Time{})))
 	}
-	return timeKey(computedTarget(name, cast), cast, nullable, value)
+	return postgresOnly(timeKey(computedTarget(name, cast), nullable, value))
 }
 
 // StringExprKey orders on a text expression. It reads NULL as the empty
@@ -94,5 +102,5 @@ func stringExprKey[T any](name string, expression jet.StringExpression, nullable
 	if !nullable {
 		wrapped = jet.StringExp(jet.CustomExpression(jet.Token("COALESCE(("), expression, jet.Token("), '')")))
 	}
-	return stringKey(computedTarget(name, wrapped), wrapped, nullable, value)
+	return postgresOnly(stringKey(computedTarget(name, wrapped), nullable, value))
 }

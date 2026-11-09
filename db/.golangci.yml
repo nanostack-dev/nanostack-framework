@@ -273,6 +273,7 @@ linters:
       - ^tools/upstreamfmt/
       - ^tools/upstreamsync/
       - ^tests/dbconfig/nanostack\.go$
+      - ^tests/internal/keysetcontract/
       - ^tests/internal/testenv/
       - ^tests/tools/
       - ^tests/(mysql|postgres|sqlite)/(generator_option|keyset\w*|nanostack_\w+|option\w*|query)_test\.go$

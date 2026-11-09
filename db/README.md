@@ -88,7 +88,14 @@ column from a row; `OrderOf` builds a total order (the requested sorts, then a u
 tiebreak) and refuses an unknown sort with `search.ErrUnknownSort`. `Page` and `PageOf` count
 the matches and read one page through `db/query`, with the executor as a parameter: they never
 read a transaction from a context. `RequireWhere` refuses a page with no `WHERE`
-(`search.ErrUnscoped`). The pager supports PostgreSQL; a MySQL or SQLite table is `ErrDialect`.
+(`search.ErrUnscoped`). The pager runs on PostgreSQL, MySQL, MariaDB and SQLite with one contract:
+the same rows, complete walks and the same cursor tokens. `Page` reads the dialect from its
+source and writes that dialect's SQL. A key whose column type a dialect lacks (`TimeKey` and
+`InetKey` off PostgreSQL, `MySQLTimestampKey` and `MariaDBTimestampKey` off MySQL, `RealKey` on
+SQLite) is `ErrDialect`. On SQLite a time column holds text: write every row through the driver
+as a `time.Time` in UTC, or give a column that SQL fills (`CURRENT_TIMESTAMP`) its text form with
+`LocalTimeKey(...).SQLiteLayout("2006-01-02 15:04:05")`. A page that ends on its own cursor
+row is `ErrNoProgress`: the key does not match the stored values.
 
 ```go
 order, err := keyset.OrderOf(page.Sort, map[SortField]keyset.Key[model.Invoice]{
