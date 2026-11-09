@@ -509,6 +509,9 @@ func TestSelectJson_ProjectionNotAliased(t *testing.T) {
 	})
 }
 
+// Nanostack: a key with a backslash is a bound argument, so the server returns it unchanged
+// in every sql_mode (see db/UPSTREAM.md, Quoted aliases). Upstream sent it as a literal,
+// where MySQL read \t, \f and \x as escapes and changed the key.
 func TestSelectJsonObject_EscapesJsonKeys(t *testing.T) {
 	stmt := SELECT_JSON_OBJ(
 		String("value").AS("author"),
@@ -527,10 +530,10 @@ SELECT JSON_OBJECT(
           'author''s name', 'value',
           'author''''s name', 'value',
           'author "name"', 'value',
-          'C:\tmp\file', 'value',
+          'C:\\tmp\\file', 'value',
           'hello
 world', 'value',
-          'a''b\\c\nd\r\x00e\x1af', 'value',
+          'a''b\\\\c\\nd\\r\\x00e\\x1af', 'value',
           'žika 😀', 'value'
      ) AS "json";
 `)
@@ -541,8 +544,8 @@ world', 'value',
 	require.NoError(t, err)
 	testutils.AssertJSON(t, dest, `
 {
-	"C:\tmpfile": "value",
-	"a'b\\c\nd\rx00ex1af": "value",
+	"C:\\tmp\\file": "value",
+	"a'b\\\\c\\nd\\r\\x00e\\x1af": "value",
 	"author": "value",
 	"author \"name\"": "value",
 	"author''s name": "value",

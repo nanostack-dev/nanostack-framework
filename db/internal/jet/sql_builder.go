@@ -102,10 +102,17 @@ func isPostSeparator(b byte) bool {
 	return b == ' ' || b == '.' || b == ',' || b == ')' || b == '\n' || b == ':' || b == '[' || b == ']'
 }
 
-// WriteAlias is used to add alias to output SQL
+// WriteAlias is used to add alias to output SQL. An alias that contains the alias quote
+// character or a backslash is written with the identifier quote character, and that quote
+// character is doubled in the alias, so the alias stays one quoted name. MySQL reads a
+// "-quoted alias as a string literal, where a backslash escapes the next character; an
+// identifier quote reads no escape on any dialect.
 func (s *SQLBuilder) WriteAlias(str string) {
-	aliasQuoteChar := string(s.Dialect.AliasQuoteChar())
-	s.WriteString(aliasQuoteChar + str + aliasQuoteChar)
+	quote := string(s.Dialect.AliasQuoteChar())
+	if strings.Contains(str, quote) || strings.Contains(str, `\`) {
+		quote = string(s.Dialect.IdentifierQuoteChar())
+	}
+	s.WriteString(quote + strings.ReplaceAll(str, quote, quote+quote) + quote)
 }
 
 // WriteString writes sting to output SQL
@@ -113,17 +120,24 @@ func (s *SQLBuilder) WriteString(str string) {
 	s.write([]byte(str))
 }
 
-// WriteJsonObjKey serializes json object key
+// WriteJsonObjKey serializes json object key. A key that contains a backslash is sent as a
+// bound argument, not as a string literal: MySQL and MariaDB read a backslash in a string
+// literal as an escape, so `\'` would end the literal. A doubled single quote is read the
+// same in every dialect and sql_mode, so a key without a backslash stays a literal.
 func (s *SQLBuilder) WriteJsonObjKey(key string) {
-	s.WriteString(stringQuote(key))
+	if strings.Contains(key, `\`) {
+		s.insertParametrizedArgument(key)
+	} else {
+		s.WriteString(stringQuote(key))
+	}
 	s.WriteString(", ")
 }
 
-// WriteIdentifier adds identifier to output SQL
+// WriteIdentifier adds identifier to output SQL. A quote character in a quoted identifier is doubled.
 func (s *SQLBuilder) WriteIdentifier(name string, alwaysQuote ...bool) {
 	if s.shouldQuote(name, alwaysQuote...) {
 		identQuoteChar := string(s.Dialect.IdentifierQuoteChar())
-		s.WriteString(identQuoteChar + name + identQuoteChar)
+		s.WriteString(identQuoteChar + strings.ReplaceAll(name, identQuoteChar, identQuoteChar+identQuoteChar) + identQuoteChar)
 	} else {
 		s.WriteString(name)
 	}

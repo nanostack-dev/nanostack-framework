@@ -88,6 +88,7 @@ linters:
       - ^generator/template/(render|unique_keys)(_test)?\.go$
       - ^generator/metadata/(unique_index|read_schema)\.go$
       - ^generator/postgres/(unique_keys|read_schema)(_test)?\.go$
+      - ^internal/jet/dialect_switch(_test)?\.go$
       - ^internal/jet/optional_arg(_test)?\.go$
       - ^internal/optional/
       - ^internal/testutils/option_parity\.go$
@@ -102,4 +103,4 @@ linters:
       - ^tests/dbconfig/nanostack\.go$
       - ^tests/internal/testenv/
       - ^tests/tools/
-      - ^tests/(mysql|postgres|sqlite)/(generator_option|nanostack_models|option\w*|query)_test\.go$
+      - ^tests/(mysql|postgres|sqlite)/(generator_option|nanostack_alias|nanostack_models|option\w*|query)_test\.go$

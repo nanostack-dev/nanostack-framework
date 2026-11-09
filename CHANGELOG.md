@@ -2,6 +2,15 @@
 
 One section per module and version, newest first. Each section uses Added, Changed, Deprecated, Removed and Fixed. [RELEASING.md](RELEASING.md) gives the release steps and the upgrade notes.
 
+## Unreleased (db)
+
+### Added
+- `internal/jet`: `DialectSwitch(func(Dialect) Expression)` and its typed forms (`BoolDialectSwitch`, `IntDialectSwitch`, `StringDialectSwitch`, ...). The statement's dialect selects the expression when the statement is serialized, so one value serves PostgreSQL, MySQL and SQLite. Search uses it for the SQL that differs per dialect.
+
+### Fixed
+- The SQL builder writes an alias that contains a quote or a backslash with the identifier quote character, doubled inside the alias (`AS "a""b"` on PostgreSQL, ``AS `a"b` `` on MySQL and SQLite). It also doubles the quote character in a quoted identifier, so a subquery column or a CTE name that refers to the alias agrees with it. Before, a quote in an alias or in a reference to it ended the quoted name, and on MySQL a backslash before a quote did the same; the rest of the name was read as SQL.
+- On MySQL, `SELECT_JSON_OBJ` sends a JSON object key that contains a backslash as a bound argument. Before, `\'` in an alias ended the key literal, and the rest of the alias was read as SQL. The server now returns such a key unchanged; before, it read `\t` or `\n` in it as an escape.
+
 ## gen/v0.23.0-beta.3
 
 Codegen part 1: the db step and the repo step of `nano gen`. It requires root `v0.23.0-beta.3` and `db/v0.23.0-beta.3`. Pin the CLI with `go get -tool github.com/nanostack-dev/nanostack-framework/gen/cmd/nano@v0.23.0-beta.3`. [RELEASING.md](RELEASING.md#upgrade-from-v0230-beta2) gives the upgrade steps.
