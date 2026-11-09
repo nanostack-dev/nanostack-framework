@@ -194,13 +194,13 @@ go tool nanostack gen
 
 ## Upgrade to the nanostack CLI
 
-The next `gen` release renames the CLI from `nano` to `nanostack` ([CHANGELOG.md](CHANGELOG.md#gen-next-release)).
+`gen/v0.23.0-beta.7` renames the CLI from `nano` to `nanostack` ([CHANGELOG.md](CHANGELOG.md#genv0230-beta7)). The root, `db` and `pkg/functional` stay at `v0.23.0-beta.4`, `v0.23.0-beta.4` and `v0.23.0-beta.1`.
 
 1. Swap the tool directive, then regenerate:
 
    ```sh
    go get -tool github.com/nanostack-dev/nanostack-framework/gen/cmd/nano@none
-   go get -tool github.com/nanostack-dev/nanostack-framework/gen/cmd/nanostack@<gen tag>
+   go get -tool github.com/nanostack-dev/nanostack-framework/gen/cmd/nanostack@v0.23.0-beta.7
    go mod tidy
    go tool nanostack gen
    ```
