@@ -429,6 +429,10 @@ func TestFieldConstructorsPanic(t *testing.T) {
 			func() { searchexec.NewTimeRange(q, nil) },
 			"searchexec: NewTimeRange: the expression is nil",
 		},
+		"LocalTimeRange nil": {
+			func() { searchexec.NewLocalTimeRange(q, nil) },
+			"searchexec: NewLocalTimeRange: the expression is nil",
+		},
 		"Presence nil": {
 			func() { searchexec.NewPresence(q, nil) },
 			"searchexec: NewPresence: the expression is nil",

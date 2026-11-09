@@ -136,7 +136,8 @@ context transaction and do not refuse a row lock. The scope is a typed value: a 
 field (also a field that only `From` reads), a query of another spec and a struct literal of
 the builder are `search.ErrUnscoped`, before any statement runs. A hand-written method starts
 from `searchexec.Resolve` and gets an opaque `Plan`, which it can narrow but never widen. The
-generated searches support PostgreSQL; a source of another dialect is `keyset.ErrDialect`.
+generated searches run on PostgreSQL, MySQL, MariaDB and SQLite; any other source, and an
+`Exists` child of another dialect than the source, is `keyset.ErrDialect`.
 
 Each filter of a generated builder returns a field type, and the method of the field returns
 the filtered copy: `In` (`expr IN (...)`), `InFold` (an exact match without case, `expr ILIKE $1
@@ -148,8 +149,13 @@ table, correlated on its link column and its tenant columns). From Go, an empty 
 no row. More than `search.MaxInValues` (1000) values is `search.ErrTooManyValues`, and a term
 longer than `search.MaxTermLength` (1000) characters is `search.ErrTermTooLong`: the field
 records the error on the query, and `Resolve` returns it before any statement runs. A string
-value that no text column can hold (not valid UTF-8, or holding NUL) matches no row, and a
-`TimeRange` bound moves to a whole microsecond.
+value that no text column can hold (not valid UTF-8, or holding NUL) matches no row.
+`NewTimeRange` takes a PostgreSQL `timestamptz`, and `NewLocalTimeRange` a timestamp without
+time zone (MySQL, SQLite, a PostgreSQL `timestamp`). A `TimeRange` bound moves to a whole
+microsecond on PostgreSQL and MySQL. On SQLite it is the time in UTC in the driver's text
+form, with every digit, so the rows must be written through the driver in UTC;
+`TimeRange.SQLiteLayout` gives the text form of a column that SQL fills. A bound outside
+0001-01-02 to 9999-12-30 (UTC) is `search.ErrInvalidTime`.
 
 ```go
 q := NewWebhookRequestSearch(scope).Method().In("GET", "POST").ReceivedAt().Since(t)

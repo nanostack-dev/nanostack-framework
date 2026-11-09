@@ -6,7 +6,6 @@ package searchexeccontract
 import (
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -26,7 +25,6 @@ func (s suite) fieldsBothWays(t *testing.T, f *sfFixture) {
 	name := searchexec.NewIn(q.Query, f.name, searchexec.StringLit[string])
 	nameFold := searchexec.NewInFold[string](q.Query, f.name)
 	perm := searchexec.NewExists(q.Query, f.perms, f.correlation, f.permName, searchexec.StringLit[string])
-	at := searchexec.NewTimeRange(q.Query, f.at)
 	note := searchexec.NewPresence(q.Query, f.note)
 	ranked := searchexec.NewFlag(q.Query, f.score.GT(Int(1)))
 	text := searchexec.NewText(q.Query, f.name, f.note)
@@ -40,30 +38,17 @@ func (s suite) fieldsBothWays(t *testing.T, f *sfFixture) {
 		q    sfSearch
 		want []int64
 	}{
-		"Eq keeps":                 {kind.Eq("x"), []int64{1, 4}},
-		"Eq drops":                 {kind.Eq("none"), []int64{}},
-		"EqIn In":                  {kind.In("x", "z", "none"), []int64{1, 3, 4}},
-		"In int":                   {n.In(2, 5), []int64{2, 5}},
-		"In int drops":             {n.In(9), []int64{}},
-		"In uuid":                  {uid.In(sfUID(3), sfUID(101)), []int64{3}},
-		"In uuid drops":            {uid.In(uuid.New()), []int64{}},
-		"Eq bool true":             {active.Eq(true), []int64{1, 3, 5}},
-		"Eq bool false":            {active.Eq(false), []int64{2, 4}},
-		"In is exact":              {name.In("istanbul"), []int64{2}},
-		"In of no value":           {name.In(), []int64{}},
-		"Since: on the bound":      {at.Since(sfT0), []int64{2, 3, 4, 5}},
-		"After: not on the bound":  {at.After(sfT0), []int64{3, 5}},
-		"Until: on the bound":      {at.Until(sfT0), []int64{1, 2, 4}},
-		"Before: not on the bound": {at.Before(sfT0), []int64{1}},
-		"Since and Before": {
-			searchexec.NewTimeRange(at.Since(sfT0).Query, f.at).Before(sfT0.Add(2 * time.Second)), []int64{2, 3, 4},
-		},
-		// A bound with nanoseconds: the same answer on every dialect and driver.
-		"Since t0+600ns":  {at.Since(sfT0.Add(600 * time.Nanosecond)), []int64{3, 5}},
-		"Since t0+400ns":  {at.Since(sfT0.Add(400 * time.Nanosecond)), []int64{3, 5}},
-		"Before t0+400ns": {at.Before(sfT0.Add(400 * time.Nanosecond)), []int64{1, 2, 4}},
-		"Until t0-400ns":  {at.Until(sfT0.Add(-400 * time.Nanosecond)), []int64{1}},
-		"After t0-600ns":  {at.After(sfT0.Add(-600 * time.Nanosecond)), []int64{2, 3, 4, 5}},
+		"Eq keeps":       {kind.Eq("x"), []int64{1, 4}},
+		"Eq drops":       {kind.Eq("none"), []int64{}},
+		"EqIn In":        {kind.In("x", "z", "none"), []int64{1, 3, 4}},
+		"In int":         {n.In(2, 5), []int64{2, 5}},
+		"In int drops":   {n.In(9), []int64{}},
+		"In uuid":        {uid.In(sfUID(3), sfUID(101)), []int64{3}},
+		"In uuid drops":  {uid.In(uuid.New()), []int64{}},
+		"Eq bool true":   {active.Eq(true), []int64{1, 3, 5}},
+		"Eq bool false":  {active.Eq(false), []int64{2, 4}},
+		"In is exact":    {name.In("istanbul"), []int64{2}},
+		"In of no value": {name.In(), []int64{}},
 		// A value that no text column holds matches no row, and gives no error.
 		"In, NUL":                        {name.In("a\x00b"), []int64{}},
 		"In, invalid UTF-8 and a value":  {name.In("Paris", "\xff"), []int64{5}},

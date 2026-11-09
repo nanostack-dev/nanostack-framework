@@ -151,6 +151,14 @@ func (s suite) timestamptz() string {
 	return "TIMESTAMPTZ"
 }
 
+// timestamp is the type of a time column without time zone: a wall clock, in UTC here.
+func (s suite) timestamp() string {
+	if s.postgresLike() {
+		return "TIMESTAMP"
+	}
+	return s.timestamptz()
+}
+
 // uuid is the type of a UUID column.
 func (s suite) uuid() string {
 	switch s.cfg.Flavor {

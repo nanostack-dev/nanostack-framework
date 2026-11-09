@@ -133,12 +133,13 @@ var errUnresolved = fmt.Errorf("%w: the plan was not returned by Resolve", searc
 //   - a context scope that returns nil (search.ErrUnscoped);
 //   - the first error that a filter recorded: more than search.MaxInValues values
 //     (search.ErrTooManyValues), a term longer than search.MaxTermLength characters
-//     (search.ErrTermTooLong), or an Exists child that is not a table (keyset.ErrDialect);
+//     (search.ErrTermTooLong), a time bound outside the years that every dialect holds
+//     (search.ErrInvalidTime), or an Exists child that is not a table (keyset.ErrDialect);
 //   - a sort direction other than ASC or DESC (search.ErrInvalidSortDirection);
 //   - a page that search.CheckPage refuses (search.ErrInvalidLimit, search.ErrInvalidOffset,
 //     search.ErrInvalidCursor, search.ErrCursorWithOffset);
-//   - a source that is not a table or join of db/postgres, db/mysql or db/sqlite
-//     (keyset.ErrDialect).
+//   - a source that is not a table or join of db/postgres, db/mysql or db/sqlite, and an
+//     Exists child of another dialect than the source (keyset.ErrDialect).
 //
 // No statement runs before these checks pass.
 func Resolve[T any, Q Builder[T, Q, S, P], S ~string, P comparable](
@@ -183,6 +184,9 @@ func Resolve[T any, Q Builder[T, Q, S, P], S ~string, P comparable](
 	}
 	source, err := searchSource(spec.from(q.scope))
 	if err != nil {
+		return Plan[T, S]{}, err
+	}
+	if err := checkChildren(source, q.children); err != nil {
 		return Plan[T, S]{}, err
 	}
 	conditions = append(conditions, spec.conditions...)
@@ -267,4 +271,26 @@ func searchSource(source keyset.Source) (keyset.Source, error) {
 		return nil, fmt.Errorf("%w: %T is not a table or join of db/postgres, db/mysql or db/sqlite",
 			keyset.ErrDialect, source)
 	}
+}
+
+// checkChildren refuses an Exists child of another dialect than source. A nested SELECT is
+// written in the dialect of the outer statement, so such a child would name a table of
+// another database.
+func checkChildren(source keyset.Source, children []jet.Dialect) error {
+	var dialect jet.Dialect
+	switch source.(type) {
+	case postgres.ReadableTable:
+		dialect = postgres.Dialect
+	case mysql.ReadableTable:
+		dialect = mysql.Dialect
+	case sqlite.ReadableTable:
+		dialect = sqlite.Dialect
+	}
+	for _, child := range children {
+		if child != dialect {
+			return fmt.Errorf("%w: an Exists child is a table of %s, the search is on %s",
+				keyset.ErrDialect, child.Name(), dialect.Name())
+		}
+	}
+	return nil
 }

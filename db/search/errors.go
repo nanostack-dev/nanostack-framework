@@ -38,6 +38,10 @@ var (
 
 	// ErrTermTooLong reports a text term longer than MaxTermLength characters.
 	ErrTermTooLong error = &clientError{"search: term too long"}
+
+	// ErrInvalidTime reports a time filter bound outside the years that every
+	// dialect holds: from 0001-01-02 to 9999-12-30, in UTC.
+	ErrInvalidTime error = &clientError{"search: time out of range"}
 )
 
 // ErrUnscoped reports a search that has no tenant scope: it was not built from

@@ -83,13 +83,18 @@ var sfPerms = []struct {
 type sfFixture struct {
 	itemsName string
 
-	items, perms                     keyset.Source
-	id, n, score, permItem           ColumnInteger
-	org, name, nameC, kind, note     ColumnString
-	uid                              ColumnString
-	permOrg, permName, permNameC     ColumnString
-	active                           ColumnBool
-	at                               ColumnTimestampz
+	items, perms                 keyset.Source
+	id, n, score, permItem       ColumnInteger
+	org, name, nameC, kind, note ColumnString
+	uid                          ColumnString
+	permOrg, permName, permNameC ColumnString
+	active                       ColumnBool
+	// at is a timestamptz on PostgreSQL and CockroachDB, and the timestamp without time zone
+	// of the generated models on MySQL and SQLite. atLocal is a PostgreSQL timestamp, the
+	// same column as at on the other dialects.
+	at, atLocal Column
+	// timeRanges bind a TimeRange to each time column, as nano gen repo binds it.
+	timeRanges                       map[string]func(sfSearch) searchexec.TimeRange[sfSearch]
 	spec                             *searchexec.Spec[sfRow, sfSort, string]
 	correlation, correlationNoTenant BoolExpression
 }
@@ -112,6 +117,7 @@ func (s suite) newSfFixture(t *testing.T) *sfFixture {
 			n BIGINT NOT NULL,
 			active BOOLEAN NOT NULL,
 			at ` + s.timestamptz() + ` NOT NULL,
+			at_local ` + s.timestamp() + ` NOT NULL,
 			note ` + s.text() + `,
 			score BIGINT`,
 		permsName: `org ` + s.text() + ` NOT NULL,
@@ -121,9 +127,10 @@ func (s suite) newSfFixture(t *testing.T) *sfFixture {
 	}, f.itemsName, permsName)
 	for _, r := range sfItems {
 		s.exec(t, "INSERT INTO "+s.qualified(f.itemsName)+
-			" (id, org, name, name_c, kind, uid, n, active, at, note, score)"+
-			" VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-			r.id, r.org, r.name, r.name, r.kind, sfUID(r.id).String(), r.n, r.active, r.at.UTC(), r.note, r.score)
+			" (id, org, name, name_c, kind, uid, n, active, at, at_local, note, score)"+
+			" VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+			r.id, r.org, r.name, r.name, r.kind, sfUID(r.id).String(), r.n, r.active, r.at.UTC(), r.at.UTC(),
+			r.note, r.score)
 	}
 	for _, p := range sfPerms {
 		s.exec(t, "INSERT INTO "+s.qualified(permsName)+" (org, item_id, name, name_c) VALUES (?, ?, ?, ?)",
@@ -133,8 +140,10 @@ func (s suite) newSfFixture(t *testing.T) *sfFixture {
 	f.id, f.n, f.score = IntegerColumn("id"), IntegerColumn("n"), IntegerColumn("score")
 	f.org, f.name, f.nameC = StringColumn("org"), StringColumn("name"), StringColumn("name_c")
 	f.kind, f.note, f.uid = StringColumn("kind"), StringColumn("note"), StringColumn("uid")
-	f.active, f.at = BoolColumn("active"), TimestampzColumn("at")
-	f.items = s.table(f.itemsName, f.id, f.org, f.name, f.nameC, f.kind, f.uid, f.n, f.active, f.at, f.note, f.score)
+	f.active = BoolColumn("active")
+	f.timeColumns(s)
+	f.items = s.table(f.itemsName, f.id, f.org, f.name, f.nameC, f.kind, f.uid, f.n, f.active, f.at, f.atLocal,
+		f.note, f.score)
 	f.permOrg, f.permItem = StringColumn("org"), IntegerColumn("item_id")
 	f.permName, f.permNameC = StringColumn("name"), StringColumn("name_c")
 	f.perms = s.table(permsName, f.permOrg, f.permItem, f.permName, f.permNameC)
@@ -174,6 +183,7 @@ var sfAllA = []int64{1, 2, 3, 4, 5}
 func (s suite) runFields(t *testing.T) {
 	f := s.newSfFixture(t)
 	t.Run("every field, both ways", func(t *testing.T) { s.fieldsBothWays(t, f) })
+	t.Run("TimeRange", func(t *testing.T) { s.fieldsTimeRange(t, f) })
 	t.Run("InFold agrees with the column", func(t *testing.T) { s.fieldsInFold(t, f) })
 	t.Run("Exists on a child of two tenants", func(t *testing.T) { s.fieldsExistsTwoTenants(t, f) })
 	t.Run("the limits", func(t *testing.T) { s.fieldsLimits(t, f) })
