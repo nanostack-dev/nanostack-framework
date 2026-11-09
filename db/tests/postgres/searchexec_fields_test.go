@@ -310,6 +310,16 @@ func TestSearchexecInFoldAgreesWithTheColumn(t *testing.T) {
 		assert.Equal(t, []int64{1, 3}, got)
 	})
 
+	t.Run("CockroachDB folds by its ILIKE rule", func(t *testing.T) {
+		if f.cCollation {
+			t.Skip("PostgreSQL: the subtests above compare with LOWER")
+		}
+		// CockroachDB's ILIKE and its LOWER do not agree on the Turkish I. InFold follows
+		// ILIKE there, as Contains does: the dotless ı matches i, and İ matches only İ.
+		assert.Equal(t, []int64{2, 3, 4}, inFold(f.name, "istanbul"))
+		assert.Equal(t, []int64{1}, inFold(f.name, "İSTANBUL"))
+	})
+
 	t.Run(`Exists fold, a child column in "C"`, func(t *testing.T) {
 		exists := func(term string) []int64 {
 			return f.ids(t, searchexec.NewExistsFold[string](f.search("org-a").Query, f.perms, f.correlation,
@@ -324,15 +334,20 @@ func TestSearchexecInFoldAgreesWithTheColumn(t *testing.T) {
 
 // lowerEquals returns the org-a ids where LOWER(column) = LOWER(term), from a statement
 // written by hand. The term takes the collation of the column, so both sides fold by the
-// same rule.
+// same rule. On CockroachDB, whose ILIKE and LOWER differ on the Turkish I, it is the
+// ILIKE match of the escaped term.
 func (f *sfFixture) lowerEquals(t *testing.T, column, term string) []int64 {
 	t.Helper()
-	value := "$1::text"
-	if column == "name_c" && f.cCollation {
-		value = `$1::text COLLATE "C"`
+	match := "LOWER(" + column + ") = LOWER($1::text)"
+	switch {
+	case !f.cCollation:
+		match = column + " ILIKE $1 ESCAPE '!'"
+		term = strings.NewReplacer("!", "!!", "%", "!%", "_", "!_").Replace(term)
+	case column == "name_c":
+		match = "LOWER(" + column + `) = LOWER($1::text COLLATE "C")`
 	}
 	rows, err := db.QueryContext(ctx, "SELECT id FROM test_sample."+f.itemsName+
-		" WHERE org = 'org-a' AND LOWER("+column+") = LOWER("+value+") ORDER BY id", term)
+		" WHERE org = 'org-a' AND "+match+" ORDER BY id", term)
 	require.NoError(t, err)
 	defer rows.Close()
 	ids := []int64{}

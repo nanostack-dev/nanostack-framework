@@ -103,6 +103,8 @@
 //     and later) fold every letter. The "C" and "POSIX" collations fold ASCII letters only,
 //     as SQLite does. This is also true for every column of a database made with
 //     --locale=C. MySQL and MariaDB fold every letter.
+//   - CockroachDB's ILIKE and its LOWER do not agree on the Turkish I: under ILIKE the
+//     dotless ı matches i, and İ matches only İ. Contains and InFold follow its ILIKE.
 //   - On PostgreSQL, ILIKE refuses a column with a nondeterministic collation with an SQL
 //     error. Give such a column an expression with an explicit deterministic COLLATE.
 //   - On MySQL and MariaDB, an accent-insensitive collation (utf8mb4_0900_ai_ci,
