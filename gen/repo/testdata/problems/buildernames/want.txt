@@ -1,2 +1,8 @@
 buildernames.go:12: ItemSort is declared here, and nano gen repo declares it for search Item
   fix: rename it, or rename the search
+buildernames.go:16: ItemSearch.Status is declared here, and nano gen repo declares it for search Item
+  fix: rename the method, or name the filter with nanorepo.FilterExpr
+buildernames.go:20: ItemSearch.FullText is declared here, and nano gen repo declares it for search Item
+  fix: rename the method: the builder declares FullText for nanorepo.FullText and FullTextExpr
+buildernames.go:35: search ItemSort and search Item both declare ItemSortSearch
+  fix: rename the search

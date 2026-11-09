@@ -66,7 +66,7 @@ func (q ItemSearch) ID() searchexec.In[ItemSearch, string] {
 	return searchexec.NewIn(q.Query, table.Items.ID, searchexec.StringLit[string])
 }
 func (q ItemSearch) Status() searchexec.EqIn[ItemSearch, model.ItemStatus] {
-	return searchexec.NewEqIn(q.Query, table.Items.Status, searchexec.StringLit[model.ItemStatus])
+	return searchexec.NewEqIn(q.Query, table.Items.Status, searchexec.EnumLit[model.ItemStatus](string(model.ItemStatus_Active), string(model.ItemStatus_Archived)))
 }
 func (q ItemSearch) Name() searchexec.Text[ItemSearch] {
 	return searchexec.NewText(q.Query, table.Items.Name)

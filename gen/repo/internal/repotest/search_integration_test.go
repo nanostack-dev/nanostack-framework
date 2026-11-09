@@ -30,7 +30,9 @@ func run(t *testing.T, db *sql.DB, q ItemSearch) search.Result[Item] {
 }
 
 // Each generated field selects the rows its condition names, of the
-// tenant of the scope only.
+// tenant of the scope only. A value that is not a label of the enum matches
+// no row: PostgreSQL would refuse the statement (22P02), and a client value
+// must not give a server error.
 func TestSearchFieldsSelectTheirRows(t *testing.T) {
 	f := newFixture(t)
 	q := NewItemSearch(f.tenant)
@@ -43,6 +45,8 @@ func TestSearchFieldsSelectTheirRows(t *testing.T) {
 		"in":                   {q.ID().In("a1", "b1", "zz"), []string{"a1"}},
 		"enum eq":              {q.Status().Eq(model.ItemStatus_Archived), []string{"a3"}},
 		"enum in":              {q.Status().In(model.ItemStatus_Active), []string{"a1", "a2"}},
+		"enum in, not a label": {q.Status().In(model.ItemStatus_Active, "bogus"), []string{"a1", "a2"}},
+		"enum eq, not a label": {q.Status().Eq("bogus"), nil},
 		"contains, escaped":    {q.Name().Contains("D_C"), []string{"a2"}},
 		"contains any":         {q.Name().ContainsAny("blue", "100%"), []string{"a1", "a3"}},
 		"int eq":               {q.Stock().Eq(7), []string{"a3"}},

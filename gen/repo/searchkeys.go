@@ -4,6 +4,7 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"slices"
 	"strings"
 )
 
@@ -11,10 +12,13 @@ import (
 // sort.
 func (c *collector) builderSorts(b *builder) {
 	s := b.s
-	if len(s.sorts) == 0 {
+	// SortHandWritten adds a constant and no key. SortExpr gives its own
+	// problem until G13.
+	if !slices.ContainsFunc(s.sorts, func(x *searchSort) bool { return x.kind != "SortHandWritten" }) {
 		c.errorf(s.tableNode, "add nanorepo.Sort(...) with the columns an API client may sort on, such as "+
 			"nanorepo.Sort("+s.tableText+"."+s.order[0].field+")",
-			"search %s declares no sort: searchexec.DefineSpec needs at least one key", s.name)
+			"search %s declares no sort with a key (SortHandWritten adds none): searchexec.DefineSpec needs "+
+				"at least one key", s.name)
 	}
 	for _, sort := range s.sorts {
 		c.builderSort(b, sort)
@@ -24,12 +28,19 @@ func (c *collector) builderSorts(b *builder) {
 		b.tiebreak = append(b.tiebreak, c.builderKey(b, ref, ""))
 	}
 	b.dflt = defaultConst(b)
-	seen := map[string]string{}
+	seen, apis := map[string]string{}, map[string]bool{}
 	for _, sort := range b.sorts {
-		if first, dup := seen[sort.name]; dup && first != sort.api {
+		if apis[sort.api] {
+			c.errorf(s.tableNode, "remove one of the two sorts, or give one another API name with "+
+				"SortKey(...).API(...)", "search %s: the sort_by value %q is given twice", s.name, sort.api)
+			continue
+		}
+		apis[sort.api] = true
+		if first, dup := seen[sort.name]; dup {
 			c.errorf(s.tableNode, "give one of the two sorts another API name with SortKey(...).API(...)",
 				"search %s: the sorts %q and %q both make the constant %sSort%s", s.name, first, sort.api, s.name,
 				sort.name)
+			continue
 		}
 		seen[sort.name] = sort.api
 	}
@@ -97,8 +108,8 @@ func (c *collector) builderKey(b *builder, col *colRef, nulls string) *sortKey {
 	nullable := col.col.nullable
 	if nullable {
 		if _, isPtr := types.Unalias(field).(*types.Pointer); !isPtr {
-			c.errorf(where, "regenerate the model with pointers for NULL columns",
-				"search %s: %s is nullable, and its model field is %s, not a pointer", s.name,
+			c.errorf(where, "make the Row field a pointer, as nano gen db does in a model for a NULL column",
+				"search %s: %s is nullable, and its Row field is %s, not a pointer", s.name,
 				col.col.sqlName, c.qualified(field))
 			return nil
 		}
@@ -213,24 +224,34 @@ func (c *collector) enumKey(col *colRef, k *sortKey) bool {
 	if !strings.Contains(dbType, ".") {
 		dbType = col.table.schema + "." + dbType
 	}
-	named, ok := types.Unalias(col.col.value).(*types.Named)
-	if !ok || !enumTypeName.MatchString(dbType) {
+	if !enumTypeName.MatchString(dbType) {
 		return false
+	}
+	labels := c.enumLabels(col)
+	k.enumType, k.labels = dbType, labels
+	return len(labels) > 0
+}
+
+// enumLabels returns the constants of the model type of an enum column, as
+// pkg.Name, in the order of its <Type>AllValues, or nil.
+func (c *collector) enumLabels(col *colRef) []string {
+	named, ok := types.Unalias(col.col.value).(*types.Named)
+	if !ok {
+		return nil
 	}
 	files, err := c.l.parsed(named.Obj().Pkg().Path())
 	if err != nil {
-		return false
+		return nil
 	}
 	all := named.Obj().Name() + "AllValues"
 	for _, f := range files {
 		for _, decl := range f.Decls {
 			if labels, found := allValues(f.Name.Name, decl, all); found {
-				k.enumType, k.labels = dbType, labels
-				return len(labels) > 0
+				return labels
 			}
 		}
 	}
-	return false
+	return nil
 }
 
 // allValues reads var <name> = []T{A, B} from decl and returns pkg.A,

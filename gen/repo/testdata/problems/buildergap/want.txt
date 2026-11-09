@@ -1,0 +1,4 @@
+buildergap.go:21: the generated buildergap_repo.gen.go does not compile: TenantID redeclared (buildergap_repo.gen.go:54)
+  fix: report this gap in the nano gen repo checks; meanwhile write the search by hand on searchexec.DefineSpec
+buildergap.go:21: the generated buildergap_repo.gen.go does not compile: 	other declaration of TenantID (buildergap_repo.gen.go:53)
+  fix: report this gap in the nano gen repo checks; meanwhile write the search by hand on searchexec.DefineSpec

@@ -107,14 +107,11 @@ func (c *collector) filterValue(s *searchDecl, f *searchFilter, bf *builderField
 	}
 	switch bf.kind {
 	case "InFold":
-		if !isStringLike(v) {
-			c.errorf(f.node, "fold a value of a string type", "search %s: InFold on %s takes %s, not a string type",
-				s.name, f.name, c.qualified(typeOrNil(v)))
-			return nil
-		}
+		// The read set check (E2) and FilterAs leave only string types here:
+		// a text column's model field, or the string of a StringExpression.
 		bf.value = v
 	case "Eq", "In", "EqIn":
-		bf.value, bf.lit = v, c.literalFunc(f, v)
+		bf.value, bf.lit = v, c.literalFunc(f, bf, v)
 		if bf.lit == "" {
 			c.errorf(f.node, "filter through a FilterExpr whose function returns a string, integer or "+
 				"bool expression, such as postgres.CAST(...).AS_TEXT()",
@@ -142,16 +139,19 @@ func (c *collector) filterTarget(f *searchFilter) string {
 }
 
 // literalFunc returns the searchexec literal function of a value of type v
-// for the filter, or "".
-func (c *collector) literalFunc(f *searchFilter, v types.Type) string {
+// for the filter, or "". For a native enum column it sets the labels of bf.
+func (c *collector) literalFunc(f *searchFilter, bf *builderField, v types.Type) string {
 	basic, _ := typeOrNil(v).Underlying().(*types.Basic)
 	switch {
 	case f.col != nil && f.col.col.kind == "ColumnString" && f.col.col.lit == litUUID:
 		if named, ok := types.Unalias(v).(*types.Named); ok && isNamed(named, uuidPath, "UUID") {
 			return "UUIDLit"
 		}
-	case f.col != nil && f.col.col.kind == "ColumnString" &&
-		!textType(f.col.table.catalog[f.col.col.sqlName]) && f.col.col.lit != litEnum:
+	case f.col != nil && f.col.col.kind == "ColumnString" && f.col.col.lit == litEnum:
+		if bf.labels = c.enumLabels(f.col); len(bf.labels) > 0 && isStringLike(v) {
+			return "EnumLit"
+		}
+	case f.col != nil && f.col.col.kind == "ColumnString" && !textType(f.col.table.catalog[f.col.col.sqlName]):
 	case basic == nil:
 	case basic.Info()&types.IsString != 0:
 		return "StringLit"

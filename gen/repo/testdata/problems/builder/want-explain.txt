@@ -2,6 +2,7 @@ search OwnRow on items (rows itemRow)
   read      items; root; nullable weight, released_on, local_at, opens_at, deleted_at, external_id, tags; tenant tenant_id
   scope     Scope items.tenant_id
   sort      name: items.name
+  sort      weight: items.weight, nullable
   tiebreak  id: the primary key items_pkey (id), by default
 search NoTenant on items (rows model.Items)
   read      items; root; nullable weight, released_on, local_at, opens_at, deleted_at, external_id, tags; tenant tenant_id
@@ -33,3 +34,32 @@ search WrongFrom on items (rows model.Items)
   scope     Scope items.sku
   sort      name: items.name
   tiebreak  id: the primary key items_pkey (id), by default
+search HandOnly on items (rows model.Items)
+  read      items; root; nullable weight, released_on, local_at, opens_at, deleted_at, external_id, tags; tenant tenant_id
+  scope     Scope items.tenant_id
+  sort      popularity: hand-written
+  tiebreak  id: the primary key items_pkey (id), by default
+search TwiceKey on items (rows model.Items)
+  read      items; root; nullable weight, released_on, local_at, opens_at, deleted_at, external_id, tags; tenant tenant_id
+  scope     Scope items.tenant_id
+  sort      name: items.name
+  sort      name: items.name
+  tiebreak  id: the primary key items_pkey (id), by default
+search TwiceHand on items (rows model.Items)
+  read      items; root; nullable weight, released_on, local_at, opens_at, deleted_at, external_id, tags; tenant tenant_id
+  scope     Scope items.tenant_id
+  sort      name: items.name
+  sort      name: hand-written
+  tiebreak  id: the primary key items_pkey (id), by default
+search OneConst on items (rows model.Items)
+  read      items; root; nullable weight, released_on, local_at, opens_at, deleted_at, external_id, tags; tenant tenant_id
+  scope     Scope items.tenant_id
+  sort      created-at: items.name
+  sort      created_at: items.created_at
+  tiebreak  id: the primary key items_pkey (id), by default
+search Client on audit_events (rows model.AuditEvents)
+  read      audit_events; root; nullable item_id, note, client, payload
+  scope     Scope audit_events.item_id
+  filter    Client: Eq on audit_events.client (inet, string)
+  sort      at: audit_events.at
+  tiebreak  id: the primary key audit_events_pkey (id), by default

@@ -36,7 +36,10 @@ type stubEntry struct {
 
 // typedSearches loads the package in dir as a run does, with the files nano
 // gen repo wrote left empty, and reads its declarations. It returns nil when
-// the package does not load or a declaration has a problem.
+// the package does not load or a declaration has a problem. A nil result is
+// not cached: a table package that the declarations need can appear later
+// in the same pipeline run, when the db step writes it, and no stamped
+// directory tells of that.
 func typedSearches(dir string) *stubSearches {
 	stubCache.Lock()
 	entry, cached := stubCache.byDir[dir]
@@ -45,6 +48,9 @@ func typedSearches(dir string) *stubSearches {
 		return entry.result
 	}
 	result, dirs := readSearches(dir)
+	if result == nil {
+		return nil
+	}
 	stubCache.Lock()
 	stubCache.byDir[dir] = stubEntry{stamp: stamp(dirs), dirs: dirs, result: result}
 	stubCache.Unlock()

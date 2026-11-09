@@ -338,8 +338,12 @@ func (l *loaded) gap(decls *declarations, out *rendered, file string, src []byte
 				"or write the repository by hand",
 			"the base of table %s does not compile: %s (%s:%d)", t.sqlName, msg, FileName, line)
 	}
-	return gen.Errorf(o.file, o.line,
-		"report this gap in the nano gen repo checks; meanwhile write the method by hand",
+	fix := "report this gap in the nano gen repo checks; meanwhile write the method by hand"
+	if searchAtLine(src, line, out.searches[filepath.Base(file)], len(out.byFile[filepath.Base(file)])) != nil {
+		fix = "report this gap in the nano gen repo checks; meanwhile write the search by hand on " +
+			"searchexec.DefineSpec"
+	}
+	return gen.Errorf(o.file, o.line, fix,
 		"the generated %s does not compile: %s (%s:%d)", filepath.Base(file), msg, filepath.Base(file), line)
 }
 

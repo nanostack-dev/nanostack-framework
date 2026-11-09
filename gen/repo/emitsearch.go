@@ -212,7 +212,7 @@ func (e *emitter) key(k *sortKey, row string) string {
 	if k.enumType != "" {
 		labels := make([]string, len(k.labels))
 		for i, label := range k.labels {
-			labels[i] = "string(" + e.enumLabel(k, label) + ")"
+			labels[i] = "string(" + e.enumLabel(k.col, label) + ")"
 		}
 		args += ", " + strconv.Quote(k.enumType) + ", []string{" + strings.Join(labels, ", ") + "}"
 	}
@@ -233,8 +233,8 @@ func (e *emitter) key(k *sortKey, row string) string {
 
 // enumLabel renders a model constant pkg.Name with the import name of the
 // model package.
-func (e *emitter) enumLabel(k *sortKey, label string) string {
-	named, _ := types.Unalias(k.col.col.value).(*types.Named)
+func (e *emitter) enumLabel(col *colRef, label string) string {
+	named, _ := types.Unalias(col.col.value).(*types.Named)
 	_, name, _ := strings.Cut(label, ".")
 	return e.ref(named.Obj().Pkg().Path(), named.Obj().Pkg().Name(), name)
 }
@@ -307,8 +307,15 @@ func (e *emitter) accessors(b *builder, q string) {
 
 // literal renders the literal function of an In, Eq or EqIn field.
 func (e *emitter) literal(f *builderField) string {
-	if f.lit == "UUIDLit" {
+	switch f.lit {
+	case "UUIDLit":
 		return e.sx("UUIDLit")
+	case "EnumLit":
+		labels := make([]string, len(f.labels))
+		for i, label := range f.labels {
+			labels[i] = "string(" + e.enumLabel(f.f.col, label) + ")"
+		}
+		return e.sx("EnumLit") + "[" + e.typ(f.value) + "](" + strings.Join(labels, ", ") + ")"
 	}
 	return e.sx(f.lit) + "[" + e.typ(f.value) + "]"
 }

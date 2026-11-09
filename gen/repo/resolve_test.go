@@ -246,8 +246,9 @@ func TestForwardStubReplacesTheLastOutput(t *testing.T) {
 
 // The pipeline plans a derived file for every file that calls
 // nanorepo.Implement, whatever its type arguments: an interface of another
-// package binds as one of the declaring package does. A file with only
-// nanorepo.Base gets none.
+// package binds as one of the declaring package does. A file that declares
+// only searches gets one for their builders. A file with only nanorepo.Base
+// gets none.
 func TestPlanned(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
@@ -260,6 +261,8 @@ func TestPlanned(t *testing.T) {
 			"func _() { nanorepo.Implement[Repo[model.X], impl](table.X, toDomain) }\n",
 		"base.go": "package p\n\nimport \"github.com/nanostack-dev/nanostack-framework/db/nanorepo\"\n\n" +
 			"func _() { nanorepo.Base[model.X](table.X) }\n",
+		"search.go": "package p\n\nimport \"github.com/nanostack-dev/nanostack-framework/db/nanorepo\"\n\n" +
+			"func _() { nanorepo.Search[model.X](\"X\", table.X) }\n",
 	}
 	var paths []string
 	for name, src := range files {
@@ -270,7 +273,8 @@ func TestPlanned(t *testing.T) {
 		paths = append(paths, path)
 	}
 	got := Planned(dir, paths)
-	want := []string{FileName, "generic_repo.gen.go", "local_repo.gen.go", "qualified_repo.gen.go"}
+	want := []string{FileName, "generic_repo.gen.go", "local_repo.gen.go", "qualified_repo.gen.go",
+		"search_repo.gen.go"}
 	names := make([]string, len(got))
 	for i, p := range got {
 		names[i] = filepath.Base(p)

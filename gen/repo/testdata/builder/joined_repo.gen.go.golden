@@ -3,6 +3,8 @@
 package builder
 
 import (
+	"time"
+
 	"github.com/google/uuid"
 	"github.com/nanostack-dev/nanostack-framework/db/keyset"
 	"github.com/nanostack-dev/nanostack-framework/db/searchexec"
@@ -63,4 +65,76 @@ func (q ItemOfTenantSearch) Name() searchexec.Eq[ItemOfTenantSearch, string] {
 }
 func (q ItemOfTenantSearch) Stock() searchexec.EqIn[ItemOfTenantSearch, int32] {
 	return searchexec.NewEqIn(q.Query, table.Items.Stock, searchexec.IntLit[int32])
+}
+
+// ShapedSearch is an immutable search of items. Start one with NewShapedSearch.
+type ShapedSearch struct {
+	searchexec.Query[model.Items, ShapedSearch, ShapedSort, ShapedScope]
+}
+
+// ShapedScope is the tenant of a ShapedSearch. A zero field refuses the search.
+type ShapedScope struct {
+	_          struct{}  // keyed fields only
+	TenantID   uuid.UUID // items.tenant_id
+	ExternalID string    // items.external_id
+}
+
+// ShapedSort is a sort of ShapedSearch.
+type ShapedSort string
+
+const (
+	ShapedSortCreatedAt ShapedSort = "created_at"
+	ShapedSortStatus    ShapedSort = "status"
+	ShapedSortStock     ShapedSort = "stock"
+)
+
+var shapedSearch = searchexec.DefineSpec(searchexec.SpecDef[model.Items, ShapedSort, ShapedScope]{
+	From:    func(s ShapedScope) keyset.Source { return itemsWithTenant(s) },
+	Columns: table.Items.AllColumns, // the Row is model.Items
+	Scope: []searchexec.ScopeCol[ShapedScope]{
+		searchexec.ScopeEq(func(s ShapedScope) uuid.UUID { return s.TenantID }, table.Items.TenantID),
+		searchexec.ScopeEq(func(s ShapedScope) string { return s.ExternalID }, table.Items.ExternalID),
+	},
+	Context: []searchexec.ContextScope{searchexec.ScopeFunc(tenantFilter, table.Tenants.Name)},
+	Keys: map[ShapedSort]keyset.Key[model.Items]{
+		ShapedSortCreatedAt: keyset.TimeKey(table.Items.CreatedAt, func(r model.Items) time.Time { return r.CreatedAt }),
+		ShapedSortStatus:    keyset.EnumKey(table.Items.Status, "public.item_status", []string{string(model.ItemStatus_Active), string(model.ItemStatus_Archived)}, func(r model.Items) string { return string(r.Status) }),
+		ShapedSortStock:     keyset.IntKey(table.Items.Stock, func(r model.Items) int64 { return int64(r.Stock) }),
+	},
+	Tiebreak: []keyset.Key[model.Items]{ // sku, id: covers items_pkey (id)
+		keyset.StringKey(table.Items.Sku, func(r model.Items) string { return r.Sku }),
+		keyset.StringKey(table.Items.ID, func(r model.Items) string { return r.ID }),
+	},
+	Default: searchexec.Desc(ShapedSortCreatedAt),
+	Limit:   20,
+})
+
+// NewShapedSearch starts a ShapedSearch of one tenant. Only a query built here runs: Resolve and Run compare the spec.
+func NewShapedSearch(scope ShapedScope) ShapedSearch {
+	return searchexec.New[ShapedSearch](shapedSearch, scope)
+}
+
+// The filters of ShapedSearch: each returns a field of q, whose method returns the filtered copy.
+func (q ShapedSearch) ID() searchexec.In[ShapedSearch, string] {
+	return searchexec.NewIn(q.Query, table.Items.ID, searchexec.StringLit[string])
+}
+func (q ShapedSearch) Sku() searchexec.In[ShapedSearch, sku] {
+	return searchexec.NewIn(q.Query, table.Items.Sku, searchexec.StringLit[sku])
+}
+func (q ShapedSearch) LowerName() searchexec.In[ShapedSearch, string] {
+	return searchexec.NewIn(q.Query, lowerName(), searchexec.StringLit[string])
+}
+func (q ShapedSearch) CreatedAt() searchexec.TimeRange[ShapedSearch] {
+	return searchexec.NewTimeRange(q.Query, table.Items.CreatedAt)
+}
+func (q ShapedSearch) DeletedAt() searchexec.Presence[ShapedSearch] {
+	return searchexec.NewPresence(q.Query, table.Items.DeletedAt)
+}
+func (q ShapedSearch) Expensive() searchexec.Flag[ShapedSearch] {
+	return searchexec.NewFlag(q.Query, expensive())
+}
+
+// FullText keeps rows where name, skuText, lowerName or tenantName contains term (searchexec.Contains). A blank term filters nothing.
+func (q ShapedSearch) FullText(term string) ShapedSearch {
+	return searchexec.NewText(q.Query, table.Items.Name, skuText(), lowerName(), tenantName()).Contains(term)
 }

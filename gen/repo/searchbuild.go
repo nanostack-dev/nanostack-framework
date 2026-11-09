@@ -63,11 +63,12 @@ type sortKey struct {
 
 // builderField is the accessor of one filter.
 type builderField struct {
-	f     *searchFilter
-	kind  string       // In, Eq, EqIn, InFold, Text, Presence, TimeRange or Flag
-	value types.Type   // V of In, Eq, EqIn and InFold
-	lit   string       // the searchexec literal function of In, Eq and EqIn
-	fn    types.Object // the function of FilterExpr and Flag
+	f      *searchFilter
+	kind   string       // In, Eq, EqIn, InFold, Text, Presence, TimeRange or Flag
+	value  types.Type   // V of In, Eq, EqIn and InFold
+	lit    string       // the searchexec literal function of In, Eq and EqIn
+	labels []string     // EnumLit: the model constants of the enum, in declaration order
+	fn     types.Object // the function of FilterExpr and Flag
 }
 
 // contextScope is one ScopeFunc.
@@ -187,6 +188,9 @@ func (c *collector) builderFrom(b *builder) {
 	if !isInvalid(param) && len(b.fields) == 1 && types.Identical(param, b.fields[0].typ) {
 		return
 	}
+	if len(b.fields) == 0 && types.Identical(param, types.NewStruct(nil, nil)) {
+		return
+	}
 	if isInvalid(param) && len(b.fields) > 1 && c.namesScope(s) {
 		return // the first load has no <Name>Scope yet: the final type check checks it
 	}
@@ -276,6 +280,41 @@ func (l *loaded) checkBuilderNames(d *declarations) []error {
 				problems = append(problems, gen.Errorf(file, line, "rename it, or rename the search",
 					"%s is declared here, and nano gen repo declares it for search %s", name, s.name))
 			}
+		}
+		problems = append(problems, l.checkBuilderMethods(s)...)
+	}
+	return problems
+}
+
+// checkBuilderMethods reports a hand-written method of the builder of s
+// that has the name of a generated accessor or of FullText. The files nano
+// gen repo wrote are empty in l.pkg, so every method found is hand-written.
+func (l *loaded) checkBuilderMethods(s *searchDecl) []error {
+	generated := map[string]bool{}
+	for _, f := range s.builder.filters {
+		generated[f.f.name] = true
+	}
+	if len(s.builder.fullText) > 0 {
+		generated["FullText"] = true
+	}
+	var problems []error
+	for _, f := range l.pkg.Syntax {
+		for _, decl := range f.Decls {
+			fd, ok := decl.(*ast.FuncDecl)
+			if !ok || fd.Recv == nil || len(fd.Recv.List) != 1 || !generated[fd.Name.Name] {
+				continue
+			}
+			if recv, _ := recvType(ast.Unparen(fd.Recv.List[0].Type)); recv != s.name+"Search" {
+				continue
+			}
+			fix := "rename the method, or name the filter with nanorepo.FilterExpr"
+			if fd.Name.Name == "FullText" {
+				fix = "rename the method: the builder declares FullText for nanorepo.FullText and FullTextExpr"
+			}
+			file, line := l.position(l.pkg.Fset, fd.Pos())
+			problems = append(problems, gen.Errorf(file, line, fix,
+				"%sSearch.%s is declared here, and nano gen repo declares it for search %s", s.name,
+				fd.Name.Name, s.name))
 		}
 	}
 	return problems

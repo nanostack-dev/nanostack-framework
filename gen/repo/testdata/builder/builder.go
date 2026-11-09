@@ -48,14 +48,17 @@ func _() {
 		nanorepo.DefaultLimit(50),
 	)
 
-	// The tenant comes from the context only: the scope is struct{}, and
-	// the constructor takes no argument.
+	// The tenant comes from the context only: the scope is struct{}, the
+	// constructor takes no argument, and a From function takes struct{}.
 	nanorepo.Search[model.Tenants]("Tenant", table.Tenants,
+		nanorepo.From(allTenants),
 		nanorepo.ScopeFunc(tenantFilter, table.Tenants.Name),
 		nanorepo.Filter(table.Tenants.ID, nanorepo.Eq, nanorepo.In),
 		nanorepo.Sort(table.Tenants.Name),
 	)
 }
+
+func allTenants(struct{}) postgres.ReadableTable { return table.Tenants }
 
 func listed() postgres.BoolExpression { return table.Items.DeletedAt.IS_NULL() }
 

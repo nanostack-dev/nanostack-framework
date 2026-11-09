@@ -398,6 +398,23 @@ func StringLit[V ~string](v V) jet.StringExpression {
 	return jet.String(s)
 }
 
+// EnumLit returns the literal of a native enum column whose labels are labels, as
+// keyset.EnumKey takes them. A value that is not a label is SQL NULL, so it matches no row
+// and the other values of a list still match, as in StringLit. Without it PostgreSQL
+// refuses the statement (SQLSTATE 22P02), and a client value gives a server error.
+func EnumLit[V ~string](labels ...string) func(V) jet.StringExpression {
+	allowed := make(map[string]bool, len(labels))
+	for _, label := range labels {
+		allowed[label] = true
+	}
+	return func(v V) jet.StringExpression {
+		if !allowed[string(v)] {
+			return jet.StringExp(jet.NULL)
+		}
+		return jet.String(string(v))
+	}
+}
+
 // BoolLit is the literal of a bool or of a named bool type.
 func BoolLit[V ~bool](v V) jet.BoolExpression { return jet.Bool(bool(v)) }
 

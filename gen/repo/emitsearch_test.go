@@ -4,15 +4,18 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"go/types"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
 	"golang.org/x/tools/go/packages"
 
 	"github.com/nanostack-dev/nanostack-framework/gen"
+	"github.com/nanostack-dev/nanostack-framework/gen/internal/importset"
 )
 
 // maxSearchLines is the most non-blank lines one fixture search may own in
@@ -82,7 +85,9 @@ func writeOverlay(t *testing.T, files []gen.File) string {
 
 // Each fixture search owns at most 80 non-blank lines of its generated
 // file, from the doc comment of its builder type to the next search or the
-// end of the file (design S8).
+// end of the file (design S8). The builder alone is counted: G8 adds the
+// search method and G12 the API mapper. Shaped in joined.go has the shape
+// of design section 4.2, and its builder owns 64 lines.
 func TestBuilderLineCount(t *testing.T) {
 	t.Parallel()
 	for _, path := range []string{"testdata/builder/builder_repo.gen.go.golden",
@@ -151,6 +156,116 @@ func TestBuilderForwardStub(t *testing.T) {
 	}
 }
 
+// The forward stub of a search that nano gen repo cannot write yet has its
+// scope struct and no builder: the From function that takes the struct
+// type-checks, and nothing names a builder that the run will not write.
+func TestBuilderForwardStubOfAnUnbuiltSearch(t *testing.T) {
+	t.Parallel()
+	dir := mustAbs(t, "testdata/builderstub")
+	stubs := ForwardStubs(dir)
+	stub, ok := stubs[filepath.Join(dir, "stub_repo.gen.go")]
+	if !ok {
+		t.Fatalf("no stub of stub_repo.gen.go: %v", stubs)
+	}
+	if !bytes.Contains(stub, []byte("type UnbuiltScope struct")) || bytes.Contains(stub, []byte("type UnbuiltSearch")) {
+		t.Errorf("the stub must have the scope struct and no builder:\n%s", stub)
+	}
+	for name, overlay := range map[string]map[string][]byte{"with": stubs, "without": nil} {
+		pkgs, err := packages.Load(&packages.Config{Mode: packages.NeedTypes | packages.NeedName, Dir: dir,
+			Overlay: overlay}, ".")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if typeChecks := len(pkgs[0].Errors) == 0; typeChecks != (name == "with") {
+			t.Errorf("%s the stub: errors %v", name, pkgs[0].Errors)
+		}
+	}
+}
+
+// The stub cache holds a read only while the files it read do not change,
+// and it never holds a failed read: in a pipeline run the db step writes a
+// table package after the first stub request of the repo package.
+func TestBuilderForwardStubCache(t *testing.T) {
+	t.Parallel()
+	root, err := os.MkdirTemp("testdata", "run-") //nolint:usetesting // must sit inside the module
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(root) })
+	// nano gen db writes the model and enum packages next to the table
+	// package; only the table package comes late here.
+	public := "internal/repotest/db/shop/public"
+	for _, pkg := range []string{"model", "enum"} {
+		if err = os.CopyFS(filepath.Join(root, pkg), os.DirFS(filepath.Join(public, pkg))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	repoDir, tableDir := filepath.Join(root, "repo"), filepath.Join(root, "table")
+	if err = os.Mkdir(repoDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	decl := `package repo
+
+import (
+	"github.com/nanostack-dev/nanostack-framework/db/nanorepo"
+	"github.com/nanostack-dev/nanostack-framework/gen/repo/` + filepath.ToSlash(root) + `/model"
+	"github.com/nanostack-dev/nanostack-framework/gen/repo/` + filepath.ToSlash(root) + `/table"
+)
+
+func _() {
+	nanorepo.Base[model.Tenants](table.Tenants)
+
+	nanorepo.Search[model.Items]("Item", table.Items,
+		nanorepo.Scope(table.Items.TenantID),
+		nanorepo.Sort(table.Items.Name),
+	)
+}
+`
+	declPath := filepath.Join(repoDir, "a.go")
+	if err = os.WriteFile(declPath, []byte(decl), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stubOf := func() string {
+		return string(ForwardStubs(mustAbs(t, repoDir))[mustAbs(t, filepath.Join(repoDir, "a_repo.gen.go"))])
+	}
+	if stub := stubOf(); strings.Contains(stub, "type ItemSearch") {
+		t.Fatalf("a builder before the table package exists:\n%s", stub)
+	}
+	if err = os.CopyFS(tableDir, os.DirFS(filepath.Join(public, "table"))); err != nil {
+		t.Fatal(err)
+	}
+	if stub := stubOf(); !strings.Contains(stub, "type ItemSearch") {
+		t.Fatalf("no builder once the table package exists:\n%s", stub)
+	}
+	edited := strings.Replace(decl, "nanorepo.Sort(table.Items.Name),",
+		"nanorepo.Sort(table.Items.Name),\n\t\tnanorepo.Filter(table.Items.Status, nanorepo.Eq),", 1)
+	if err = os.WriteFile(declPath, []byte(edited), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if stub := stubOf(); !strings.Contains(stub, "func (q ItemSearch) Status()") {
+		t.Fatalf("the stub does not follow the edited declaration:\n%s", stub)
+	}
+}
+
+// A read depends on the table packages of the declarations and on the model
+// and enum packages next to them: a change in any of them refreshes the
+// stub.
+func TestBuilderStubDependencies(t *testing.T) {
+	t.Parallel()
+	dir := mustAbs(t, "testdata/builder")
+	result, dirs := readSearches(dir)
+	if result == nil {
+		t.Fatal("testdata/builder does not read")
+	}
+	public := mustAbs(t, "internal/repotest/db/shop/public")
+	for _, want := range []string{dir, filepath.Join(public, "table"), filepath.Join(public, "model"),
+		filepath.Join(public, "enum")} {
+		if !slices.Contains(dirs, want) {
+			t.Errorf("the read of testdata/builder does not depend on %s: %v", want, dirs)
+		}
+	}
+}
+
 // Without the stub, the hand-written code of testdata/builder does not
 // type-check: the stub test above proves something.
 func TestBuilderNeedsTheStub(t *testing.T) {
@@ -208,5 +323,28 @@ func TestBuilderCheckAndOrphan(t *testing.T) {
 	}
 	if _, err = os.Stat(filepath.Join(dir, "joined_repo.gen.go")); !os.IsNotExist(err) {
 		t.Errorf("the run kept joined_repo.gen.go: %v", err)
+	}
+}
+
+// A key on a nullable column whose value needs a conversion, such as a
+// smallint read as *int16, converts the value behind the pointer. No
+// fixture table has such a column, so this checks the emitter alone.
+func TestNullableKeyConversion(t *testing.T) {
+	t.Parallel()
+	e := &emitter{imp: importset.New("example.com/p"), self: "example.com/p"}
+	k := &sortKey{
+		ctor: "NullableIntKey",
+		col: &colRef{
+			table: &tableBase{pkgPath: "example.com/table", pkgName: "table", goName: "Items"},
+			col:   column{field: "Rank"},
+		},
+		field:   "Rank",
+		value:   types.NewPointer(types.Typ[types.Int64]),
+		ptrConv: "int64",
+	}
+	want := "keyset.NullableIntKey(table.Items.Rank, func(r model.Items) *int64 { if r.Rank == nil {\n\t\treturn nil\n\t}\n" +
+		"\tv := int64(*r.Rank)\n\treturn &v })"
+	if got := e.key(k, "model.Items"); got != want {
+		t.Errorf("key =\n%s\nwant\n%s", got, want)
 	}
 }

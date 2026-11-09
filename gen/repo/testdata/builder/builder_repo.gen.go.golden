@@ -70,7 +70,7 @@ func (q ItemSearch) ID() searchexec.In[ItemSearch, string] {
 	return searchexec.NewIn(q.Query, table.Items.ID, searchexec.StringLit[string])
 }
 func (q ItemSearch) Status() searchexec.EqIn[ItemSearch, model.ItemStatus] {
-	return searchexec.NewEqIn(q.Query, table.Items.Status, searchexec.StringLit[model.ItemStatus])
+	return searchexec.NewEqIn(q.Query, table.Items.Status, searchexec.EnumLit[model.ItemStatus](string(model.ItemStatus_Active), string(model.ItemStatus_Archived)))
 }
 func (q ItemSearch) Sku() searchexec.In[ItemSearch, sku] {
 	return searchexec.NewIn(q.Query, table.Items.Sku, searchexec.StringLit[sku])
@@ -112,7 +112,7 @@ const (
 )
 
 var tenantSearch = searchexec.DefineSpec(searchexec.SpecDef[model.Tenants, TenantSort, struct{}]{
-	From:    func(struct{}) keyset.Source { return table.Tenants },
+	From:    func(s struct{}) keyset.Source { return allTenants(s) },
 	Columns: table.Tenants.AllColumns, // the Row is model.Tenants
 	Context: []searchexec.ContextScope{searchexec.ScopeFunc(tenantFilter, table.Tenants.Name)},
 	Keys: map[TenantSort]keyset.Key[model.Tenants]{
