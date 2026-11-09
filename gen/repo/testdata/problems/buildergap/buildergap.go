@@ -1,7 +1,6 @@
-// Package buildergap declares a search whose builder does not compile and
-// that no check of nano gen repo refuses yet: two scope fields with one
-// name (E12 in G6 will refuse it). The compile error is reported at the
-// declaration of the search that owns the line, the second of the file.
+// Package buildergap declares the search whose builder did not compile
+// before the tenant check: two scope fields with one name. E12 refuses it
+// now, before the builder is written.
 package buildergap
 
 import (

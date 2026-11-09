@@ -244,7 +244,10 @@ type runner struct {
 	files    []Event           // wrote, deleted, stale, missing, orphan
 	notes    []Event           // skipped and error
 	planned  map[string]bool   // every output of every unit, for the orphan scan
-	server   *gendb.Server     // the database server of the run, started on first use
+	// exemptions are the lines of the exemption file that the repo units
+	// returned, each after its package directory.
+	exemptions []string
+	server     *gendb.Server // the database server of the run, started on first use
 }
 
 // database opens an empty database on the server of the run, which it
@@ -278,6 +281,7 @@ func Run(opts Options) Result {
 	for i, u := range r.units {
 		r.runUnit(i, u)
 	}
+	r.writeExemptions()
 	r.scanOrphans()
 	return r.result()
 }
@@ -468,6 +472,22 @@ func (r *runner) runUnit(i int, u *unit) {
 	}
 	r.problem(name, u.step.base(r, u), out.gaps)
 	r.warn(name, u.step.base(r, u), out.warnings)
+}
+
+// writeExemptions writes nanogen/search-exemptions.txt: every tenant
+// exemption of every search of the module, one per line (ADR 0027). The
+// repo step must have run on every package: a failed unit returns no
+// exemptions, so the file is left as it is. Without an exemption the file
+// is not produced, and an old one is an orphan.
+func (r *runner) writeExemptions() {
+	if !r.ran["repo"] || r.failed["repo"] || len(r.exemptions) == 0 {
+		return
+	}
+	lines := slices.Clone(r.exemptions)
+	slices.Sort(lines)
+	path := r.abs(genrepo.ExemptionsFile)
+	r.planned[path] = true
+	r.sync("repo", gen.File{Path: path, Data: genrepo.ExemptionsData(lines)})
 }
 
 // sync compares one output with the disk and, without Check, writes it.

@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"golang.org/x/tools/go/packages"
+
+	"github.com/nanostack-dev/nanostack-framework/gen/repo/internal/repotest"
 )
 
 // A method promoted from a newly embedded field wins over the derived copy
@@ -16,7 +18,7 @@ import (
 // method it generated.
 func TestStaleOutputNeverHidesAPromotedMethod(t *testing.T) {
 	t.Parallel()
-	res, err := Generate(Options{Dir: "testdata/stale", Scopes: []string{"tenant_id"}})
+	res, err := Generate(Options{Dir: "testdata/stale", Scopes: repotest.Scopes, ContextScopes: repotest.ContextScopes})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +65,7 @@ func TestBackstop(t *testing.T) {
 		!strings.Contains(strings.Join(build, "\n"), "(missing method ListActive)") {
 		t.Fatalf("the build does not stop at the var _ line: %v", build)
 	}
-	_, err = Generate(Options{Dir: dir, Scopes: []string{"tenant_id"}})
+	_, err = Generate(Options{Dir: dir, Scopes: repotest.Scopes, ContextScopes: repotest.ContextScopes})
 	want := "ItemRepository.ListActive: not implemented: no hand-written method on *itemRepositoryImpl, and the " +
 		"name does not derive: it does not start with FindBy"
 	if err == nil || !strings.Contains(err.Error(), want) ||
@@ -168,8 +170,10 @@ func TestForwardStub(t *testing.T) {
 	derived := mustAbs(t, filepath.Join(dir, "repository"+derivedSuffix))
 	stub, ok := stubs[derived]
 	_, search := stubs[mustAbs(t, filepath.Join(dir, "search"+derivedSuffix))]
-	if len(stubs) != 2 || !ok || !search {
-		t.Fatalf("stubs for %d files, want %s and the stub of search.go", len(stubs), derived)
+	_, row := stubs[mustAbs(t, filepath.Join(dir, "row"+derivedSuffix))]
+	_, tenant := stubs[mustAbs(t, filepath.Join(dir, "tenant"+derivedSuffix))]
+	if len(stubs) != 4 || !ok || !search || !row || !tenant {
+		t.Fatalf("stubs for %d files, want %s and the stubs of search.go, row.go and tenant.go", len(stubs), derived)
 	}
 	for _, want := range []string{"func (r *itemRepositoryImpl) FindByTenantIDAndName(", "FindAllInternal(",
 		`import uuid "github.com/google/uuid"`} {

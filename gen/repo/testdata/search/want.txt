@@ -1,18 +1,16 @@
-search.go:54: search ItemByTenantSku has no tenant condition (no Scope, ScopeOrNull, ScopeNull or ScopeFunc): searchexec.DefineSpec refuses it when the package starts
-  fix: scope the search: nanorepo.Scope(table.Items.TenantID)
-search.go:72: search ItemWithTenant: a sort on tenants.name needs a Row field for it, and the Row model.Items has none: nano gen repo selects only the columns of items yet
-  fix: sort on a column of items, or filter on tenants.name
-search.go:73: search ItemWithTenant: SortExpr("Total") is read, and nano gen repo does not generate a computed key yet
-  fix: sort on a column, or write the method by hand on searchexec.Resolve with keyset.IntExprKey (or its kin) in plan.Order
-search.go:81: search ItemOptionalTenant has no tenant condition (no Scope, ScopeOrNull, ScopeNull or ScopeFunc): searchexec.DefineSpec refuses it when the package starts
-  fix: scope the search: nanorepo.Scope(table.Items.TenantID)
-search.go:84: search ItemOptionalTenant: a sort on tenants.name needs a Row field for it, and the Row model.Items has none: nano gen repo selects only the columns of items yet
-  fix: sort on a column of items, or filter on tenants.name
-search.go:90: search ItemAliasedTenant has no tenant condition (no Scope, ScopeOrNull, ScopeNull or ScopeFunc): searchexec.DefineSpec refuses it when the package starts
-  fix: scope the search: nanorepo.Scope(table.Items.TenantID)
-search.go:94: search ItemAliasedTenant: a sort on owner.name needs a Row field for it, and the Row model.Items has none: nano gen repo selects only the columns of items yet
-  fix: sort on a column of items, or filter on owner.name
-search.go:111: search ItemOfNamedTenant: SortExpr("Siblings") is read, and nano gen repo does not generate a computed key yet
-  fix: sort on a column, or write the method by hand on searchexec.Resolve with keyset.IntExprKey (or its kin) in plan.Order
-search.go:112: search ItemOfNamedTenant: SortExpr("CreatedDay") is read, and nano gen repo does not generate a computed key yet
-  fix: sort on a column, or write the method by hand on searchexec.Resolve with keyset.IntExprKey (or its kin) in plan.Order
+search.go:73: search ItemWithTenant: SortKey(table.Tenants.Name) needs a Row field for tenants.name; model.Items has none
+  fix: search a Row of your own: type itemWithTenantRow struct { model.Items; TenantName string `alias:"tenants.name"` }
+search.go:74: search ItemWithTenant: SortExpr("Total", total): the Row model.Items has no exported field Total to carry the value
+  fix: add the field Total float64 to model.Items
+search.go:82: search ItemOptionalTenant has no tenant condition (no Scope, ScopeOrNull, ScopeNull or ScopeFunc): searchexec.DefineSpec refuses it when the package starts
+  fix: scope the search with nanorepo.Scope(column) or nanorepo.ScopeFunc(fn, column)
+search.go:85: search ItemOptionalTenant: Sort(table.Tenants.Name) needs a Row field for tenants.name; model.Items has none
+  fix: search a Row of your own: type itemOptionalTenantRow struct { model.Items; TenantName *string `alias:"tenants.name"` }
+search.go:91: search ItemAliasedTenant has no tenant condition (no Scope, ScopeOrNull, ScopeNull or ScopeFunc): searchexec.DefineSpec refuses it when the package starts
+  fix: scope the search with nanorepo.Scope(column) or nanorepo.ScopeFunc(fn, column)
+search.go:95: search ItemAliasedTenant: SortKey(table.Tenants.AS("owner").Name) needs a Row field for owner.name; model.Items has none
+  fix: search a Row of your own: type itemAliasedTenantRow struct { model.Items; OwnerName string `alias:"owner.name"` }
+search.go:112: search ItemOfNamedTenant: SortExpr("Siblings", siblingCount): the Row model.Items has no exported field Siblings to carry the value
+  fix: add the field Siblings int64 to model.Items
+search.go:113: search ItemOfNamedTenant: SortExpr("CreatedDay", createdDay): a computed key orders on an integer, float, string or timestamptz expression
+  fix: return a postgres.IntegerExpression, FloatExpression, StringExpression or TimestampzExpression from createdDay, with no parameter

@@ -10,33 +10,11 @@ import (
 	"github.com/nanostack-dev/nanostack-framework/gen/repo/internal/repotest/db/shop/public/table"
 )
 
-// itemRow is a Row of its own. Its Weight is not a pointer, and the column
-// is nullable.
-type itemRow struct {
-	model.Items
-	Weight float32
-}
-
 // otherScope is not the scope value of any search.
 type otherScope struct{ TenantID string }
 
 func _() {
 	nanorepo.Base[model.Tenants](table.Tenants)
-
-	// A Row that is not the model of the table, and a sort on a nullable
-	// column whose Row field is not a pointer.
-	nanorepo.Search[itemRow]("OwnRow", table.Items,
-		nanorepo.Scope(table.Items.TenantID),
-		nanorepo.Sort(table.Items.Name),
-		nanorepo.SortKey(table.Items.Weight),
-	)
-
-	// No tenant condition: searchexec.DefineSpec refuses it. Unscoped is a
-	// record, not a condition.
-	nanorepo.Search[model.Items]("NoTenant", table.Items,
-		nanorepo.Unscoped(table.Items.TenantID, "fixture"),
-		nanorepo.Sort(table.Items.Name),
-	)
 
 	// No sort: searchexec.DefineSpec needs a key.
 	nanorepo.Search[model.Items]("NoSort", table.Items,
@@ -44,7 +22,7 @@ func _() {
 	)
 
 	// Operators that make two field types, a filter that hides a method of
-	// the builder, two filters with one accessor, FilterExists, a Range on a
+	// the builder, two filters with one accessor, a Range on a
 	// column that is not timestamptz, an Eq with no literal, NULL placement on a NOT NULL column, and a sort on a
 	// column that has no key.
 	nanorepo.Search[model.Items]("Shapes", table.Items,
@@ -53,7 +31,6 @@ func _() {
 		nanorepo.FilterExpr("Limit", lowerName, nanorepo.Eq),
 		nanorepo.Filter(table.Items.Name, nanorepo.Eq),
 		nanorepo.FilterExpr("Name", lowerName, nanorepo.In),
-		nanorepo.FilterExists(table.Tenants, table.Tenants.ID, table.Tenants.Name, nanorepo.In),
 		nanorepo.Filter(table.Items.Stock, nanorepo.Range("min_stock", "max_stock")),
 		nanorepo.Filter(table.Items.Price, nanorepo.Eq),
 		nanorepo.SortKey(table.Items.Name).NullsFirst(),
@@ -101,10 +78,16 @@ func _() {
 	// Eq on a string column whose catalogue type is not text (inet): no
 	// literal, as PostgreSQL would refuse a value that is not an address.
 	nanorepo.Search[model.AuditEvents]("Client", table.AuditEvents,
+		nanorepo.From(eventsOfItems),
+		nanorepo.Scope(table.Items.TenantID),
 		nanorepo.Scope(table.AuditEvents.ItemID),
 		nanorepo.FilterAs[string](table.AuditEvents.Client, nanorepo.Eq),
 		nanorepo.Sort(table.AuditEvents.At),
 	)
+}
+
+func eventsOfItems() postgres.ReadableTable {
+	return table.AuditEvents.INNER_JOIN(table.Items, table.Items.ID.EQ(table.AuditEvents.ItemID))
 }
 
 func lowerName() postgres.StringExpression { return postgres.LOWER(table.Items.Name) }

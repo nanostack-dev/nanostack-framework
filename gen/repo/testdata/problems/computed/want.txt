@@ -1,0 +1,8 @@
+computed.go:28: search ComputedKeys: SortExpr("LastEvent", lastEventID): lastEventID can be NULL (it is not a top-level COUNT or COALESCE), and eventRow.LastEvent is int64
+  fix: make LastEvent *int64, or wrap the expression in postgres.COALESCE(..., <literal>)
+computed.go:29: SortExpr FirstEvent: the subquery of firstEventItem reads a column instead of an aggregate: another row's value would go into the Row and the cursor
+  fix: select an aggregate of the child rows, such as postgres.COUNT(...) or postgres.MAX(...)
+computed.go:30: search ComputedKeys: SortExpr("Missing", eventCount): the Row eventRow has no exported field Missing to carry the value
+  fix: add the field Missing int64 to eventRow
+computed.go:31: search ComputedKeys: SortExpr("Count", eventCount): eventRow.Count is string, and the expression gives int64
+  fix: make Count int64, or *int64 when the expression can be NULL

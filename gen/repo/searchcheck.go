@@ -12,8 +12,10 @@ const textFix = "use nanorepo.Range(...), Eq or In, or nanorepo.FullTextExpr on 
 
 // checkSearch checks a search that reads without a problem: the columns
 // of the options (E5), the text operators (E2), FilterAs (E13), the default
-// sort (E14) and the order (E3, E4).
+// sort (E14), the order (E3, E4), then the tenant coverage (E8 to E10,
+// E12, E29, E30) of a search that has no other problem.
 func (c *collector) checkSearch(s *searchDecl) {
+	before := len(c.problems)
 	if !c.checkColumnsRead(s) {
 		return
 	}
@@ -29,6 +31,9 @@ func (c *collector) checkSearch(s *searchDecl) {
 	}
 	c.checkDefaultSort(s)
 	c.order(s)
+	if len(c.problems) == before {
+		c.checkTenant(s)
+	}
 }
 
 // checkFilter checks the text operators (Contains, ContainsAny, InFold)
@@ -381,13 +386,17 @@ func (c *collector) checkColumnsRead(s *searchDecl) bool {
 		if f.kind != "FilterExists" {
 			continue
 		}
+		named := true
 		for _, col := range []*colRef{f.link, f.col} {
 			if col.table != f.child || col.alias != "" {
-				ok = false
+				ok, named = false, false
 				c.errorf(col.expr, "name a column of "+f.child.sqlName+", the child table of FilterExists",
 					"search %s: FilterExists(%s, ...) names %s, which is not a column of %s", s.name,
 					f.child.sqlName, col, f.child.sqlName)
 			}
+		}
+		if named && !c.existsLink(s, f) {
+			ok = false
 		}
 	}
 	return ok

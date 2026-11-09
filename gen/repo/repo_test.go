@@ -38,11 +38,11 @@ func golden(t *testing.T, path string, got []byte) {
 }
 
 // The committed base of the fixture, which its integration tests run on
-// PostgreSQL, is what the generator writes, and its clean repositories get
-// no warning.
+// PostgreSQL, is what the generator writes, its clean repositories get no
+// warning, and its exemption file is testdata/exemptions.golden.
 func TestFixtureBaseIsCurrent(t *testing.T) {
 	t.Parallel()
-	res, err := Generate(Options{Dir: fixture, Scopes: repotest.Scopes})
+	res, err := Generate(Options{Dir: fixture, Scopes: repotest.Scopes, ContextScopes: repotest.ContextScopes})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,6 +55,13 @@ func TestFixtureBaseIsCurrent(t *testing.T) {
 	for _, f := range res.Files {
 		golden(t, f.Path, f.Data)
 	}
+	// The exemption file lists the shared rows of tenant.go (ScopeNull,
+	// ScopeOrNull), which a review must see.
+	lines := make([]string, len(res.Exemptions))
+	for i, e := range res.Exemptions {
+		lines[i] = e.String()
+	}
+	golden(t, "testdata/exemptions.golden", ExemptionsData(lines))
 }
 
 func mustAbs(t *testing.T, path string) string {
@@ -72,7 +79,7 @@ func mustAbs(t *testing.T, path string) string {
 // Contains predicates call searchexec.Contains.
 func TestContainsOnTextColumnsOnly(t *testing.T) {
 	t.Parallel()
-	res, err := Generate(Options{Dir: fixture, Scopes: repotest.Scopes})
+	res, err := Generate(Options{Dir: fixture, Scopes: repotest.Scopes, ContextScopes: repotest.ContextScopes})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -206,7 +213,7 @@ func TestProblems(t *testing.T) {
 	for _, dir := range dirs {
 		t.Run(filepath.Base(dir), func(t *testing.T) {
 			t.Parallel()
-			res, genErr := Generate(Options{Dir: dir, Scopes: []string{"tenant_id"}})
+			res, genErr := Generate(Options{Dir: dir, Scopes: repotest.Scopes, ContextScopes: repotest.ContextScopes})
 			var warnings []*gen.Error
 			if genErr != nil {
 				gentest.Problems(t, genErr)

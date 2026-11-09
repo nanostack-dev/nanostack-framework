@@ -12,8 +12,7 @@ import (
 // sort.
 func (c *collector) builderSorts(b *builder) {
 	s := b.s
-	// SortHandWritten adds a constant and no key. SortExpr gives its own
-	// problem until G13.
+	// SortHandWritten adds a constant and no key.
 	if !slices.ContainsFunc(s.sorts, func(x *searchSort) bool { return x.kind != "SortHandWritten" }) {
 		c.errorf(s.tableNode, "add nanorepo.Sort(...) with the columns an API client may sort on, such as "+
 			"nanorepo.Sort("+s.tableText+"."+s.order[0].field+")",
@@ -25,7 +24,7 @@ func (c *collector) builderSorts(b *builder) {
 	}
 	for _, col := range s.order {
 		ref := &colRef{table: s.root.table, tableText: s.tableText, col: col}
-		b.tiebreak = append(b.tiebreak, c.builderKey(b, ref, ""))
+		b.tiebreak = append(b.tiebreak, c.builderKey(b, ref, "", tiebreakText(s)))
 	}
 	b.dflt = defaultConst(b)
 	seen, apis := map[string]string{}, map[string]bool{}
@@ -50,16 +49,15 @@ func (c *collector) builderSorts(b *builder) {
 func (c *collector) builderSort(b *builder, sort *searchSort) {
 	switch sort.kind {
 	case "SortExpr":
-		c.errorf(sort.expr, "sort on a column, or write the method by hand on searchexec.Resolve with "+
-			"keyset.IntExprKey (or its kin) in plan.Order",
-			"search %s: SortExpr(%q) is read, and nano gen repo does not generate a computed key yet",
-			b.s.name, sort.field)
+		if key := c.exprKey(b, sort); key != nil {
+			b.sorts = append(b.sorts, sortConst{name: sort.field, api: sort.api[0], key: key})
+		}
 		return
 	case "SortHandWritten":
 		b.sorts = append(b.sorts, sortConst{name: goName(sort.api[0]), api: sort.api[0]})
 		return
 	}
-	key := c.builderKey(b, sort.col, sort.nulls)
+	key := c.builderKey(b, sort.col, sort.nulls, sort.kind+"("+c.source(sort.col.expr)+")")
 	for _, api := range sort.api {
 		name := goName(api)
 		if sort.kind == "Sort" {
@@ -73,12 +71,19 @@ func (c *collector) builderSort(b *builder, sort *searchSort) {
 // DefaultSort.
 func defaultConst(b *builder) *sortConst {
 	d := b.s.defaultSort
-	if d == nil || d.col == nil {
+	if d == nil {
 		return nil
 	}
 	for i, sort := range b.sorts {
-		if sort.key != nil && sort.key.col.table == d.col.table && sort.key.col.alias == d.col.alias &&
-			sort.key.col.col.field == d.col.col.field {
+		if d.col == nil {
+			if sort.key != nil && sort.key.expr != nil && sort.key.field == d.field {
+				return &b.sorts[i]
+			}
+			continue
+		}
+		k := sort.key
+		if k != nil && k.col != nil && k.col.table == d.col.table && k.col.alias == d.col.alias &&
+			k.col.col.field == d.col.col.field {
 			return &b.sorts[i]
 		}
 	}
@@ -86,36 +91,49 @@ func defaultConst(b *builder) *sortConst {
 }
 
 // builderKey picks the keyset key of a column from its kind, its catalogue
-// type and its model field (design S7). nil after a problem.
-func (c *collector) builderKey(b *builder, col *colRef, nulls string) *sortKey {
+// type and its Row field (design S7, S9.1). what names the option that
+// sorts on the column, for a message. nil after a problem.
+func (c *collector) builderKey(b *builder, col *colRef, nulls, what string) *sortKey {
 	s := b.s
 	where := ast.Node(s.tableNode)
 	if col.expr != nil {
 		where = col.expr
 	}
-	if !s.root.is(col.table, col.alias) {
-		c.errorf(where, "sort on a column of "+s.root.table.sqlName+", or filter on "+c.qualifiedColumn(s, col),
-			"search %s: a sort on %s needs a Row field for it, and the Row %s has none: nano gen repo "+
-				"selects only the columns of %s yet", s.name, c.qualifiedColumn(s, col), c.qualified(s.row),
-			s.root.table.sqlName)
+	inst := s.instanceOf(col)
+	if inst == nil {
+		return nil // the read set check reports it
+	}
+	rf := b.row.cols[instCol{inst, col.col.sqlName}]
+	if rf == nil {
+		c.noRowField(b, where, inst, col.col, what)
 		return nil
 	}
-	field, ok := modelField(s.row, col.col.field)
-	if !ok {
+	if rf.bad || rf.typ == nil {
 		return nil // builderRow reports it
 	}
-	k := &sortKey{col: col, field: col.col.field, nulls: nulls}
-	nullable := col.col.nullable
-	if nullable {
-		if _, isPtr := types.Unalias(field).(*types.Pointer); !isPtr {
-			c.errorf(where, "make the Row field a pointer, as nano gen db does in a model for a NULL column",
-				"search %s: %s is nullable, and its Row field is %s, not a pointer", s.name,
-				col.col.sqlName, c.qualified(field))
-			return nil
-		}
-	} else if nulls != "" {
+	k := &sortKey{col: col, field: rf.path, nulls: nulls}
+	nullable := inst.columnNullable(col.col)
+	_, isPtr := types.Unalias(rf.typ).(*types.Pointer)
+	switch {
+	case nullable && !isPtr:
+		c.errorf(where, "make the Row field a pointer, as nano gen db does in a model for a NULL column",
+			"search %s: %s is nullable, and its Row field is %s, not a pointer", s.name,
+			col.col.sqlName, c.qualified(rf.typ))
+		return nil
+	case !nullable && nulls != "":
 		c.errorf(where, "remove ."+nulls+"(): a NOT NULL column has no NULL to place",
 			"search %s: %s on %s, which is NOT NULL", s.name, nulls, col.col.sqlName)
+		return nil
+	case !nullable && holdsNull(rf.typ):
+		c.errorf(where, "make the Row field "+c.fieldType(col.col, false)+": the column is NOT NULL",
+			"search %s: the key on %s.%s reads the Row field %s of type %s, and the key needs %s", s.name,
+			inst.name(), col.col.sqlName, rf.path, c.qualified(rf.typ), c.fieldType(col.col, false))
+		return nil
+	}
+	if elem, _ := optional(rf.typ); !types.Identical(elem, col.col.value) {
+		c.errorf(where, "make the Row field "+c.fieldType(col.col, nullable)+", the type of the model field",
+			"search %s: the key on %s.%s reads the Row field %s of type %s, and the key needs %s", s.name,
+			inst.name(), col.col.sqlName, rf.path, c.qualified(rf.typ), c.fieldType(col.col, nullable))
 		return nil
 	}
 	if !c.pickKey(col, k, nullable) {
@@ -125,6 +143,27 @@ func (c *collector) builderKey(b *builder, col *colRef, nulls string) *sortKey {
 		return nil
 	}
 	return k
+}
+
+// noRowField reports a key column that no Row field reads (E25).
+func (c *collector) noRowField(b *builder, where ast.Node, inst *instance, col column, what string) {
+	s := b.s
+	field := c.suggestField(b, inst, col)
+	fix := "add " + field + " to " + c.qualified(s.row)
+	if b.row.model {
+		fix = "search a Row of your own: type " + lowerFirst(s.name) + "Row struct { " + c.qualified(s.row) + "; " +
+			field + " }"
+	}
+	c.errorf(where, fix, "search %s: %s needs a Row field for %s.%s; %s has none", s.name, what, inst.name(),
+		col.sqlName, c.qualified(s.row))
+}
+
+// tiebreakText names the tiebreak of s for a message.
+func tiebreakText(s *searchDecl) string {
+	if s.orderDefault {
+		return "the tiebreak " + s.orderKey.String()
+	}
+	return "Tiebreak"
 }
 
 // pickKey sets the constructor and the accessor of k from the column.
@@ -283,16 +322,16 @@ func allValues(pkg string, decl ast.Decl, name string) ([]string, bool) {
 	return nil, false
 }
 
-// modelField returns the type of the field of the struct row, or false.
-func modelField(row types.Type, name string) (types.Type, bool) {
+// modelField returns the type of the field of the struct row, or nil.
+func modelField(row types.Type, name string) types.Type {
 	st, ok := types.Unalias(row).Underlying().(*types.Struct)
 	if !ok {
-		return nil, false
+		return nil
 	}
 	for f := range st.Fields() {
 		if f.Name() == name {
-			return f.Type(), true
+			return f.Type()
 		}
 	}
-	return nil, false
+	return nil
 }

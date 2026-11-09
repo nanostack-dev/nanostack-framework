@@ -19,7 +19,6 @@ func _() {
 		nanorepo.Scope(table.Items.TenantID, table.Tenants.ID),
 		nanorepo.ScopeOrNull(table.Items.ExternalID),
 		nanorepo.ScopeNull(table.Items.ReleasedOn),
-		nanorepo.Unscoped(table.Tenants.Name, "the ON clause scopes it"),
 		nanorepo.Filter(table.Tenants.Name, nanorepo.Eq),
 		nanorepo.Filter(table.Items.Stock, nanorepo.Eq, nanorepo.In),
 		nanorepo.SortKey(table.Items.Name).API("name", "title"),
@@ -30,14 +29,12 @@ func _() {
 }
 
 func _() {
-	// The shape of design section 4.2: a join, a scope struct, a context
-	// scope, six filters, a FullText of four parts, three sorts and a
+	// The shape of design section 4.2: a join, a scope struct, six filters, a FullText of four parts, three sorts and a
 	// tiebreak of two columns. The line count check reads its builder.
 	nanorepo.Search[model.Items]("Shaped", table.Items,
 		nanorepo.From(itemsWithTenant),
 		nanorepo.Scope(table.Items.TenantID),
 		nanorepo.Scope(table.Items.ExternalID),
-		nanorepo.ScopeFunc(tenantFilter, table.Tenants.Name),
 		nanorepo.Filter(table.Items.ID, nanorepo.In),
 		nanorepo.FilterAs[sku](table.Items.Sku, nanorepo.In),
 		nanorepo.FilterExpr("LowerName", lowerName, nanorepo.In),

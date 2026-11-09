@@ -14,6 +14,7 @@ import (
 
 	"github.com/nanostack-dev/nanostack-framework/db/nanorepo"
 	"github.com/nanostack-dev/nanostack-framework/db/qrm"
+	"github.com/nanostack-dev/nanostack-framework/db/search"
 	"github.com/nanostack-dev/nanostack-framework/gen/repo/internal/repotest/db/shop/public/enum"
 	"github.com/nanostack-dev/nanostack-framework/gen/repo/internal/repotest/db/shop/public/model"
 	"github.com/nanostack-dev/nanostack-framework/gen/repo/internal/repotest/db/shop/public/table"
@@ -22,7 +23,13 @@ import (
 
 // Scopes are the tenant columns of the fixture, as Postgres.Scopes declares
 // them in a service.
-var Scopes = []string{"tenant_id"} //nolint:gochecknoglobals // fixture
+var Scopes = []string{"tenant_id", "workspace_id"} //nolint:gochecknoglobals // fixture
+
+// ContextScopes registers the function that scopes each context tenant
+// column of the fixture, as Postgres.ContextScopes declares it.
+var ContextScopes = map[string]string{ //nolint:gochecknoglobals // fixture
+	"workspace_id": "github.com/nanostack-dev/nanostack-framework/gen/repo/internal/repotest/workspacescope.Filter",
+}
 
 // ErrItemSKUExists is returned when a tenant already has an item with the SKU.
 var ErrItemSKUExists = errors.New("an item with this SKU exists")
@@ -73,6 +80,18 @@ type ItemRepository interface {
 	ListActive(ctx context.Context, tenantID uuid.UUID) ([]Item, error)
 	Create(ctx context.Context, item model.Items) (Item, error)
 	Archive(ctx context.Context, tenantID uuid.UUID, id string) (bool, error)
+
+	// Generated: each takes a declared search and runs it on the search
+	// hatch of the base.
+	SearchItems(ctx context.Context, q ItemSearch) (search.Result[Item], error)
+	SearchItemSummaries(ctx context.Context, q ItemSummarySearch) (search.Result[itemSummary], error)
+	SearchItemsWithOwner(ctx context.Context, q ItemWithOwnerSearch) (search.Result[itemWithOwner], error)
+	SearchItemsOfOwner(ctx context.Context, q ItemOfOwnerSearch) (search.Result[itemOfOwner], error)
+	SearchManagedLabels(ctx context.Context, q ManagedLabelSearch) (search.Result[Label], error)
+	SearchLicensedItems(ctx context.Context, q LicensedItemSearch) (search.Result[itemWithLicense], error)
+	SearchCountedItems(ctx context.Context, q CountedItemSearch) (search.Result[itemWithEvents], error)
+	// Hand-written: the hand-written method wins, and runs q.Query itself.
+	SearchAssignableLabels(ctx context.Context, q AssignableLabelSearch) (search.Result[Label], error)
 }
 
 // AuditLog appends audit events. audit_events has no tenant column.
@@ -88,6 +107,16 @@ func _() {
 
 type itemRepositoryImpl struct {
 	itemsBase
+	labels labelMapper
+}
+
+// SearchAssignableLabels runs the search on the base hatch, as the
+// generated method would: nano gen repo checks that it runs q.Query with
+// its own ctx and the search's spec.
+func (r *itemRepositoryImpl) SearchAssignableLabels(
+	ctx context.Context, q AssignableLabelSearch,
+) (search.Result[Label], error) {
+	return r.search(ctx, assignableLabelSearch, q.Query, r.labels.toLabel)
 }
 
 // NewItemRepository returns the item repository on db.

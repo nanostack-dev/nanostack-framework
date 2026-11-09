@@ -1,5 +1,6 @@
-// Package builderstub declares a search that nano gen repo cannot write yet
-// (FilterExists, G7) and whose From function takes the scope struct. The
+// Package builderstub declares a search that nano gen repo cannot write (an
+// Eq on a float column has no literal) and whose From function takes the
+// scope struct. The
 // forward stub has the scope struct and no builder, so the package
 // type-checks before a run.
 package builderstub
@@ -18,7 +19,7 @@ func _() {
 		nanorepo.From(itemsOf),
 		nanorepo.Scope(table.Items.TenantID),
 		nanorepo.Scope(table.Items.Sku),
-		nanorepo.FilterExists(table.Tenants, table.Tenants.ID, table.Tenants.Name, nanorepo.In),
+		nanorepo.Filter(table.Items.Price, nanorepo.Eq),
 		nanorepo.Sort(table.Items.Name),
 	)
 }

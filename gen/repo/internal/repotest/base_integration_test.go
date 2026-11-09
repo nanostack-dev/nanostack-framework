@@ -46,7 +46,8 @@ func TestSchemaIsCurrent(t *testing.T) {
 	err := gendb.Run(gendb.Options{Dir: ".", Postgres: shop, Fresh: true, Check: true, Database: server().Open})
 	if err != nil {
 		t.Fatalf("%v\nregenerate with: go run ./cmd/nano gen db -dir repo/internal/repotest -name shop -out db "+
-			"(from gen/), then go run ./cmd/nano gen repo -dir repo/internal/repotest -scopes tenant_id", err)
+			"(from gen/), then go run ./cmd/nano gen repo -dir repo/internal/repotest -scopes tenant_id,workspace_id "+
+			"-context-scopes workspace_id=github.com/nanostack-dev/nanostack-framework/gen/repo/internal/repotest/workspacescope.Filter", err)
 	}
 }
 
@@ -174,16 +175,16 @@ func TestPredicatesSelectTheirRows(t *testing.T) {
 // Contains composes with AND and keeps the other condition.
 func TestContainsMatchesLiterally(t *testing.T) {
 	ctx := context.Background()
-	b := newAuditEventsBase(openShop(t))
+	b := newAuditEventsBase(newFixture(t).db) // events name existing items (audit_events_item_id_fkey)
 	note := func(s string) *string { return &s }
 	item := func(s string) *string { return &s }
 	var all []int64
 	for _, ev := range []model.AuditEvents{
-		{ItemID: item("i1"), Action: "100% off"},
-		{ItemID: item("i1"), Action: "a_b", Note: note("Late NOTE")},
-		{ItemID: item("i2"), Action: "x!y", Note: note("on time")},
-		{ItemID: item("i2"), Action: `c:\tmp`},
-		{ItemID: item("i3"), Action: "AbC"},
+		{ItemID: item("a1"), Action: "100% off"},
+		{ItemID: item("a1"), Action: "a_b", Note: note("Late NOTE")},
+		{ItemID: item("a2"), Action: "x!y", Note: note("on time")},
+		{ItemID: item("a2"), Action: `c:\tmp`},
+		{ItemID: item("a3"), Action: "AbC"},
 	} {
 		stmt := b.t.INSERT(b.t.ItemID, b.t.Action, b.t.Note).MODEL(ev).RETURNING(b.t.AllColumns)
 		row, err := b.queryRow(ctx, stmt).Value()
@@ -210,9 +211,9 @@ func TestContainsMatchesLiterally(t *testing.T) {
 		"white space":         {w.ActionContains(" \t "), all},
 		"blank on NULLs":      {w.NoteContains(""), all},
 		"varchar, any case":   {w.NoteContains("note"), all[1:2]},
-		"blank after AND":     {w.ItemID("i1").AND(w.ActionContains("")), all[0:2]},
-		"blank before AND":    {w.ActionContains("").AND(w.ItemID("i2")), all[2:4]},
-		"blank in OR":         {w.ItemID("i3").OR(w.NoteContains("")), all},
+		"blank after AND":     {w.ItemID("a1").AND(w.ActionContains("")), all[0:2]},
+		"blank before AND":    {w.ActionContains("").AND(w.ItemID("a2")), all[2:4]},
+		"blank in OR":         {w.ItemID("a3").OR(w.NoteContains("")), all},
 		"not valid UTF-8":     {w.ActionContains("\xff"), nil},
 	} {
 		t.Run(name, func(t *testing.T) {

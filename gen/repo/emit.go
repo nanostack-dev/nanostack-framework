@@ -17,6 +17,9 @@ type emitter struct {
 	b    strings.Builder
 	imp  *importset.Set
 	self string // import path of the declaring package
+	// searches is true when the package declares a search: each base then
+	// gets the search hatches, search and searchPage.
+	searches bool
 }
 
 func (e *emitter) p(format string, args ...any) { fmt.Fprintf(&e.b, format, args...) }
@@ -36,6 +39,7 @@ func (l *loaded) render(d *declarations) ([]byte, error) {
 	e.imp.Block(l.pkg.Types.Scope().Names()...)
 	tables := slices.Clone(d.tables)
 	slices.SortFunc(tables, func(a, b *tableBase) int { return strings.Compare(a.baseName(), b.baseName()) })
+	e.searches = len(d.searches) > 0
 	for _, t := range tables {
 		e.base(t)
 		e.where(t)
@@ -202,6 +206,9 @@ func (e *emitter) hatches(t *tableBase) {
 	e.p("func (b %s) page[T, R any](mapFunc func(T) R, columns ...%s) *%s[T, R] {\n",
 		base, e.pg("Projection"), e.ref(transactorPath, "transactor", "PageBuilder"))
 	e.p("\treturn %s.Page(b.db, mapFunc, columns...)\n}\n\n", tx)
+	if e.searches {
+		e.searchHatches(base, ctx, tx)
+	}
 
 	if t.mapper == nil {
 		e.rowHatches(t, base, ctx, stmt, result, opt)
@@ -339,4 +346,21 @@ func (e *emitter) where(t *tableBase) {
 			e.p("func (%s) %sIsNull() %s { return %s.IS_NULL() }\n\n", where, c.field, bexpr, col)
 		}
 	}
+}
+
+// searchHatches writes search and searchPage, which run a declared search
+// in the context transaction (transactor.Search and SearchPage). They are
+// unexported, so a product's public API has no generic method.
+func (e *emitter) searchHatches(base, ctx, tx string) {
+	sx := func(ident string) string { return e.ref(searchexecPath, "searchexec", ident) }
+	res := e.ref(searchPath, "search", "Result")
+	tparams := "[T any, Q " + sx("Builder") + "[T, Q, S, P], S ~string, P comparable, R any]"
+	args := "ctx " + ctx + ", spec *" + sx("Spec") + "[T, S, P], q " + sx("Query") + "[T, Q, S, P]"
+	e.p("// search runs a declared search in the context transaction and maps each row\n// with toDomain.\n")
+	e.p("func (b %s) search%s(\n\t%s, toDomain func(T) R,\n) (%s[R], error) {\n", base, tparams, args, res)
+	e.p("\treturn %s.Search(ctx, b.db, spec, q, toDomain).Value()\n}\n\n", tx)
+	e.p("// searchPage is search with a mapper that maps the whole page in one call.\n")
+	e.p("func (b %s) searchPage%s(\n\t%s, toDomain func(%s, []T) ([]R, error),\n) (%s[R], error) {\n", base,
+		tparams, args, ctx, res)
+	e.p("\treturn %s.SearchPage(ctx, b.db, spec, q, toDomain).Value()\n}\n\n", tx)
 }

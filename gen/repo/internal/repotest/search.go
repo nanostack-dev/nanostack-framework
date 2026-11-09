@@ -12,6 +12,7 @@ import (
 // field type, and a keyset walk on a key of each kind of column.
 func _() {
 	nanorepo.Search[model.Items]("Item", table.Items,
+		nanorepo.Map(itemToDomain),
 		nanorepo.Scope(table.Items.TenantID),
 		nanorepo.Filter(table.Items.ID, nanorepo.In),
 		nanorepo.Filter(table.Items.Status, nanorepo.Eq, nanorepo.In),

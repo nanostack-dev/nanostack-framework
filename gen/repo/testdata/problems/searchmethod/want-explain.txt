@@ -1,0 +1,90 @@
+Repository on *repositoryImpl (table items, scope tenant_id)
+  SearchFine           search Fine: generated, runs fineSearch on the base's search
+  SearchHandSort       ERROR: generated search with a hand-written sort
+  SearchBackground     hand-written searchmethod.go:59, runs search Background
+  SearchReassigned     hand-written searchmethod.go:63, runs search Reassigned
+  SearchForeignSpec    hand-written searchmethod.go:68, runs search ForeignSpec
+  SearchIgnored        hand-written searchmethod.go:72, runs search Ignored
+  SearchPromoted       ERROR: a promoted method takes a search
+  SearchNoMapperField  ERROR: the Map receiver is not one field of the implementation
+  SearchWrongResult    ERROR: the result is not the search result
+NoBase on *noBaseImpl (table items, scope tenant_id)
+  SearchNoBase  search NoBase: generated, runs noBaseSearch on the base's search
+search Fine on items (rows model.Items)
+  read      items; root; nullable weight, released_on, local_at, opens_at, deleted_at, external_id, tags; tenant tenant_id
+  tenant    items: tenant_id by Scope
+  map       Map(toItem)
+  scope     Scope items.tenant_id
+  sort      name: items.name
+  tiebreak  id: the primary key items_pkey (id), by default
+search HandSort on items (rows model.Items)
+  read      items; root; nullable weight, released_on, local_at, opens_at, deleted_at, external_id, tags; tenant tenant_id
+  tenant    items: tenant_id by Scope
+  map       Map(toItem)
+  scope     Scope items.tenant_id
+  sort      name: items.name
+  sort      popularity: hand-written
+  tiebreak  id: the primary key items_pkey (id), by default
+search Background on items (rows model.Items)
+  read      items; root; nullable weight, released_on, local_at, opens_at, deleted_at, external_id, tags; tenant tenant_id
+  tenant    items: tenant_id by Scope
+  map       Map(toItem)
+  scope     Scope items.tenant_id
+  sort      name: items.name
+  tiebreak  id: the primary key items_pkey (id), by default
+search Reassigned on items (rows model.Items)
+  read      items; root; nullable weight, released_on, local_at, opens_at, deleted_at, external_id, tags; tenant tenant_id
+  tenant    items: tenant_id by Scope
+  map       Map(toItem)
+  scope     Scope items.tenant_id
+  sort      name: items.name
+  tiebreak  id: the primary key items_pkey (id), by default
+search ForeignSpec on items (rows model.Items)
+  read      items; root; nullable weight, released_on, local_at, opens_at, deleted_at, external_id, tags; tenant tenant_id
+  tenant    items: tenant_id by Scope
+  map       Map(toItem)
+  scope     Scope items.tenant_id
+  sort      name: items.name
+  tiebreak  id: the primary key items_pkey (id), by default
+search Ignored on items (rows model.Items)
+  read      items; root; nullable weight, released_on, local_at, opens_at, deleted_at, external_id, tags; tenant tenant_id
+  tenant    items: tenant_id by Scope
+  map       Map(toItem)
+  scope     Scope items.tenant_id
+  sort      name: items.name
+  tiebreak  id: the primary key items_pkey (id), by default
+search Promoted on items (rows model.Items)
+  read      items; root; nullable weight, released_on, local_at, opens_at, deleted_at, external_id, tags; tenant tenant_id
+  tenant    items: tenant_id by Scope
+  map       Map(toItem)
+  scope     Scope items.tenant_id
+  sort      name: items.name
+  tiebreak  id: the primary key items_pkey (id), by default
+search NoMapperField on items (rows model.Items)
+  read      items; root; nullable weight, released_on, local_at, opens_at, deleted_at, external_id, tags; tenant tenant_id
+  tenant    items: tenant_id by Scope
+  map       Map((itemMapper).toItem)
+  scope     Scope items.tenant_id
+  sort      name: items.name
+  tiebreak  id: the primary key items_pkey (id), by default
+search WrongResult on items (rows model.Items)
+  read      items; root; nullable weight, released_on, local_at, opens_at, deleted_at, external_id, tags; tenant tenant_id
+  tenant    items: tenant_id by Scope
+  map       Map(toItem)
+  scope     Scope items.tenant_id
+  sort      name: items.name
+  tiebreak  id: the primary key items_pkey (id), by default
+search NoBase on items (rows model.Items)
+  read      items; root; nullable weight, released_on, local_at, opens_at, deleted_at, external_id, tags; tenant tenant_id
+  tenant    items: tenant_id by Scope
+  map       Map(toItem)
+  scope     Scope items.tenant_id
+  sort      name: items.name
+  tiebreak  id: the primary key items_pkey (id), by default
+search Unused on items (rows model.Items)
+  read      items; root; nullable weight, released_on, local_at, opens_at, deleted_at, external_id, tags; tenant tenant_id
+  tenant    items: tenant_id by Scope
+  map       Map(toItem)
+  scope     Scope items.tenant_id
+  sort      name: items.name
+  tiebreak  id: the primary key items_pkey (id), by default

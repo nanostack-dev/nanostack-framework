@@ -33,7 +33,9 @@ type resolution struct {
 	recvPtr   bool   // generated methods take a pointer receiver
 	via       string // "r." or "r.itemsBase." when the implementation embeds several bases
 	problems  []error
-	missing   []string // methods with no implementation: compile errors they cause are not reported twice
+	missing   []string        // methods with no implementation: compile errors they cause are not reported twice
+	searches  []*searchMethod // generated methods that run a declared search
+	takes     []string        // the builder types that a method of the interface takes, XSearch
 	// incomplete is true when a method was skipped because its signature
 	// does not type-check: the package's own compile error says why.
 	incomplete bool
@@ -92,33 +94,18 @@ func (r *resolver) run(d *declarations) {
 	hand, ptr, val := r.handWritten()
 	r.res.recvPtr = ptr || !val
 	for _, fn := range r.methods() {
-		switch {
-		case invalidSig(fn.Type()):
-			r.res.incomplete = true
-			r.line(fn, "ERROR: the signature does not type-check", "")
-		case hand[fn.Name()] != nil:
-			r.resolveHandWritten(fn, hand[fn.Name()])
-		default:
-			if hits := r.promoted(fn.Name()); len(hits) > 0 {
-				r.resolvePromoted(fn, hits)
-				continue
-			}
-			m, fail := r.derive(fn)
-			if fail != nil {
-				r.unimplemented(fn, fail)
-				continue
-			}
-			r.res.derived = append(r.res.derived, m)
-			how := "derived: "
-			if m.unscoped {
-				how = "derived, UNSCOPED (Internal): "
-			}
-			r.line(fn, how+r.methodSQL(m), "")
-		}
+		r.resolveMethod(d, fn, hand)
 	}
 	bases := r.embeddedBases(d)
 	if len(bases) > 1 {
 		r.res.via = "r." + r.t.baseName() + "."
+	}
+	if len(r.res.searches) > 0 && len(r.res.derived) == 0 && !slices.Contains(bases, r.t.baseName()) {
+		r.res.problems = append(r.res.problems, gen.Errorf(r.b.file, r.b.line,
+			fmt.Sprintf("embed it: add %s as a field of %s, set to %s(db) in the constructor",
+				r.t.baseName(), r.b.impl.Obj().Name(), r.t.newName()),
+			"%s runs on the generated %s, but %s does not embed it", r.res.searches[0].fn.Name(),
+			r.t.baseName(), r.b.impl.Obj().Name()))
 	}
 	if len(r.res.derived) > 0 && !slices.Contains(bases, r.t.baseName()) {
 		name := r.res.explain.Iface

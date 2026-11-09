@@ -1,0 +1,104 @@
+search MissingJoined on items (rows withoutTenant)
+  from      itemsWithTenants
+  read      items; root; nullable weight, released_on, local_at, opens_at, deleted_at, external_id, tags; tenant tenant_id
+  read      tenants; INNER JOIN; ON table.Tenants.ID.EQ(table.Items.TenantID); one row by tenants_pkey (id)
+  tenant    items: tenant_id by Scope
+  tenant    tenants: no tenant column; linked to items by items_tenant_id_fkey
+  scope     Scope items.tenant_id
+  sort      name: tenants.name
+  tiebreak  id: the primary key items_pkey (id), by default
+search MissingTiebreak on items (rows noID)
+  read      items; root; nullable weight, released_on, local_at, opens_at, deleted_at, external_id, tags; tenant tenant_id
+  tenant    items: tenant_id by Scope
+  scope     Scope items.tenant_id
+  sort      name: items.name
+  tiebreak  id: the primary key items_pkey (id), by default
+search Plain on items (rows plain)
+  read      items; root; nullable weight, released_on, local_at, opens_at, deleted_at, external_id, tags; tenant tenant_id
+  tenant    items: tenant_id by Scope
+  scope     Scope items.tenant_id
+  sort      name: items.name
+  tiebreak  id: the primary key items_pkey (id), by default
+search Unexported on items (rows unexported)
+  from      itemsWithTenants
+  read      items; root; nullable weight, released_on, local_at, opens_at, deleted_at, external_id, tags; tenant tenant_id
+  read      tenants; INNER JOIN; ON table.Tenants.ID.EQ(table.Items.TenantID); one row by tenants_pkey (id)
+  tenant    items: tenant_id by Scope
+  tenant    tenants: no tenant column; linked to items by items_tenant_id_fkey
+  scope     Scope items.tenant_id
+  sort      name: items.name
+  tiebreak  id: the primary key items_pkey (id), by default
+search BadTags on items (rows badTags)
+  read      items; root; nullable weight, released_on, local_at, opens_at, deleted_at, external_id, tags; tenant tenant_id
+  tenant    items: tenant_id by Scope
+  scope     Scope items.tenant_id
+  sort      id: items.id
+  tiebreak  id: the primary key items_pkey (id), by default
+search WrongType on items (rows wrongType)
+  read      items; root; nullable weight, released_on, local_at, opens_at, deleted_at, external_id, tags; tenant tenant_id
+  tenant    items: tenant_id by Scope
+  scope     Scope items.tenant_id
+  sort      name: items.name
+  tiebreak  id: the primary key items_pkey (id), by default
+search LeftValue on items (rows leftValue)
+  from      itemsMaybeTenants
+  read      items; root; nullable weight, released_on, local_at, opens_at, deleted_at, external_id, tags; tenant tenant_id
+  read      tenants; LEFT JOIN; ON table.Tenants.ID.EQ(table.Items.TenantID); one row by tenants_pkey (id); every column nullable
+  tenant    items: tenant_id by Scope
+  tenant    tenants: no tenant column; linked to items by items_tenant_id_fkey
+  scope     Scope items.tenant_id
+  sort      name: tenants.name, nullable
+  tiebreak  id: the primary key items_pkey (id), by default
+search LeftEmbedded on items (rows leftEmbedded)
+  from      itemsMaybeTenants
+  read      items; root; nullable weight, released_on, local_at, opens_at, deleted_at, external_id, tags; tenant tenant_id
+  read      tenants; LEFT JOIN; ON table.Tenants.ID.EQ(table.Items.TenantID); one row by tenants_pkey (id); every column nullable
+  tenant    items: tenant_id by Scope
+  tenant    tenants: no tenant column; linked to items by items_tenant_id_fkey
+  scope     Scope items.tenant_id
+  sort      tenant_name: tenants.name, nullable
+  tiebreak  id: the primary key items_pkey (id), by default
+search NullValue on items (rows nullValue)
+  read      items; root; nullable weight, released_on, local_at, opens_at, deleted_at, external_id, tags; tenant tenant_id
+  tenant    items: tenant_id by Scope
+  scope     Scope items.tenant_id
+  sort      weight: items.weight, nullable
+  tiebreak  id: the primary key items_pkey (id), by default
+search PointerEmbedded on items (rows pointerEmbedded)
+  from      itemsMaybeTenants
+  read      items; root; nullable weight, released_on, local_at, opens_at, deleted_at, external_id, tags; tenant tenant_id
+  read      tenants; LEFT JOIN; ON table.Tenants.ID.EQ(table.Items.TenantID); one row by tenants_pkey (id); every column nullable
+  tenant    items: tenant_id by Scope
+  tenant    tenants: no tenant column; linked to items by items_tenant_id_fkey
+  scope     Scope items.tenant_id
+  sort      name: items.name
+  tiebreak  id: the primary key items_pkey (id), by default
+search OwnerUntagged on items (rows ownerUntagged)
+  from      itemsWithOwners
+  read      items; root; nullable weight, released_on, local_at, opens_at, deleted_at, external_id, tags; tenant tenant_id
+  read      tenants AS owner; INNER JOIN; ON table.Tenants.AS("owner").ID.EQ(table.Items.TenantID); one row by tenants_pkey (id)
+  tenant    items: tenant_id by Scope
+  tenant    tenants AS owner: no tenant column; linked to items by items_tenant_id_fkey
+  scope     Scope items.tenant_id
+  sort      created_at: items.created_at
+  tiebreak  id: the primary key items_pkey (id), by default
+search Foreign on items (rows foreign)
+  read      items; root; nullable weight, released_on, local_at, opens_at, deleted_at, external_id, tags; tenant tenant_id
+  tenant    items: tenant_id by Scope
+  scope     Scope items.tenant_id
+  sort      created_at: items.created_at
+  tiebreak  id: the primary key items_pkey (id), by default
+search Empty on items (rows empty)
+  read      items; root; nullable weight, released_on, local_at, opens_at, deleted_at, external_id, tags; tenant tenant_id
+  tenant    items: tenant_id by Scope
+  scope     Scope items.tenant_id
+  sort      popularity: hand-written
+  sort      name: items.name
+  tiebreak  id: the primary key items_pkey (id), by default
+search KeyTypes on items (rows keyTypes)
+  read      items; root; nullable weight, released_on, local_at, opens_at, deleted_at, external_id, tags; tenant tenant_id
+  tenant    items: tenant_id by Scope
+  scope     Scope items.tenant_id
+  sort      name: items.name
+  sort      sku: items.sku
+  tiebreak  id: the primary key items_pkey (id), by default

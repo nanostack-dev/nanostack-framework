@@ -131,6 +131,19 @@ func TestDBDeclarationErrors(t *testing.T) {
 nanogen/project.go:7: Postgres.Scopes lists "tenant_id" twice
   fix: remove the second "tenant_id"
 `},
+		{`Postgres: &project.Postgres{Name: "app", Scopes: []string{"organization_id", "workspace_id"}, ` +
+			`ContextScopes: []project.ContextScope{{Column: "team_id", Func: "app/scope.Filter"}, ` +
+			`{Column: "workspace_id", Func: "Filter"}, {Column: "workspace_id", Func: "app/scope.Filter"}, ` +
+			`{Column: "organization_id", Func: "app/scope.1Filter"}}}`,
+			`nanogen/project.go:7: Postgres.ContextScopes names "team_id", which is not in Postgres.Scopes
+  fix: add "team_id" to Postgres.Scopes, or remove its context scope
+nanogen/project.go:7: Postgres.ContextScopes: the function of "workspace_id" is "Filter", not an import path, a dot and a function name
+  fix: write the function as "example.com/app/internal/db/workspacescope.Filter"
+nanogen/project.go:7: Postgres.ContextScopes names "workspace_id" twice
+  fix: register one function per column
+nanogen/project.go:7: Postgres.ContextScopes: the function of "organization_id" is "app/scope.1Filter", not an import path, a dot and a function name
+  fix: write the function as "example.com/app/internal/db/workspacescope.Filter"
+`},
 	} {
 		dir := copyFixtureOf(t, dbFixture)
 		edit(t, dir, "nanogen/project.go", `Postgres: &project.Postgres{Name: "app"}`, tc.decl)

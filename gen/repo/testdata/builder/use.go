@@ -24,6 +24,6 @@ func ofTenant(tenant uuid.UUID, external string) ItemOfTenantSearch {
 		SortBy(ItemOfTenantSortPopularity, search.SortAscending)
 }
 
-func tenants() TenantSearch { return NewTenantSearch().ID().Eq(uuid.Nil) }
+func boards() BoardSearch { return NewBoardSearch().ID().Eq("b1") }
 
-var _, _, _ = recentItems, ofTenant, tenants
+var _, _, _ = recentItems, ofTenant, boards

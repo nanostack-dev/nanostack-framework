@@ -20,12 +20,62 @@ func (e *emitter) ks(ident string) string { return e.ref(keysetPath, "keyset", i
 // column renders a column as the declaration names it: table.Items.Name,
 // or table.Tenants.AS("owner").Name.
 func (e *emitter) column(col *colRef) string {
-	t := col.table
+	return e.instance(col.table, col.alias) + "." + col.col.field
+}
+
+// instance renders a table instance: table.Items, or
+// table.Tenants.AS("owner").
+func (e *emitter) instance(t *tableBase, alias string) string {
 	ref := e.ref(t.pkgPath, t.pkgName, t.goName)
-	if col.alias != "" {
-		ref += ".AS(" + strconv.Quote(col.alias) + ")"
+	if alias != "" {
+		ref += ".AS(" + strconv.Quote(alias) + ")"
 	}
-	return ref + "." + col.col.field
+	return ref
+}
+
+// columnsWidth is the width up to which the projection of a Row of its
+// own takes one line.
+const columnsWidth = 100
+
+// columns writes the projection of the spec (design S9.1): the AllColumns
+// of the searched table when the Row is its model, else one entry per
+// embedded model or alias-tagged field of the Row.
+func (e *emitter) columns(b *builder, row string) {
+	projs := b.row.projs
+	computed := computedKeys(b)
+	if len(projs) == 1 && projs[0].col == nil && len(computed) == 0 {
+		e.p("\tColumns: %s.AllColumns, // the Row is %s\n", e.instance(projs[0].inst.table, projs[0].inst.alias), row)
+		return
+	}
+	parts := make([]string, len(projs), len(projs)+len(computed))
+	for i, p := range projs {
+		if p.col == nil {
+			parts[i] = e.instance(p.inst.table, p.inst.alias) + ".AllColumns"
+			continue
+		}
+		parts[i] = e.column(&colRef{table: p.inst.table, alias: p.inst.alias, col: *p.col})
+	}
+	for _, k := range computed {
+		parts = append(parts, keyVar(b, k)+".Projection()")
+	}
+	head := "\tColumns: " + e.pg("ProjectionList") + "{"
+	if one := head + strings.Join(parts, ", ") + "},"; len(one) <= columnsWidth {
+		e.p("%s // the Row is %s\n", one, row)
+		return
+	}
+	e.p("%s // the Row is %s\n", head, row)
+	line := ""
+	for _, part := range parts {
+		if line != "" && len(line)+len(part)+3 > columnsWidth {
+			e.p("\t\t%s\n", line)
+			line = ""
+		}
+		if line != "" {
+			line += " "
+		}
+		line += part + ","
+	}
+	e.p("\t\t%s\n\t},\n", line)
 }
 
 // fn renders a function of the declaring package, or of an import.
@@ -97,6 +147,7 @@ func (e *emitter) scopeStruct(b *builder) {
 // package starts.
 func (e *emitter) spec(b *builder, row, sortT, p string) {
 	s := b.s
+	e.computedVars(b, row)
 	e.p("var %s = %s(%s[%s, %s, %s]{\n", specVar(s), e.sx("DefineSpec"), e.sx("SpecDef"), row, sortT, p)
 	from := e.ref(s.root.table.pkgPath, s.root.table.pkgName, s.root.table.goName)
 	switch {
@@ -107,7 +158,7 @@ func (e *emitter) spec(b *builder, row, sortT, p string) {
 	default:
 		e.p("\tFrom: func(%s) %s { return %s },\n", p, e.ks("Source"), from)
 	}
-	e.p("\tColumns: %s.AllColumns, // the Row is %s\n", from, row)
+	e.columns(b, row)
 	e.scopes(b, p)
 	e.context(b)
 	e.p("\tKeys: map[%s]%s[%s]{\n", sortT, e.ks("Key"), row)
@@ -208,6 +259,9 @@ func (e *emitter) scopes(b *builder, p string) {
 
 // key renders a keyset key and the accessor of its value.
 func (e *emitter) key(k *sortKey, row string) string {
+	if k.expr != nil {
+		return k.varName
+	}
 	args := e.column(k.col)
 	if k.enumType != "" {
 		labels := make([]string, len(k.labels))
@@ -278,6 +332,17 @@ func (e *emitter) accessors(b *builder, q string) {
 		case "InFold":
 			typ = e.sx(f.kind) + "[" + q + ", " + e.typ(f.value) + "]"
 			call = e.sx("NewInFold") + "[" + e.typ(f.value) + "](q.Query, " + target + ")"
+		case "Exists", "ExistsFold":
+			child := e.instance(f.f.child, "")
+			corr := e.column(f.f.link) + ".EQ(" + e.column(f.f.ref) + ")"
+			typ = e.sx("Exists") + "[" + q + ", " + e.typ(f.value) + "]"
+			if f.kind == "Exists" {
+				call = e.sx("NewExists") + "(q.Query, " + child + ", " + corr + ", " + target + ", " +
+					e.literal(f) + ")"
+			} else {
+				call = e.sx("NewExistsFold") + "[" + e.typ(f.value) + "](q.Query, " + child + ", " + corr + ", " +
+					target + ")"
+			}
 		default:
 			typ = e.sx(f.kind) + "[" + q + "]"
 			call = e.sx("New"+f.kind) + "(q.Query, " + target + ")"

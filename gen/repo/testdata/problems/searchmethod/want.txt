@@ -1,0 +1,21 @@
+searchmethod.go:37: Repository.SearchHandSort: search HandSort: sort popularity is hand-written, but SearchHandSort is generated and would refuse it
+  fix: write SearchHandSort by hand on searchexec.Resolve, or declare the sort with nanorepo.SortExpr
+searchmethod.go:42: Repository.SearchPromoted: SearchPromoted takes a PromotedSearch and is promoted from the embedded searcher: nano gen repo cannot check that it runs the declared scope
+  fix: write SearchPromoted on *repositoryImpl by hand on searchexec.Resolve, or remove it from searcher so nano gen repo generates it
+searchmethod.go:44: Repository.SearchWrongResult: SearchWrongResult returns ([]Item, error); the search WrongResult gives (search.Result[Item], error)
+  fix: change it to:
+         SearchWrongResult(ctx context.Context, q WrongResultSearch) (search.Result[Item], error)
+searchmethod.go:59: Repository.SearchBackground: the hand-written method (searchmethod.go:59) takes a BackgroundSearch but runs it with context.Background(), not the ctx of the method: it skips the declared scope
+  fix: run it as searchexec.Resolve(ctx, backgroundSearch, q.Query) (or searchexec.Run, RunPage, or the base's search and searchPage), with the ctx and q of the method
+searchmethod.go:63: Repository.SearchReassigned: the hand-written method (searchmethod.go:63) takes a ReassignedSearch but assigns q, so the query it runs is not the one the caller built: it skips the declared scope
+  fix: run it as searchexec.Resolve(ctx, reassignedSearch, q.Query) (or searchexec.Run, RunPage, or the base's search and searchPage), with the ctx and q of the method
+searchmethod.go:68: Repository.SearchForeignSpec: the hand-written method (searchmethod.go:68) takes a ForeignSpecSearch but runs it with the spec fineSearch, not foreignSpecSearch: it skips the declared scope
+  fix: run it as searchexec.Resolve(ctx, foreignSpecSearch, q.Query) (or searchexec.Run, RunPage, or the base's search and searchPage), with the ctx and q of the method
+searchmethod.go:72: Repository.SearchIgnored: the hand-written method (searchmethod.go:72) takes an IgnoredSearch but never runs q.Query through searchexec.Resolve(ctx, ignoredSearch, q.Query): it skips the declared scope
+  fix: run it as searchexec.Resolve(ctx, ignoredSearch, q.Query) (or searchexec.Run, RunPage, or the base's search and searchPage), with the ctx and q of the method
+searchmethod.go:78: SearchNoBase runs on the generated itemsBase, but noBaseImpl does not embed it
+  fix: embed it: add itemsBase as a field of noBaseImpl, set to newItemsBase(db) in the constructor
+searchmethod.go:94: Repository.SearchNoMapperField: Map((itemMapper).toItem): repositoryImpl has no field of type itemMapper, so SearchNoMapperField cannot call the mapper
+  fix: give repositoryImpl one field of type itemMapper, set in the constructor
+searchmethod.go:100: search Unused is declared, and no method takes an UnusedSearch
+  fix: add SearchUnuseds(ctx context.Context, q UnusedSearch) (search.Result[Item], error) to Repository, or remove the declaration

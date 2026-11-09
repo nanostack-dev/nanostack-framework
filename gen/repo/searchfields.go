@@ -34,9 +34,22 @@ func (c *collector) builderField(s *searchDecl, f *searchFilter) *builderField {
 	bf := &builderField{f: f}
 	switch f.kind {
 	case "FilterExists":
-		c.errorf(f.node, "write the filter by hand on searchexec.NewExists, in a method on the builder",
-			"search %s: FilterExists is read, and nano gen repo does not generate it yet", s.name)
-		return nil
+		switch {
+		case len(f.ops) == 1 && f.ops[0].name == "In":
+			bf.kind = "Exists"
+		case len(f.ops) == 1 && f.ops[0].name == "InFold":
+			bf.kind, bf.value = "ExistsFold", f.col.col.value
+			if f.as != nil {
+				bf.value = f.as
+			}
+			return bf
+		default:
+			c.errorf(f.node, "pass one operator: nanorepo.In, or nanorepo.InFold on a text column",
+				"search %s: FilterExists keeps rows that have a child row whose value is in a list: it takes "+
+					"In or InFold alone", s.name)
+			return nil
+		}
+		return c.filterValue(s, f, bf)
 	case "Flag":
 		bf.kind, bf.fn = "Flag", c.funcObj(s, "Flag", f.expr)
 		return bf
@@ -110,7 +123,7 @@ func (c *collector) filterValue(s *searchDecl, f *searchFilter, bf *builderField
 		// The read set check (E2) and FilterAs leave only string types here:
 		// a text column's model field, or the string of a StringExpression.
 		bf.value = v
-	case "Eq", "In", "EqIn":
+	case "Eq", "In", "EqIn", "Exists":
 		bf.value, bf.lit = v, c.literalFunc(f, bf, v)
 		if bf.lit == "" {
 			c.errorf(f.node, "filter through a FilterExpr whose function returns a string, integer or "+

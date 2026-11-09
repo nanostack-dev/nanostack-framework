@@ -34,6 +34,14 @@ func (l *loaded) explainSearches(d *declarations) []SearchExplanation {
 	return out
 }
 
+// explainMapper renders Map(fn) or MapPage(fn).
+func (c *collector) explainMapper(m *searchMapper) string {
+	if m.page {
+		return "MapPage(" + c.source(m.fn) + ")"
+	}
+	return "Map(" + c.source(m.fn) + ")"
+}
+
 func (c *collector) explainSearch(s *searchDecl) SearchExplanation {
 	e := SearchExplanation{Name: s.name, Table: s.root.table.sqlName, Row: c.qualified(s.row)}
 	add := func(label, format string, args ...any) {
@@ -48,12 +56,11 @@ func (c *collector) explainSearch(s *searchDecl) SearchExplanation {
 	for _, in := range s.inner {
 		add("subquery", "%s", c.explainInner(in))
 	}
+	for _, line := range s.tenantLines {
+		add("tenant", "%s", line)
+	}
 	if s.mapper != nil {
-		kind := "Map"
-		if s.mapper.page {
-			kind = "MapPage"
-		}
-		add("map", "%s(%s)", kind, c.source(s.mapper.fn))
+		add("map", "%s", c.explainMapper(s.mapper))
 	}
 	c.explainScopes(s, add)
 	for _, f := range s.filters {

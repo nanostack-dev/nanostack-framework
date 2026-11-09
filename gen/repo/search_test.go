@@ -17,9 +17,12 @@ import (
 // the instances of a subquery; a Tiebreak that covers the primary key
 // (shaped like echopoint B10); the primary key as the default tiebreak; and
 // every option.
+//
+// The run names no tenant column: the tenant check has fixtures of its own
+// (testdata/tenant and testdata/problems/tenant).
 func TestSearchExplain(t *testing.T) {
 	t.Parallel()
-	res, err := Generate(Options{Dir: "testdata/search", Scopes: []string{"tenant_id"}})
+	res, err := Generate(Options{Dir: "testdata/search"})
 	if res == nil {
 		t.Fatal(err)
 	}
@@ -121,12 +124,12 @@ func TestReadCatalogue(t *testing.T) {
 	if len(fks) != 1 || fks[0].String() != "items_tenant_id_fkey (tenant_id) -> tenants (id)" {
 		t.Errorf("ForeignKeys: %v", fks)
 	}
-	f, err = parser.ParseFile(token.NewFileSet(), fixture+"/db/shop/public/table/audit_events.go", nil, 0)
+	f, err = parser.ParseFile(token.NewFileSet(), fixture+"/db/shop/public/table/boards.go", nil, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	readForeignKeys(f, src)
-	if none, found := src.foreignKeys["AuditEventsTable"]; !found || len(none) != 0 {
+	if none, found := src.foreignKeys["BoardsTable"]; !found || len(none) != 0 {
 		t.Errorf("a table with no foreign key: %v, %v", none, found)
 	}
 }

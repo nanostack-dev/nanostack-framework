@@ -54,6 +54,11 @@ type searchDecl struct {
 	builder *builder
 	unbuilt []error
 
+	// exemptions are the lines of the exemption file that the tenant check
+	// found (design S6.6); tenantLines say how each instance is covered.
+	exemptions  []string
+	tenantLines []string
+
 	given   map[string]at       // options that a search takes once, by group -> where
 	givenAs map[string]string   // the group of a once-option -> the option given, such as MapPage
 	stale   map[*tableBase]bool // tables whose missing facts are reported (E17)
@@ -166,6 +171,8 @@ type searchFilter struct {
 	as     types.Type
 	child  *tableBase // FilterExists
 	link   *colRef    // FilterExists
+	ref    *colRef    // FilterExists: the root column that link references
+	key    string     // FilterExists: the foreign key of link
 	expr   ast.Expr   // the function of FilterExpr and Flag
 	ops    []searchOp
 	goOnly bool

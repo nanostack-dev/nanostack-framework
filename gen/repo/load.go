@@ -39,6 +39,9 @@ type loaded struct {
 	fset    *token.FileSet                  // of files
 	typed   map[string]*types.Package       // package path -> types, for the models of searched tables
 	scopes  []string                        // the tenant columns, Postgres.Scopes
+	// contextScopes maps each context tenant column to its registered
+	// function, import path and name: Postgres.ContextScopes.
+	contextScopes map[string]string
 }
 
 // loadPackage type-checks the package with repo_base.gen.go and every

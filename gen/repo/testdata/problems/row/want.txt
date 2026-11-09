@@ -1,0 +1,36 @@
+row.go:32: search Plain: plain.Score has no alias tag, so the search selects nothing for it
+  fix: tag it with the column it reads, such as `alias:"items.id"`, or remove it: only the key of a SortHandWritten sort fills a field with no tag
+row.go:38: search Unexported: unexported.tenant is not exported, and the scan sets only exported fields
+  fix: export it: rename it Tenant
+row.go:45: search BadTags: badTags.Title has alias:"Items.Name", which names no column of a table the search reads (items)
+  fix: write alias:"items.name", as SQL names the column
+row.go:46: search BadTags: badTags.Note has alias:"audit_events.note", which names no column of a table the search reads (items)
+  fix: write alias:"<table or alias>.<column>" with a table the search reads, such as alias:"items.id"
+row.go:52: search WrongType: wrongType.Count is string, and items.stock is int32 in the model
+  fix: make it int32
+row.go:58: search LeftValue: leftValue.TenantName reads tenants.name, which is NULL when no tenants row matches (LEFT JOIN)
+  fix: make it *string
+row.go:65: search LeftEmbedded: leftEmbedded.Tenants embeds model.Tenants, whose fields ID, Name read tenants, which is NULL when no tenants row matches (LEFT JOIN)
+  fix: replace the embedded model.Tenants with alias-tagged pointer fields, such as TenantID *uuid.UUID `alias:"tenants.id"`
+row.go:71: search NullValue: nullValue.Weight reads items.weight, which can be NULL (the model field is a pointer)
+  fix: make it *float32
+row.go:77: search PointerEmbedded: pointerEmbedded.Tenants embeds a pointer to a model, and nano gen repo reads only an embedded model
+  fix: embed model.Tenants, or read a nullable instance with alias-tagged pointer fields
+row.go:84: search OwnerUntagged: ownerUntagged.Tenants embeds model.Tenants, and the search reads tenants only as owner: the embedded field names the instance with an alias tag
+  fix: tag the field alias:"owner"
+row.go:90: search Foreign: foreign.AuditEvents embeds model.AuditEvents, which is not the model of a table the search reads (items)
+  fix: remove it, or join its table in the From function
+row.go:113: search MissingJoined: Sort(table.Tenants.Name) needs a Row field for tenants.name; withoutTenant has none
+  fix: add TenantName string `alias:"tenants.name"` to withoutTenant
+row.go:116: search MissingTiebreak: the tiebreak items_pkey (id) needs a Row field for items.id; noID has none
+  fix: add ID string `alias:"items.id"` to noID
+row.go:176: search Empty: the Row empty selects no column
+  fix: embed the model of items in empty, or tag its fields with alias:"table.column"
+row.go:176: search Empty: the tiebreak items_pkey (id) needs a Row field for items.id; empty has none
+  fix: add ID string `alias:"items.id"` to empty
+row.go:179: search Empty: Sort(table.Items.Name) needs a Row field for items.name; empty has none
+  fix: add Name string `alias:"items.name"` to empty
+row.go:184: search KeyTypes: the key on items.name reads the Row field Name of type *string, and the key needs string
+  fix: make the Row field string: the column is NOT NULL
+row.go:184: search KeyTypes: the key on items.sku reads the Row field Sku of type sku, and the key needs string
+  fix: make the Row field string, the type of the model field
