@@ -75,8 +75,11 @@ func (p Plan[T, S]) Page() search.Pagination {
 }
 
 // Run counts the matches and reads one page in order, mapping each row with toDomain. db is
-// the executor of both statements. A hand-written repository method runs a plan through
-// transactor.RunPlan, which resolves the context transaction and refuses a row lock.
+// the executor of both statements.//
+// It runs on db as given: it does not read the context transaction and does not refuse a
+// row lock. Repository code runs searches through the transactor forwarders
+// (transactor.Search, SearchPage, RunPlan and RunPlanPage, in a later release), which use
+// the context transaction and refuse a row lock.
 func (p Plan[T, S]) Run[R any](
 	ctx context.Context, db query.Executor, order keyset.Order[T], toDomain func(T) R,
 ) (search.Result[R], error) {
@@ -92,7 +95,11 @@ func (p Plan[T, S]) Run[R any](
 }
 
 // RunPage is Run with a mapper that maps the whole page in one call, for example to load
-// the children of the page's rows in one statement. A nil result is an empty page.
+// the children of the page's rows in one statement. A nil result is an empty page.//
+// It runs on db as given: it does not read the context transaction and does not refuse a
+// row lock. Repository code runs searches through the transactor forwarders
+// (transactor.Search, SearchPage, RunPlan and RunPlanPage, in a later release), which use
+// the context transaction and refuse a row lock.
 func (p Plan[T, S]) RunPage[R any](
 	ctx context.Context, db query.Executor, order keyset.Order[T], toDomain func(context.Context, []T) ([]R, error),
 ) (search.Result[R], error) {
@@ -116,7 +123,9 @@ var errUnresolved = fmt.Errorf("%w: the plan was not returned by Resolve", searc
 // Resolve refuses, in this order:
 //   - a nil spec, a query built from another spec, and a struct literal of the builder
 //     (search.ErrUnscoped);
-//   - a zero scope value (search.ErrUnscoped, naming the columns);
+//   - a zero scope value (search.ErrUnscoped, naming the columns), and a zero field of the
+//     scope struct that no ScopeCol reads, for example a field that only From reads
+//     (search.ErrUnscoped, naming the field);
 //   - a context scope that returns nil (search.ErrUnscoped);
 //   - a page that search.CheckPage refuses (search.ErrInvalidLimit, search.ErrInvalidOffset,
 //     search.ErrInvalidCursor, search.ErrCursorWithOffset);
@@ -138,7 +147,12 @@ func Resolve[T any, Q Builder[T, Q, S, P], S ~string, P comparable](
 		if err != nil {
 			return Plan[T, S]{}, err
 		}
-		conditions = append(conditions, condition)
+		if condition != nil {
+			conditions = append(conditions, condition)
+		}
+	}
+	if field := zeroScopeField(q.scope); field != "" {
+		return Plan[T, S]{}, fmt.Errorf("%w: the scope field %s is zero", search.ErrUnscoped, field)
 	}
 	for i, scope := range spec.context {
 		condition := scope(ctx)
@@ -160,10 +174,16 @@ func Resolve[T any, Q Builder[T, Q, S, P], S ~string, P comparable](
 	if len(sorts) == 0 && spec.sort.Field != "" {
 		sorts = []search.Sort[S]{spec.sort}
 	}
+	// A search scoped only through From (ScopeFrom) has no WHERE condition. DefineSpec
+	// already proved its scope, so the plan runs with TRUE.
+	condition := jet.BoolExpression(jet.Bool(true))
+	if len(conditions) > 0 {
+		condition = jet.AND(conditions...)
+	}
 	return Plan[T, S]{
 		source:    source,
 		columns:   spec.columns,
-		condition: jet.AND(conditions...),
+		condition: condition,
 		keys:      spec.keys,
 		tiebreak:  spec.tiebreak,
 		sorts:     sorts,
@@ -173,7 +193,11 @@ func Resolve[T any, Q Builder[T, Q, S, P], S ~string, P comparable](
 
 // Run resolves q, counts the matches and reads one page in order, mapping each row with
 // toDomain. It refuses what Resolve refuses, and a sort that is not a key of the spec
-// (search.ErrUnknownSort). db is the executor of both statements.
+// (search.ErrUnknownSort). db is the executor of both statements.//
+// It runs on db as given: it does not read the context transaction and does not refuse a
+// row lock. Repository code runs searches through the transactor forwarders
+// (transactor.Search, SearchPage, RunPlan and RunPlanPage, in a later release), which use
+// the context transaction and refuse a row lock.
 func Run[T any, Q Builder[T, Q, S, P], S ~string, P comparable, R any](
 	ctx context.Context, db query.Executor, spec *Spec[T, S, P], q Query[T, Q, S, P], toDomain func(T) R,
 ) (search.Result[R], error) {
@@ -188,7 +212,11 @@ func Run[T any, Q Builder[T, Q, S, P], S ~string, P comparable, R any](
 	return plan.Run(ctx, db, order, toDomain)
 }
 
-// RunPage is Run with a mapper that maps the whole page in one call.
+// RunPage is Run with a mapper that maps the whole page in one call.//
+// It runs on db as given: it does not read the context transaction and does not refuse a
+// row lock. Repository code runs searches through the transactor forwarders
+// (transactor.Search, SearchPage, RunPlan and RunPlanPage, in a later release), which use
+// the context transaction and refuse a row lock.
 func RunPage[T any, Q Builder[T, Q, S, P], S ~string, P comparable, R any](
 	ctx context.Context,
 	db query.Executor,

@@ -256,6 +256,8 @@ func TestPageSetters(t *testing.T) {
 		"After clears an offset")
 	assert.Equal(t, search.Pagination{Limit: 20, Offset: 3}, page(q.Offset(3).After("")),
 		"an empty cursor keeps the offset")
+	assert.Equal(t, search.Pagination{Limit: 20, Cursor: "token"}, page(q.After("token").Offset(0)),
+		"a zero offset keeps the cursor")
 }
 
 func TestQueryIsImmutable(t *testing.T) {
@@ -349,6 +351,16 @@ func TestPlanOrder(t *testing.T) {
 	_, err = plan.Order(map[itemSort]keyset.Key[item]{itemSortRank: computed})
 	require.Error(t, err, "a hand-written key cannot replace a declared sort")
 	assert.Contains(t, err.Error(), `"rank"`)
+
+	// Order copies the declared keys before it adds the hand-written ones: the spec's map is
+	// shared by every request, so the extra key must not stay in it.
+	_, err = plan.Order(map[itemSort]keyset.Key[item]{"score": computed})
+	require.NoError(t, err, "the same extra key a second time")
+	_, err = plan.Order(nil)
+	require.ErrorIs(t, err, search.ErrUnknownSort, "the extra key did not go into the plan")
+	_, err = searchexec.Run(t.Context(), rec, itemSpec, q.Query, identity)
+	require.ErrorIs(t, err, search.ErrUnknownSort, "the extra key did not go into the spec")
+	assert.Empty(t, rec.queries)
 }
 
 func TestZeroPlanDoesNotRun(t *testing.T) {
@@ -408,12 +420,23 @@ func TestDefineSpecCopiesTheDefinition(t *testing.T) {
 	def.Scope[0] = searchexec.ScopeNull[itemScope](itemOrg)
 	def.Conditions[0] = postgres.Bool(true)
 	delete(def.Keys, itemSortRank)
+	def.Tiebreak[0] = keyset.IntKey(itemRank, func(r item) int64 { return r.Rank })
+	def.Context[0] = func(context.Context) postgres.BoolExpression { return postgres.Bool(true) }
 
+	ctx := context.WithValue(t.Context(), workspaceKey{}, "ws-1")
+	q := searchexec.New[itemSearch](spec, fullScope())
 	rec := &recorder{}
-	_, err := searchexec.Run(t.Context(), rec, spec, searchexec.New[itemSearch](spec, fullScope()).Query, identity)
+	_, err := searchexec.Run(ctx, rec, spec, q.Query, identity)
 	require.ErrorIs(t, err, errStop)
 	assert.Contains(t, rec.queries[0], "(items.org = $1)")
 	assert.Contains(t, rec.queries[0], "items.deleted IS FALSE")
+	assert.Contains(t, rec.queries[0], "items.workspace = ", "the context scope is the copy")
+
+	plan, err := searchexec.Resolve(ctx, spec, q.Query)
+	require.NoError(t, err)
+	order, err := plan.Order(nil)
+	require.NoError(t, err)
+	assert.Equal(t, "items.rank:DESC,items.id:DESC", order.Signature(), "the tiebreak is the copy")
 }
 
 func TestDefineSpecPanics(t *testing.T) {
@@ -459,6 +482,12 @@ func TestDefineSpecPanics(t *testing.T) {
 		"limit above the max": {
 			func(d *searchexec.SpecDef[item, itemSort, itemScope]) { d.Limit = search.MaxLimit + 1 },
 			"default limit 1001",
+		},
+		"key name collides with the tiebreak": {
+			func(d *searchexec.SpecDef[item, itemSort, itemScope]) {
+				d.Keys[itemSortName] = keyset.IntExprKey("items.id", itemRank, func(r item) int64 { return r.Rank })
+			},
+			"items.id",
 		},
 	}
 	for name, tc := range cases {
@@ -563,4 +592,85 @@ func panicMessage(t *testing.T, build func()) (message string) {
 	}()
 	build()
 	return ""
+}
+
+// fromScope is the scope of a search whose team value goes into an ON clause.
+type fromScope struct {
+	_    struct{}
+	Org  string
+	Team string
+}
+
+type fromSearch struct {
+	searchexec.Query[item, fromSearch, itemSort, fromScope]
+}
+
+func fromDef() searchexec.SpecDef[item, itemSort, fromScope] {
+	return searchexec.SpecDef[item, itemSort, fromScope]{
+		From: func(s fromScope) keyset.Source {
+			return items.LEFT_JOIN(teams, teamID.EQ(itemTeam).AND(teamOrg.EQ(postgres.String(s.Team))))
+		},
+		Columns: postgres.ProjectionList{itemID, itemRank, itemOwner},
+		Scope: []searchexec.ScopeCol[fromScope]{
+			searchexec.ScopeEq(func(s fromScope) string { return s.Org }, itemOrg),
+		},
+		Keys: map[itemSort]keyset.Key[item]{
+			itemSortRank: keyset.IntKey(itemRank, func(r item) int64 { return r.Rank }),
+		},
+		Tiebreak: []keyset.Key[item]{keyset.StringKey(itemID, func(r item) string { return r.ID })},
+		Limit:    20,
+	}
+}
+
+func TestResolveRefusesAZeroFieldThatOnlyFromReads(t *testing.T) {
+	spec := searchexec.DefineSpec(fromDef())
+	rec := &recorder{}
+	_, err := searchexec.Run(t.Context(), rec, spec,
+		searchexec.New[fromSearch](spec, fromScope{Org: "secret-org"}).Query, identity)
+	require.ErrorIs(t, err, search.ErrUnscoped)
+	assert.Contains(t, err.Error(), "the scope field Team is zero")
+	assert.NotContains(t, err.Error(), "secret-org")
+	assert.Empty(t, rec.queries, "no statement runs")
+
+	_, err = searchexec.Run(t.Context(), rec, spec,
+		searchexec.New[fromSearch](spec, fromScope{Org: "org-a", Team: "team-1"}).Query, identity)
+	require.ErrorIs(t, err, errStop)
+	assert.Equal(t, []any{"team-1", "org-a"}, rec.args[0])
+}
+
+func TestScopeFrom(t *testing.T) {
+	def := fromDef()
+	def.Scope = []searchexec.ScopeCol[fromScope]{
+		searchexec.ScopeFrom(func(s fromScope) string { return s.Org }, itemOrg),
+		searchexec.ScopeFrom(func(s fromScope) string { return s.Team }, teamOrg),
+	}
+	def.From = func(s fromScope) keyset.Source {
+		return items.INNER_JOIN(teams, teamID.EQ(itemTeam).
+			AND(itemOrg.EQ(postgres.String(s.Org))).
+			AND(teamOrg.EQ(postgres.String(s.Team))))
+	}
+	var spec *searchexec.Spec[item, itemSort, fromScope]
+	require.NotPanics(t, func() { spec = searchexec.DefineSpec(def) }, "a ScopeFrom entry is a tenant scope")
+
+	rec := &recorder{}
+	_, err := searchexec.Run(t.Context(), rec, spec,
+		searchexec.New[fromSearch](spec, fromScope{Team: "secret-team"}).Query, identity)
+	require.ErrorIs(t, err, search.ErrUnscoped)
+	assert.Contains(t, err.Error(), "the scope value of items.org is zero", "the error names the columns")
+	assert.NotContains(t, err.Error(), "secret-team")
+	assert.Empty(t, rec.queries, "no statement runs")
+
+	_, err = searchexec.Run(t.Context(), rec, spec,
+		searchexec.New[fromSearch](spec, fromScope{Org: "org-a", Team: "team-1"}).Query, identity)
+	require.ErrorIs(t, err, errStop)
+	assert.Contains(t, flat(rec.queries[0]), "WHERE $3;", "ScopeFrom adds no WHERE condition")
+	assert.Equal(t, []any{"org-a", "team-1", true}, rec.args[0], "the plan runs with TRUE")
+
+	assert.Contains(
+		t,
+		panicMessage(t, func() { searchexec.ScopeFrom[fromScope, string](nil, itemOrg) }),
+		"value is nil",
+	)
+	assert.Contains(t,
+		panicMessage(t, func() { searchexec.ScopeFrom(func(s fromScope) string { return s.Org }) }), "no column")
 }

@@ -129,10 +129,13 @@ stmt := SELECT(Invoice.AllColumns).FROM(Invoice).WHERE(
 
 `nano gen repo` writes each declared search as a `searchexec.Spec` (a package variable that
 `DefineSpec` checks at package init), a builder that embeds `searchexec.Query`, and the
-repository method that runs it with `searchexec.Run`. The scope is a typed value: a zero
-scope field, a query of another spec and a struct literal of the builder are
-`search.ErrUnscoped`, before any statement runs. A hand-written method starts from
-`searchexec.Resolve` and gets an opaque `Plan`, which it can narrow but never widen. The
+repository method. The method runs it through the transactor forwarders (`transactor.Search`
+and `SearchPage`, in a later release), which use the context transaction and refuse a row
+lock. `searchexec.Run` and `RunPage` run on the executor they get: they do not read the
+context transaction and do not refuse a row lock. The scope is a typed value: a zero scope
+field (also a field that only `From` reads), a query of another spec and a struct literal of
+the builder are `search.ErrUnscoped`, before any statement runs. A hand-written method starts
+from `searchexec.Resolve` and gets an opaque `Plan`, which it can narrow but never widen. The
 generated searches support PostgreSQL; a source of another dialect is `keyset.ErrDialect`.
 
 The complete list of changes, the upstream commit we started from, and how we merge upstream

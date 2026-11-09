@@ -64,12 +64,15 @@ func (q Query[T, Q, S, P]) After(cursor string) Q {
 	return Q{q}
 }
 
-// Offset skips n rows of the ordered result. It clears the cursor. It serves the deprecated
-// limit and offset lists; new callers continue with After. A negative n is
-// search.ErrInvalidOffset when the search runs.
+// Offset skips n rows of the ordered result. A non-zero n clears the cursor; Offset(0)
+// keeps it, as After("") keeps the offset, so a mapper can set both from one request. It
+// serves the deprecated limit and offset lists; new callers continue with After. A negative
+// n is search.ErrInvalidOffset when the search runs.
 func (q Query[T, Q, S, P]) Offset(n int32) Q {
 	q.page.Offset = n
-	q.page.Cursor = ""
+	if n != 0 {
+		q.page.Cursor = ""
+	}
 	return Q{q}
 }
 

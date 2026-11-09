@@ -14,10 +14,18 @@
 //   - The builder is a struct that embeds Query and nothing else. Query gives it Scope,
 //     SortBy, After, Offset and Limit. Every method returns a changed copy, so a builder is
 //     immutable. The scope is a typed value P: one value, or a generated scope struct whose
-//     fields must be named. A zero scope field refuses the search.
-//   - The repository method runs the builder with Run or RunPage. A hand-written method
-//     starts from Resolve, which returns an opaque Plan: the method can narrow it with
-//     Plan.And, add the keys of its hand-written sorts with Plan.Order, and run it.
+//     fields must be named. A zero scope field refuses the search, also a field that only
+//     From reads.
+//   - The repository method runs the builder through the transactor forwarders
+//     (transactor.Search and SearchPage, in a later release), which use the context
+//     transaction and refuse a row lock. A hand-written method starts from Resolve, which
+//     returns an opaque Plan: the method can narrow it with Plan.And, add the keys of its
+//     hand-written sorts with Plan.Order, and run it through transactor.RunPlan or
+//     RunPlanPage (in the same release).
+//
+// Run, RunPage, Plan.Run and Plan.RunPage run on the executor they get. They do not read
+// the context transaction and do not refuse a row lock, so repository code does not call
+// them directly.
 //
 // Resolve, Run and RunPage take the spec as an argument and refuse a query whose spec is
 // another one, a struct literal of the builder, a zero scope value and a context scope that
@@ -26,8 +34,9 @@
 // keyset.PageBuilder.RequireWhere.
 //
 // The tenant conditions are ScopeEq (col = $1, for one or more columns), ScopeOrNull
-// ((col = $1 OR col IS NULL), for rows that every tenant shares), ScopeNull (col IS NULL)
-// and ScopeFunc (a condition that the context carries, such as the workspace).
+// ((col = $1 OR col IS NULL), for rows that every tenant shares), ScopeNull (col IS NULL),
+// ScopeFrom (a scope field that From puts in an ON clause; it adds no WHERE condition) and
+// ScopeFunc (a condition that the context carries, such as the workspace).
 //
 // The generated searches support PostgreSQL. A source of another dialect is
 // keyset.ErrDialect.

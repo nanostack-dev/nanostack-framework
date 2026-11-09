@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"reflect"
 	"slices"
 
 	"github.com/nanostack-dev/nanostack-framework/db/internal/jet"
@@ -40,7 +41,7 @@ type SpecDef[T any, S ~string, P comparable] struct {
 	// ProjectionList.
 	Columns jet.Projection
 	// Scope holds the tenant conditions that read the scope value (ScopeEq, ScopeOrNull,
-	// ScopeNull).
+	// ScopeNull), and the scope fields that only From reads (ScopeFrom).
 	Scope []ScopeCol[P]
 	// Context holds the tenant conditions that read the context (ScopeFunc).
 	Context []ContextScope
@@ -67,7 +68,8 @@ type SpecDef[T any, S ~string, P comparable] struct {
 // DefineSpec panics when d has no From, no Columns, no key or no tiebreak, when it has no
 // tenant condition (no Scope and no Context entry: an Unscoped entry is a record, not a
 // scope), when a Scope entry is the zero ScopeCol, when a Context entry or a condition is
-// nil, when the Default field is not a key, or when Limit is outside 1 to search.MaxLimit.
+// nil, when the Default field is not a key, when two keys (the tiebreak included) have the
+// same name but differ, or when Limit is outside 1 to search.MaxLimit.
 //
 // The Spec holds copies of the slices and the map of d, so a later change to d does not
 // change it.
@@ -109,6 +111,9 @@ func DefineSpec[T any, S ~string, P comparable](d SpecDef[T, S, P]) *Spec[T, S, 
 			panic(fmt.Sprintf("searchexec: DefineSpec: the default sort %q is not a key", d.Default.Field))
 		}
 	}
+	if _, err := keyset.OrderOf[S](nil, d.Keys, d.Tiebreak[0], d.Tiebreak[1:]...); err != nil {
+		panic("searchexec: DefineSpec: " + err.Error())
+	}
 	return &Spec[T, S, P]{
 		from:       d.From,
 		columns:    d.Columns,
@@ -124,10 +129,10 @@ func DefineSpec[T any, S ~string, P comparable](d SpecDef[T, S, P]) *Spec[T, S, 
 }
 
 // ScopeCol is one tenant condition that reads the scope value P. Build it with ScopeEq,
-// ScopeOrNull or ScopeNull; the zero ScopeCol makes DefineSpec panic.
+// ScopeOrNull, ScopeNull or ScopeFrom; the zero ScopeCol makes DefineSpec panic.
 type ScopeCol[P comparable] struct {
-	// condition returns the condition for the scope value, or search.ErrUnscoped when
-	// the value it reads is zero.
+	// condition returns the WHERE condition for the scope value, or search.ErrUnscoped when
+	// the value it reads is zero. A nil condition with no error adds nothing (ScopeFrom).
 	condition func(P) (jet.BoolExpression, error)
 }
 
@@ -187,6 +192,24 @@ func ScopeNull[P comparable](column jet.ColumnExpression) ScopeCol[P] {
 	}}
 }
 
+// ScopeFrom declares a scope field that only From reads, for example a tenant value that
+// From puts in the ON clause of a LEFT JOIN: columns are the columns of that ON clause that
+// the value equals. It adds no WHERE condition, because From already applies the value. A
+// zero value refuses the search with search.ErrUnscoped, as for ScopeEq. The error names
+// the columns, not the value. A ScopeFrom entry counts as a tenant scope in DefineSpec.
+//
+// ScopeFrom panics when value is nil, or when columns is empty or holds a nil column.
+func ScopeFrom[P comparable, V comparable](value func(P) V, columns ...jet.ColumnExpression) ScopeCol[P] {
+	if value == nil {
+		panic("searchexec: ScopeFrom: value is nil")
+	}
+	names := columnNames("ScopeFrom", columns)
+	return ScopeCol[P]{condition: func(p P) (jet.BoolExpression, error) {
+		_, err := nonZero(value(p), names)
+		return nil, err
+	}}
+}
+
 // Value is the accessor of a scope that is one value: ScopeEq(Value[string], column).
 func Value[V comparable](v V) V { return v }
 
@@ -214,6 +237,25 @@ func Asc[S ~string](field S) search.Sort[S] {
 // Desc is a descending sort of field, for SpecDef.Default.
 func Desc[S ~string](field S) search.Sort[S] {
 	return search.Sort[S]{Field: field, Direction: search.SortDescending}
+}
+
+// zeroScopeField returns the name of the first named field of the scope struct p that is
+// zero, or "value" when p is one value and is zero. It covers every field, also a field that
+// only From reads and that no ScopeCol declares. It returns "" when no field is zero.
+func zeroScopeField[P comparable](p P) string {
+	v := reflect.ValueOf(&p).Elem()
+	if v.Kind() != reflect.Struct {
+		if v.IsZero() {
+			return "value"
+		}
+		return ""
+	}
+	for i := range v.NumField() {
+		if f := v.Type().Field(i); f.Name != "_" && v.Field(i).IsZero() {
+			return f.Name
+		}
+	}
+	return ""
 }
 
 // nonZero returns v, or search.ErrUnscoped naming the columns when v is the zero value.
