@@ -64,6 +64,23 @@ func (tb TableSQLBuilder) UseUniqueKeys(uniqueKeys bool) TableSQLBuilder {
 	return tb
 }
 
+// UseColumnTypes returns a TableSQLBuilder that adds, or not, a ColumnTypes
+// method to the table type (catalog_methods.go). The schema must come from
+// the ReadSchema function of the dialect, or from GetSchema, which fill
+// metadata.Column.CatalogType.
+func (tb TableSQLBuilder) UseColumnTypes(columnTypes bool) TableSQLBuilder {
+	tb.ColumnTypes = columnTypes
+	return tb
+}
+
+// UseForeignKeys returns a TableSQLBuilder that adds, or not, a ForeignKeys
+// method to the table type (catalog_methods.go). Only the ReadSchema function
+// of the dialect fills metadata.Table.ForeignKeys.
+func (tb TableSQLBuilder) UseForeignKeys(foreignKeys bool) TableSQLBuilder {
+	tb.ForeignKeys = foreignKeys
+	return tb
+}
+
 // sink receives the generated files of processSchema.
 type sink interface {
 	ensureDir(dir string) error

@@ -3,10 +3,15 @@
 package model
 
 import (
+	"github.com/shopspring/decimal"
 	"time"
 )
 
 type Events struct {
-	At      time.Time
-	Payload *string
+	At        time.Time
+	Payload   *string
+	Source    *string
+	Amount    *decimal.Decimal
+	TenantID  *string
+	UserEmail *string
 }

@@ -2,5 +2,8 @@ DROP VIEW active_users;
 DROP TABLE events;
 DROP TABLE users;
 DROP TABLE tenants;
+DROP TABLE ledger.accounts;
+DROP SCHEMA ledger;
+DROP DOMAIN email_address;
 DROP TYPE user_status;
 DROP COLLATION case_insensitive;

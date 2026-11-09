@@ -230,6 +230,18 @@ func processTableSQLBuilder(out sink, header, fileTypes, dirPath string,
 					}
 					return uniqueKeysMethod(tableMetaData, tableSQLBuilder)
 				},
+				"columnTypes": func() (string, error) { // Nanostack: see catalog_methods.go
+					if fileTypes == "view" || !tableSQLBuilder.ColumnTypes {
+						return "", nil
+					}
+					return columnTypesMethod(tableMetaData, tableSQLBuilder, dialect)
+				},
+				"foreignKeys": func() (string, error) { // Nanostack: see catalog_methods.go
+					if fileTypes == "view" || !tableSQLBuilder.ForeignKeys {
+						return "", nil
+					}
+					return foreignKeysMethod(tableMetaData, tableSQLBuilder, dialect, schemaMetaData.Name)
+				},
 				"columnList": func(columns []metadata.Column) string {
 					names := []string{}
 					for _, col := range columns {

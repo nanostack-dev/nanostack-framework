@@ -21,9 +21,9 @@ formatters:
       - ^cmd/jet/(main|main_test|version)\.go$
       - ^examples/
       - ^generator/metadata/(column_meta_data|dialect_query_set|enum_meta_data|schema_meta_data|table_meta_data)\.go$
-      - ^generator/mysql/
+      - ^generator/mysql/(mysql_generator|query_set)\.go$
       - ^generator/postgres/(postgres_generator|query_set)\.go$
-      - ^generator/sqlite/
+      - ^generator/sqlite/(query_set|sqlite_generator)\.go$
       - ^generator/template/(file_templates|format|format_test|generator_template|model_template|model_template_test|process|sql_builder_template|sql_builder_template_test)\.go$
       - ^internal/3rdparty/
       - ^internal/jet/(alias|array_expression|array_expression_test|blob_expression|bool_expression|bool_expression_test|clause|clause_test|column|column_assigment|column_list|column_list_assigment|column_list_test|column_test|column_types|column_types_test|date_expression|dialect|enum_value|expression|expression_test|float_expression|float_expression_test|func_expression|func_expression_test|group_by_clause|integer_expression|integer_expression_test|interval_expression|keyword|literal_expression|literal_expression_test|logger|numeric_expression|operators|operators_test|order_by_clause|order_set_aggregate_functions|projection|projection_test|range_expression|range_expression_test|raw_statement|raw_statement_test|row_expression|select_lock|select_table|serializer|sql_builder|sql_builder_test|statement|string_expression|string_expression_test|string_or_blob_expression|table|table_test|testutils_test|time_expression|time_expression_test|timestamp_expression|timestamp_expression_test|timestampz_expression|timestampz_expression_test|timez_expression|timez_expression_test|utils|utils_test|values|window_expression|window_func|window_func_test|with_statement)\.go$
@@ -85,15 +85,18 @@ linters:
       - ^cmd/jet/nullable(_test)?\.go$
       - ^filter/
       - ^generator/template/nullable(_test)?\.go$
-      - ^generator/template/(render|unique_keys)(_test)?\.go$
-      - ^generator/metadata/(unique_index|read_schema)\.go$
-      - ^generator/postgres/(unique_keys|read_schema)(_test)?\.go$
+      - ^generator/template/(render|unique_keys|catalog_methods)(_test)?\.go$
+      - ^generator/metadata/(unique_index|read_schema|catalog|catalog_set)\.go$
+      - ^generator/postgres/(unique_keys|read_schema|catalog)(_test)?\.go$
+      - ^generator/(mysql|sqlite)/read_schema\.go$
       - ^internal/jet/dialect_switch(_test)?\.go$
+      - ^internal/jet/foreign_key\.go$
       - ^internal/jet/optional_arg(_test)?\.go$
       - ^internal/optional/
       - ^internal/testutils/option_parity\.go$
       - ^keyset/
       - ^nanorepo/
+      - ^(mysql|postgres|sqlite)/foreign_key\.go$
       - ^(mysql|postgres|sqlite)/literal_option(_test)?\.go$
       - ^(mysql|postgres|sqlite)/statement_option_test\.go$
       - ^qrm/option(_test)?\.go$
@@ -104,4 +107,4 @@ linters:
       - ^tests/dbconfig/nanostack\.go$
       - ^tests/internal/testenv/
       - ^tests/tools/
-      - ^tests/(mysql|postgres|sqlite)/(generator_option|keyset\w*|nanostack_alias|nanostack_models|option\w*|query)_test\.go$
+      - ^tests/(mysql|postgres|sqlite)/(generator_option|keyset\w*|nanostack_\w+|option\w*|query)_test\.go$

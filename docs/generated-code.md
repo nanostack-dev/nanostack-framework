@@ -176,6 +176,8 @@ func (ProductUsersTable) UniqueKeys() map[string][]string {
 }
 ```
 
+After `UniqueKeys` come `ColumnTypes`, the catalogue type of each column by name (`text`, `inet`, `jsonb`, an enum's name), and `ForeignKeys`, the foreign keys of the table with their columns in key order ([the methods](generation.md#database-nano-gen-db)). A migration that changes a column type or a foreign key changes them; review them against the migration.
+
 `nanogen.sum` sits next to the schema directory. It changes with every migration and every output; read its `input migration` lines against the migrations of the diff, and do not review its hashes.
 
 The `Option[T]` mode, from the fork's test data. `db/tests/.gentestdata/option/jetdb/test_sample/model/link.go` (20 lines):

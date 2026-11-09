@@ -3,6 +3,7 @@
 package model
 
 type Tenants struct {
-	ID   string `sql:"primary_key"`
-	Name string
+	ID        string `sql:"primary_key"`
+	Name      string
+	AccountID *string
 }

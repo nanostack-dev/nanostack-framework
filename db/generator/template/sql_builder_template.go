@@ -74,6 +74,9 @@ type TableSQLBuilder struct {
 	Column       func(columnMetaData metadata.Column) TableSQLBuilderColumn
 	// UniqueKeys adds a UniqueKeys method to the table type (Nanostack, see unique_keys.go).
 	UniqueKeys bool
+	// ColumnTypes and ForeignKeys add the methods of these names to the table type (Nanostack, see catalog_methods.go).
+	ColumnTypes bool
+	ForeignKeys bool
 }
 
 // ViewSQLBuilder is template for generating view SQLBuilder files

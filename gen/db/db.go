@@ -1,7 +1,7 @@
 // Package gendb implements nano gen db: it applies a module's SQL
 // migrations to an empty PostgreSQL database and writes the go-jet code of
-// one schema, the models and the table types, with a UniqueKeys method on
-// each table type.
+// one schema, the models and the table types, with the methods UniqueKeys,
+// ColumnTypes and ForeignKeys on each table type.
 //
 // The database is a container of the declared image, started through
 // testcontainers, or a scratch database on the server that
@@ -28,8 +28,17 @@
 // most one row": valid, immediate, no expression key, no predicate other
 // than "<key column> IS NOT NULL", and no key column under a nondeterministic
 // collation that the index does not use. Each other unique index is a "Not
-// a key" line of its doc comment. nano gen repo reads the method with
-// go/parser, so the repo step needs no database.
+// a key" line of its doc comment.
+//
+// ColumnTypes lists, by column name, the catalogue type of each column:
+// information_schema.columns.udt_name (the base type of a domain, "_text" for
+// a text array, the name of an enum). ForeignKeys lists the foreign keys of
+// the table in constraint name order, with the referencing and the
+// referenced columns in key order, and the schema of the referenced table
+// when it is not the generated schema.
+//
+// nano gen repo reads the three methods with go/parser, so the repo step
+// needs no database.
 //
 // The pipeline runs this step first, from the Postgres declaration of
 // nanogen/project.go; Main is the single run, with the same fields as flags.
@@ -247,14 +256,16 @@ func unreachable(reason string, err error) error {
 
 // jetTemplate is the go-jet template of the step: go-jet's defaults
 // (pointers for nullable columns, as the services' models have today), the
-// nano header, and UniqueKeys on each table type.
+// nano header, and UniqueKeys, ColumnTypes and ForeignKeys on each table
+// type.
 func jetTemplate() template.Template {
 	return template.Default(postgres.Dialect).
 		UseHeader(header).
 		UseSchema(func(s metadata.Schema) template.Schema {
 			return template.DefaultSchema(s).UseSQLBuilder(
 				template.DefaultSQLBuilder().UseTable(func(t metadata.Table) template.TableSQLBuilder {
-					return template.DefaultTableSQLBuilder(t).UseUniqueKeys(true)
+					return template.DefaultTableSQLBuilder(t).
+						UseUniqueKeys(true).UseColumnTypes(true).UseForeignKeys(true)
 				}))
 		})
 }

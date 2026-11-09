@@ -1,11 +1,23 @@
--- One table per unique-index shape that nano gen db must classify.
+-- One table per unique-index shape that nano gen db must classify, and one
+-- foreign key and one column type per shape that ForeignKeys and ColumnTypes
+-- must report.
 CREATE COLLATION case_insensitive (provider = icu, locale = 'und-u-ks-level2', deterministic = false);
 
 CREATE TYPE user_status AS ENUM ('ACTIVE', 'DISABLED');
 
+-- ColumnTypes gives the base type of a domain column.
+CREATE DOMAIN email_address AS text;
+
+-- A table of another schema: a key to it names that schema.
+CREATE SCHEMA ledger;
+CREATE TABLE ledger.accounts (
+    id text PRIMARY KEY
+);
+
 CREATE TABLE tenants (
-    id   text PRIMARY KEY,
-    name text NOT NULL UNIQUE
+    id         text PRIMARY KEY,
+    name       text NOT NULL UNIQUE,
+    account_id text REFERENCES ledger.accounts (id)
 );
 
 CREATE TABLE users (
@@ -19,6 +31,8 @@ CREATE TABLE users (
     tags        text[],
     deleted_at  timestamptz,
     created_at  timestamptz NOT NULL DEFAULT now(),
+    -- A key to its own table.
+    invited_by  text REFERENCES users (id),
     CONSTRAINT users_tenant_email_key UNIQUE (tenant_id, email),
     CONSTRAINT users_tenant_name_deferrable UNIQUE (tenant_id, name) DEFERRABLE INITIALLY IMMEDIATE
 );
@@ -41,8 +55,16 @@ CREATE UNIQUE INDEX idx_users_handle_c ON users (tenant_id, handle COLLATE "C");
 
 -- No unique index at all.
 CREATE TABLE events (
-    at      timestamptz NOT NULL,
-    payload jsonb
+    at         timestamptz NOT NULL,
+    payload    jsonb,
+    source     inet,
+    amount     numeric(12, 2),
+    tenant_id  text,
+    user_email email_address,
+    -- Two keys to one table. The composite key lists its columns in another
+    -- order than the unique constraint it references.
+    CONSTRAINT events_user_fkey FOREIGN KEY (user_email, tenant_id) REFERENCES users (email, tenant_id),
+    CONSTRAINT events_tenant_fkey FOREIGN KEY (tenant_id) REFERENCES tenants (id)
 );
 
 CREATE VIEW active_users AS SELECT id, tenant_id FROM users WHERE status = 'ACTIVE';
