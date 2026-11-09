@@ -138,6 +138,23 @@ the builder are `search.ErrUnscoped`, before any statement runs. A hand-written 
 from `searchexec.Resolve` and gets an opaque `Plan`, which it can narrow but never widen. The
 generated searches support PostgreSQL; a source of another dialect is `keyset.ErrDialect`.
 
+Each filter of a generated builder returns a field type, and the method of the field returns
+the filtered copy: `In` (`expr IN (...)`), `InFold` (an exact match without case, `expr ILIKE $1
+ESCAPE '!'` for each value with its wildcards escaped: the database folds both sides by the
+column's collation), `Eq`, `EqIn`, `TimeRange` (`Since >=`, `Until <=`,
+`After >`, `Before <`), `Presence` (`IS NOT NULL` or `IS NULL`), `Flag` (a condition, or
+`condition IS NOT TRUE`), `Text` (`Contains`, `ContainsAny`) and `Exists` (`EXISTS` on a child
+table, correlated on its link column and its tenant columns). From Go, an empty list matches
+no row. More than `search.MaxInValues` (1000) values is `search.ErrTooManyValues`, and a term
+longer than `search.MaxTermLength` (1000) characters is `search.ErrTermTooLong`: the field
+records the error on the query, and `Resolve` returns it before any statement runs. A string
+value that no text column can hold (not valid UTF-8, or holding NUL) matches no row, and a
+`TimeRange` bound moves to a whole microsecond.
+
+```go
+q := NewWebhookRequestSearch(scope).Method().In("GET", "POST").ReceivedAt().Since(t)
+```
+
 The complete list of changes, the upstream commit we started from, and how we merge upstream
 releases are in [UPSTREAM.md](UPSTREAM.md). The go-jet README, which documents the statement
 builder in depth, is kept in [docs/upstream/README.md](docs/upstream/README.md); go-jet's

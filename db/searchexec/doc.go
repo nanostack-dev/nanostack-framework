@@ -41,6 +41,45 @@
 // The generated searches support PostgreSQL. A source of another dialect is
 // keyset.ErrDialect.
 //
+// # Field types
+//
+// Each filter method of a generated builder returns a field of the query, and the method of
+// the field returns the filtered copy:
+//
+//	q.Method().In("GET", "POST").ReceivedAt().Since(t)
+//
+// A field has only the operators that its declaration names:
+//
+//	In         In(v...)        expr IN (v...)
+//	InFold     In(v...)        expr ILIKE v OR ..., v escaped: exact, folded in the database
+//	Eq         Eq(v)           expr = v
+//	EqIn       Eq(v), In(v...)
+//	TimeRange  Since(t), Until(t), After(t), Before(t)    >=, <=, >, <
+//	Presence   Present(bool)   expr IS NOT NULL, or expr IS NULL
+//	Flag       Is(bool)        condition, or condition IS NOT TRUE
+//	Text       Contains(term), ContainsAny(terms...)
+//	Exists     In(v...)        EXISTS (SELECT 1 FROM child WHERE correlation AND column IN (v...))
+//	                           (NewExistsFold: column ILIKE v OR ..., as InFold)
+//
+// From Go, an empty list matches no row: a caller that builds an empty list gets nothing,
+// not everything. The API mapper reads an empty list as no filter and does not call the
+// field. InFold leaves the case of the values to the database, because Go and the
+// database fold some letters differently (the Turkish dotted I under COLLATE "C"). ILIKE
+// folds the value by the collation of the column, so the answer agrees with the column
+// also when its collation is not the default one. LOWER($1) would fold the value by the
+// default collation. On the other dialects InFold is LOWER(expr) LIKE LOWER(?) ESCAPE '!'.
+//
+// A string value that no text column can hold (not valid UTF-8, or holding NUL) matches no
+// row in every field, as in Contains: StringLit makes it NULL and InFold drops it. A
+// TimeRange bound moves to a whole microsecond, the precision of timestamptz, in the
+// direction that keeps its meaning, so lib/pq and pgx give the same rows.
+//
+// A field does not return an error. More than search.MaxInValues values
+// (search.ErrTooManyValues), a term longer than search.MaxTermLength characters after the
+// trim (search.ErrTermTooLong), or a child table of another dialect (keyset.ErrDialect)
+// records the error on the query. Resolve returns the first recorded error after the scope
+// checks, so a missing tenant scope still wins, and no statement runs.
+//
 // # Contains
 //
 // Contains is the one substring rule of the framework. A search's full-text filter, each
@@ -64,6 +103,8 @@
 //     and later) fold every letter. The "C" and "POSIX" collations fold ASCII letters only,
 //     as SQLite does. This is also true for every column of a database made with
 //     --locale=C. MySQL and MariaDB fold every letter.
+//   - CockroachDB's ILIKE and its LOWER do not agree on the Turkish I: under ILIKE the
+//     dotless ı matches i, and İ matches only İ. Contains and InFold follow its ILIKE.
 //   - On PostgreSQL, ILIKE refuses a column with a nondeterministic collation with an SQL
 //     error. Give such a column an expression with an explicit deterministic COLLATE.
 //   - On MySQL and MariaDB, an accent-insensitive collation (utf8mb4_0900_ai_ci,

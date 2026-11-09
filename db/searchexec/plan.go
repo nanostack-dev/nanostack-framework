@@ -127,6 +127,9 @@ var errUnresolved = fmt.Errorf("%w: the plan was not returned by Resolve", searc
 //     scope struct that no ScopeCol reads, for example a field that only From reads
 //     (search.ErrUnscoped, naming the field);
 //   - a context scope that returns nil (search.ErrUnscoped);
+//   - the first error that a filter recorded: more than search.MaxInValues values
+//     (search.ErrTooManyValues), a term longer than search.MaxTermLength characters
+//     (search.ErrTermTooLong), or a child table of another dialect (keyset.ErrDialect);
 //   - a page that search.CheckPage refuses (search.ErrInvalidLimit, search.ErrInvalidOffset,
 //     search.ErrInvalidCursor, search.ErrCursorWithOffset);
 //   - a source that is not a db/postgres table or join (keyset.ErrDialect).
@@ -160,6 +163,9 @@ func Resolve[T any, Q Builder[T, Q, S, P], S ~string, P comparable](
 			return Plan[T, S]{}, fmt.Errorf("%w: context scope %d returned no condition", search.ErrUnscoped, i)
 		}
 		conditions = append(conditions, condition)
+	}
+	if q.err != nil {
+		return Plan[T, S]{}, q.err
 	}
 	if err := search.CheckPage(q.page); err != nil {
 		return Plan[T, S]{}, err
@@ -212,7 +218,8 @@ func Run[T any, Q Builder[T, Q, S, P], S ~string, P comparable, R any](
 	return plan.Run(ctx, db, order, toDomain)
 }
 
-// RunPage is Run with a mapper that maps the whole page in one call.//
+// RunPage is Run with a mapper that maps the whole page in one call.
+//
 // It runs on db as given: it does not read the context transaction and does not refuse a
 // row lock. Repository code runs searches through the transactor forwarders
 // (transactor.Search, SearchPage, RunPlan and RunPlanPage, in a later release), which use

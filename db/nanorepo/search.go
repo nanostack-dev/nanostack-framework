@@ -252,8 +252,9 @@ var (
 	// db/search.MaxInValues (1000) values is an error. API property: the
 	// plural of the field name ("ids").
 	In Op
-	// InFold is In with case folded on both sides: LOWER(column) IN
-	// (LOWER(v)...). Text columns only. More than db/search.MaxInValues
+	// InFold is In with case folded on both sides by the collation of the
+	// column: column ILIKE v OR ..., with the wildcards of v escaped. Text
+	// columns only. More than db/search.MaxInValues
 	// (1000) values is an error. API property: the plural, as In.
 	InFold Op
 	// Contains is Contains(term): a case-insensitive substring, with the
