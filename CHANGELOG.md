@@ -2,6 +2,14 @@
 
 One section per module and version, newest first. Each section uses Added, Changed, Deprecated, Removed and Fixed. [RELEASING.md](RELEASING.md) gives the release steps and the upgrade notes.
 
+## Unreleased (db)
+
+### Added
+- `internal/jet`: `DialectSwitch(func(Dialect) Expression)` and its typed forms (`BoolDialectSwitch`, `IntDialectSwitch`, `StringDialectSwitch`, ...). The statement's dialect selects the expression when the statement is serialized, so one value serves PostgreSQL, MySQL and SQLite. Search uses it for the SQL that differs per dialect.
+
+### Fixed
+- The SQL builder doubles the quote character in an alias (`AS "a""b"`). Before, a quote in an alias ended the quoted name, and the rest of the alias was read as SQL.
+
 ## gen/v0.23.0-beta.3
 
 Codegen part 1: the db step and the repo step of `nano gen`. It requires root `v0.23.0-beta.3` and `db/v0.23.0-beta.3`. Pin the CLI with `go get -tool github.com/nanostack-dev/nanostack-framework/gen/cmd/nano@v0.23.0-beta.3`. [RELEASING.md](RELEASING.md#upgrade-from-v0230-beta2) gives the upgrade steps.

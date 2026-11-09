@@ -102,10 +102,11 @@ func isPostSeparator(b byte) bool {
 	return b == ' ' || b == '.' || b == ',' || b == ')' || b == '\n' || b == ':' || b == '[' || b == ']'
 }
 
-// WriteAlias is used to add alias to output SQL
+// WriteAlias is used to add alias to output SQL. A quote character in the alias is doubled,
+// so the alias stays one quoted name.
 func (s *SQLBuilder) WriteAlias(str string) {
 	aliasQuoteChar := string(s.Dialect.AliasQuoteChar())
-	s.WriteString(aliasQuoteChar + str + aliasQuoteChar)
+	s.WriteString(aliasQuoteChar + strings.ReplaceAll(str, aliasQuoteChar, aliasQuoteChar+aliasQuoteChar) + aliasQuoteChar)
 }
 
 // WriteString writes sting to output SQL

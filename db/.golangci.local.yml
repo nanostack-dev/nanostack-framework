@@ -88,6 +88,7 @@ linters:
       - ^generator/template/(render|unique_keys)(_test)?\.go$
       - ^generator/metadata/(unique_index|read_schema)\.go$
       - ^generator/postgres/(unique_keys|read_schema)(_test)?\.go$
+      - ^internal/jet/dialect_switch(_test)?\.go$
       - ^internal/jet/optional_arg(_test)?\.go$
       - ^internal/optional/
       - ^internal/testutils/option_parity\.go$
