@@ -7,6 +7,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/nanostack-dev/nanostack-framework/db/internal/jet"
@@ -221,31 +222,169 @@ func TestDialectSwitchIsSafeForConcurrentUse(t *testing.T) {
 		wg.Go(func() {
 			pg, _ := postgres.SELECT(postgres.Int(1)).WHERE(cond).Sql()
 			my, _ := mysql.SELECT(mysql.Int(1)).WHERE(cond).Sql()
-			require.Equal(t, "\nSELECT $1\nWHERE name ILIKE $2;\n", pg)
-			require.Equal(t, "\nSELECT ?\nWHERE LOWER(name) LIKE LOWER(?);\n", my)
+			// FailNow must run on the test goroutine, so assert, not require.
+			assert.Equal(t, "\nSELECT $1\nWHERE name ILIKE $2;\n", pg)
+			assert.Equal(t, "\nSELECT ?\nWHERE LOWER(name) LIKE LOWER(?);\n", my)
 		})
 	}
 	wg.Wait()
 }
 
-func TestWriteAliasEscapesTheQuoteCharacter(t *testing.T) {
+func TestWriteAliasKeepsTheAliasOneQuotedName(t *testing.T) {
 	t.Parallel()
 
-	alias := `a"b`
-	hostile := `x" FROM secrets --`
+	type statement interface{ DebugSql() string }
 
-	require.Equal(t, "\nSELECT 1 AS \"a\"\"b\";\n", postgres.SELECT(postgres.Int(1).AS(alias)).DebugSql())
-	require.Equal(t, "\nSELECT 1 AS \"a\"\"b\";\n", mysql.SELECT(mysql.Int(1).AS(alias)).DebugSql())
-	require.Equal(t, "\nSELECT 1 AS \"a\"\"b\";\n", sqlite.SELECT(sqlite.Int(1).AS(alias)).DebugSql())
+	alias := func(name string) map[string]statement {
+		return map[string]statement{
+			"postgres": postgres.SELECT(postgres.Int(1).AS(name)),
+			"mysql":    mysql.SELECT(mysql.Int(1).AS(name)),
+			"sqlite":   sqlite.SELECT(sqlite.Int(1).AS(name)),
+		}
+	}
 
-	// The whole alias stays one quoted name.
-	require.Equal(t, "\nSELECT 1 AS \"x\"\" FROM secrets --\";\n",
-		postgres.SELECT(postgres.Int(1).AS(hostile)).DebugSql())
+	tests := []struct {
+		name  string
+		alias string
+		want  map[string]string
+	}{
+		{
+			// An alias with no quote and no backslash is written as before.
+			name:  "plain",
+			alias: "table.col",
+			want: map[string]string{
+				"postgres": `"table.col"`,
+				"mysql":    `"table.col"`,
+				"sqlite":   `"table.col"`,
+			},
+		},
+		{
+			// An alias with a quote is written with the identifier quote, doubled.
+			name:  "quote",
+			alias: `a"b`,
+			want: map[string]string{
+				"postgres": `"a""b"`,
+				"mysql":    "`a\"b`",
+				"sqlite":   "`a\"b`",
+			},
+		},
+		{
+			name:  "quote and backtick",
+			alias: "a\"b`c",
+			want: map[string]string{
+				"postgres": "\"a\"\"b`c\"",
+				"mysql":    "`a\"b``c`",
+				"sqlite":   "`a\"b``c`",
+			},
+		},
+		{
+			// MySQL reads a "-quoted alias as a string literal, where a backslash
+			// escapes the next character. A backtick-quoted name reads no escape.
+			name:  "trailing backslash",
+			alias: `a\`,
+			want: map[string]string{
+				"postgres": `"a\"`,
+				"mysql":    "`a\\`",
+				"sqlite":   "`a\\`",
+			},
+		},
+		{
+			name:  "backslash before a quote",
+			alias: `\" UNION SELECT 99 -- `,
+			want: map[string]string{
+				"postgres": `"\"" UNION SELECT 99 -- "`,
+				"mysql":    "`\\\" UNION SELECT 99 -- `",
+				"sqlite":   "`\\\" UNION SELECT 99 -- `",
+			},
+		},
+		{
+			name:  "backslash and a second column",
+			alias: `x\" , 'INJECTED' AS q; -- `,
+			want: map[string]string{
+				"postgres": `"x\"" , 'INJECTED' AS q; -- "`,
+				"mysql":    "`x\\\" , 'INJECTED' AS q; -- `",
+				"sqlite":   "`x\\\" , 'INJECTED' AS q; -- `",
+			},
+		},
+	}
 
-	// An alias without the quote character is written as before.
-	require.Equal(t, "\nSELECT 1 AS \"table.col\";\n", postgres.SELECT(postgres.Int(1).AS("table.col")).DebugSql())
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 
-	out := jet.SQLBuilder{Dialect: postgres.Dialect}
-	out.WriteAlias(`"`)
-	require.Equal(t, `""""`, out.Buff.String())
+			for dialect, stmt := range alias(tc.alias) {
+				require.Equal(t, "\nSELECT 1 AS "+tc.want[dialect]+";\n", stmt.DebugSql(), dialect)
+			}
+		})
+	}
+}
+
+func TestWriteIdentifierEscapesTheQuoteCharacter(t *testing.T) {
+	t.Parallel()
+
+	name := "a\"b`c"
+
+	t.Run("subquery column", func(t *testing.T) {
+		t.Parallel()
+
+		pgSub := postgres.SELECT(postgres.Int(1).AS(name)).AsTable("sub")
+		require.Equal(
+			t,
+			"\nSELECT sub.\"a\"\"b`c\" AS \"a\"\"b`c\"\nFROM (\n          SELECT 1 AS \"a\"\"b`c\"\n     ) AS sub;\n",
+			postgres.SELECT(postgres.IntegerColumn(name).From(pgSub)).FROM(pgSub).DebugSql(),
+		)
+
+		mySub := mysql.SELECT(mysql.Int(1).AS(name)).AsTable("sub")
+		require.Equal(
+			t,
+			"\nSELECT sub.`a\"b``c` AS `a\"b``c`\nFROM (\n          SELECT 1 AS `a\"b``c`\n     ) AS sub;\n",
+			mysql.SELECT(mysql.IntegerColumn(name).From(mySub)).FROM(mySub).DebugSql(),
+		)
+
+		liteSub := sqlite.SELECT(sqlite.Int(1).AS(name)).AsTable("sub")
+		require.Equal(
+			t,
+			"\nSELECT sub.`a\"b``c` AS `a\"b``c`\nFROM (\n          SELECT 1 AS `a\"b``c`\n     ) AS sub;\n",
+			sqlite.SELECT(sqlite.IntegerColumn(name).From(liteSub)).FROM(liteSub).DebugSql(),
+		)
+	})
+
+	t.Run("CTE name", func(t *testing.T) {
+		t.Parallel()
+
+		pgCTE := postgres.CTE(name)
+		require.Equal(
+			t,
+			"\nWITH \"a\"\"b`c\" AS (\n     SELECT 1 AS \"v\"\n)\nSELECT \"a\"\"b`c\".v AS \"v\"\nFROM \"a\"\"b`c\";\n",
+			postgres.WITH(pgCTE.AS(postgres.SELECT(postgres.Int(1).AS("v"))))(
+				postgres.SELECT(postgres.IntegerColumn("v").From(pgCTE)).FROM(pgCTE),
+			).DebugSql(),
+		)
+
+		myCTE := mysql.CTE(name)
+		require.Equal(
+			t,
+			"\nWITH `a\"b``c` AS (\n     SELECT 1 AS \"v\"\n)\nSELECT `a\"b``c`.v AS \"v\"\nFROM `a\"b``c`;\n",
+			mysql.WITH(myCTE.AS(mysql.SELECT(mysql.Int(1).AS("v"))))(
+				mysql.SELECT(mysql.IntegerColumn("v").From(myCTE)).FROM(myCTE),
+			).DebugSql(),
+		)
+
+		liteCTE := sqlite.CTE(name)
+		require.Equal(
+			t,
+			"\nWITH `a\"b``c` AS (\n     SELECT 1 AS \"v\"\n)\nSELECT `a\"b``c`.v AS \"v\"\nFROM `a\"b``c`;\n",
+			sqlite.WITH(liteCTE.AS(sqlite.SELECT(sqlite.Int(1).AS("v"))))(
+				sqlite.SELECT(sqlite.IntegerColumn("v").From(liteCTE)).FROM(liteCTE),
+			).DebugSql(),
+		)
+	})
+
+	t.Run("builder", func(t *testing.T) {
+		t.Parallel()
+
+		out := jet.SQLBuilder{Dialect: mysql.Dialect}
+		out.WriteIdentifier("a`b")
+		require.Equal(t, "`a``b`", out.Buff.String())
+	})
 }

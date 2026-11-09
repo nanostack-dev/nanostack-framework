@@ -47,21 +47,14 @@ func (s dialectSwitch) serialize(statement StatementType, out *SQLBuilder, optio
 	selected.serialize(statement, out, options...)
 }
 
-// typedSwitch adapts a typed choose function to DialectSwitch. A nil interface of the
-// typed result stays a nil Expression, so the nil check of serialize sees it.
+// typedSwitch adapts a typed choose function to DialectSwitch. A nil typed interface
+// converts to a nil Expression, so the nil check of serialize sees it.
 func typedSwitch[T Expression](choose func(Dialect) T) Expression {
 	if choose == nil {
 		panic("jet: DialectSwitch needs a function")
 	}
 
-	return DialectSwitch(func(d Dialect) Expression {
-		selected := choose(d)
-		if any(selected) == nil {
-			return nil
-		}
-
-		return selected
-	})
+	return DialectSwitch(func(d Dialect) Expression { return choose(d) })
 }
 
 // BoolDialectSwitch is DialectSwitch for a bool expression.

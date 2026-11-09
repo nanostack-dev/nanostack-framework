@@ -270,7 +270,7 @@ linters:
       - ^tests/dbconfig/nanostack\.go$
       - ^tests/internal/testenv/
       - ^tests/tools/
-      - ^tests/(mysql|postgres|sqlite)/(generator_option|nanostack_models|option\w*|query)_test\.go$
+      - ^tests/(mysql|postgres|sqlite)/(generator_option|nanostack_alias|nanostack_models|option\w*|query)_test\.go$
 issues:
   max-issues-per-linter: 0
   max-same-issues: 0

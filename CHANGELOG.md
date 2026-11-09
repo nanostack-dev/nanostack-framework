@@ -8,7 +8,7 @@ One section per module and version, newest first. Each section uses Added, Chang
 - `internal/jet`: `DialectSwitch(func(Dialect) Expression)` and its typed forms (`BoolDialectSwitch`, `IntDialectSwitch`, `StringDialectSwitch`, ...). The statement's dialect selects the expression when the statement is serialized, so one value serves PostgreSQL, MySQL and SQLite. Search uses it for the SQL that differs per dialect.
 
 ### Fixed
-- The SQL builder doubles the quote character in an alias (`AS "a""b"`). Before, a quote in an alias ended the quoted name, and the rest of the alias was read as SQL.
+- The SQL builder writes an alias that contains a quote or a backslash with the identifier quote character, doubled inside the alias (`AS "a""b"` on PostgreSQL, ``AS `a"b` `` on MySQL and SQLite). It also doubles the quote character in a quoted identifier, so a subquery column or a CTE name that refers to the alias agrees with it. Before, a quote in an alias or in a reference to it ended the quoted name, and on MySQL a backslash before a quote did the same; the rest of the name was read as SQL.
 
 ## gen/v0.23.0-beta.3
 
