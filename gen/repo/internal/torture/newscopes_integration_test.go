@@ -4,12 +4,14 @@ package torture
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"testing"
 
 	"github.com/google/uuid"
 
+	"github.com/nanostack-dev/nanostack-framework/db/nanorepo"
 	"github.com/nanostack-dev/nanostack-framework/gen/repo/internal/torture/regionscope"
 )
 
@@ -134,6 +136,23 @@ func TestTwoContextScopes(t *testing.T) {
 					t.Fatal(err)
 				}
 				n, err := NewZones(tx).DeleteByOrgAndWorkspaceAndRegionAndName(ctx, orgs[o], "same")
+				if ws == "" {
+					// workspace_id has a Present function: a bare context fails closed, whatever
+					// the region. region_id has none: a context with a workspace and no region
+					// deletes the workspace's rows of every region (pinned below).
+					_ = tx.Rollback()
+					if !errors.Is(err, nanorepo.ErrNoContextScope) || n != 0 ||
+						len(column(t, db, `SELECT id FROM zone`)) != len(rows) {
+						t.Fatalf(
+							"delete without a workspace, org %d region %q: %d %v, want ErrNoContextScope and no change",
+							o,
+							region,
+							n,
+							err,
+						)
+					}
+					continue
+				}
 				left := column(t, db, `SELECT id FROM zone`) // outside the transaction: still every row
 				if len(left) != len(rows) {
 					t.Fatalf("a delete in an open transaction is visible outside it")
@@ -235,10 +254,12 @@ func TestScopeImplies(t *testing.T) {
 	for o := range 2 {
 		for p := range 2 {
 			prod := uuid.NewSHA1(uuid.NameSpaceOID, []byte{byte(o), byte(p)})
+			mustExec(t, db, `INSERT INTO tproduct (id, org_id) VALUES ($1,$2)`, prod, orgs[o])
 			mustExec(t, db, `INSERT INTO shelf (id, org_id, product_id, name) VALUES ($1,$2,$3,'same')`,
 				fmt.Sprintf("shelf-%d%d", o, p), orgs[o], prod)
 			for s := range 2 {
 				site := uuid.NewSHA1(uuid.NameSpaceOID, []byte{byte(o), byte(p), byte(s)})
+				mustExec(t, db, `INSERT INTO tsite (id, product_id) VALUES ($1,$2)`, site, prod)
 				mustExec(t, db, `INSERT INTO bin (id, org_id, product_id, site_id, name) VALUES ($1,$2,$3,$4,'same')`,
 					fmt.Sprintf("bin-%d%d%d", o, p, s), orgs[o], prod, site)
 			}
@@ -266,14 +287,14 @@ func TestScopeImplies(t *testing.T) {
 		t.Errorf("%d bins left, want 7", n)
 	}
 	product := uuid.NewSHA1(uuid.NameSpaceOID, []byte{0, 1})
-	if o, err := shelves.FindByProductAndID(ctx, product, "shelf-01"); err != nil || !o.IsPresent() {
-		t.Errorf("FindByProductAndID: %v %v", o, err)
+	if o, err := shelves.FindByOrgAndProductAndID(ctx, orgs[0], product, "shelf-01"); err != nil || !o.IsPresent() {
+		t.Errorf("FindByOrgAndProductAndID: %v %v", o, err)
 	}
-	if o, err := shelves.FindByProductAndID(ctx, product, "shelf-11"); err != nil || o.IsPresent() {
-		t.Errorf("FindByProductAndID of another product's shelf: %v %v", o, err)
+	if o, err := shelves.FindByOrgAndProductAndID(ctx, orgs[0], product, "shelf-11"); err != nil || o.IsPresent() {
+		t.Errorf("FindByOrgAndProductAndID of another product's shelf: %v %v", o, err)
 	}
-	if n, err := shelves.DeleteByProductAndName(ctx, product, "same"); err != nil || n != 1 {
-		t.Errorf("DeleteByProductAndName: %d %v", n, err)
+	if n, err := shelves.DeleteByOrgAndProductAndName(ctx, orgs[0], product, "same"); err != nil || n != 1 {
+		t.Errorf("DeleteByOrgAndProductAndName: %d %v", n, err)
 	}
 	if n := len(column(t, db, `SELECT id FROM shelf`)); n != 3 {
 		t.Errorf("%d shelves left, want 3", n)

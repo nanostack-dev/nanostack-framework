@@ -88,7 +88,6 @@ Orders on *ordersImpl (table order, scope org_id (Org), product_id (Product), wo
                                                          note: table order is scoped by org_id, product_id, workspace_id (Postgres.Scopes), and the name does not name workspace_id: Internal skips the scope on derived reads only
   FindByOrgAndProductAndWorkspaceAndName                 ERROR: not implemented
                                                          note: it returns one row, but (org_id, product_id, name) covers no unique key; the keys of order are order_pkey (id), order_org_id_product_id_by_key (org_id, product_id, by), order_org_id_product_id_workspace_id_name_key (org_id, product_id, workspace_id, name); order_org_id_product_id_workspace_id_name_key holds workspace_id, which the short name binds to no parameter: the registered function may keep every workspace, so it does not prove one row
-  FindByWorkspaceAndOrgAndProductAndName                 derived: SELECT * FROM order WHERE workspacescope.Filter(ctx, workspace_id) AND org_id = $1 AND product_id = $2 AND name = $3
   FindByOrgIDAndProductIDAndWorkspaceAndName             ERROR: not implemented
                                                          note: parameter orgID has type ProductID, which says column product_id, but it is bound to org_id
   FindByOrgAndWorkspaceAndName                           ERROR: not implemented
@@ -112,7 +111,7 @@ Orders on *ordersImpl (table order, scope org_id (Org), product_id (Product), wo
   FindByNameAndOrgAndProductAndWorkspace                 ERROR: not implemented
                                                          note: table order is scoped by org_id, product_id, workspace_id (Postgres.Scopes), and the name has a column before a scope column: the scope words come first
   FindByProductAndWorkspaceAndBy                         ERROR: not implemented
-                                                         note: it returns one row, but (product_id, by) covers no unique key; the keys of order are order_pkey (id), order_org_id_product_id_by_key (org_id, product_id, by), order_org_id_product_id_workspace_id_name_key (org_id, product_id, workspace_id, name)
+                                                         note: table order is scoped by org_id, product_id, workspace_id (Postgres.Scopes), and the name does not name org_id
 Ledgers on *ledgersImpl (table ledger, scope org_id (Org), product_id (Product), site_id (Site), workspace_id (Workspace))
   FindByOrgAndProductAndSiteAndWorkspaceAndSeq  ERROR: not implemented
                                                 note: it returns one row, but (org_id, product_id, site_id, seq) covers no unique key; the keys of ledger are ledger_pkey (org_id, product_id, site_id, workspace_id, seq); ledger_pkey holds workspace_id, which the short name binds to no parameter: the registered function may keep every workspace, so it does not prove one row
@@ -123,7 +122,7 @@ Ledgers on *ledgersImpl (table ledger, scope org_id (Org), product_id (Product),
   FindByWorkspaceIDAndSeq                       ERROR: not implemented
                                                 note: table ledger is scoped by org_id, product_id, site_id, workspace_id (Postgres.Scopes), and the name does not name org_id or product_id or site_id
   DeleteByWorkspaceIDAndSeq                     ERROR: not implemented
-                                                note: table ledger is scoped by org_id, product_id, site_id, workspace_id (Postgres.Scopes), and the name does not name org_id or product_id or site_id
+                                                note: a derived delete names the context scope WorkspaceID by its Go field, which binds a parameter and skips the function of Postgres.ContextScopes: a cross-workspace delete is hand-written, where review sees it
   DeleteByOrgAndMemoInternal                    ERROR: not implemented
                                                 note: table ledger is scoped by org_id, product_id, site_id, workspace_id (Postgres.Scopes), and the name does not name product_id or site_id or workspace_id: Internal skips the scope on derived reads only
 Notes on *notesImpl (table note, scope workspace_id (Workspace))
@@ -165,7 +164,8 @@ Mixeds on *mixedsImpl (table mixed, scope org_id (Org), product_id (Product))
                         note: table mixed is scoped by org_id, product_id (Postgres.Scopes), and the name does not name product_id
   DeleteByOrgAndName    ERROR: not implemented
                         note: table mixed is scoped by org_id, product_id (Postgres.Scopes), and the name does not name product_id
-  FindByProductAndName  derived: SELECT * FROM mixed WHERE product_id = $1 AND name = $2
+  FindByProductAndName  ERROR: not implemented
+                        note: table mixed is scoped by org_id, product_id (Postgres.Scopes), and the name does not name org_id
 Bins on *binsImpl (table bin, scope org_id (Org), product_id (Product), site_id (Site))
   FindByProductAndID      ERROR: not implemented
                           note: table bin is scoped by org_id, product_id, site_id (Postgres.Scopes), and the name does not name site_id
@@ -222,6 +222,50 @@ Kitchens on *kitchensImpl (table kitchen, scope org_id (Org))
                         note: parameter v has type string; column kitchen.c_mood is model.Mood
   FindByOrgAndCReal     ERROR: not implemented
                         note: parameter v has type float64; column kitchen.c_real is float32
+Shelves on *shelvesImpl (table shelf, scope org_id (Org), product_id (Product))
+  FindByProductAndID      ERROR: not implemented
+                          note: table shelf is scoped by org_id, product_id (Postgres.Scopes), and the name does not name org_id
+  FindByProductAndName    ERROR: not implemented
+                          note: table shelf is scoped by org_id, product_id (Postgres.Scopes), and the name does not name org_id
+  DeleteByProductAndName  ERROR: not implemented
+                          note: table shelf is scoped by org_id, product_id (Postgres.Scopes), and the name does not name org_id
+LedgerForms on *ledgerFormsImpl (table ledger, scope org_id (Org), product_id (Product), site_id (Site), workspace_id (Workspace))
+  DeleteByOrgAndProductAndSiteAndWorkspaceIDAndSeq  ERROR: not implemented
+                                                    note: a derived delete names the context scope WorkspaceID by its Go field, which binds a parameter and skips the function of Postgres.ContextScopes: a cross-workspace delete is hand-written, where review sees it
+NoteForms on *noteFormsImpl (table note, scope workspace_id (Workspace))
+  DeleteByWorkspaceIDAndID  ERROR: not implemented
+                            note: a derived delete names the context scope WorkspaceID by its Go field, which binds a parameter and skips the function of Postgres.ContextScopes: a cross-workspace delete is hand-written, where review sees it
+OrderForms on *orderFormsImpl (table order, scope org_id (Org), product_id (Product), workspace_id (Workspace))
+  DeleteByOrgAndProductAndWorkspaceIDAndName  ERROR: not implemented
+                                              note: a derived delete names the context scope WorkspaceID by its Go field, which binds a parameter and skips the function of Postgres.ContextScopes: a cross-workspace delete is hand-written, where review sees it
+WideForms on *wideFormsImpl (table wide, scope org_id (Org), product_id (Product), workspace_id (Workspace))
+  CreateInOrgAndProductAndWorkspaceID         ERROR: not implemented
+                                              note: a derived write names the context scope WorkspaceID by its Go field, which binds a parameter and skips the function of Postgres.ContextScopes: a cross-workspace write is hand-written, where review sees it
+  UpdateByOrgAndProductAndWorkspaceIDAndID    ERROR: not implemented
+                                              note: a derived write names the context scope WorkspaceID by its Go field, which binds a parameter and skips the function of Postgres.ContextScopes: a cross-workspace write is hand-written, where review sees it
+  UpsertByOrgAndProductAndWorkspaceIDAndSlug  ERROR: not implemented
+                                              note: a derived write names the context scope WorkspaceID by its Go field, which binds a parameter and skips the function of Postgres.ContextScopes: a cross-workspace write is hand-written, where review sees it
+BinWrites on *binWritesImpl (table bin, scope org_id (Org), product_id (Product), site_id (Site))
+  CreateInSite                 ERROR: not implemented
+                               note: table bin is scoped by org_id, product_id, site_id (Postgres.Scopes), and the name does not name org_id or product_id: a derived Create takes its scope from the name, never from the value
+  CreateInProductAndSite       ERROR: not implemented
+                               note: table bin is scoped by org_id, product_id, site_id (Postgres.Scopes), and the name does not name org_id: a derived Create takes its scope from the name, never from the value
+  UpdateBySiteAndID            ERROR: not implemented
+                               note: table bin is scoped by org_id, product_id, site_id (Postgres.Scopes), and the name does not name org_id or product_id
+  UpdateByProductAndSiteAndID  ERROR: not implemented
+                               note: table bin is scoped by org_id, product_id, site_id (Postgres.Scopes), and the name does not name org_id
+GlobalWrites on *globalWritesImpl (table wglobal, scope org_id (Org), product_id (Product))
+  UpsertByOrgAndProductAndSlug  ERROR: not implemented
+                                note: a derived upsert conflicts on one unique key that holds a hard scope and every key column of the name, and no key fits (org_id, product_id, slug); the keys of wglobal are wglobal_pkey (id), wglobal_slug_key (slug)
+  UpsertByOrgAndProductAndID    ERROR: not implemented
+                                note: a derived upsert conflicts on one unique key that holds a hard scope and every key column of the name, and no key fits (org_id, product_id, id); the keys of wglobal are wglobal_pkey (id), wglobal_slug_key (slug)
+ViewWrites on *viewWritesImpl (table order_live, scope org_id (Org), product_id (Product))
+  CreateInOrgAndProduct       ERROR: not implemented
+                              note: table order_live is a view: nanostack gen db types every view column as nullable, so no tenant column of a view can be trusted as a scope, and a derived delete on an updatable view would reach the rows of every tenant
+  UpdateByOrgAndProductAndID  ERROR: not implemented
+                              note: table order_live is a view: nanostack gen db types every view column as nullable, so no tenant column of a view can be trusted as a scope, and a derived delete on an updatable view would reach the rows of every tenant
+  UpsertByOrgAndProductAndID  ERROR: not implemented
+                              note: table order_live is a view: nanostack gen db types every view column as nullable, so no tenant column of a view can be trusted as a scope, and a derived delete on an updatable view would reach the rows of every tenant
 Collides on *collidesImpl (table collide, scope org_id)
   FindByOrgAndID  ERROR: not resolved
                   note: a short scope name of the table is also the Go field of a column

@@ -109,16 +109,17 @@ type Postgres struct {
 	// Upsert of that table. Empty: derived writes set every column.
 	DatabaseColumns []string
 	// ScopeImplies maps a tenant column of Scopes to the tenant column that
-	// it determines in the data: {"organization_id": "product_id",
-	// "product_id": "platform_tenant_id"} says that an organization has one
-	// product, which has one platform tenant. A derived repository method
-	// must name every scope column of its table; a column it names stands
-	// for the columns it implies, transitively, so FindByOrgAndID is legal
-	// on a table with all three. Declare only what the schema guarantees,
-	// such as a foreign key chain: a wrong entry lets a derived method omit
-	// a tenant filter. Both sides are columns of Scopes, neither is a
-	// context column, and the map has no cycle. Empty: every scope column of
-	// a table is named.
+	// it determines in the data: {"product_id": "platform_tenant_id"} says
+	// that a product has one platform tenant. A derived read or delete must
+	// name every scope column of its table; a column it names stands for the
+	// columns it implies, transitively. An entry applies on a table only
+	// when the table proves it: a foreign key of the table lists both
+	// columns among its referencing columns, and the referenced table has a
+	// unique key on the column that the first one references, alone. A table
+	// without the proof names every column, and the refusal says which
+	// foreign key is missing. A derived write never uses an implication.
+	// Both sides are columns of Scopes, neither is a context column, and the
+	// map has no cycle. Empty: every scope column of a table is named.
 	ScopeImplies map[string]string
 }
 
@@ -141,6 +142,17 @@ type ContextScope struct {
 	// error of Stamp, such as a request without a workspace. Empty: such
 	// writes do not derive, and are written by hand.
 	Stamp string
+	// Present reports whether a context carries a value for Column, in the
+	// form func(context.Context) bool, such as
+	// "example.com/app/internal/db/workspacescope.Present". Func reads TRUE
+	// when the context carries none (an organisation-wide read), and a
+	// derived delete, update, upsert or create with a bare context would
+	// reach every value of Column. When Present is set, each of them first
+	// checks it and returns nanorepo.ErrNoContextScope before any SQL; reads
+	// keep Func. Empty: they keep Func, and nanostack gen repo warns on each
+	// derived delete and update of such a table. Set it for every column
+	// whose Func fails open.
+	Present string
 }
 
 // OpenAPI is the API contract and the Go packages generated from it. nanostack

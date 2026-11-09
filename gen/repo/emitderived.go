@@ -136,6 +136,12 @@ func (e *emitter) binding(r *resolution) {
 		} else {
 			body = e.body(m, r.via)
 		}
+		if guard := e.presentGuard(m, t); guard != "" {
+			e.p(
+				"//\n// FAIL-CLOSED: a context without the scope fails with nanorepo.ErrNoContextScope, before any SQL.\n",
+			)
+			body = guard + body
+		}
 		e.p("func (%s) %s(%s) %s {\n%s}\n\n", recv, m.fn.Name(), e.params(m), e.results(m, t), body)
 	}
 	for _, m := range r.searches {
@@ -232,6 +238,35 @@ func (e *emitter) body(m *derivedMethod, via string) string {
 	case shapeAffected:
 	}
 	return "\treturn " + call("deleteWhere") + "\n"
+}
+
+// presentGuard renders the check that a delete or a write makes first: each
+// context scope of its table with a Present function must find its value in
+// ctx, else the method returns nanorepo.ErrNoContextScope without SQL.
+func (e *emitter) presentGuard(m *derivedMethod, t *tableBase) string {
+	if len(m.present) == 0 {
+		return ""
+	}
+	var zero string
+	switch m.shape {
+	case shapeOption:
+		zero = e.ref(functionalPath, "functional", "None") + "[" + e.typ(t.domain) + "](), "
+	case shapeSlice:
+		zero = "nil, "
+	case shapeOne:
+		zero = "*new(" + e.typ(t.domain) + "), "
+	case shapeBool, shapeDeleted:
+		zero = "false, "
+	case shapeInt64, shapeAffected:
+		zero = "0, "
+	case shapeErr:
+	}
+	var s strings.Builder
+	for _, c := range m.present {
+		s.WriteString("\tif !" + e.funcRef(c.present) + "(ctx) {\n\t\treturn " + zero +
+			e.ref(nanorepoPath, "nanorepo", "ErrNoContextScope") + "\n\t}\n")
+	}
+	return s.String()
 }
 
 // ctxCall renders the condition of a context scope named by its short name:

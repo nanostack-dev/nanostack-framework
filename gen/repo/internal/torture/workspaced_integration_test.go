@@ -98,10 +98,6 @@ func TestNotesIsolation(t *testing.T) {
 		},
 		{name: "DeleteByWorkspaceAndTitle", ws: wsCtx, vals: titleVals, pred: title,
 			del: func(c context.Context, a args) (int64, error) { return repo.DeleteByWorkspaceAndTitle(c, a.s) }},
-		{name: "DeleteByWorkspaceIDAndID", ws: wsParam, vals: idVals, pred: label,
-			del: func(c context.Context, a args) (int64, error) {
-				return none(repo.DeleteByWorkspaceIDAndID(c, a.ws, a.s))
-			}},
 		{name: "FindByIDInternal", vals: idVals, pred: label, single: true,
 			find: func(c context.Context, a args) ([]string, error) { return optLbl(repo.FindByIDInternal(c, a.s)) }},
 		{

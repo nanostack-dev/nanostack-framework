@@ -164,6 +164,11 @@ nanogen/project.go:7: Postgres.ScopeNames: the name of "workspace_id" is "1Works
 			`nanogen/project.go:7: Postgres.ContextScopes: the stamp function of "workspace_id" is "Stamp", not an import path, a dot and a function name
   fix: write the stamp function as "example.com/app/internal/db/workspacescope.Stamp"
 `},
+		{`Postgres: &project.Postgres{Name: "app", Scopes: []string{"organization_id", "workspace_id"}, ` +
+			`ContextScopes: []project.ContextScope{{Column: "workspace_id", Func: "app/scope.Filter", Present: "Present"}}}`,
+			`nanogen/project.go:7: Postgres.ContextScopes: the present function of "workspace_id" is "Present", not an import path, a dot and a function name
+  fix: write the function as "example.com/app/internal/db/workspacescope.Present"
+`},
 		{`Postgres: &project.Postgres{Name: "app", Scopes: []string{"organization_id"}, ` +
 			`DatabaseColumns: []string{"CreatedAt", "created_at", "created_at", "organization_id"}}`,
 			`nanogen/project.go:7: Postgres.DatabaseColumns entry "CreatedAt" is not a lower-case column name

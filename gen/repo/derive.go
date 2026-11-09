@@ -80,6 +80,11 @@ type derivedMethod struct {
 	params   []param    // one per entry of preds; a write adds its value last
 	key      *uniqueKey // the key that proves a single-row result, or the conflict key of an upsert
 	write    *writePlan // the columns of a write; nil for a read or a delete
+	// present are the context scopes of the table that have a Present
+	// function: a delete or a write checks each first. failOpen are the
+	// ones without: a bare context reaches every value of the column.
+	present  []ctxScope
+	failOpen []ctxScope
 }
 
 // param is one value parameter of a derived method.
@@ -122,6 +127,15 @@ func (r *resolver) derive(fn *types.Func) (*derivedMethod, *refusal) {
 	if fail = r.checkUnique(fn, m); fail != nil {
 		return nil, fail
 	}
+	if m.op.changesRows() {
+		for _, c := range r.ctx {
+			if c.present != "" {
+				m.present = append(m.present, c)
+			} else {
+				m.failOpen = append(m.failOpen, c)
+			}
+		}
+	}
 	return m, nil
 }
 
@@ -157,6 +171,9 @@ func (r *resolver) parseName(fn *types.Func) (*derivedMethod, *refusal) {
 		}
 		m.terms = r.termsOf(toks)
 		r.collectPreds(m)
+		if len(m.cross) > 0 && m.op.changesRows() {
+			return nil, r.crossRefusal(m)
+		}
 	}
 	// A table that no derived write can scope (a nullable scope column, no hard
 	// scope) gets the write refusal, which says so, before the read rule.
@@ -169,23 +186,6 @@ func (r *resolver) parseName(fn *types.Func) (*derivedMethod, *refusal) {
 		return nil, fail
 	}
 	return m, nil
-}
-
-// collectPreds records the parameter-bound predicates of m, and the context
-// columns a name binds from a parameter (m.cross).
-func (r *resolver) collectPreds(m *derivedMethod) {
-	for i, t := range m.terms {
-		switch {
-		case t.ctx != nil:
-		case m.op.isWrite() && !slices.Contains(r.allScope, t.field):
-			m.terms[i].fromRow = true // a key column: the write reads it from its value
-		default:
-			m.preds = append(m.preds, t.field)
-			if c := r.ctxOf(t.field); c != nil {
-				m.cross = append(m.cross, c.col)
-			}
-		}
-	}
 }
 
 // scopeRules applies the scope rules to the terms of m: the name gives every
@@ -324,11 +324,7 @@ func (r *resolver) scopeRefusal(fn *types.Func, m *derivedMethod, base string, m
 			fix += "; " + c.field + " takes a parameter, and a short name from Postgres.ScopeNames binds none"
 		}
 	}
-	hardMissing := slices.ContainsFunc(missing, func(f string) bool { return r.ctxOf(f) == nil })
-	namesScope := slices.ContainsFunc(m.terms, func(t term) bool { return slices.Contains(r.allScope, t.field) })
-	if hardMissing && namesScope && !m.op.isWrite() {
-		fix += "; if a column the name has determines the others in the schema, declare it in Postgres.ScopeImplies"
-	}
+	fix += r.impliesHint(m, missing)
 	if m.op == opDelete && m.internal {
 		return &refusal{
 			msg:  what + ": Internal skips the scope on derived reads only",

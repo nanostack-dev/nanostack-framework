@@ -401,7 +401,8 @@ func NewUserCounts(db qrm.DB) UserCounts { return &userCounts{usersBase: newUser
 		wantCode int
 		want     string
 	}{
-		{`map[string]string{"external_id": "tenant_id"}`, 0, ""},
+		// users has no foreign key from external_id to tenant_id: the entry does not apply.
+		{`map[string]string{"external_id": "tenant_id"}`, 1, `Postgres.ScopeImplies says external_id determines tenant_id, but table users has no foreign key`},
 		{`nil`, 1, `table users is scoped by tenant_id, external_id (Postgres.Scopes), and the name does not name tenant_id`},
 	} {
 		dir := copyFixtureOf(t, dbFixture)

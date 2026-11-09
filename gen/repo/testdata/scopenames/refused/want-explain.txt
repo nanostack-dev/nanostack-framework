@@ -22,9 +22,9 @@ Boards on *boardsImpl (table boards, scope workspace_id (Workspace))
   FindByIDInternal  derived, UNSCOPED (Internal): SELECT * FROM boards WHERE id = $1 LIMIT 2 -- at most one row: boards_pkey (id); a second row is ErrMoreThanOneRow
 NoteWrites on *noteWritesImpl (table notes, scope tenant_id (Tenant), workspace_id (Workspace))
   CreateInTenantAndWorkspaceID  ERROR: not implemented
-                                note: table notes has the scope columns tenant_id, workspace_id, and the name does not name workspace_id: a derived write names every scope column, a hard scope as a parameter and a context scope by its short name, so none comes from the value
+                                note: a derived write names the context scope WorkspaceID by its Go field, which binds a parameter and skips the function of Postgres.ContextScopes: a cross-workspace write is hand-written, where review sees it
   UpdateByWorkspaceIDAndID      ERROR: not implemented
-                                note: table notes is scoped by tenant_id, workspace_id (Postgres.Scopes), and the name does not name tenant_id
+                                note: a derived write names the context scope WorkspaceID by its Go field, which binds a parameter and skips the function of Postgres.ContextScopes: a cross-workspace write is hand-written, where review sees it
 ShelfWrites on *shelfWritesImpl (table shelves, scope tenant_id (Tenant), store_id, workspace_id (Workspace))
   CreateInTenantAndWorkspace         ERROR: not implemented
                                      note: table shelves is scoped by tenant_id, store_id, workspace_id (Postgres.Scopes), and the name does not name store_id: a derived Create takes its scope from the name, never from the value

@@ -369,7 +369,7 @@ func (r *resolver) fitsConflict(k uniqueKey, fields, rowFields []string) bool {
 	within := !slices.ContainsFunc(k.fields, func(f string) bool { return !slices.Contains(fields, f) })
 	holdsRow := !slices.ContainsFunc(rowFields, func(f string) bool { return !slices.Contains(k.fields, f) })
 	hard := slices.ContainsFunc(k.fields, func(f string) bool {
-		return slices.Contains(r.scope, f) && r.ctxOf(f) == nil
+		return slices.Contains(r.allScope, f) && r.ctxOf(f) == nil
 	})
 	return within && holdsRow && hard
 }

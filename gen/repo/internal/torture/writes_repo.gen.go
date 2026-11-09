@@ -8,6 +8,7 @@ import (
 	"errors"
 
 	"github.com/google/uuid"
+	"github.com/nanostack-dev/nanostack-framework/db/nanorepo"
 	"github.com/nanostack-dev/nanostack-framework/db/postgres"
 	"github.com/nanostack-dev/nanostack-framework/gen/repo/internal/repotest/workspacescope"
 	"github.com/nanostack-dev/nanostack-framework/gen/repo/internal/torture/db/torture/public/model"
@@ -31,7 +32,12 @@ func (r *widesImpl) FindByOrgAndProductAndWorkspaceAndID(ctx context.Context, or
 // CreateInOrgAndProductAndWorkspace is derived from its name:
 //
 //	INSERT INTO wide (id, org_id, product_id, workspace_id, slug, c_uuid, c_text, c_varchar, c_citext, c_small, c_int, c_big, c_real, c_double, c_bool, c_mood, c_inet, c_json, c_bytes, c_date, c_ts, c_tstz, c_time, c_timetz, c_texts, c_ints, n_uuid, n_text, n_varchar, n_citext, n_small, n_int, n_big, n_real, n_double, n_bool, n_mood, n_inet, n_json, n_bytes, n_date, n_ts, n_tstz, n_time, n_timetz, n_texts, n_ints) VALUES (...) RETURNING *
+//
+// FAIL-CLOSED: a context without the scope fails with nanorepo.ErrNoContextScope, before any SQL.
 func (r *widesImpl) CreateInOrgAndProductAndWorkspace(ctx context.Context, orgID uuid.UUID, productID uuid.UUID, wide model.Wide) (model.Wide, error) {
+	if !workspacescope.Present(ctx) {
+		return *new(model.Wide), nanorepo.ErrNoContextScope
+	}
 	row := wide
 	row.OrgID = orgID
 	row.ProductID = productID
@@ -49,7 +55,12 @@ func (r *widesImpl) CreateInOrgAndProductAndWorkspace(ctx context.Context, orgID
 // UpdateByOrgAndProductAndWorkspaceAndID is derived from its name:
 //
 //	UPDATE wide SET slug, c_uuid, c_text, c_varchar, c_citext, c_small, c_int, c_big, c_real, c_double, c_bool, c_mood, c_inet, c_json, c_bytes, c_date, c_ts, c_tstz, c_time, c_timetz, c_texts, c_ints, n_uuid, n_text, n_varchar, n_citext, n_small, n_int, n_big, n_real, n_double, n_bool, n_mood, n_inet, n_json, n_bytes, n_date, n_ts, n_tstz, n_time, n_timetz, n_texts, n_ints WHERE org_id = $1 AND product_id = $2 AND workspacescope.Filter(ctx, workspace_id) AND id = <value>.ID RETURNING *
+//
+// FAIL-CLOSED: a context without the scope fails with nanorepo.ErrNoContextScope, before any SQL.
 func (r *widesImpl) UpdateByOrgAndProductAndWorkspaceAndID(ctx context.Context, orgID uuid.UUID, productID uuid.UUID, wide model.Wide) (model.Wide, error) {
+	if !workspacescope.Present(ctx) {
+		return *new(model.Wide), nanorepo.ErrNoContextScope
+	}
 	row := wide
 	stmt := r.t.UPDATE(r.t.Slug, r.t.CUUID, r.t.CText, r.t.CVarchar, r.t.CCitext, r.t.CSmall, r.t.CInt, r.t.CBig, r.t.CReal, r.t.CDouble, r.t.CBool, r.t.CMood, r.t.CInet, r.t.CJSON, r.t.CBytes, r.t.CDate, r.t.CTs, r.t.CTstz, r.t.CTime, r.t.CTimetz, r.t.CTexts, r.t.CInts, r.t.NUUID, r.t.NText, r.t.NVarchar, r.t.NCitext, r.t.NSmall, r.t.NInt, r.t.NBig, r.t.NReal, r.t.NDouble, r.t.NBool, r.t.NMood, r.t.NInet, r.t.NJSON, r.t.NBytes, r.t.NDate, r.t.NTs, r.t.NTstz, r.t.NTime, r.t.NTimetz, r.t.NTexts, r.t.NInts).
 		MODEL(row).
@@ -63,7 +74,12 @@ func (r *widesImpl) UpdateByOrgAndProductAndWorkspaceAndID(ctx context.Context, 
 // UpdateByOrgAndProductAndWorkspaceAndSlug is derived from its name:
 //
 //	UPDATE wide SET c_uuid, c_text, c_varchar, c_citext, c_small, c_int, c_big, c_real, c_double, c_bool, c_mood, c_inet, c_json, c_bytes, c_date, c_ts, c_tstz, c_time, c_timetz, c_texts, c_ints, n_uuid, n_text, n_varchar, n_citext, n_small, n_int, n_big, n_real, n_double, n_bool, n_mood, n_inet, n_json, n_bytes, n_date, n_ts, n_tstz, n_time, n_timetz, n_texts, n_ints WHERE org_id = $1 AND product_id = $2 AND workspacescope.Filter(ctx, workspace_id) AND slug = <value>.Slug RETURNING *
+//
+// FAIL-CLOSED: a context without the scope fails with nanorepo.ErrNoContextScope, before any SQL.
 func (r *widesImpl) UpdateByOrgAndProductAndWorkspaceAndSlug(ctx context.Context, orgID uuid.UUID, productID uuid.UUID, wide model.Wide) (functional.Option[model.Wide], error) {
+	if !workspacescope.Present(ctx) {
+		return functional.None[model.Wide](), nanorepo.ErrNoContextScope
+	}
 	row := wide
 	stmt := r.t.UPDATE(r.t.CUUID, r.t.CText, r.t.CVarchar, r.t.CCitext, r.t.CSmall, r.t.CInt, r.t.CBig, r.t.CReal, r.t.CDouble, r.t.CBool, r.t.CMood, r.t.CInet, r.t.CJSON, r.t.CBytes, r.t.CDate, r.t.CTs, r.t.CTstz, r.t.CTime, r.t.CTimetz, r.t.CTexts, r.t.CInts, r.t.NUUID, r.t.NText, r.t.NVarchar, r.t.NCitext, r.t.NSmall, r.t.NInt, r.t.NBig, r.t.NReal, r.t.NDouble, r.t.NBool, r.t.NMood, r.t.NInet, r.t.NJSON, r.t.NBytes, r.t.NDate, r.t.NTs, r.t.NTstz, r.t.NTime, r.t.NTimetz, r.t.NTexts, r.t.NInts).
 		MODEL(row).
@@ -84,7 +100,12 @@ func (r *widesImpl) UpdateByOrgAndProductAndWorkspaceAndSlug(ctx context.Context
 // UpsertByOrgAndProductAndWorkspaceAndSlug is derived from its name:
 //
 //	INSERT INTO wide (id, org_id, product_id, workspace_id, slug, c_uuid, c_text, c_varchar, c_citext, c_small, c_int, c_big, c_real, c_double, c_bool, c_mood, c_inet, c_json, c_bytes, c_date, c_ts, c_tstz, c_time, c_timetz, c_texts, c_ints, n_uuid, n_text, n_varchar, n_citext, n_small, n_int, n_big, n_real, n_double, n_bool, n_mood, n_inet, n_json, n_bytes, n_date, n_ts, n_tstz, n_time, n_timetz, n_texts, n_ints) VALUES (...) ON CONFLICT (org_id, product_id, slug) DO UPDATE SET c_uuid = EXCLUDED.c_uuid, c_text = EXCLUDED.c_text, c_varchar = EXCLUDED.c_varchar, c_citext = EXCLUDED.c_citext, c_small = EXCLUDED.c_small, c_int = EXCLUDED.c_int, c_big = EXCLUDED.c_big, c_real = EXCLUDED.c_real, c_double = EXCLUDED.c_double, c_bool = EXCLUDED.c_bool, c_mood = EXCLUDED.c_mood, c_inet = EXCLUDED.c_inet, c_json = EXCLUDED.c_json, c_bytes = EXCLUDED.c_bytes, c_date = EXCLUDED.c_date, c_ts = EXCLUDED.c_ts, c_tstz = EXCLUDED.c_tstz, c_time = EXCLUDED.c_time, c_timetz = EXCLUDED.c_timetz, c_texts = EXCLUDED.c_texts, c_ints = EXCLUDED.c_ints, n_uuid = EXCLUDED.n_uuid, n_text = EXCLUDED.n_text, n_varchar = EXCLUDED.n_varchar, n_citext = EXCLUDED.n_citext, n_small = EXCLUDED.n_small, n_int = EXCLUDED.n_int, n_big = EXCLUDED.n_big, n_real = EXCLUDED.n_real, n_double = EXCLUDED.n_double, n_bool = EXCLUDED.n_bool, n_mood = EXCLUDED.n_mood, n_inet = EXCLUDED.n_inet, n_json = EXCLUDED.n_json, n_bytes = EXCLUDED.n_bytes, n_date = EXCLUDED.n_date, n_ts = EXCLUDED.n_ts, n_tstz = EXCLUDED.n_tstz, n_time = EXCLUDED.n_time, n_timetz = EXCLUDED.n_timetz, n_texts = EXCLUDED.n_texts, n_ints = EXCLUDED.n_ints WHERE wide.workspace_id = EXCLUDED.workspace_id RETURNING *
+//
+// FAIL-CLOSED: a context without the scope fails with nanorepo.ErrNoContextScope, before any SQL.
 func (r *widesImpl) UpsertByOrgAndProductAndWorkspaceAndSlug(ctx context.Context, orgID uuid.UUID, productID uuid.UUID, wide model.Wide) (model.Wide, error) {
+	if !workspacescope.Present(ctx) {
+		return *new(model.Wide), nanorepo.ErrNoContextScope
+	}
 	row := wide
 	row.OrgID = orgID
 	row.ProductID = productID
@@ -162,7 +183,12 @@ func (r *wShelvesImpl) FindByOrgAndProductAndWorkspaceAndID(ctx context.Context,
 // CreateInOrgAndProductAndWorkspace is derived from its name:
 //
 //	INSERT INTO wshelf (id, org_id, product_id, workspace_id, slug, body) VALUES (...)
+//
+// FAIL-CLOSED: a context without the scope fails with nanorepo.ErrNoContextScope, before any SQL.
 func (r *wShelvesImpl) CreateInOrgAndProductAndWorkspace(ctx context.Context, orgID uuid.UUID, productID uuid.UUID, shelf model.Wshelf) error {
+	if !workspacescope.Present(ctx) {
+		return nanorepo.ErrNoContextScope
+	}
 	row := shelf
 	row.OrgID = orgID
 	row.ProductID = productID
@@ -179,7 +205,12 @@ func (r *wShelvesImpl) CreateInOrgAndProductAndWorkspace(ctx context.Context, or
 // UpdateByOrgAndProductAndWorkspaceAndID is derived from its name:
 //
 //	UPDATE wshelf SET slug, body WHERE org_id = $1 AND product_id = $2 AND workspacescope.Filter(ctx, workspace_id) AND id = <value>.ID
+//
+// FAIL-CLOSED: a context without the scope fails with nanorepo.ErrNoContextScope, before any SQL.
 func (r *wShelvesImpl) UpdateByOrgAndProductAndWorkspaceAndID(ctx context.Context, orgID uuid.UUID, productID uuid.UUID, shelf model.Wshelf) error {
+	if !workspacescope.Present(ctx) {
+		return nanorepo.ErrNoContextScope
+	}
 	row := shelf
 	stmt := r.t.UPDATE(r.t.Slug, r.t.Body).
 		MODEL(row).
@@ -195,7 +226,12 @@ func (r *wShelvesImpl) UpdateByOrgAndProductAndWorkspaceAndID(ctx context.Contex
 // UpsertByOrgAndProductAndWorkspaceAndSlug is derived from its name:
 //
 //	INSERT INTO wshelf (id, org_id, product_id, workspace_id, slug, body) VALUES (...) ON CONFLICT (product_id, slug) DO UPDATE SET body = EXCLUDED.body WHERE wshelf.org_id = EXCLUDED.org_id AND wshelf.workspace_id = EXCLUDED.workspace_id
+//
+// FAIL-CLOSED: a context without the scope fails with nanorepo.ErrNoContextScope, before any SQL.
 func (r *wShelvesImpl) UpsertByOrgAndProductAndWorkspaceAndSlug(ctx context.Context, orgID uuid.UUID, productID uuid.UUID, shelf model.Wshelf) error {
+	if !workspacescope.Present(ctx) {
+		return nanorepo.ErrNoContextScope
+	}
 	row := shelf
 	row.OrgID = orgID
 	row.ProductID = productID

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/nanostack-dev/nanostack-framework/db/nanorepo"
 	"github.com/nanostack-dev/nanostack-framework/gen/repo/internal/repotest/workspacescope"
 	"github.com/nanostack-dev/nanostack-framework/gen/repo/internal/torture/db/torture/public/model"
 	"github.com/nanostack-dev/nanostack-framework/gen/repo/internal/torture/regionscope"
@@ -439,7 +440,7 @@ func (r *usersImpl) DeleteByOrgAndName(ctx context.Context, orgID uuid.UUID, nam
 	return r.deleteWhere(ctx, r.where.OrgID(orgID).AND(r.where.Name(name)))
 }
 
-// Orders on *ordersImpl: 34 derived methods on table order; the other methods are
+// Orders on *ordersImpl: 33 derived methods on table order; the other methods are
 // hand-written (nanostack gen repo -explain lists each one).
 //
 // A compile error on the next line means Orders gained or lost a method since
@@ -677,7 +678,12 @@ func (r *ordersImpl) ExistsByOrgAndProductAndWorkspaceAndID(ctx context.Context,
 // DeleteByOrgAndProductAndWorkspaceAndID is derived from its name:
 //
 //	DELETE FROM order WHERE org_id = $1 AND product_id = $2 AND workspacescope.Filter(ctx, workspace_id) AND id = $3
+//
+// FAIL-CLOSED: a context without the scope fails with nanorepo.ErrNoContextScope, before any SQL.
 func (r *ordersImpl) DeleteByOrgAndProductAndWorkspaceAndID(ctx context.Context, orgID uuid.UUID, productID uuid.UUID, id uuid.UUID) (bool, error) {
+	if !workspacescope.Present(ctx) {
+		return false, nanorepo.ErrNoContextScope
+	}
 	n, err := r.deleteWhere(ctx, r.where.OrgID(orgID).AND(r.where.ProductID(productID)).AND(workspacescope.Filter(ctx, r.t.WorkspaceID)).AND(r.where.ID(id)))
 	return n > 0, err
 }
@@ -685,7 +691,12 @@ func (r *ordersImpl) DeleteByOrgAndProductAndWorkspaceAndID(ctx context.Context,
 // DeleteByOrgAndProductAndWorkspaceAndBy is derived from its name:
 //
 //	DELETE FROM order WHERE org_id = $1 AND product_id = $2 AND workspacescope.Filter(ctx, workspace_id) AND by = $3
+//
+// FAIL-CLOSED: a context without the scope fails with nanorepo.ErrNoContextScope, before any SQL.
 func (r *ordersImpl) DeleteByOrgAndProductAndWorkspaceAndBy(ctx context.Context, orgID uuid.UUID, productID uuid.UUID, by string) error {
+	if !workspacescope.Present(ctx) {
+		return nanorepo.ErrNoContextScope
+	}
 	_, err := r.deleteWhere(ctx, r.where.OrgID(orgID).AND(r.where.ProductID(productID)).AND(workspacescope.Filter(ctx, r.t.WorkspaceID)).AND(r.where.By(by)))
 	return err
 }
@@ -693,27 +704,28 @@ func (r *ordersImpl) DeleteByOrgAndProductAndWorkspaceAndBy(ctx context.Context,
 // DeleteByOrgAndProductAndWorkspaceAndName is derived from its name:
 //
 //	DELETE FROM order WHERE org_id = $1 AND product_id = $2 AND workspacescope.Filter(ctx, workspace_id) AND name = $3
+//
+// FAIL-CLOSED: a context without the scope fails with nanorepo.ErrNoContextScope, before any SQL.
 func (r *ordersImpl) DeleteByOrgAndProductAndWorkspaceAndName(ctx context.Context, orgID uuid.UUID, productID uuid.UUID, name string) (int64, error) {
+	if !workspacescope.Present(ctx) {
+		return 0, nanorepo.ErrNoContextScope
+	}
 	return r.deleteWhere(ctx, r.where.OrgID(orgID).AND(r.where.ProductID(productID)).AND(workspacescope.Filter(ctx, r.t.WorkspaceID)).AND(r.where.Name(name)))
-}
-
-// DeleteByOrgAndProductAndWorkspaceIDAndName is derived from its name:
-//
-//	DELETE FROM order WHERE org_id = $1 AND product_id = $2 AND workspace_id = $3 AND name = $4
-//
-// CROSS-WORKSPACE: workspace from a parameter, not from ctx: the registered function is not applied.
-func (r *ordersImpl) DeleteByOrgAndProductAndWorkspaceIDAndName(ctx context.Context, orgID uuid.UUID, productID uuid.UUID, workspaceID string, name string) (int64, error) {
-	return r.deleteWhere(ctx, r.where.OrgID(orgID).AND(r.where.ProductID(productID)).AND(r.where.WorkspaceID(workspaceID)).AND(r.where.Name(name)))
 }
 
 // DeleteByOrgAndProductAndWorkspace is derived from its name:
 //
 //	DELETE FROM order WHERE org_id = $1 AND product_id = $2 AND workspacescope.Filter(ctx, workspace_id)
+//
+// FAIL-CLOSED: a context without the scope fails with nanorepo.ErrNoContextScope, before any SQL.
 func (r *ordersImpl) DeleteByOrgAndProductAndWorkspace(ctx context.Context, orgID uuid.UUID, productID uuid.UUID) (int64, error) {
+	if !workspacescope.Present(ctx) {
+		return 0, nanorepo.ErrNoContextScope
+	}
 	return r.deleteWhere(ctx, r.where.OrgID(orgID).AND(r.where.ProductID(productID)).AND(workspacescope.Filter(ctx, r.t.WorkspaceID)))
 }
 
-// Ledgers on *ledgersImpl: 14 derived methods on table ledger; the other methods are
+// Ledgers on *ledgersImpl: 13 derived methods on table ledger; the other methods are
 // hand-written (nanostack gen repo -explain lists each one).
 //
 // A compile error on the next line means Ledgers gained or lost a method since
@@ -816,32 +828,32 @@ func (r *ledgersImpl) ExistsByOrgAndProductAndSiteAndWorkspaceIDAndSeq(ctx conte
 	return r.exists(ctx, r.where.OrgID(orgID).AND(r.where.ProductID(productID)).AND(r.where.SiteID(siteID)).AND(r.where.WorkspaceID(workspaceID)).AND(r.where.Seq(seq)))
 }
 
-// DeleteByOrgAndProductAndSiteAndWorkspaceIDAndSeq is derived from its name:
-//
-//	DELETE FROM ledger WHERE org_id = $1 AND product_id = $2 AND site_id = $3 AND workspace_id = $4 AND seq = $5
-//
-// CROSS-WORKSPACE: workspace from a parameter, not from ctx: the registered function is not applied.
-func (r *ledgersImpl) DeleteByOrgAndProductAndSiteAndWorkspaceIDAndSeq(ctx context.Context, orgID uuid.UUID, productID uuid.UUID, siteID uuid.UUID, workspaceID string, seq int64) (bool, error) {
-	n, err := r.deleteWhere(ctx, r.where.OrgID(orgID).AND(r.where.ProductID(productID)).AND(r.where.SiteID(siteID)).AND(r.where.WorkspaceID(workspaceID)).AND(r.where.Seq(seq)))
-	return n > 0, err
-}
-
 // DeleteByOrgAndProductAndSiteAndWorkspaceAndSeq is derived from its name:
 //
 //	DELETE FROM ledger WHERE org_id = $1 AND product_id = $2 AND site_id = $3 AND workspacescope.Filter(ctx, workspace_id) AND seq = $4
+//
+// FAIL-CLOSED: a context without the scope fails with nanorepo.ErrNoContextScope, before any SQL.
 func (r *ledgersImpl) DeleteByOrgAndProductAndSiteAndWorkspaceAndSeq(ctx context.Context, orgID uuid.UUID, productID uuid.UUID, siteID uuid.UUID, seq int64) (int64, error) {
+	if !workspacescope.Present(ctx) {
+		return 0, nanorepo.ErrNoContextScope
+	}
 	return r.deleteWhere(ctx, r.where.OrgID(orgID).AND(r.where.ProductID(productID)).AND(r.where.SiteID(siteID)).AND(workspacescope.Filter(ctx, r.t.WorkspaceID)).AND(r.where.Seq(seq)))
 }
 
 // DeleteByOrgAndProductAndSiteAndWorkspaceAndMemo is derived from its name:
 //
 //	DELETE FROM ledger WHERE org_id = $1 AND product_id = $2 AND site_id = $3 AND workspacescope.Filter(ctx, workspace_id) AND memo = $4
+//
+// FAIL-CLOSED: a context without the scope fails with nanorepo.ErrNoContextScope, before any SQL.
 func (r *ledgersImpl) DeleteByOrgAndProductAndSiteAndWorkspaceAndMemo(ctx context.Context, orgID uuid.UUID, productID uuid.UUID, siteID uuid.UUID, memo string) error {
+	if !workspacescope.Present(ctx) {
+		return nanorepo.ErrNoContextScope
+	}
 	_, err := r.deleteWhere(ctx, r.where.OrgID(orgID).AND(r.where.ProductID(productID)).AND(r.where.SiteID(siteID)).AND(workspacescope.Filter(ctx, r.t.WorkspaceID)).AND(r.where.Memo(memo)))
 	return err
 }
 
-// Notes on *notesImpl: 13 derived methods on table note; the other methods are
+// Notes on *notesImpl: 12 derived methods on table note; the other methods are
 // hand-written (nanostack gen repo -explain lists each one).
 //
 // A compile error on the next line means Notes gained or lost a method since
@@ -907,7 +919,12 @@ func (r *notesImpl) ExistsByWorkspaceAndTitle(ctx context.Context, title string)
 // DeleteByWorkspaceAndID is derived from its name:
 //
 //	DELETE FROM note WHERE workspacescope.Filter(ctx, workspace_id) AND id = $1
+//
+// FAIL-CLOSED: a context without the scope fails with nanorepo.ErrNoContextScope, before any SQL.
 func (r *notesImpl) DeleteByWorkspaceAndID(ctx context.Context, id string) (bool, error) {
+	if !workspacescope.Present(ctx) {
+		return false, nanorepo.ErrNoContextScope
+	}
 	n, err := r.deleteWhere(ctx, workspacescope.Filter(ctx, r.t.WorkspaceID).AND(r.where.ID(id)))
 	return n > 0, err
 }
@@ -915,18 +932,13 @@ func (r *notesImpl) DeleteByWorkspaceAndID(ctx context.Context, id string) (bool
 // DeleteByWorkspaceAndTitle is derived from its name:
 //
 //	DELETE FROM note WHERE workspacescope.Filter(ctx, workspace_id) AND title = $1
+//
+// FAIL-CLOSED: a context without the scope fails with nanorepo.ErrNoContextScope, before any SQL.
 func (r *notesImpl) DeleteByWorkspaceAndTitle(ctx context.Context, title string) (int64, error) {
+	if !workspacescope.Present(ctx) {
+		return 0, nanorepo.ErrNoContextScope
+	}
 	return r.deleteWhere(ctx, workspacescope.Filter(ctx, r.t.WorkspaceID).AND(r.where.Title(title)))
-}
-
-// DeleteByWorkspaceIDAndID is derived from its name:
-//
-//	DELETE FROM note WHERE workspace_id = $1 AND id = $2
-//
-// CROSS-WORKSPACE: workspace from a parameter, not from ctx: the registered function is not applied.
-func (r *notesImpl) DeleteByWorkspaceIDAndID(ctx context.Context, workspaceID string, id string) error {
-	_, err := r.deleteWhere(ctx, r.where.WorkspaceID(workspaceID).AND(r.where.ID(id)))
-	return err
 }
 
 // FindByIDInternal is derived from its name:
@@ -987,7 +999,12 @@ func (r *draftsImpl) CountByWorkspace(ctx context.Context) (int64, error) {
 // DeleteByWorkspaceAndTitle is derived from its name:
 //
 //	DELETE FROM draft WHERE workspacescope.Filter(ctx, workspace_id) AND title = $1
+//
+// FAIL-CLOSED: a context without the scope fails with nanorepo.ErrNoContextScope, before any SQL.
 func (r *draftsImpl) DeleteByWorkspaceAndTitle(ctx context.Context, title string) (int64, error) {
+	if !workspacescope.Present(ctx) {
+		return 0, nanorepo.ErrNoContextScope
+	}
 	return r.deleteWhere(ctx, workspacescope.Filter(ctx, r.t.WorkspaceID).AND(r.where.Title(title)))
 }
 
@@ -1148,14 +1165,24 @@ func (r *zonesImpl) ExistsByOrgAndWorkspaceAndRegionAndName(ctx context.Context,
 // DeleteByOrgAndWorkspaceAndRegionAndName is derived from its name:
 //
 //	DELETE FROM zone WHERE org_id = $1 AND workspacescope.Filter(ctx, workspace_id) AND regionscope.Filter(ctx, region_id) AND name = $2
+//
+// FAIL-CLOSED: a context without the scope fails with nanorepo.ErrNoContextScope, before any SQL.
 func (r *zonesImpl) DeleteByOrgAndWorkspaceAndRegionAndName(ctx context.Context, orgID uuid.UUID, name string) (int64, error) {
+	if !workspacescope.Present(ctx) {
+		return 0, nanorepo.ErrNoContextScope
+	}
 	return r.deleteWhere(ctx, r.where.OrgID(orgID).AND(workspacescope.Filter(ctx, r.t.WorkspaceID)).AND(regionscope.Filter(ctx, r.t.RegionID)).AND(r.where.Name(name)))
 }
 
 // DeleteByOrgAndWorkspaceAndRegionAndID is derived from its name:
 //
 //	DELETE FROM zone WHERE org_id = $1 AND workspacescope.Filter(ctx, workspace_id) AND regionscope.Filter(ctx, region_id) AND id = $2
+//
+// FAIL-CLOSED: a context without the scope fails with nanorepo.ErrNoContextScope, before any SQL.
 func (r *zonesImpl) DeleteByOrgAndWorkspaceAndRegionAndID(ctx context.Context, orgID uuid.UUID, id string) (bool, error) {
+	if !workspacescope.Present(ctx) {
+		return false, nanorepo.ErrNoContextScope
+	}
 	n, err := r.deleteWhere(ctx, r.where.OrgID(orgID).AND(workspacescope.Filter(ctx, r.t.WorkspaceID)).AND(regionscope.Filter(ctx, r.t.RegionID)).AND(r.where.ID(id)))
 	return n > 0, err
 }
@@ -1257,25 +1284,18 @@ func (r *binsImpl) DeleteBySiteAndName(ctx context.Context, siteID uuid.UUID, na
 	return r.deleteWhere(ctx, r.where.SiteID(siteID).AND(r.where.Name(name)))
 }
 
-// Shelves on *shelvesImpl: 4 derived methods on table shelf; the other methods are
+// Shelves on *shelvesImpl: 3 derived methods on table shelf; the other methods are
 // hand-written (nanostack gen repo -explain lists each one).
 //
 // A compile error on the next line means Shelves gained or lost a method since
 // the last run: run nanostack gen repo.
 var _ Shelves = (*shelvesImpl)(nil)
 
-// FindByProductAndID is derived from its name:
+// FindByOrgAndProductAndID is derived from its name:
 //
-//	SELECT * FROM shelf WHERE product_id = $1 AND id = $2 LIMIT 2 -- at most one row: shelf_pkey (id); a second row is ErrMoreThanOneRow
-func (r *shelvesImpl) FindByProductAndID(ctx context.Context, productID uuid.UUID, id string) (functional.Option[model.Shelf], error) {
-	return r.findOne(ctx, r.where.ProductID(productID).AND(r.where.ID(id)))
-}
-
-// FindByProductAndName is derived from its name:
-//
-//	SELECT * FROM shelf WHERE product_id = $1 AND name = $2
-func (r *shelvesImpl) FindByProductAndName(ctx context.Context, productID uuid.UUID, name string) ([]model.Shelf, error) {
-	return r.findAll(ctx, r.where.ProductID(productID).AND(r.where.Name(name)))
+//	SELECT * FROM shelf WHERE org_id = $1 AND product_id = $2 AND id = $3 LIMIT 2 -- at most one row: shelf_pkey (id); a second row is ErrMoreThanOneRow
+func (r *shelvesImpl) FindByOrgAndProductAndID(ctx context.Context, orgID uuid.UUID, productID uuid.UUID, id string) (functional.Option[model.Shelf], error) {
+	return r.findOne(ctx, r.where.OrgID(orgID).AND(r.where.ProductID(productID)).AND(r.where.ID(id)))
 }
 
 // FindByOrgAndProductAndName is derived from its name:
@@ -1285,11 +1305,11 @@ func (r *shelvesImpl) FindByOrgAndProductAndName(ctx context.Context, orgID uuid
 	return r.findAll(ctx, r.where.OrgID(orgID).AND(r.where.ProductID(productID)).AND(r.where.Name(name)))
 }
 
-// DeleteByProductAndName is derived from its name:
+// DeleteByOrgAndProductAndName is derived from its name:
 //
-//	DELETE FROM shelf WHERE product_id = $1 AND name = $2
-func (r *shelvesImpl) DeleteByProductAndName(ctx context.Context, productID uuid.UUID, name string) (int64, error) {
-	return r.deleteWhere(ctx, r.where.ProductID(productID).AND(r.where.Name(name)))
+//	DELETE FROM shelf WHERE org_id = $1 AND product_id = $2 AND name = $3
+func (r *shelvesImpl) DeleteByOrgAndProductAndName(ctx context.Context, orgID uuid.UUID, productID uuid.UUID, name string) (int64, error) {
+	return r.deleteWhere(ctx, r.where.OrgID(orgID).AND(r.where.ProductID(productID)).AND(r.where.Name(name)))
 }
 
 // Members on *membersImpl: 5 derived methods on table member; the other methods are

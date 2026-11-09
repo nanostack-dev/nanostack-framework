@@ -33,6 +33,8 @@
 // type-check the declaration and a rename updates it.
 package nanorepo
 
+import "errors"
+
 // Table is satisfied by every table type that nanostack gen db generates.
 type Table interface {
 	TableName() string
@@ -106,3 +108,10 @@ func NoMapper[E any](row E) E { return row }
 //
 //nolint:revive // the parameter documents the call; nanostack gen repo reads the argument from source
 func Base[E any](table Table) {}
+
+// ErrNoContextScope is what a derived delete, update, upsert or create
+// returns, without running any SQL, when the context carries no value for a
+// context scope column whose ContextScope.Present is set: the registered
+// filter reads TRUE then, and the statement would reach every value of the
+// column. Reads keep the filter.
+var ErrNoContextScope = errors.New("nanorepo: the context carries no value for a context scope column of the table")

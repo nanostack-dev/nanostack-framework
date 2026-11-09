@@ -21,6 +21,8 @@ func UseSchema(schema string) {
 	SchemaMigrations = SchemaMigrations.FromSchema(schema)
 	SharedDoc = SharedDoc.FromSchema(schema)
 	Shelf = Shelf.FromSchema(schema)
+	Tproduct = Tproduct.FromSchema(schema)
+	Tsite = Tsite.FromSchema(schema)
 	User = User.FromSchema(schema)
 	Wglobal = Wglobal.FromSchema(schema)
 	Wide = Wide.FromSchema(schema)

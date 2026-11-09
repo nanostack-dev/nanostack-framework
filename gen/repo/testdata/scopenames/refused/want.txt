@@ -35,14 +35,14 @@ refused.go:61: Boards.FindByID: not implemented: no hand-written method on *boar
   fix: write it by hand on *boardsImpl, in a non-generated file of package refused:
          func (r *boardsImpl) FindByID(ctx context.Context, id string) (functional.Option[Board], error)
        or rename it FindByWorkspaceAndID; Workspace binds no parameter: it applies workspacescope.Filter to workspace_id, or end the name in Internal for a trusted system path
-writes.go:19: NoteWrites.CreateInTenantAndWorkspaceID: not implemented: no hand-written method on *noteWritesImpl, and the name does not derive: table notes has the scope columns tenant_id, workspace_id, and the name does not name workspace_id: a derived write names every scope column, a hard scope as a parameter and a context scope by its short name, so none comes from the value
+writes.go:19: NoteWrites.CreateInTenantAndWorkspaceID: not implemented: no hand-written method on *noteWritesImpl, and the name does not derive: a derived write names the context scope WorkspaceID by its Go field, which binds a parameter and skips the function of Postgres.ContextScopes: a cross-workspace write is hand-written, where review sees it
   fix: write it by hand on *noteWritesImpl, in a non-generated file of package refused:
          func (r *noteWritesImpl) CreateInTenantAndWorkspaceID(ctx context.Context, tenantID uuid.UUID, workspaceID string, note model.Notes) error
-       or rename it CreateInTenantAndWorkspace
-writes.go:21: NoteWrites.UpdateByWorkspaceIDAndID: not implemented: no hand-written method on *noteWritesImpl, and the name does not derive: table notes is scoped by tenant_id, workspace_id (Postgres.Scopes), and the name does not name tenant_id
+       or name Workspace instead, which applies the function of the context
+writes.go:21: NoteWrites.UpdateByWorkspaceIDAndID: not implemented: no hand-written method on *noteWritesImpl, and the name does not derive: a derived write names the context scope WorkspaceID by its Go field, which binds a parameter and skips the function of Postgres.ContextScopes: a cross-workspace write is hand-written, where review sees it
   fix: write it by hand on *noteWritesImpl, in a non-generated file of package refused:
          func (r *noteWritesImpl) UpdateByWorkspaceIDAndID(ctx context.Context, workspaceID string, note model.Notes) error
-       or rename it UpdateByWorkspaceIDAndTenantAndID, with tenantID as parameter, scope words first
+       or name Workspace instead, which applies the function of the context
 writes.go:26: ShelfWrites.CreateInTenantAndWorkspace: not implemented: no hand-written method on *shelfWritesImpl, and the name does not derive: table shelves is scoped by tenant_id, store_id, workspace_id (Postgres.Scopes), and the name does not name store_id: a derived Create takes its scope from the name, never from the value
   fix: write it by hand on *shelfWritesImpl, in a non-generated file of package refused:
          func (r *shelfWritesImpl) CreateInTenantAndWorkspace(ctx context.Context, tenantID uuid.UUID, shelf model.Shelves) error

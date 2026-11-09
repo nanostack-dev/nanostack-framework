@@ -46,8 +46,12 @@ func TestFixtureBaseIsCurrent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(res.Warnings) > 0 {
-		t.Errorf("warnings on the fixture: %v", res.Warnings)
+	// The fixture sets no Present function (the fail-open mode, as before): its
+	// derived deletes and updates on a workspace table warn, and nothing else does.
+	for _, w := range res.Warnings {
+		if !strings.Contains(w.Error(), "a context without workspace_id makes this derived") {
+			t.Errorf("warning on the fixture: %v", w)
+		}
 	}
 	if res.Files[0].Path != mustAbs(t, filepath.Join(fixture, FileName)) {
 		t.Errorf("path %s", res.Files[0].Path)

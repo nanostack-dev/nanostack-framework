@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/nanostack-dev/nanostack-framework/core/nano/project"
+	genrepo "github.com/nanostack-dev/nanostack-framework/gen/repo"
 )
 
 // scopes checks Postgres.Scopes: each entry a column name, none twice.
@@ -44,6 +45,11 @@ func (c *projectCheck) contextScopes(scopes []string, ctx []project.ContextScope
 		case !funcPath(cs.Func):
 			c.add(c.at("Postgres.ContextScopes"), fix, "Postgres.ContextScopes: the function of %q is %q, not "+
 				"an import path, a dot and a function name", cs.Column, cs.Func)
+		case cs.Present != "" && !funcPath(cs.Present):
+			c.add(c.at("Postgres.ContextScopes"),
+				`write the function as "example.com/app/internal/db/workspacescope.Present"`,
+				"Postgres.ContextScopes: the present function of %q is %q, not an import path, a dot and a "+
+					"function name", cs.Column, cs.Present)
 		case cs.Stamp != "" && !funcPath(cs.Stamp):
 			c.add(c.at("Postgres.ContextScopes"),
 				`write the stamp function as "example.com/app/internal/db/workspacescope.Stamp"`,
@@ -104,36 +110,13 @@ func (c *projectCheck) scopeNames(scopes []string, names map[string]string) {
 // scopeImplies checks Postgres.ScopeImplies: both sides in Scopes, neither a
 // context column, no cycle.
 func (c *projectCheck) scopeImplies(scopes []string, ctx []project.ContextScope, implies map[string]string) {
-	cols := make([]string, 0, len(implies))
-	for col := range implies {
-		cols = append(cols, col)
-	}
-	slices.Sort(cols)
-	isCtx := func(col string) bool {
-		return slices.ContainsFunc(ctx, func(cs project.ContextScope) bool { return cs.Column == col })
+	cols := make([]string, len(ctx))
+	for i, cs := range ctx {
+		cols[i] = cs.Column
 	}
 	at := c.at("Postgres.ScopeImplies")
-	for _, col := range cols {
-		to := implies[col]
-		for _, side := range []string{col, to} {
-			switch {
-			case !slices.Contains(scopes, side):
-				c.add(at, "add "+strconv.Quote(side)+" to Postgres.Scopes, or remove the entry",
-					"Postgres.ScopeImplies names %q, which is not in Postgres.Scopes", side)
-			case isCtx(side):
-				c.add(at, "remove the entry: a context scope is named in every derived method, and implies nothing",
-					"Postgres.ScopeImplies names %q, a context column (Postgres.ContextScopes)", side)
-			}
-		}
-		seen := map[string]bool{}
-		for next, ok := to, true; ok && !seen[next]; next, ok = implies[next] {
-			if next == col {
-				c.add(at, "break the cycle: a column cannot determine itself",
-					"Postgres.ScopeImplies has a cycle through %q", col)
-				break
-			}
-			seen[next] = true
-		}
+	for _, pr := range genrepo.CheckScopeImplies("Postgres.ScopeImplies", scopes, cols, implies) {
+		c.add(at, pr.Fix, "%s", pr.Msg)
 	}
 }
 

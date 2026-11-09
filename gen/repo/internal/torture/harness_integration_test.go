@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/nanostack-dev/nanostack-framework/db/nanorepo"
 	"github.com/nanostack-dev/nanostack-framework/gen/repo/internal/repotest/workspacescope"
 	"github.com/nanostack-dev/nanostack-framework/pkg/db/transactor"
 	"github.com/nanostack-dev/nanostack-framework/pkg/functional"
@@ -279,6 +280,9 @@ func runSpecs(t *testing.T, db *sql.DB, w world, specs []spec) {
 	}
 }
 
+// ctxOfIsBare reports whether ctx carries no workspace.
+func ctxOfIsBare(ctx context.Context) bool { return !workspacescope.Present(ctx) }
+
 func checkFind(ctx context.Context, t *testing.T, s *spec, a args, want []string, where string) {
 	t.Helper()
 	got, err := s.find(ctx, a)
@@ -305,6 +309,22 @@ func checkDelete(ctx context.Context, t *testing.T, db *sql.DB, w world, s *spec
 	}
 	defer func() { _ = tx.Rollback() }()
 	n, err := s.del(transactor.WithTx(ctx, tx), a)
+	if s.ws == wsCtx && ctxOfIsBare(ctx) {
+		// Present is registered for workspace_id: a delete on a bare context fails
+		// closed, before any SQL, where a read takes the whole tenant.
+		if !errors.Is(err, nanorepo.ErrNoContextScope) {
+			t.Fatalf("%s: delete on a context without a workspace: %v, want nanorepo.ErrNoContextScope", where, err)
+		}
+		if got := w.remaining(t, tx); len(got) != len(w.rows) {
+			t.Fatalf(
+				"%s: a delete that failed closed changed the table: %d rows left of %d",
+				where,
+				len(got),
+				len(w.rows),
+			)
+		}
+		return
+	}
 	if err != nil {
 		t.Fatalf("%s: delete: %v", where, err)
 	}

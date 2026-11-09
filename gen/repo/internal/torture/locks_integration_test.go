@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 
+	"github.com/nanostack-dev/nanostack-framework/gen/repo/internal/repotest/workspacescope"
 	"github.com/nanostack-dev/nanostack-framework/pkg/db/transactor"
 )
 
@@ -97,7 +98,12 @@ func TestTransactionsAndRowLocks(t *testing.T) {
 		})
 	}
 	del := func(c context.Context) error {
-		_, ierr := orders.DeleteByOrgAndProductAndWorkspaceAndID(c, orgs[0], products[0], row)
+		_, ierr := orders.DeleteByOrgAndProductAndWorkspaceAndID(
+			workspacescope.With(c, "w1"),
+			orgs[0],
+			products[0],
+			row,
+		)
 		return ierr
 	}
 	if err := del(transactor.ForUpdate(ctx)); !errors.Is(err, transactor.ErrRowLockOutsideTx) {
@@ -118,7 +124,13 @@ func TestTransactionsAndRowLocks(t *testing.T) {
 	// A delete in a transaction is seen inside it, and a rollback restores the row.
 	errRollback := errors.New("rollback")
 	err := run(func(tx context.Context) error {
-		if ok, err := orders.DeleteByOrgAndProductAndWorkspaceAndID(tx, orgs[0], products[0], row); err != nil || !ok {
+		if ok, err := orders.DeleteByOrgAndProductAndWorkspaceAndID(
+			workspacescope.With(tx, "w1"),
+			orgs[0],
+			products[0],
+			row,
+		); err != nil ||
+			!ok {
 			t.Errorf("delete: %v %v", ok, err)
 		}
 		if ok, err := orders.ExistsByOrgAndProductAndWorkspaceAndID(tx, orgs[0], products[0], row); err != nil || ok {

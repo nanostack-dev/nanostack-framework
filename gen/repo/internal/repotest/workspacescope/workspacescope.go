@@ -40,3 +40,12 @@ func Stamp(ctx context.Context) (string, error) {
 	}
 	return workspace, nil
 }
+
+// Present reports whether ctx carries a workspace: the Present function of
+// ContextScope for workspace_id, so that a derived delete or write on a bare
+// context fails with nanorepo.ErrNoContextScope instead of reaching every
+// workspace.
+func Present(ctx context.Context) bool {
+	_, found := ctx.Value(workspaceKey{}).(string)
+	return found
+}

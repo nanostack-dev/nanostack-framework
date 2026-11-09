@@ -165,17 +165,35 @@ CREATE TABLE mixed (
     name       text NOT NULL
 );
 
--- Three hard scopes that determine each other: a site belongs to one product,
--- which belongs to one org (Postgres.ScopeImplies site_id -> product_id -> org_id).
+-- Products and sites: the tables that prove, with a foreign key, that a site
+-- has one product and a product one org (Postgres.ScopeImplies).
+CREATE TABLE tproduct (
+    id     uuid PRIMARY KEY,
+    org_id uuid NOT NULL,
+    UNIQUE (id, org_id)
+);
+CREATE TABLE tsite (
+    id         uuid PRIMARY KEY,
+    product_id uuid NOT NULL,
+    UNIQUE (id, product_id)
+);
+
+-- Three hard scopes that determine each other: the foreign keys prove that a
+-- site belongs to one product, which belongs to one org (Postgres.ScopeImplies
+-- site_id -> product_id -> org_id).
 CREATE TABLE bin (
     id         text PRIMARY KEY,
     org_id     uuid NOT NULL,
     product_id uuid NOT NULL,
     site_id    uuid NOT NULL,
-    name       text NOT NULL
+    name       text NOT NULL,
+    FOREIGN KEY (product_id, org_id) REFERENCES tproduct (id, org_id),
+    FOREIGN KEY (site_id, product_id) REFERENCES tsite (id, product_id)
 );
 
--- Two hard scopes where a product belongs to one org.
+-- Two hard scopes with no foreign key between them: Postgres.ScopeImplies
+-- says product_id -> org_id, and this table does not prove it, so a name
+-- must give both.
 CREATE TABLE shelf (
     id         text PRIMARY KEY,
     org_id     uuid NOT NULL,

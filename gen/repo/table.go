@@ -26,6 +26,7 @@ type tableBase struct {
 	catalogOK bool              // the table type has a ColumnTypes method
 	view      bool              // the table variable is in a view package of nanostack gen db
 
+	src         *tableFiles  // what the table package declares, for the keys of the tables it references
 	foreignKeys []foreignKey // from ForeignKeys, in its order
 	fksFound    bool         // the table type has a ForeignKeys method
 
@@ -235,6 +236,7 @@ func (c *collector) tableOf(arg ast.Expr, v *types.Var, named *types.Named) (*ta
 	t.defaults = names.defaults
 	t.catalog, t.catalogOK = src.types[named.Obj().Name()]
 	t.foreignKeys, t.fksFound = src.foreignKeys[named.Obj().Name()]
+	t.src = src
 	return t, true
 }
 

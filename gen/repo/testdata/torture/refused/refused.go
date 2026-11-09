@@ -84,7 +84,6 @@ type Orders interface {
 	// The context scope in its short form binds no parameter, so it does not prove a key that holds workspace_id.
 	FindByOrgAndProductAndWorkspaceAndName(ctx context.Context, orgID, productID uuid.UUID, name string) (functional.Option[model.Order], error)
 	// The first word is a context scope while a hard scope exists.
-	FindByWorkspaceAndOrgAndProductAndName(ctx context.Context, orgID, productID uuid.UUID, name string) ([]model.Order, error)
 	// A named type that says another column of the table, for a scope parameter.
 	FindByOrgIDAndProductIDAndWorkspaceAndName(ctx context.Context, orgID ProductID, productID uuid.UUID, name string) ([]model.Order, error)
 	// The org only: every product of it. The workspace in its field form is no scope that the
@@ -161,6 +160,67 @@ type Bins interface {
 	DeleteByProductAndName(ctx context.Context, productID uuid.UUID, name string) (int64, error)
 }
 
+// Shelves has two hard scopes and no foreign key between them: Postgres.ScopeImplies
+// says product_id determines org_id, and this table does not prove it.
+type Shelves interface {
+	FindByProductAndID(ctx context.Context, productID uuid.UUID, id string) (functional.Option[model.Shelf], error)
+	FindByProductAndName(ctx context.Context, productID uuid.UUID, name string) ([]model.Shelf, error)
+	DeleteByProductAndName(ctx context.Context, productID uuid.UUID, name string) (int64, error)
+}
+
+// WorkspaceForms name a context scope by its Go field: allowed on a read, refused
+// on a delete and on every write.
+type (
+	LedgerForms interface {
+		DeleteByOrgAndProductAndSiteAndWorkspaceIDAndSeq(
+			ctx context.Context, orgID, productID, siteID uuid.UUID, workspaceID string, seq int64,
+		) (bool, error)
+	}
+	NoteForms interface {
+		DeleteByWorkspaceIDAndID(ctx context.Context, workspaceID, id string) error
+	}
+	OrderForms interface {
+		DeleteByOrgAndProductAndWorkspaceIDAndName(
+			ctx context.Context, orgID, productID uuid.UUID, workspaceID, name string,
+		) (int64, error)
+	}
+	WideForms interface {
+		CreateInOrgAndProductAndWorkspaceID(
+			ctx context.Context, orgID, productID uuid.UUID, workspaceID string, wide model.Wide,
+		) (model.Wide, error)
+		UpdateByOrgAndProductAndWorkspaceIDAndID(
+			ctx context.Context, orgID, productID uuid.UUID, workspaceID string, wide model.Wide,
+		) (model.Wide, error)
+		UpsertByOrgAndProductAndWorkspaceIDAndSlug(
+			ctx context.Context, orgID, productID uuid.UUID, workspaceID string, wide model.Wide,
+		) (model.Wide, error)
+	}
+)
+
+// BinWrites write a table whose site implies its product and org (Postgres.ScopeImplies,
+// proved by foreign keys) for reads: a write never relaxes the rule, so the name
+// gives every scope column, or product_id and org_id would come from the value.
+type BinWrites interface {
+	CreateInSite(ctx context.Context, siteID uuid.UUID, bin model.Bin) (model.Bin, error)
+	CreateInProductAndSite(ctx context.Context, productID, siteID uuid.UUID, bin model.Bin) (model.Bin, error)
+	UpdateBySiteAndID(ctx context.Context, siteID uuid.UUID, bin model.Bin) (model.Bin, error)
+	UpdateByProductAndSiteAndID(ctx context.Context, productID, siteID uuid.UUID, bin model.Bin) (model.Bin, error)
+}
+
+// GlobalWrites write a table whose only unique keys, (id) and (slug), hold no scope column:
+// an upsert would conflict across tenants.
+type GlobalWrites interface {
+	UpsertByOrgAndProductAndSlug(ctx context.Context, orgID, productID uuid.UUID, g model.Wglobal) error
+	UpsertByOrgAndProductAndID(ctx context.Context, orgID, productID uuid.UUID, g model.Wglobal) error
+}
+
+// ViewWrites write a view: refused, like a derived read of a view.
+type ViewWrites interface {
+	CreateInOrgAndProduct(ctx context.Context, orgID, productID uuid.UUID, v model.OrderLive) (model.OrderLive, error)
+	UpdateByOrgAndProductAndID(ctx context.Context, orgID, productID uuid.UUID, v model.OrderLive) (model.OrderLive, error)
+	UpsertByOrgAndProductAndID(ctx context.Context, orgID, productID uuid.UUID, v model.OrderLive) (model.OrderLive, error)
+}
+
 // OrderLives is a view of orders: every derived name is refused, the scope
 // columns of a view being nullable to the generator.
 type OrderLives interface {
@@ -225,6 +285,14 @@ func _() {
 	nanorepo.Implement[OrderLives, orderLivesImpl](view.OrderLive, nanorepo.NoMapper[model.OrderLive])
 	nanorepo.Implement[LogLines, logLinesImpl](table.LogLine, nanorepo.NoMapper[model.LogLine])
 	nanorepo.Implement[Kitchens, kitchensImpl](table.Kitchen, nanorepo.NoMapper[model.Kitchen])
+	nanorepo.Implement[Shelves, shelvesImpl](table.Shelf, nanorepo.NoMapper[model.Shelf])
+	nanorepo.Implement[LedgerForms, ledgerFormsImpl](table.Ledger, nanorepo.NoMapper[model.Ledger])
+	nanorepo.Implement[NoteForms, noteFormsImpl](table.Note, nanorepo.NoMapper[model.Note])
+	nanorepo.Implement[OrderForms, orderFormsImpl](table.Order, nanorepo.NoMapper[model.Order])
+	nanorepo.Implement[WideForms, wideFormsImpl](table.Wide, nanorepo.NoMapper[model.Wide])
+	nanorepo.Implement[BinWrites, binWritesImpl](table.Bin, nanorepo.NoMapper[model.Bin])
+	nanorepo.Implement[GlobalWrites, globalWritesImpl](table.Wglobal, nanorepo.NoMapper[model.Wglobal])
+	nanorepo.Implement[ViewWrites, viewWritesImpl](view.OrderLive, nanorepo.NoMapper[model.OrderLive])
 	nanorepo.Implement[Collides, collidesImpl](table.Collide, nanorepo.NoMapper[model.Collide])
 	nanorepo.Implement[CollideWorkspaces, collideWorkspacesImpl](table.CollideWs, nanorepo.NoMapper[model.CollideWs])
 	nanorepo.Implement[CollideProducts, collideProductsImpl](table.CollideProduct, nanorepo.NoMapper[model.CollideProduct])
@@ -243,6 +311,14 @@ type (
 	binsImpl              struct{ binBase }
 	orderLivesImpl        struct{ orderLiveBase }
 	kitchensImpl          struct{ kitchenBase }
+	shelvesImpl           struct{ shelfBase }
+	ledgerFormsImpl       struct{ ledgerBase }
+	noteFormsImpl         struct{ noteBase }
+	orderFormsImpl        struct{ orderBase }
+	wideFormsImpl         struct{ wideBase }
+	binWritesImpl         struct{ binBase }
+	globalWritesImpl      struct{ wglobalBase }
+	viewWritesImpl        struct{ orderLiveBase }
 	collidesImpl          struct{ collideBase }
 	collideWorkspacesImpl struct{ collideWsBase }
 	collideProductsImpl   struct{ collideProductBase }

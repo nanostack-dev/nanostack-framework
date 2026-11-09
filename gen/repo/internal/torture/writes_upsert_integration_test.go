@@ -8,7 +8,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/nanostack-dev/nanostack-framework/gen/repo/internal/repotest/workspacescope"
+	"github.com/nanostack-dev/nanostack-framework/db/nanorepo"
 	"github.com/nanostack-dev/nanostack-framework/gen/repo/internal/torture/db/torture/public/model"
 )
 
@@ -23,7 +23,15 @@ func TestWriteUpsertCannotHijackARow(t *testing.T) {
 	// Another workspace of the tenant, same slug as a's: the key conflicts, the guard refuses.
 	v := newWide("u1", w.a.Slug)
 	v.CText = "hijack by workspace"
-	if _, err := w.repo.UpsertByOrgAndProductAndWorkspaceAndSlug(wctx("wX"), orgs[0], products[0], v); !errors.Is(err, sql.ErrNoRows) {
+	if _, err := w.repo.UpsertByOrgAndProductAndWorkspaceAndSlug(
+		wctx("wX"),
+		orgs[0],
+		products[0],
+		v,
+	); !errors.Is(
+		err,
+		sql.ErrNoRows,
+	) {
 		t.Errorf("upsert of a row of another workspace: %v, want sql.ErrNoRows", err)
 	}
 	wantOnly(t, "an upsert from another workspace", before, snapshot(t, w.db, "wide"))
@@ -45,8 +53,16 @@ func TestWriteUpsertCannotHijackARow(t *testing.T) {
 	}
 	wantOnly(t, "an upsert of another org", mid, snapshot(t, w.db, "wide"), v2.ID)
 	// No workspace: the stamp fails first.
-	if _, err = w.repo.UpsertByOrgAndProductAndWorkspaceAndSlug(context.Background(), orgs[0], products[0], v); !errors.Is(err, workspacescope.ErrNoWorkspace) {
-		t.Errorf("upsert without a workspace: %v, want ErrNoWorkspace", err)
+	if _, err = w.repo.UpsertByOrgAndProductAndWorkspaceAndSlug(
+		context.Background(),
+		orgs[0],
+		products[0],
+		v,
+	); !errors.Is(
+		err,
+		nanorepo.ErrNoContextScope,
+	) {
+		t.Errorf("upsert without a workspace: %v, want ErrNoContextScope", err)
 	}
 }
 
@@ -54,10 +70,20 @@ func TestWriteUpsertOnAKeyWithoutTheTenant(t *testing.T) {
 	db := openTorture(t)
 	repo := NewWShelves(db)
 	shelf := func(id, slug, body string) model.Wshelf { return model.Wshelf{ID: id, Slug: slug, Body: body} }
-	if err := repo.CreateInOrgAndProductAndWorkspace(wctx("w1"), orgs[0], products[0], shelf("a", "s", "a")); err != nil {
+	if err := repo.CreateInOrgAndProductAndWorkspace(
+		wctx("w1"),
+		orgs[0],
+		products[0],
+		shelf("a", "s", "a"),
+	); err != nil {
 		t.Fatal(err)
 	}
-	if err := repo.CreateInOrgAndProductAndWorkspace(wctx("w1"), orgs[1], products[1], shelf("b", "s", "b")); err != nil {
+	if err := repo.CreateInOrgAndProductAndWorkspace(
+		wctx("w1"),
+		orgs[1],
+		products[1],
+		shelf("b", "s", "b"),
+	); err != nil {
 		t.Fatal(err)
 	}
 	before := snapshot(t, db, "wshelf")
@@ -67,14 +93,24 @@ func TestWriteUpsertOnAKeyWithoutTheTenant(t *testing.T) {
 		org  int
 		ws   string
 	}{{"another org, same product", 1, "w1"}, {"same org, another workspace", 0, "w2"}} {
-		err := repo.UpsertByOrgAndProductAndWorkspaceAndSlug(wctx(at.ws), orgs[at.org], products[0], shelf("x", "s", "taken over by "+at.name))
+		err := repo.UpsertByOrgAndProductAndWorkspaceAndSlug(
+			wctx(at.ws),
+			orgs[at.org],
+			products[0],
+			shelf("x", "s", "taken over by "+at.name),
+		)
 		if !errors.Is(err, sql.ErrNoRows) {
 			t.Errorf("%s: %v, want sql.ErrNoRows", at.name, err)
 		}
 	}
 	wantOnlyText(t, "an upsert through the key of another scope", before, snapshot(t, db, "wshelf"))
 	// The owner updates its row; the id of the value never replaces the stored id.
-	if err := repo.UpsertByOrgAndProductAndWorkspaceAndSlug(wctx("w1"), orgs[0], products[0], shelf("zzz", "s", "owner")); err != nil {
+	if err := repo.UpsertByOrgAndProductAndWorkspaceAndSlug(
+		wctx("w1"),
+		orgs[0],
+		products[0],
+		shelf("zzz", "s", "owner"),
+	); err != nil {
 		t.Fatal(err)
 	}
 	after := snapshot(t, db, "wshelf")
@@ -86,7 +122,15 @@ func TestWriteUpsertOnAKeyWithoutTheTenant(t *testing.T) {
 		t.Errorf("row a after the owner's upsert: %+v, %v", got, err)
 	}
 	// An update cannot move a row to another product either: the scope columns are never SET.
-	if err = repo.UpdateByOrgAndProductAndWorkspaceAndID(wctx("w1"), orgs[1], products[1], model.Wshelf{ID: "a", Slug: "z", Body: "z"}); !errors.Is(err, sql.ErrNoRows) {
+	if err = repo.UpdateByOrgAndProductAndWorkspaceAndID(
+		wctx("w1"),
+		orgs[1],
+		products[1],
+		model.Wshelf{ID: "a", Slug: "z", Body: "z"},
+	); !errors.Is(
+		err,
+		sql.ErrNoRows,
+	) {
 		t.Errorf("update of A's row by B: %v, want sql.ErrNoRows", err)
 	}
 }

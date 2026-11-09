@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 
+	"github.com/nanostack-dev/nanostack-framework/db/nanorepo"
 	"github.com/nanostack-dev/nanostack-framework/gen/repo/internal/repotest/workspacescope"
 	"github.com/nanostack-dev/nanostack-framework/gen/repo/internal/torture/db/torture/public/model"
 	"github.com/nanostack-dev/nanostack-framework/pkg/db/pgerr"
@@ -54,7 +55,27 @@ func fullWide(w model.Wide) model.Wide {
 	u, s, i16, i32, i64 := idOf("n-"+w.Slug), "n't", int16(9), int32(-9), int64(99)
 	f32, f64, b, mood, inet := float32(1.5), 2.5, false, model.Mood_Sad, "::1"
 	js, by := `{"n": null}`, []byte{9}
-	date, tm, tmz := at.Truncate(24*time.Hour), time.Date(0, 1, 1, 1, 2, 3, 0, time.UTC), time.Date(0, 1, 1, 1, 2, 3, 0, time.FixedZone("z", -3600))
+	date, tm, tmz := at.Truncate(
+		24*time.Hour,
+	), time.Date(
+		0,
+		1,
+		1,
+		1,
+		2,
+		3,
+		0,
+		time.UTC,
+	), time.Date(
+		0,
+		1,
+		1,
+		1,
+		2,
+		3,
+		0,
+		time.FixedZone("z", -3600),
+	)
 	texts, ints := []string{"x"}, []int32{7}
 	w.NUUID, w.NText, w.NVarchar, w.NCitext, w.NSmall, w.NInt, w.NBig = &u, &s, &s, &s, &i16, &i32, &i64
 	w.NReal, w.NDouble, w.NBool, w.NMood, w.NInet, w.NJSON, w.NBytes = &f32, &f64, &b, &mood, &inet, &js, &by
@@ -195,7 +216,12 @@ func TestWriteCreateScopeComesFromParameters(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got.OrgID != orgs[0] || got.ProductID != products[0] || got.WorkspaceID != "w1" {
-		t.Errorf("created in (%s, %s, %s), want the parameters and the context", got.OrgID, got.ProductID, got.WorkspaceID)
+		t.Errorf(
+			"created in (%s, %s, %s), want the parameters and the context",
+			got.OrgID,
+			got.ProductID,
+			got.WorkspaceID,
+		)
 	}
 	after := snapshot(t, w.db, "wide")
 	wantOnly(t, "create", before, after, v.ID)
@@ -212,10 +238,15 @@ func TestWriteCreateScopeComesFromParameters(t *testing.T) {
 	}
 	wantOnly(t, "create over another tenant's id", after, snapshot(t, w.db, "wide"))
 
-	// No workspace in ctx: the stamp fails, nothing is inserted.
-	_, err = w.repo.CreateInOrgAndProductAndWorkspace(context.Background(), orgs[0], products[0], newWide("nows", "nows"))
-	if !errors.Is(err, workspacescope.ErrNoWorkspace) {
-		t.Errorf("create without a workspace: %v, want ErrNoWorkspace", err)
+	// No workspace in ctx: fails closed, nothing is inserted.
+	_, err = w.repo.CreateInOrgAndProductAndWorkspace(
+		context.Background(),
+		orgs[0],
+		products[0],
+		newWide("nows", "nows"),
+	)
+	if !errors.Is(err, nanorepo.ErrNoContextScope) {
+		t.Errorf("create without a workspace: %v, want nanorepo.ErrNoContextScope", err)
 	}
 	wantOnly(t, "create without a workspace", after, snapshot(t, w.db, "wide"))
 }
@@ -242,7 +273,15 @@ func TestWriteUpdateWrongScope(t *testing.T) {
 		v.CText, v.Slug = "hijacked", "hijacked"
 		v.OrgID, v.ProductID, v.WorkspaceID = orgs[at.org], products[at.prod], at.ws // a claim in the value
 		ctx := wctx(at.ws)
-		if _, err := w.repo.UpdateByOrgAndProductAndWorkspaceAndID(ctx, orgs[at.org], products[at.prod], v); !errors.Is(err, sql.ErrNoRows) {
+		if _, err := w.repo.UpdateByOrgAndProductAndWorkspaceAndID(
+			ctx,
+			orgs[at.org],
+			products[at.prod],
+			v,
+		); !errors.Is(
+			err,
+			sql.ErrNoRows,
+		) {
 			t.Errorf("%s: update by id: %v, want sql.ErrNoRows", at.name, err)
 		}
 		opt, err := w.repo.UpdateByOrgAndProductAndWorkspaceAndSlug(ctx, orgs[at.org], products[at.prod], v)
@@ -265,23 +304,70 @@ func TestWriteUpdateWrongScope(t *testing.T) {
 	wantOnly(t, "an update", before, snapshot(t, w.db, "wide"), w.a.ID)
 }
 
-// A request without a workspace updates within its whole tenant, as a read
-// does (documented): the workspace filter reads TRUE. It still cannot reach
-// another tenant.
-func TestWriteUpdateWithoutWorkspaceStaysInTenant(t *testing.T) {
+// A request without a workspace writes nothing: workspace_id has a Present
+// function, so a derived create, update or upsert returns
+// nanorepo.ErrNoContextScope before any SQL (the repository here sits on a
+// closed database: any statement would fail with another error). A read
+// keeps the registered filter and takes the whole tenant.
+func TestWriteWithoutWorkspaceFailsClosed(t *testing.T) {
 	w := seedWides(t)
 	before := snapshot(t, w.db, "wide")
+	dead := openTorture(t)
+	if err := dead.Close(); err != nil {
+		t.Fatal(err)
+	}
+	repo := NewWides(dead)
+	bare := context.Background()
 	v := w.c // tenant A, workspace w2
 	v.CText = "from no workspace"
-	if _, err := w.repo.UpdateByOrgAndProductAndWorkspaceAndID(context.Background(), orgs[0], products[0], v); err != nil {
-		t.Fatalf("update of the tenant's row without a workspace: %v", err)
+	if _, err := repo.UpdateByOrgAndProductAndWorkspaceAndID(
+		bare,
+		orgs[0],
+		products[0],
+		v,
+	); !errors.Is(
+		err,
+		nanorepo.ErrNoContextScope,
+	) {
+		t.Errorf("update: %v, want ErrNoContextScope", err)
 	}
-	wantOnly(t, "an update without a workspace", before, snapshot(t, w.db, "wide"), w.c.ID)
-	mid := snapshot(t, w.db, "wide")
-	v = w.b // tenant B
-	v.CText = "cross tenant"
-	if _, err := w.repo.UpdateByOrgAndProductAndWorkspaceAndID(context.Background(), orgs[0], products[0], v); !errors.Is(err, sql.ErrNoRows) {
-		t.Errorf("update of another tenant's row without a workspace: %v, want sql.ErrNoRows", err)
+	if _, err := repo.UpdateByOrgAndProductAndWorkspaceAndSlug(
+		bare,
+		orgs[0],
+		products[0],
+		v,
+	); !errors.Is(
+		err,
+		nanorepo.ErrNoContextScope,
+	) {
+		t.Errorf("update by slug: %v, want ErrNoContextScope", err)
 	}
-	wantOnly(t, "a cross-tenant update without a workspace", mid, snapshot(t, w.db, "wide"))
+	if _, err := repo.UpsertByOrgAndProductAndWorkspaceAndSlug(
+		bare,
+		orgs[0],
+		products[0],
+		v,
+	); !errors.Is(
+		err,
+		nanorepo.ErrNoContextScope,
+	) {
+		t.Errorf("upsert: %v, want ErrNoContextScope", err)
+	}
+	if _, err := repo.CreateInOrgAndProductAndWorkspace(
+		bare,
+		orgs[0],
+		products[0],
+		newWide("x", "x"),
+	); !errors.Is(
+		err,
+		nanorepo.ErrNoContextScope,
+	) {
+		t.Errorf("create: %v, want ErrNoContextScope", err)
+	}
+	wantOnly(t, "a write without a workspace", before, snapshot(t, w.db, "wide"))
+	// A read on the same bare context takes the whole tenant, and no other.
+	got, err := w.repo.FindByOrgAndProductAndWorkspaceAndID(bare, orgs[0], products[0], w.c.ID)
+	if err != nil || !got.IsPresent() {
+		t.Errorf("read without a workspace: %v %v, want the tenant's row", got, err)
+	}
 }

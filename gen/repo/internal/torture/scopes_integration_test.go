@@ -345,10 +345,6 @@ func TestLedgersIsolation(t *testing.T) {
 			exists: func(c context.Context, a args) (bool, error) {
 				return repo.ExistsByOrgAndProductAndSiteAndWorkspaceIDAndSeq(c, o(a), p(a), s(a), a.ws, a.n)
 			}},
-		{name: "DeleteByOrgAndProductAndSiteAndWorkspaceIDAndSeq", sc: three, ws: wsParam, vals: seqVals, pred: seq,
-			del: func(c context.Context, a args) (int64, error) {
-				return affected(repo.DeleteByOrgAndProductAndSiteAndWorkspaceIDAndSeq(c, o(a), p(a), s(a), a.ws, a.n))
-			}},
 		{name: "DeleteByOrgAndProductAndSiteAndWorkspaceAndSeq", sc: three, ws: wsCtx, vals: seqVals, pred: seq,
 			del: func(c context.Context, a args) (int64, error) {
 				return repo.DeleteByOrgAndProductAndSiteAndWorkspaceAndSeq(c, o(a), p(a), s(a), a.n)

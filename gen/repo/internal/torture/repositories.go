@@ -195,9 +195,6 @@ type Orders interface {
 		orgID, productID uuid.UUID,
 		name string,
 	) (int64, error)
-	DeleteByOrgAndProductAndWorkspaceIDAndName(
-		ctx context.Context, orgID, productID uuid.UUID, workspaceID, name string,
-	) (int64, error)
 	DeleteByOrgAndProductAndWorkspace(ctx context.Context, orgID, productID uuid.UUID) (int64, error)
 }
 
@@ -243,12 +240,6 @@ type Ledgers interface {
 		workspaceID string,
 		seq int64,
 	) (bool, error)
-	DeleteByOrgAndProductAndSiteAndWorkspaceIDAndSeq(
-		ctx context.Context,
-		orgID, productID, siteID uuid.UUID,
-		workspaceID string,
-		seq int64,
-	) (bool, error)
 	DeleteByOrgAndProductAndSiteAndWorkspaceAndSeq(
 		ctx context.Context,
 		orgID, productID, siteID uuid.UUID,
@@ -273,7 +264,6 @@ type Notes interface {
 	ExistsByWorkspaceAndTitle(ctx context.Context, title string) (bool, error)
 	DeleteByWorkspaceAndID(ctx context.Context, id string) (bool, error)
 	DeleteByWorkspaceAndTitle(ctx context.Context, title string) (int64, error)
-	DeleteByWorkspaceIDAndID(ctx context.Context, workspaceID, id string) error
 	FindByIDInternal(ctx context.Context, id string) (functional.Option[model.Note], error)
 	FindAllInternal(ctx context.Context) ([]model.Note, error)
 	CountInternal(ctx context.Context) (int64, error)
@@ -357,13 +347,14 @@ type Bins interface {
 	DeleteBySiteAndName(ctx context.Context, siteID uuid.UUID, name string) (int64, error)
 }
 
-// Shelves has two hard scopes where a product belongs to one org: Product
-// alone names both.
+// Shelves has two hard scopes, and no foreign key proves that a product
+// belongs to one org: a name gives both, whatever Postgres.ScopeImplies says.
 type Shelves interface {
-	FindByProductAndID(ctx context.Context, productID uuid.UUID, id string) (functional.Option[model.Shelf], error)
-	FindByProductAndName(ctx context.Context, productID uuid.UUID, name string) ([]model.Shelf, error)
+	FindByOrgAndProductAndID(
+		ctx context.Context, orgID, productID uuid.UUID, id string,
+	) (functional.Option[model.Shelf], error)
 	FindByOrgAndProductAndName(ctx context.Context, orgID, productID uuid.UUID, name string) ([]model.Shelf, error)
-	DeleteByProductAndName(ctx context.Context, productID uuid.UUID, name string) (int64, error)
+	DeleteByOrgAndProductAndName(ctx context.Context, orgID, productID uuid.UUID, name string) (int64, error)
 }
 
 // Members is a join table: the tenant column is part of its composite key.

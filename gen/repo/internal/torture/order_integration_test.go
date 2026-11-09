@@ -295,10 +295,6 @@ func testOrdersIsolation(t *testing.T, reverse bool) {
 			del: func(c context.Context, a args) (int64, error) {
 				return repo.DeleteByOrgAndProductAndWorkspaceAndName(c, o(a), p(a), a.s)
 			}},
-		{name: "DeleteByOrgAndProductAndWorkspaceIDAndName", sc: both, ws: wsParam, vals: nameVals, pred: name,
-			del: func(c context.Context, a args) (int64, error) {
-				return repo.DeleteByOrgAndProductAndWorkspaceIDAndName(c, o(a), p(a), a.ws, a.s)
-			}},
 		{name: "DeleteByOrgAndProductAndWorkspace", sc: both, ws: wsCtx,
 			del: func(c context.Context, a args) (int64, error) {
 				return repo.DeleteByOrgAndProductAndWorkspace(c, o(a), p(a))

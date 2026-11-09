@@ -118,5 +118,18 @@ func (BinTable) ColumnTypes() map[string]string {
 // gen db from the catalogue. nanostack gen repo reads it to find the joins that
 // a key declares.
 func (BinTable) ForeignKeys() []postgres.ForeignKey {
-	return []postgres.ForeignKey{}
+	return []postgres.ForeignKey{
+		{
+			Name:              "bin_product_id_org_id_fkey",
+			Columns:           []string{"product_id", "org_id"},
+			References:        "tproduct",
+			ReferencedColumns: []string{"id", "org_id"},
+		},
+		{
+			Name:              "bin_site_id_product_id_fkey",
+			Columns:           []string{"site_id", "product_id"},
+			References:        "tsite",
+			ReferencedColumns: []string{"id", "product_id"},
+		},
+	}
 }

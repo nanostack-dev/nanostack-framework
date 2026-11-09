@@ -17,6 +17,9 @@ type ctxScope struct {
 	col   string // SQL column
 	fn    string // import path, a dot and the function name
 	short string // the short name, "" when ScopeNames gives none
+	// present is the function that reports whether ctx carries the column
+	// (ContextScope.Present), "" when none is registered.
+	present string
 }
 
 // term is one property of a derived name. A term of a context scope named by
@@ -65,7 +68,8 @@ func (r *resolver) setupScopes(scopes []string) {
 	}
 	for _, c := range cols {
 		if fn, ok := r.l.contextScopes[c.sqlName]; ok {
-			r.ctx = append(r.ctx, ctxScope{field: c.field, col: c.sqlName, fn: fn, short: r.shortOf[c.field]})
+			r.ctx = append(r.ctx, ctxScope{field: c.field, col: c.sqlName, fn: fn, short: r.shortOf[c.field],
+				present: r.l.contextPresents[c.sqlName]})
 		}
 	}
 }
@@ -150,7 +154,9 @@ func (r *resolver) missingScopes(terms []term) []string { return r.missingOf(ter
 // missingFor is missingScopes for the method m: a write never relaxes the
 // rule with Postgres.ScopeImplies, so its name gives every scope column
 // itself and none comes from the value.
-func (r *resolver) missingFor(m *derivedMethod) []string { return r.missingOf(m.terms, !m.op.isWrite()) }
+func (r *resolver) missingFor(m *derivedMethod) []string {
+	return r.missingOf(m.terms, !m.op.isWrite())
+}
 
 func (r *resolver) missingOf(terms []term, implied bool) []string {
 	have := r.covered(terms, implied)
@@ -178,8 +184,10 @@ func (r *resolver) misordered(terms []term) bool {
 	return false
 }
 
-// impliedOf returns the scope fields that field implies, transitively, from
-// Postgres.ScopeImplies, limited to the scope columns of the table.
+// impliedOf returns the scope fields that field implies, transitively: each
+// step is an entry of Postgres.ScopeImplies that this table proves with a
+// foreign key (see proves). An entry that the table does not prove implies
+// nothing here.
 func (r *resolver) impliedOf(field string) []string {
 	var out []string
 	seen := map[string]bool{field: true}
@@ -187,6 +195,9 @@ func (r *resolver) impliedOf(field string) []string {
 	for {
 		next, ok := r.l.scopeImplies[col]
 		if !ok || seen[next] {
+			return out
+		}
+		if !r.t.proves(col, next) {
 			return out
 		}
 		seen[next] = true
@@ -197,6 +208,64 @@ func (r *resolver) impliedOf(field string) []string {
 			}
 		}
 	}
+}
+
+// proves reports whether the table proves that column a determines column
+// b, and a foreign key of the table lists
+// both among its referencing columns, and the referenced table has a unique
+// key (not partial) on the column that a references, alone. A row with a
+// given a then has one b, because the referenced row has one.
+func (t *tableBase) proves(a, b string) bool {
+	if t.src == nil {
+		return false
+	}
+	for _, k := range t.foreignKeys {
+		ia, ib := slices.Index(k.columns, a), slices.Index(k.columns, b)
+		if ia < 0 || ib < 0 || len(k.refColumns) != len(k.columns) {
+			continue
+		}
+		for name, names := range t.src.tables {
+			if names.table != k.references || (k.refSchema != "" && names.schema != k.refSchema) {
+				continue
+			}
+			for _, key := range t.src.keys[name+"Table"] {
+				if len(key.sqlCols) == 1 && key.sqlCols[0] == k.refColumns[ia] && key.pred == "" {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// unprovenImplication explains an entry of Postgres.ScopeImplies that would
+// cover the missing columns for the named ones, and that this table does not
+// prove. It returns "" when no entry applies.
+func (r *resolver) unprovenImplication(terms []term, missing []string) string {
+	for _, t := range terms {
+		if !slices.Contains(r.allScope, t.field) {
+			continue
+		}
+		col := r.sqlName(t.field)
+		seen := map[string]bool{col: true}
+		for {
+			next, ok := r.l.scopeImplies[col]
+			if !ok || seen[next] {
+				break
+			}
+			seen[next] = true
+			if !r.t.proves(col, next) {
+				if slices.ContainsFunc(missing, func(f string) bool { return r.sqlName(f) == next }) {
+					return fmt.Sprintf("Postgres.ScopeImplies says %s determines %s, but table %s has no foreign key "+
+						"that lists both and references a table with a unique key on the target of %s alone, "+
+						"so the implication does not apply here", col, next, r.t.sqlName, col)
+				}
+				break
+			}
+			col = next
+		}
+	}
+	return ""
 }
 
 // display is the name of a column in a suggested method name: its short

@@ -36,6 +36,14 @@ var ContextStamps = map[string]string{ //nolint:gochecknoglobals // fixture
 	"workspace_id": "github.com/nanostack-dev/nanostack-framework/gen/repo/internal/repotest/workspacescope.Stamp",
 }
 
+// ContextPresents registers the function that reports whether a context
+// carries a workspace: a derived delete or write fails closed without one.
+// region_id has none, so a derived delete on a table with a region fails open
+// on a context without a region (and warns at generation).
+var ContextPresents = map[string]string{ //nolint:gochecknoglobals // fixture
+	"workspace_id": "github.com/nanostack-dev/nanostack-framework/gen/repo/internal/repotest/workspacescope.Present",
+}
+
 // DatabaseColumns are the columns the database writes.
 var DatabaseColumns = []string{"created_at", "updated_at"} //nolint:gochecknoglobals // fixture
 
