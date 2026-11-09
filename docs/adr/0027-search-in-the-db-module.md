@@ -111,3 +111,4 @@ This record covers the decisions that shape the modules: S1 (packages), S3 (dial
 - Each product commits `nanogen/search-exemptions.txt`, and reviews each exemption in the diff.
 - The CHANGELOG says: "The db module now holds the search contract and the keyset pager." It names no other library.
 - Two decisions wait for Alexis's confirmation, and the design picks the option shown until then: the tightened `Unscoped` rule of decision 11 (approved answer 7), and rule 3 of decision 8, which trusts referential data. If rule 3 is dropped, a join that it covers needs `Unscoped` or a tenant equality in the `ON` clause.
+- One question is open for Alexis and G6: whether a search may rely on a context scope alone. The design accepts it (`DefineSpec` takes a spec whose only scope is a context scope), but on an instance whose only tenant column is a context scope, the search reads every tenant's rows when the context carries no value. No echopoint table has that shape today.
