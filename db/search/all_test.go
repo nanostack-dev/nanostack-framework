@@ -103,3 +103,24 @@ func TestAllStopsWhenTheContextEnds(t *testing.T) {
 		t.Fatalf("page ran %d times after the cancel, want 1", calls)
 	}
 }
+
+// TestAllStopsWhenAPageDoesNotAdvance pins the guard against a hand-written
+// Pager that gives back the cursor it started after: without it, All reads the
+// same page until ctx ends.
+func TestAllStopsWhenAPageDoesNotAdvance(t *testing.T) {
+	t.Parallel()
+	calls := 0
+	got, err := search.All(t.Context(), numbers{n: 9}, func(_ context.Context, _ numbers) (search.Result[int], error) {
+		calls++
+		return search.Result[int]{Items: []int{1}, Count: 1, NextCursor: "1"}, nil
+	})
+	if err == nil || got != nil {
+		t.Fatalf("All() = %v, %v; want nil and an error", got, err)
+	}
+	if search.IsClientError(err) {
+		t.Fatalf("All() error %v is a client error; a stuck pager is a programming error", err)
+	}
+	if calls != 2 {
+		t.Fatalf("page ran %d times, want 2", calls)
+	}
+}

@@ -11,6 +11,7 @@ import (
 	"github.com/lib/pq"
 	"github.com/rs/zerolog"
 
+	dbsearch "github.com/nanostack-dev/nanostack-framework/db/search"
 	"github.com/nanostack-dev/nanostack-framework/pkg/db/pgerr"
 	"github.com/nanostack-dev/nanostack-framework/pkg/fault"
 	"github.com/nanostack-dev/nanostack-framework/pkg/log"
@@ -80,6 +81,29 @@ func TestLevelFor(t *testing.T) {
 			name: "invalid cursor wrapped by a repository is debug",
 			err:  fmt.Errorf("failed to search collections: %w", search.ErrInvalidCursor),
 			want: zerolog.DebugLevel,
+		},
+		{
+			// The new client errors of db/search reach pkg/log through the
+			// pkg/search forward of IsClientError.
+			name: "too many filter values is debug",
+			err:  fmt.Errorf("search flows: %w", dbsearch.ErrTooManyValues),
+			want: zerolog.DebugLevel,
+		},
+		{
+			name: "limit out of range is debug",
+			err:  dbsearch.ErrInvalidLimit,
+			want: zerolog.DebugLevel,
+		},
+		{
+			// A missing tenant scope is a programming error (500).
+			name: "unscoped search stays error",
+			err:  fmt.Errorf("search flows: %w", dbsearch.ErrUnscoped),
+			want: zerolog.ErrorLevel,
+		},
+		{
+			name: "unscoped joined with a client error stays error",
+			err:  errors.Join(dbsearch.ErrTermTooLong, dbsearch.ErrUnscoped),
+			want: zerolog.ErrorLevel,
 		},
 		{
 			name: "internal fault stays error",

@@ -227,8 +227,13 @@ func faultFrom(err error, opts Options) (*fault.Error, bool) {
 
 // searchFault maps the client errors of a search to a 400, so every search
 // endpoint answers a bad page, sort or filter the same way. The checks run
-// from the most specific error to the most general one.
+// from the most specific error to the most general one. ErrUnscoped wins over
+// every client error: an error that holds it (for example through errors.Join)
+// is not mapped, so it is the unmodelled 500.
 func searchFault(err error) (*fault.Error, bool) {
+	if errors.Is(err, search.ErrUnscoped) {
+		return nil, false
+	}
 	var message string
 	code, field := CodeInvalidCursor, "pagination.cursor"
 	switch {

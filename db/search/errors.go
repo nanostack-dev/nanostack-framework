@@ -53,8 +53,18 @@ func (e *clientError) Error() string { return e.msg }
 func (*clientError) Level() slog.Level { return slog.LevelDebug }
 
 // IsClientError reports whether err is a search error the caller caused, at
-// any depth of wrapping. Each answers HTTP 400. ErrUnscoped is not one.
+// any depth of wrapping. Each answers HTTP 400. ErrUnscoped is not one, and it
+// wins: an error that also holds ErrUnscoped (for example through errors.Join)
+// is not a client error, because a missing tenant scope is a programming error
+// even when the request was also bad.
+//
+// core/log's LevelFor reads the first Level method it finds, and core cannot
+// import db. So a join of a client error and ErrUnscoped can still log at
+// Debug there. Wrap ErrUnscoped alone, never in a join with a client error.
 func IsClientError(err error) bool {
+	if errors.Is(err, ErrUnscoped) {
+		return false
+	}
 	_, ok := errors.AsType[*clientError](err)
 	return ok
 }

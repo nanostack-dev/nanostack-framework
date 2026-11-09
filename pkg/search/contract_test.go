@@ -45,6 +45,7 @@ func TestIsClientErrorAgreesWithTheContract(t *testing.T) {
 		dbsearch.ErrTooManyValues,
 		dbsearch.ErrTermTooLong,
 		dbsearch.ErrUnscoped,
+		errors.Join(dbsearch.ErrTooManyValues, dbsearch.ErrUnscoped),
 		errors.New("connection refused"),
 		nil,
 	} {
@@ -55,6 +56,9 @@ func TestIsClientErrorAgreesWithTheContract(t *testing.T) {
 	}
 	if search.IsClientError(dbsearch.ErrUnscoped) {
 		t.Error("pkg/search.IsClientError(ErrUnscoped) = true, want false")
+	}
+	if search.IsClientError(errors.Join(dbsearch.ErrInvalidCursor, dbsearch.ErrUnscoped)) {
+		t.Error("pkg/search.IsClientError(join with ErrUnscoped) = true, want false")
 	}
 }
 

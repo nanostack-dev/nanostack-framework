@@ -124,6 +124,12 @@ func TestResolveWritesTheBytesOfWriteJSON(t *testing.T) {
 			Details: []fault.Detail{{Code: "BAD_REQUEST",
 				Message: "A search term is longer than 1000 characters."}}}, false},
 		{"unscoped", fmt.Errorf("search webhooks: %w", dbsearch.ErrUnscoped), fault.ErrUnexpected, true},
+		{
+			"unscoped joined with a client error",
+			errors.Join(dbsearch.ErrTooManyValues, dbsearch.ErrUnscoped),
+			fault.ErrUnexpected,
+			true,
+		},
 		{"catalogue error with detail", fmt.Errorf("get: %w", webhookNotFound{detail: "No webhook has id wh_2."}),
 			fault.NotFound("WEBHOOK_NOT_FOUND", "No webhook has id wh_2."), false},
 		{"catalogue error without detail", webhookNotFound{},

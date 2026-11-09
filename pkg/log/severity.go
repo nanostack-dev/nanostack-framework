@@ -23,10 +23,12 @@ import (
 //   - A handled API error below 500 is Debug. A 404 or a validation failure is
 //     the API answering correctly, and paging on it trains people to ignore the
 //     pager.
-//   - A search error the caller caused (search.IsClientError: an invalid
-//     cursor, a cursor with an offset, an unknown sort field) is Debug for the
-//     same reason. It is a plain sentinel that the transport maps to a 400, so
-//     it carries no fault status of its own.
+//   - A search error the caller caused (search.IsClientError: the client
+//     errors of db/search, such as an invalid cursor, an unknown sort field or
+//     a page or filter over a limit) is Debug for the same reason. It is a
+//     plain sentinel that the transport maps to a 400, so it carries no fault
+//     status of its own. db/search.ErrUnscoped is not one, even in a join with
+//     a client error.
 //   - Everything else is Error.
 //
 // Cancellation is checked first: a cancelled request often also carries a fault

@@ -35,10 +35,12 @@ func TestIsClientError(t *testing.T) {
 		}
 	}
 	for name, err := range map[string]error{
-		"nil":              nil,
-		"unscoped":         search.ErrUnscoped,
-		"wrapped unscoped": fmt.Errorf("search flows: %w", search.ErrUnscoped),
-		"plain error":      errors.New("connection refused"),
+		"nil":                                   nil,
+		"unscoped":                              search.ErrUnscoped,
+		"wrapped unscoped":                      fmt.Errorf("search flows: %w", search.ErrUnscoped),
+		"unscoped joined after a client error":  errors.Join(search.ErrTooManyValues, search.ErrUnscoped),
+		"unscoped joined before a client error": errors.Join(search.ErrUnscoped, search.ErrTermTooLong),
+		"plain error":                           errors.New("connection refused"),
 	} {
 		if search.IsClientError(err) {
 			t.Errorf("IsClientError(%s: %v) = true, want false", name, err)
