@@ -2,7 +2,9 @@
 
 One section per module and version, newest first. Each section uses Added, Changed, Deprecated, Removed and Fixed. [RELEASING.md](RELEASING.md) gives the release steps and the upgrade notes.
 
-## Unreleased (gen)
+## gen/v0.23.0-beta.6
+
+Search in `nano gen repo`. It requires root `v0.23.0-beta.4` and `db/v0.23.0-beta.4`. `gen/v0.23.0-beta.4` and `gen/v0.23.0-beta.5` were fix releases of the `gen` module only, so this release of `gen` is `gen/v0.23.0-beta.6`. Pin the CLI with `go get -tool github.com/nanostack-dev/nanostack-framework/gen/cmd/nano@v0.23.0-beta.6`. [RELEASING.md](RELEASING.md#upgrade-from-v0230-beta3) gives the upgrade steps.
 
 ### Added
 - `nano gen repo` binds the request body of a search that declares `nanorepo.API[Body]()` both ways against `API.Spec` (A1 to A10 of [ADR 0027](docs/adr/0027-search-in-the-db-module.md)) and writes its API mapper `<Name>SearchFromAPI`: filters with their conventional or `API(...)` property names, the three `Range` bound kinds and a one-sided `Range`, `SortKey(...).API(...)` names and aliases in the `sort_by` enum, `APIDirection` for a `sort_direction` with no `sort_by`, `IgnoresFullText`, `APIHandWritten`, and the page limits. A mapper whose handler is in another package goes there, in `<search>_search_api.gen.go`. The pipeline passes `API.Spec` and the new `API.SortByDirection` (`"ASC"` or `"DESC"`, required when a search body has `sort_by`); the single run takes `-spec` and `-sort-by-direction`.
@@ -21,7 +23,9 @@ One section per module and version, newest first. Each section uses Added, Chang
 - **Breaking:** the base's `XContains(term)` calls `db/searchexec.Contains`, the substring rule of every search, and the base no longer declares `nanoContainsPattern`. A blank or white-space term now matches every row, also a row where the column is NULL (before: every row where the column is not NULL). The term is trimmed. `%`, `_` and `!` in the term match themselves, and `\` is an ordinary character. On PostgreSQL the SQL is `col ILIKE $1 ESCAPE '!'` instead of `LOWER(col) LIKE $1`: an index on `lower(col)` no longer serves it, and a trigram index on `col` does. A term that is not valid UTF-8 matches no row. On PostgreSQL, `XContains` on a column with a nondeterministic collation fails with an SQL error, because `ILIKE` refuses such a collation (before, `LOWER(col) LIKE` worked there on PostgreSQL 18): write that predicate by hand. Run `go tool nano gen repo` and commit the base.
 - **Breaking:** `nano gen db` also writes `ColumnTypes()` and `ForeignKeys()` on each table type, after `UniqueKeys()`. `ColumnTypes` gives the catalogue type of each column by column name (the type name from `pg_type`: the base type at the end of a chain of domains, `_text` for a `text[]` column or an array of a text domain, the name of an enum, and `schema.name` for a type of another schema or a type that has the name of a `pg_catalog` type (`billing.status`, `public.path`)), so `nano gen repo` can tell `text` from `inet`, `jsonb` or `uuid`. `ForeignKeys` gives the foreign keys in constraint name order, with the referencing and the referenced columns in key order, and the schema of the referenced table when it is another schema. A column named `column_types` or `foreign_keys` is an error. Every table file and every `output` line of `nanogen.sum` changes: run `go tool nano gen db -fresh` (or `go tool nano gen -fresh`) and commit the result ([generation](docs/generation.md#database-nano-gen-db)).
 
-## Unreleased (db)
+## db/v0.23.0-beta.4
+
+The db module now holds the search contract, the keyset pager and the runtime of generated searches. It requires `pkg/functional/v0.23.0-beta.1`, which does not change. All changes add API; no exported name is removed.
 
 ### Added
 - `search`: `Request[F, S]`, `NewRequest` and the methods `One`, `WithFilter`, `WithFullTextSearch`, `WithSort`, `WithCursor` and `WithPagination` move here from `pkg/search`, with the same behaviour and validate tags. Use `Request` for a search that has no SQL builder (a remote call, data in memory) or that `nano gen repo` cannot declare.
@@ -44,7 +48,9 @@ One section per module and version, newest first. Each section uses Added, Chang
 - The SQL builder writes an alias that contains a quote or a backslash with the identifier quote character, doubled inside the alias (`AS "a""b"` on PostgreSQL, ``AS `a"b` `` on MySQL and SQLite). It also doubles the quote character in a quoted identifier, so a subquery column or a CTE name that refers to the alias agrees with it. Before, a quote in an alias or in a reference to it ended the quoted name, and on MySQL a backslash before a quote did the same; the rest of the name was read as SQL.
 - On MySQL, `SELECT_JSON_OBJ` sends a JSON object key that contains a backslash as a bound argument. Before, `\'` in an alias ended the key literal, and the rest of the alias was read as SQL. The server now returns such a key unchanged; before, it read `\t` or `\n` in it as an escape.
 
-## Unreleased (root)
+## v0.23.0-beta.4 (root)
+
+It requires `db/v0.23.0-beta.4`. `pkg/functional` does not change and stays at `v0.23.0-beta.1`. [RELEASING.md](RELEASING.md#upgrade-from-v0230-beta3) gives the upgrade steps.
 
 ### Added
 - `core/nano/project`: `OpenAPI.SortByDirection`, the direction (`"ASC"` or `"DESC"`) of a search request that sends a `sort_by` and no `sort_direction`. `nano gen repo` writes it into each API mapper; `nano gen` refuses another value.
