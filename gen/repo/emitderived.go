@@ -103,16 +103,17 @@ func (e *emitter) params(m *derivedMethod) string {
 	return strings.Join(parts, ", ")
 }
 
-// results renders the result list of a derived method.
+// results renders the result list of a derived method. Only a method that
+// returns rows names the domain type, so only it imports the type's package:
+// a derived file whose methods return no row must not import it.
 func (e *emitter) results(m *derivedMethod, t *tableBase) string {
-	dom := e.typ(t.domain)
 	switch m.shape {
 	case shapeOption:
-		return "(" + e.ref(functionalPath, "functional", "Option") + "[" + dom + "], error)"
+		return "(" + e.ref(functionalPath, "functional", "Option") + "[" + e.typ(t.domain) + "], error)"
 	case shapeSlice:
-		return "([]" + dom + ", error)"
+		return "([]" + e.typ(t.domain) + ", error)"
 	case shapeOne:
-		return "(" + dom + ", error)"
+		return "(" + e.typ(t.domain) + ", error)"
 	case shapeBool, shapeDeleted:
 		return "(bool, error)"
 	case shapeInt64, shapeAffected:

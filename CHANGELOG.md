@@ -2,6 +2,11 @@
 
 One section per module and version, newest first. Each section uses Added, Changed, Deprecated, Removed and Fixed. [RELEASING.md](RELEASING.md) gives the release steps and the upgrade notes.
 
+## gen/v0.23.0-beta.5
+
+### Fixed
+- `nano gen repo` no longer imports the package of the domain type into a derived file whose derived methods return no row, such as only `CountBy...`, `ExistsBy...` or `DeleteBy...`. Go refused that file with `imported and not used`, and the run stopped with "the generated ..._repo.gen.go does not compile". Run `go tool nano gen repo`: a derived file that generated before does not change.
+
 ## gen/v0.23.0-beta.4
 
 ### Fixed
