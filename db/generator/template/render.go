@@ -65,9 +65,9 @@ func (tb TableSQLBuilder) UseUniqueKeys(uniqueKeys bool) TableSQLBuilder {
 }
 
 // UseColumnTypes returns a TableSQLBuilder that adds, or not, a ColumnTypes
-// method to the table type (catalog_methods.go). The schema must come from
-// the ReadSchema function of the dialect, or from GetSchema, which fill
-// metadata.Column.CatalogType.
+// method to the table type (catalog_methods.go). Only the ReadSchema function
+// of the dialect fills metadata.Column.CatalogType; Render returns an error
+// for a table that it did not read (from GetSchema, for example).
 func (tb TableSQLBuilder) UseColumnTypes(columnTypes bool) TableSQLBuilder {
 	tb.ColumnTypes = columnTypes
 	return tb
@@ -75,7 +75,8 @@ func (tb TableSQLBuilder) UseColumnTypes(columnTypes bool) TableSQLBuilder {
 
 // UseForeignKeys returns a TableSQLBuilder that adds, or not, a ForeignKeys
 // method to the table type (catalog_methods.go). Only the ReadSchema function
-// of the dialect fills metadata.Table.ForeignKeys.
+// of the dialect fills metadata.Table.ForeignKeys; Render returns an error
+// for a table that it did not read (from GetSchema, for example).
 func (tb TableSQLBuilder) UseForeignKeys(foreignKeys bool) TableSQLBuilder {
 	tb.ForeignKeys = foreignKeys
 	return tb

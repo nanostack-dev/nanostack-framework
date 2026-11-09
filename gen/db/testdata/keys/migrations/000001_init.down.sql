@@ -1,9 +1,14 @@
+DROP TABLE sites;
+DROP TABLE regions;
 DROP VIEW active_users;
 DROP TABLE events;
 DROP TABLE users;
 DROP TABLE tenants;
 DROP TABLE ledger.accounts;
+DROP TYPE ledger.user_status;
 DROP SCHEMA ledger;
+DROP DOMAIN work_email;
 DROP DOMAIN email_address;
+DROP TYPE public.path;
 DROP TYPE user_status;
 DROP COLLATION case_insensitive;

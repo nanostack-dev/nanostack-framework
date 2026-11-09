@@ -6,7 +6,11 @@ package table
 // this method only once at the beginning of the program.
 func UseSchema(schema string) {
 	Events = Events.FromSchema(schema)
+	Regions = Regions.FromSchema(schema)
+	Regions1 = Regions1.FromSchema(schema)
 	SchemaMigrations = SchemaMigrations.FromSchema(schema)
+	Sites = Sites.FromSchema(schema)
+	Sites1 = Sites1.FromSchema(schema)
 	Tenants = Tenants.FromSchema(schema)
 	Users = Users.FromSchema(schema)
 }

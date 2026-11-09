@@ -18,6 +18,9 @@ func columnTypesMethod(table metadata.Table, builder TableSQLBuilder, dialect je
 	if err := checkMethodName(table, builder, "ColumnTypes"); err != nil {
 		return "", err
 	}
+	if !table.CatalogTypesRead {
+		return "", fmt.Errorf("table %q has no catalogue types: %s", table.Name, readSchemaHint)
+	}
 	var b strings.Builder
 	b.WriteString("\n")
 	b.WriteString(docComment("ColumnTypes lists the catalogue type of each column of " + table.Name +
@@ -28,17 +31,26 @@ func columnTypesMethod(table metadata.Table, builder TableSQLBuilder, dialect je
 		if builder.Column(c).Skip {
 			continue
 		}
+		if c.CatalogType == "" && dialect.PackageName() != "sqlite" { // "" is a declared type only on SQLite
+			return "", fmt.Errorf("column %q of table %q has no catalogue type: %s", c.Name, table.Name,
+				readSchemaHint)
+		}
 		fmt.Fprintf(&b, "\t\t%s: %s,\n", strconv.Quote(c.Name), strconv.Quote(c.CatalogType))
 	}
 	b.WriteString("\t}\n}\n")
 	return b.String(), nil
 }
 
+// readSchemaHint says how to get a schema that has the catalogue facts.
+const readSchemaHint = "read the schema with the ReadSchema function of the dialect " +
+	"(GetSchema does not read the catalogue types and the foreign keys)"
+
 // columnTypesSource says where the types of ColumnTypes come from, by
 // dialect package.
 var columnTypesSource = map[string]string{ //nolint:gochecknoglobals // read-only table
-	"postgres": `pg_type.typname, as information_schema.columns.udt_name gives it (the base type of ` +
-		`a domain, and the array type of an array, such as "_text")`,
+	"postgres": `pg_type.typname (the base type at the end of a chain of domains, the array type ` +
+		`of an array, such as "_text", and "schema.name" for a type of another schema than ` +
+		`pg_catalog and the schema of the table, or for a type that has the name of a pg_catalog type)`,
 	"mysql":  `information_schema.columns.COLUMN_TYPE (such as "varchar(255)", "tinyint(1)" or "enum('a','b')")`,
 	"sqlite": `the declared type, as pragma_table_xinfo gives it ("" for a column declared without a type)`,
 }
@@ -66,6 +78,9 @@ func foreignKeysMethod(
 ) (string, error) {
 	if err := checkMethodName(table, builder, "ForeignKeys"); err != nil {
 		return "", err
+	}
+	if !table.ForeignKeysRead {
+		return "", fmt.Errorf("table %q has no foreign keys from the catalogue: %s", table.Name, readSchemaHint)
 	}
 	typ := "[]" + dialect.PackageName() + ".ForeignKey"
 	var b strings.Builder

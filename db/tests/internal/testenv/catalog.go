@@ -306,18 +306,23 @@ func rows(t *testing.T, db *sql.DB, query string, row func(cols []string), args 
 	}
 }
 
-// pgCatalogue reads information_schema: udt_name for the types, and for the
-// keys the referenced column of each referencing column, by its position in
-// the referenced unique constraint.
+// pgCatalogue reads information_schema: for the types, udt_schema and
+// udt_name, with each domain resolved through information_schema.domains to
+// the type at the end of its chain (see pgTypeName); for the keys, the
+// referenced column of each referencing column, by its position in the
+// referenced unique constraint.
 func pgCatalogue(t *testing.T, db *sql.DB, schema string) catalogue {
 	t.Helper()
 	b := newCatalogue()
+	types := pgTypeNames(t, db)
 	rows(t, db, `
-SELECT c.table_name, c.column_name, c.udt_name
+SELECT c.table_name, c.column_name, c.udt_schema, c.udt_name
 FROM information_schema.columns c
 JOIN information_schema.tables t ON t.table_schema = c.table_schema AND t.table_name = c.table_name
 WHERE c.table_schema = $1 AND t.table_type = 'BASE TABLE'
-ORDER BY c.table_name, c.ordinal_position`, func(c []string) { b.column(c[0], c[1], c[2]) }, schema)
+ORDER BY c.table_name, c.ordinal_position`, func(c []string) {
+		b.column(c[0], c[1], types.name(schema, c[2], c[3]))
+	}, schema)
 	rows(t, db, `
 SELECT kcu.table_name, kcu.constraint_name, ref.table_schema, ref.table_name, kcu.column_name, ref.column_name
 FROM information_schema.referential_constraints rc
@@ -331,6 +336,47 @@ ORDER BY kcu.table_name, kcu.constraint_name COLLATE "C", kcu.ordinal_position`,
 		b.key(c[0], c[1], c[1], sameSchema(c[2], schema), c[3], c[4], c[5])
 	}, schema)
 	return b.c
+}
+
+// pgTypes resolves a type that information_schema gives as udt_schema and
+// udt_name to the value that ColumnTypes must have.
+type pgTypes struct {
+	domains map[[2]string][2]string // domain -> its base, one level
+	catalog map[string]bool         // the type names of pg_catalog
+}
+
+func pgTypeNames(t *testing.T, db *sql.DB) pgTypes {
+	t.Helper()
+	types := pgTypes{domains: map[[2]string][2]string{}, catalog: map[string]bool{}}
+	rows(t, db, `SELECT domain_schema, domain_name, udt_schema, udt_name FROM information_schema.domains`,
+		func(c []string) { types.domains[[2]string{c[0], c[1]}] = [2]string{c[2], c[3]} })
+	rows(t, db, `SELECT typname FROM pg_catalog.pg_type WHERE typnamespace = 'pg_catalog'::regnamespace`,
+		func(c []string) { types.catalog[c[0]] = true })
+	return types
+}
+
+// name follows a domain to its base until the base is not a domain. An array
+// of a domain ("_" and the name of the domain) becomes the array of its base.
+// The name has its schema unless the type is in pg_catalog, or is in the
+// schema of the table and pg_catalog has no type of that name.
+func (p pgTypes) name(schema, typeSchema, typeName string) string {
+	array := ""
+	if _, ok := p.domains[[2]string{typeSchema, strings.TrimPrefix(typeName, "_")}]; ok &&
+		strings.HasPrefix(typeName, "_") {
+		array, typeName = "_", typeName[1:]
+	}
+	for {
+		base, ok := p.domains[[2]string{typeSchema, typeName}]
+		if !ok {
+			break
+		}
+		typeSchema, typeName = base[0], base[1]
+	}
+	typeName = array + typeName
+	if typeSchema == "pg_catalog" || (typeSchema == schema && !p.catalog[typeName]) {
+		return typeName
+	}
+	return typeSchema + "." + typeName
 }
 
 // mysqlCatalogue reads information_schema: COLUMN_TYPE for the types, and
@@ -360,7 +406,9 @@ ORDER BY rc.TABLE_NAME, CAST(rc.CONSTRAINT_NAME AS BINARY), k.ORDINAL_POSITION`,
 
 // sqliteCatalogue reads the pragmas: the declared type of each column, and
 // pragma_foreign_key_list for the keys, which have no name. A key declared
-// without its referenced columns references the primary key.
+// without its referenced columns references the primary key. The referenced
+// table and columns are the names in sqlite_master and pragma_table_info,
+// which SQLite matches without case to the names in the REFERENCES clause.
 func sqliteCatalogue(t *testing.T, db *sql.DB) catalogue {
 	t.Helper()
 	b := newCatalogue()
@@ -372,9 +420,13 @@ func sqliteCatalogue(t *testing.T, db *sql.DB) catalogue {
 			b.column(table, c[0], strings.TrimSuffix(c[1], " GENERATED ALWAYS"))
 		}, table)
 		rows(t, db, `
-SELECT k.id, k."table", k."from",
-       COALESCE(k."to", (SELECT p.name FROM pragma_table_info(k."table") p WHERE p.pk = k.seq + 1))
+SELECT k.id, m.name, k."from",
+       CASE WHEN k."to" IS NULL
+            THEN (SELECT p.name FROM pragma_table_info(m.name) p WHERE p.pk = k.seq + 1)
+            ELSE (SELECT p.name FROM pragma_table_info(m.name) p WHERE p.name = k."to" COLLATE NOCASE)
+       END
 FROM pragma_foreign_key_list(?) k
+JOIN sqlite_master m ON m.type = 'table' AND m.name = k."table" COLLATE NOCASE
 ORDER BY k.id, k.seq`, func(c []string) {
 			b.key(table, c[0], "", "", c[1], c[2], c[3])
 		}, table)

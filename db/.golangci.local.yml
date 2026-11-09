@@ -86,9 +86,10 @@ linters:
       - ^filter/
       - ^generator/template/nullable(_test)?\.go$
       - ^generator/template/(render|unique_keys|catalog_methods)(_test)?\.go$
-      - ^generator/metadata/(unique_index|read_schema|catalog|catalog_set)\.go$
+      - ^generator/metadata/(unique_index|read_schema|catalog)\.go$
+      - ^generator/metadata/catalog_set(_test)?\.go$
       - ^generator/postgres/(unique_keys|read_schema|catalog)(_test)?\.go$
-      - ^generator/(mysql|sqlite)/read_schema\.go$
+      - ^generator/(mysql|sqlite)/read_schema(_test)?\.go$
       - ^internal/jet/dialect_switch(_test)?\.go$
       - ^internal/jet/foreign_key\.go$
       - ^internal/jet/optional_arg(_test)?\.go$

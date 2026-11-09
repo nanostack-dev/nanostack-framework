@@ -18,19 +18,28 @@ import (
 // methods on PostgreSQL, MySQL and SQLite (db/tests, TestCatalogMethodsMatchCatalog).
 
 // ColumnTypes of every table file lists every column of its table, in
-// column order, with the type information_schema.columns gives as udt_name:
-// the base type of a domain, the array type of an array, the enum's name.
+// column order, with the type information_schema.columns gives as
+// udt_schema and udt_name, resolved by pgTypeName: the base type at the end
+// of a chain of domains, the array type of an array, the enum's name, and the
+// schema of a type of another schema or of a type that has the name of a
+// pg_catalog type.
 func TestColumnTypesMatchCatalog(t *testing.T) {
 	db, drop := migrated(t)
 	defer drop()
+	domains := map[[2]string][2]string{} // domain -> its base, one level
+	queryRows(t, db, `SELECT domain_schema, domain_name, udt_schema, udt_name FROM information_schema.domains`,
+		func(cols []string) { domains[[2]string{cols[0], cols[1]}] = [2]string{cols[2], cols[3]} })
+	pgCatalog := map[string]bool{}
+	queryRows(t, db, `SELECT typname FROM pg_catalog.pg_type WHERE typnamespace = 'pg_catalog'::regnamespace`,
+		func(cols []string) { pgCatalog[cols[0]] = true })
 	catalog := map[string][]string{} // table -> "column type" in column order
 	queryRows(t, db, `
-SELECT c.table_name, c.column_name, c.udt_name
+SELECT c.table_name, c.column_name, c.udt_schema, c.udt_name
 FROM information_schema.columns c
 JOIN information_schema.tables t ON t.table_schema = c.table_schema AND t.table_name = c.table_name
 WHERE c.table_schema = 'public' AND t.table_type = 'BASE TABLE'
 ORDER BY c.table_name, c.ordinal_position`, func(cols []string) {
-		catalog[cols[0]] = append(catalog[cols[0]], cols[1]+" "+cols[2])
+		catalog[cols[0]] = append(catalog[cols[0]], cols[1]+" "+pgTypeName(domains, pgCatalog, cols[2], cols[3]))
 	})
 	emitted := map[string][]string{}
 	for file, lit := range methodLiterals(t, "ColumnTypes") {
@@ -49,9 +58,44 @@ ORDER BY c.table_name, c.ordinal_position`, func(cols []string) {
 			t.Errorf("%s: ColumnTypes %q, catalogue %q", table, got, want)
 		}
 	}
-	if want := "user_email text"; !slices.Contains(emitted["events"], want) {
-		t.Errorf("events: ColumnTypes %q has no %q: a domain column has the type of its base", emitted["events"], want)
+	for _, want := range []string{
+		"user_email text",                  // a domain
+		"backup_email text",                // a domain of a domain
+		"emails _text",                     // an array of a domain
+		"ledger_status ledger.user_status", // an enum of another schema, with the name of a public enum
+		"route public.path",                // a public enum with the name of a pg_catalog type
+	} {
+		if !slices.Contains(emitted["events"], want) {
+			t.Errorf("events: ColumnTypes %q has no %q", emitted["events"], want)
+		}
 	}
+	if want := "status user_status"; !slices.Contains(emitted["users"], want) {
+		t.Errorf("users: ColumnTypes %q has no %q", emitted["users"], want)
+	}
+}
+
+// pgTypeName follows a domain to its base until the base is not a domain. An
+// array of a domain ("_" and the name of the domain) becomes the array of its
+// base. The name has its schema unless the type is in pg_catalog, or is in
+// public and pg_catalog has no type of that name.
+func pgTypeName(domains map[[2]string][2]string, pgCatalog map[string]bool, typeSchema, typeName string) string {
+	array := ""
+	if _, ok := domains[[2]string{typeSchema, strings.TrimPrefix(typeName, "_")}]; ok &&
+		strings.HasPrefix(typeName, "_") {
+		array, typeName = "_", typeName[1:]
+	}
+	for {
+		base, ok := domains[[2]string{typeSchema, typeName}]
+		if !ok {
+			break
+		}
+		typeSchema, typeName = base[0], base[1]
+	}
+	typeName = array + typeName
+	if typeSchema == "pg_catalog" || (typeSchema == "public" && !pgCatalog[typeName]) {
+		return typeName
+	}
+	return typeSchema + "." + typeName
 }
 
 // ForeignKeys of every table file lists every foreign key of its table, as
@@ -112,6 +156,23 @@ ORDER BY kcu.table_name, kcu.constraint_name COLLATE "C", kcu.ordinal_position`,
 			lines = append(lines, line)
 		}
 		emitted[tableOf(file)] = lines
+	}
+	// information_schema joins the keys by constraint name, and also lists the
+	// copies of a key to a partitioned table, one per partition, that
+	// PostgreSQL adds to the referencing table. The partitioned tables are
+	// checked against exact lists below.
+	partitioned := map[string][]string{
+		"regions":   {},
+		"regions_1": {},
+		"sites":     {"sites_region_fkey -> .regions: region_id=id part=part"},
+		"sites_1":   {"sites_region_fkey -> .regions: region_id=id part=part"},
+	}
+	for table, want := range partitioned {
+		if got, ok := emitted[table]; !ok || !slices.Equal(got, want) {
+			t.Errorf("%s: ForeignKeys %q, want %q", table, got, want)
+		}
+		delete(emitted, table)
+		delete(catalog, table)
 	}
 	for table, got := range emitted {
 		if want := catalog[table]; !slices.Equal(got, want) && (len(got) > 0 || len(want) > 0) {

@@ -31,8 +31,10 @@
 // a key" line of its doc comment.
 //
 // ColumnTypes lists, by column name, the catalogue type of each column:
-// information_schema.columns.udt_name (the base type of a domain, "_text" for
-// a text array, the name of an enum). ForeignKeys lists the foreign keys of
+// the type name from pg_type (the base type at the end of a chain of domains,
+// "_text" for a text array or an array of a text domain, the name of an enum,
+// and "schema.name" for a type of another schema or a type that has the name
+// of a pg_catalog type). ForeignKeys lists the foreign keys of
 // the table in constraint name order, with the referencing and the
 // referenced columns in key order, and the schema of the referenced table
 // when it is not the generated schema.

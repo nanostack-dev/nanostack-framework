@@ -85,7 +85,7 @@ FROM pg_index ix
 JOIN pg_class c ON c.oid = ix.indrelid
 JOIN pg_class i ON i.oid = ix.indexrelid
 JOIN pg_namespace n ON n.oid = c.relnamespace
-WHERE n.nspname = 'public' AND c.relkind = 'r' AND ix.indisunique`)
+WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p') AND ix.indisunique`)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -3,14 +3,19 @@ package metadata
 // Two facts from the catalogue are for nano gen db and nano gen repo:
 // Column.CatalogType and Table.ForeignKeys (Nanostack).
 //
-// The ReadSchema function of each dialect (postgres, mysql and sqlite) fills
-// both for each base table. GetSchema, GenerateDB and the jet command leave
-// them empty, so their metadata and output stay upstream's.
+// Only the ReadSchema function of each dialect (postgres, mysql and sqlite)
+// fills both for each base table, and sets Table.CatalogTypesRead and
+// Table.ForeignKeysRead. GetSchema, GenerateDB and the jet command leave them
+// empty, so their metadata and output stay upstream's. The ColumnTypes and
+// ForeignKeys templates refuse a table that does not have the marks.
 //
 // Column.CatalogType is the type name of a column as the catalogue gives it:
-// pg_type.typname on PostgreSQL, as information_schema.columns.udt_name gives
-// it (a domain column has the type of its base, an array column the name of
-// its array type, such as "_text"); information_schema.columns.COLUMN_TYPE on
+// pg_type.typname on PostgreSQL, with these changes: a domain column has the
+// type at the end of its chain of domains, and an array of a domain has the
+// array type of that base type ("_text"); the name has its schema
+// ("billing.status") when the type is not in pg_catalog and not in the schema
+// of the table, or when the type is in the schema of the table and has the
+// name of a pg_catalog type. information_schema.columns.COLUMN_TYPE on
 // MySQL and MariaDB (such as "varchar(255)", "tinyint(1)" or "enum('a','b')");
 // and the declared type on SQLite (such as "VARCHAR(20)", or "" for a column
 // declared without a type). DataType.Name is not the same: go-jet maps it for

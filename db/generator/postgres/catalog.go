@@ -9,19 +9,43 @@ import (
 	"github.com/nanostack-dev/nanostack-framework/db/generator/metadata"
 )
 
-// catalogTypeQuery reads the type name of every column of the base tables of
-// schema $1, as information_schema.columns.udt_name defines it: the base type
-// of a domain, else the type itself (the array type of an array).
+// catalogTypeQuery reads the type of every column of the base tables of
+// schema $1: the column, the schema and the name of the type, and whether
+// pg_catalog has a type of the same name. The type of a domain column is the
+// type at the end of its chain of domains (a domain can have a domain as its
+// base). The type of an array of a domain is the array type of that base
+// type. information_schema.columns.udt_name resolves one level of domain only,
+// and does not resolve the element of an array.
 const catalogTypeQuery = `
-SELECT c.relname, a.attname, COALESCE(bt.typname, t.typname)
+WITH RECURSIVE chain(domain, base) AS (
+    SELECT t.oid, t.typbasetype FROM pg_catalog.pg_type t WHERE t.typtype = 'd'
+    UNION ALL
+    SELECT ch.domain, t.typbasetype
+    FROM chain ch JOIN pg_catalog.pg_type t ON t.oid = ch.base AND t.typtype = 'd'),
+resolved(domain, base) AS (
+    SELECT ch.domain, ch.base
+    FROM chain ch JOIN pg_catalog.pg_type t ON t.oid = ch.base AND t.typtype <> 'd')
+SELECT c.relname, a.attname, rn.nspname, rt.typname,
+       EXISTS (SELECT 1 FROM pg_catalog.pg_type p
+               WHERE p.typnamespace = 'pg_catalog'::regnamespace AND p.typname = rt.typname)
 FROM pg_catalog.pg_attribute a
 JOIN pg_catalog.pg_class c ON c.oid = a.attrelid
 JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
 JOIN pg_catalog.pg_type t ON t.oid = a.atttypid
-LEFT JOIN pg_catalog.pg_type bt ON t.typtype = 'd' AND bt.oid = t.typbasetype
+LEFT JOIN resolved d ON d.domain = t.oid
+LEFT JOIN pg_catalog.pg_type et ON t.typcategory = 'A' AND et.oid = t.typelem AND et.typtype = 'd'
+LEFT JOIN resolved ed ON ed.domain = et.oid
+LEFT JOIN pg_catalog.pg_type ebt ON ebt.oid = ed.base
+JOIN pg_catalog.pg_type rt ON rt.oid = COALESCE(d.base, NULLIF(ebt.typarray, 0), t.oid)
+JOIN pg_catalog.pg_namespace rn ON rn.oid = rt.typnamespace
 WHERE n.nspname = $1 AND c.relkind IN ('r', 'p') AND a.attnum > 0 AND NOT a.attisdropped`
 
-// addCatalogTypes sets the CatalogType of each column of each table.
+// addCatalogTypes sets the CatalogType of each column of each table. The
+// name of a type has its schema ("billing.status") when the type is not in
+// pg_catalog and not in schemaName, so two types of the same name in two
+// schemas never get the same value. A type of schemaName that has the name
+// of a pg_catalog type ("public.path") has its schema too, so it never looks
+// like the pg_catalog type.
 func addCatalogTypes(ctx context.Context, db *sql.DB, schemaName string, tables []metadata.Table) error {
 	rows, err := db.QueryContext(ctx, catalogTypeQuery, schemaName)
 	if err != nil {
@@ -30,20 +54,32 @@ func addCatalogTypes(ctx context.Context, db *sql.DB, schemaName string, tables 
 	defer func() { _ = rows.Close() }()
 	types := map[string]map[string]string{}
 	for rows.Next() {
-		var table, column, typ string
-		if err = rows.Scan(&table, &column, &typ); err != nil {
+		var table, column, typeSchema, typ string
+		var shadows bool
+		if err = rows.Scan(&table, &column, &typeSchema, &typ, &shadows); err != nil {
 			return fmt.Errorf("failed to scan a column type of schema '%s': %w", schemaName, err)
 		}
 		if types[table] == nil {
 			types[table] = map[string]string{}
 		}
-		types[table][column] = typ
+		types[table][column] = qualifiedTypeName(schemaName, typeSchema, typ, shadows)
 	}
 	if err = rows.Err(); err != nil {
 		return fmt.Errorf("failed to read column types of schema '%s': %w", schemaName, err)
 	}
 	metadata.SetCatalogTypes(tables, types)
 	return nil
+}
+
+// qualifiedTypeName returns the catalogue type name of a column of a table
+// of schema: typeName when the type is in pg_catalog, or in schema and
+// shadowsCatalog is false (pg_catalog has no type of that name); else
+// typeSchema.typeName.
+func qualifiedTypeName(schema, typeSchema, typeName string, shadowsCatalog bool) string {
+	if typeSchema == "pg_catalog" || (typeSchema == schema && !shadowsCatalog) {
+		return typeName
+	}
+	return typeSchema + "." + typeName
 }
 
 // foreignKeyQuery reads every foreign key of the base tables of schema $1,

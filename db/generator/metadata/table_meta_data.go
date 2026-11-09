@@ -12,6 +12,10 @@ type Table struct {
 	UniqueIndexes []UniqueIndex
 	// ForeignKeys are the foreign keys of a base table, from the ReadSchema function of each dialect (Nanostack, see catalog.go).
 	ForeignKeys []ForeignKey
+	// CatalogTypesRead and ForeignKeysRead say that the ReadSchema function of the dialect filled
+	// Column.CatalogType and ForeignKeys (Nanostack, see catalog.go).
+	CatalogTypesRead bool
+	ForeignKeysRead  bool
 }
 
 // MutableColumns returns list of mutable columns for table
