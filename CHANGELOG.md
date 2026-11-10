@@ -2,9 +2,9 @@
 
 One section per module and version, newest first. Each section uses Added, Changed, Deprecated, Removed and Fixed. [RELEASING.md](RELEASING.md) gives the release steps and the upgrade notes.
 
-## gen and root (unreleased)
+## gen/v0.23.0-beta.11, v0.23.0-beta.8 and db/v0.23.0-beta.6
 
-Root: `Postgres.ScopeImplies`, `ContextScope.Present`, `ContextScope.AllowFailOpenWrites` in `core/nano/project`. `db`: `ForeignKey.NotValid`, `MatchFull`, `nanorepo.ErrNoContextScope`. `gen`: requires them.
+Upgrade with [RELEASING.md](RELEASING.md#upgrade-from-v0230-beta7). Root: `Postgres.ScopeImplies`, `ContextScope.Present`, `ContextScope.AllowFailOpenWrites` in `core/nano/project`. `db`: `ForeignKey.NotValid`, `MatchFull`, `nanorepo.ErrNoContextScope`. `gen`: requires them.
 
 ### Added
 - `Postgres.ScopeImplies` in `core/nano/project`, and `-scope-implies column=column,...` on `nanostack gen repo`: a scope column that a derived read or delete gives stands for the columns it determines, transitively, **on a table that proves it**: a foreign key that lists both columns and references a table with a unique key on the first one's target alone. A write never uses it. The pipeline and the flag check, with one function, that both sides are in `Scopes`, neither is a context column, and there is no cycle.
@@ -22,8 +22,6 @@ Root: `Postgres.ScopeImplies`, `ContextScope.Present`, `ContextScope.AllowFailOp
 
 ### Fixed
 - A column `order_by` could not be named in a derived name. A short scope name in a hint was used as a predicate (`r.where.Org`). A composite key hint ordered by one column.
-
-### Fixed
 - `nanostack gen repo` no longer imports `database/sql` into a generated file whose only derived write is a create, such as `CreateInOrgAndWorkspace`. Before the fix, the file did not compile ("imported and not used").
 
 ## gen/v0.23.0-beta.10, v0.23.0-beta.7 and db/v0.23.0-beta.5

@@ -192,6 +192,15 @@ go tool nanostack gen
 
 - A consumer goes back to the last good version with `go get <module>@<version>`, then `go mod tidy`.
 
+## Upgrade from v0.23.0-beta.7
+
+Root `v0.23.0-beta.8`, `db/v0.23.0-beta.6` and `gen/v0.23.0-beta.11` tighten the scope rule of derived methods ([CHANGELOG.md](CHANGELOG.md#genv0230-beta11-v0230-beta8-and-dbv0230-beta6)). `pkg/functional` keeps `v0.23.0-beta.1`.
+
+1. Bump: `go get github.com/nanostack-dev/nanostack-framework@v0.23.0-beta.8 github.com/nanostack-dev/nanostack-framework/db@v0.23.0-beta.6 && go get -tool github.com/nanostack-dev/nanostack-framework/gen/cmd/nanostack@gen/v0.23.0-beta.11 && go mod tidy`, then `go tool lintconfig` where the service generates its lint config.
+2. Run `go tool nanostack gen`. A derived name now gives every `Postgres.Scopes` column of its table, scope words first; follow each refusal's rename. `Postgres.ScopeImplies` lets one scope word stand for another only on a table whose validated foreign key proves it (NOT NULL columns or MATCH FULL).
+3. For each `Postgres.ContextScopes` entry, set `Present` (derived deletes and writes fail closed with `nanorepo.ErrNoContextScope` when the context carries no value), or set `AllowFailOpenWrites` after a review of why a delete or update without the context must reach every value. Without one of them, a derived delete or update on that table is refused.
+4. Review `go tool nanostack gen repo -inventory` (every `UNSCOPED`, `CROSS-`, `ORG-WIDE`, `FAIL-OPEN (reviewed)` and `HAND-WRITTEN (derivable)` method) in the upgrade pull request. `nanostack gen` and `-check` verify the scope coverage of the derived code on every run.
+
 ## Upgrade from v0.23.0-beta.6
 
 `db/v0.23.0-beta.5`, root `v0.23.0-beta.7` and `gen/v0.23.0-beta.10` derive repository writes ([CHANGELOG.md](CHANGELOG.md#genv0230-beta10-v0230-beta7-and-dbv0230-beta5)). `pkg/functional` keeps `v0.23.0-beta.1`.
