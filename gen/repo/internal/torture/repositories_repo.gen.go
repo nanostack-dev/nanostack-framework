@@ -853,7 +853,7 @@ func (r *ledgersImpl) DeleteByOrgAndProductAndSiteAndWorkspaceAndMemo(ctx contex
 	return err
 }
 
-// Notes on *notesImpl: 12 derived methods on table note; the other methods are
+// Notes on *notesImpl: 13 derived methods on table note; the other methods are
 // hand-written (nanostack gen repo -explain lists each one).
 //
 // A compile error on the next line means Notes gained or lost a method since
@@ -904,6 +904,18 @@ func (r *notesImpl) FindByWorkspaceIDAndID(ctx context.Context, workspaceID stri
 //
 // FAIL-CLOSED: a context without the scope fails with nanorepo.ErrNoContextScope, before any SQL.
 func (r *notesImpl) FindByWorkspaceAndTitle(ctx context.Context, title string) ([]model.Note, error) {
+	if !workspacescope.Present(ctx) {
+		return nil, nanorepo.ErrNoContextScope
+	}
+	return r.findAll(ctx, workspacescope.Filter(ctx, r.t.WorkspaceID).AND(r.where.Title(title)))
+}
+
+// FindByWorkspaceAndTitleInternal is derived from its name:
+//
+//	SELECT * FROM note WHERE workspacescope.Filter(ctx, workspace_id) AND title = $1
+//
+// FAIL-CLOSED: a context without the scope fails with nanorepo.ErrNoContextScope, before any SQL.
+func (r *notesImpl) FindByWorkspaceAndTitleInternal(ctx context.Context, title string) ([]model.Note, error) {
 	if !workspacescope.Present(ctx) {
 		return nil, nanorepo.ErrNoContextScope
 	}

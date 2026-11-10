@@ -259,6 +259,8 @@ type Notes interface {
 	GetByWorkspaceAndID(ctx context.Context, id string) (model.Note, error)
 	FindByWorkspaceIDAndID(ctx context.Context, workspaceID, id string) (functional.Option[model.Note], error)
 	FindByWorkspaceAndTitle(ctx context.Context, title string) ([]model.Note, error)
+	// Internal skips nothing here: Workspace is named, so the read still fails closed on a bare context.
+	FindByWorkspaceAndTitleInternal(ctx context.Context, title string) ([]model.Note, error)
 	FindByWorkspace(ctx context.Context) ([]model.Note, error)
 	CountByWorkspace(ctx context.Context) (int64, error)
 	ExistsByWorkspaceAndTitle(ctx context.Context, title string) (bool, error)

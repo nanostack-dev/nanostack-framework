@@ -257,7 +257,7 @@ func TestMainVerifyScopesAndInventory(t *testing.T) {
 	if code := Main(append(torturePairs(), "-inventory"), &out, &errOut); code != 0 {
 		t.Fatalf("-inventory: exit %d\n%s", code, errOut.String())
 	}
-	for _, want := range []string{"Orders.FindByOrgAndProductAndNameInternal", "UNSCOPED", "CROSS-WORKSPACE"} {
+	for _, want := range []string{"Orders.FindByOrgAndProductAndNameInternal", "UNSCOPED", "CROSS-WORKSPACE", "ORG-WIDE (ctx scope fail-open read)"} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("-inventory lacks %q:\n%s", want, out.String())
 		}
@@ -313,6 +313,17 @@ func TestTortureVerifyIsStructural(t *testing.T) {
 		{repos, "notesImpl", "FindByWorkspaceAndTitle",
 			"\tif !workspacescope.Present(ctx) {\n\t\treturn nil, nanorepo.ErrNoContextScope\n\t}\n", "", "",
 			"a read of a context-only table has no Present guard"},
+		{repos, "notesImpl", "FindByWorkspaceAndTitleInternal",
+			"\tif !workspacescope.Present(ctx) {\n\t\treturn nil, nanorepo.ErrNoContextScope\n\t}\n", "", "",
+			"a fully named Internal read of a context-only table has no Present guard"},
+		{repos, "ordersImpl", "FindByOrgAndProductAndWorkspaceAndName", "r.where.OrgID(orgID).AND(",
+			"postgres.EXISTS(postgres.SELECT(postgres.Int(1)).FROM(r.t).WHERE(r.where.OrgID(orgID))).AND(", "",
+			"a scope predicate only inside a nested SELECT"},
+		{repos, "ordersImpl", "FindByOrgAndProductAndWorkspaceAndName", "r.where.OrgID(orgID).AND(",
+			"postgres.EXISTS(r.findAll(ctx, r.where.OrgID(orgID))).AND(", "",
+			"a scope predicate only inside a nested helper call"},
+		{repos, "notesImpl", "FindByWorkspaceAndTitle", "workspacescope.Filter(", "regionscope.Filter(", regionImport,
+			"a different function is given the context column"},
 		{"writes_repo.gen.go", "widesImpl", "UpdateByOrgAndProductAndWorkspaceAndID", "workspacescope.Present(ctx)",
 			"regionscope.Present(ctx)", regionImport, "an update calls another Present"},
 	} {

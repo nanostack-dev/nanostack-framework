@@ -1,0 +1,8 @@
+internalctx.go:24: Boards.FindByWorkspaceAndIDInternal: not implemented: no hand-written method on *boardsImpl, and the name does not derive: table boards has the context scope workspace_id as its only scope, and its function reads TRUE on a context without a value: a derived read would read every tenant
+  fix: write it by hand on *boardsImpl, in a non-generated file of package internalctx:
+         func (r *boardsImpl) FindByWorkspaceAndIDInternal(ctx context.Context, id string) (functional.Option[Board], error)
+       or set Present in the ContextScope of workspace_id in nanogen/project.go (the read then fails with nanorepo.ErrNoContextScope on a bare context), or leave the scope out of the name: Internal skips only the scopes the name leaves out
+internalctx.go:25: Boards.CountByWorkspaceInternal: not implemented: no hand-written method on *boardsImpl, and the name does not derive: table boards has the context scope workspace_id as its only scope, and its function reads TRUE on a context without a value: a derived read would read every tenant
+  fix: write it by hand on *boardsImpl, in a non-generated file of package internalctx:
+         func (r *boardsImpl) CountByWorkspaceInternal(ctx context.Context) (int64, error)
+       or set Present in the ContextScope of workspace_id in nanogen/project.go (the read then fails with nanorepo.ErrNoContextScope on a bare context), or leave the scope out of the name: Internal skips only the scopes the name leaves out

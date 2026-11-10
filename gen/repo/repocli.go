@@ -214,6 +214,18 @@ func reviewNotes(r *resolution, m *derivedMethod) []string {
 	for _, col := range m.cross {
 		notes = append(notes, "CROSS-"+strings.ToUpper(strings.TrimSuffix(col, "_id"))+", "+col+" from a parameter")
 	}
+	if m.op != opDelete && !m.op.isWrite() && len(m.present) == 0 {
+		var cols []string
+		for _, t := range m.terms {
+			if t.ctx != nil {
+				cols = append(cols, t.ctx.col)
+			}
+		}
+		if len(cols) > 0 {
+			notes = append(notes, "ORG-WIDE (ctx scope fail-open read), a context without "+strings.Join(cols, " or ")+
+				" reads the whole organisation")
+		}
+	}
 	if len(m.failOpen) > 0 {
 		cols := make([]string, len(m.failOpen))
 		for i, c := range m.failOpen {

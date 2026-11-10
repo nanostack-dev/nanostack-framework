@@ -200,56 +200,86 @@ var derivedHelpers = map[string]bool{ //nolint:gochecknoglobals // read-only tab
 	"findOne": true, "findAll": true, "exists": true, "count": true, "deleteWhere": true,
 }
 
-// scan reads the facts of fd. A scope column is covered only by a conjunct of
-// a condition that the statement applies: the arguments of AND at the top of
-// the condition, so that OR or NOT around a predicate covers nothing.
+// scan reads the facts of fd. Only the statements at the top of the body
+// count, and in them only the condition of the statement itself: a WHERE
+// inside a nested SELECT, or a helper called inside a condition, credits
+// nothing. A scope column is covered by a conjunct of that condition: the
+// arguments of AND at its top, so that OR or NOT around a predicate covers
+// nothing.
 func (v *verifier) scan(fd *ast.FuncDecl) codeFacts {
 	f := codeFacts{map[string]bool{}, map[string]bool{}, map[string]bool{}}
-	ast.Inspect(fd.Body, func(n ast.Node) bool {
-		switch n := n.(type) {
-		case *ast.AssignStmt: // row.OrgID = orgID, row.WorkspaceID, err = Stamp(ctx)
-			for _, lhs := range n.Lhs {
-				if field := assignedField(lhs); field != "" {
-					f.stamped[field] = true
-				}
+	stampedFields(fd, f.stamped)
+	for _, stmt := range fd.Body.List {
+		switch st := stmt.(type) {
+		case *ast.ReturnStmt:
+			for _, e := range st.Results {
+				v.scanChain(e, f)
 			}
-		case *ast.CallExpr:
-			scanCall(n, f)
+		case *ast.AssignStmt:
+			for _, e := range st.Rhs {
+				v.scanChain(e, f)
+			}
+		case *ast.ExprStmt:
+			v.scanChain(st.X, f)
 		case *ast.IfStmt: // if !pkg.Present(ctx) { ... }
-			if call := negatedCall(n.Cond); call != nil {
+			if call := negatedCall(st.Cond); call != nil {
 				f.hasPresent[v.resolve(call.Fun)] = true
+			}
+		}
+	}
+	return f
+}
+
+// stampedFields records the fields set on the row anywhere in fd:
+// row.OrgID = orgID, row.WorkspaceID, err = Stamp(ctx).
+func stampedFields(fd *ast.FuncDecl, into map[string]bool) {
+	ast.Inspect(fd.Body, func(n ast.Node) bool {
+		if as, ok := n.(*ast.AssignStmt); ok {
+			for _, lhs := range as.Lhs {
+				if field := assignedField(lhs); field != "" {
+					into[field] = true
+				}
 			}
 		}
 		return true
 	})
-	return f
 }
 
-// scanCall records what a call contributes: the conjuncts of the condition
-// of a helper or of WHERE, and the columns of ON_CONFLICT.
-func scanCall(call *ast.CallExpr, f codeFacts) {
+// scanChain follows the chain of calls that makes a statement, a.B().C(), and
+// records the condition of each link that applies one: a helper, WHERE, the
+// ON_CONFLICT columns, and the guard inside DO_UPDATE.
+func (v *verifier) scanChain(e ast.Expr, f codeFacts) {
+	call, ok := e.(*ast.CallExpr)
+	if !ok {
+		return
+	}
 	sel, ok := call.Fun.(*ast.SelectorExpr)
 	if !ok {
 		return
 	}
 	switch {
 	case derivedHelpers[sel.Sel.Name] && len(call.Args) >= 2:
-		coverConjuncts(call.Args[1], f.covered)
+		v.coverConjuncts(call.Args[1], f.covered)
 	case sel.Sel.Name == "WHERE" && len(call.Args) == 1:
-		coverConjuncts(call.Args[0], f.covered)
+		v.coverConjuncts(call.Args[0], f.covered)
 	case sel.Sel.Name == "ON_CONFLICT":
 		for _, arg := range call.Args {
 			if field := tableField(arg); field != "" {
 				f.covered[field] = true
 			}
 		}
+	case sel.Sel.Name == "DO_UPDATE":
+		for _, arg := range call.Args {
+			v.scanChain(arg, f)
+		}
 	}
+	v.scanChain(sel.X, f)
 }
 
 // coverConjuncts marks the scope fields that the conjuncts of cond cover.
-func coverConjuncts(cond ast.Expr, covered map[string]bool) {
+func (v *verifier) coverConjuncts(cond ast.Expr, covered map[string]bool) {
 	for _, c := range conjuncts(cond) {
-		if field := coveredBy(c); field != "" {
+		if field := v.coveredBy(c); field != "" {
 			covered[field] = true
 		}
 	}
@@ -266,9 +296,10 @@ func conjuncts(e ast.Expr) []ast.Expr {
 }
 
 // coveredBy returns the field that the conjunct c constrains: r.where.F(x), a
-// function of the context on the column (pkg.Filter(ctx, r.t.F)), or a guard
+// registered function of the context on the column (pkg.Filter(ctx, r.t.F),
+// matched by import path and name against ContextScopes), or a guard
 // r.t.F.EQ(r.t.EXCLUDED.F).
-func coveredBy(c ast.Expr) string {
+func (v *verifier) coveredBy(c ast.Expr) string {
 	call, ok := c.(*ast.CallExpr)
 	if !ok {
 		return ""
@@ -281,9 +312,21 @@ func coveredBy(c ast.Expr) string {
 			return tableField(sel.X)
 		}
 	}
+	fn := v.resolve(call.Fun)
 	for _, arg := range call.Args {
-		if field := tableField(arg); field != "" {
+		if field := tableField(arg); field != "" && fn != "" && fn == v.contextFunc(field) {
 			return field
+		}
+	}
+	return ""
+}
+
+// contextFunc is the function that ContextScopes registers for the column of
+// the Go field, "" when it has none.
+func (v *verifier) contextFunc(field string) string {
+	for _, c := range v.r.b.table.columns {
+		if c.field == field {
+			return v.opts.ContextScopes[c.sqlName]
 		}
 	}
 	return ""
@@ -396,7 +439,7 @@ func (v *verifier) checkRead(m *derivedMethod, fd *ast.FuncDecl, f codeFacts) []
 // column from a parameter. The call is matched by import path and name.
 func (v *verifier) checkPresent(m *derivedMethod, f codeFacts) []string {
 	read := !m.op.changesRows()
-	if read && (!v.ctxOnly() || m.internal) {
+	if read && !v.ctxOnly() {
 		return nil
 	}
 	var out []string
@@ -405,7 +448,7 @@ func (v *verifier) checkPresent(m *derivedMethod, f codeFacts) []string {
 		if fn == "" || v.opts.ContextScopes[c.sqlName] == "" || !slices.Contains(v.opts.Scopes, c.sqlName) {
 			continue
 		}
-		if read && slices.Contains(m.cross, c.sqlName) {
+		if read && (slices.Contains(m.cross, c.sqlName) || slices.Contains(m.skipped, c.field)) {
 			continue
 		}
 		if !f.hasPresent[fn] {

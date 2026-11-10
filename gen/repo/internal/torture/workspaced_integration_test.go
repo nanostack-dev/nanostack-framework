@@ -83,6 +83,15 @@ func TestNotesIsolation(t *testing.T) {
 			pred: title,
 			find: func(c context.Context, a args) ([]string, error) { return lbl(repo.FindByWorkspaceAndTitle(c, a.s)) },
 		},
+		{
+			name: "FindByWorkspaceAndTitleInternal",
+			ws:   wsCtx,
+			vals: titleVals,
+			pred: title,
+			find: func(c context.Context, a args) ([]string, error) {
+				return lbl(repo.FindByWorkspaceAndTitleInternal(c, a.s))
+			},
+		},
 		{name: "FindByWorkspace", ws: wsCtx,
 			find: func(c context.Context, _ args) ([]string, error) { return lbl(repo.FindByWorkspace(c)) }},
 		{name: "CountByWorkspace", ws: wsCtx,
