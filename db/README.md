@@ -130,7 +130,7 @@ stmt := SELECT(Invoice.AllColumns).FROM(Invoice).WHERE(
 `nanostack gen repo` writes each declared search as a `searchexec.Spec` (a package variable that
 `DefineSpec` checks at package init), a builder that embeds `searchexec.Query`, and the
 repository method. The method runs it through the transactor forwarders (`transactor.Search`
-and `SearchPage`, in a later release), which use the context transaction and refuse a row
+and `SearchPage`), which use the context transaction and refuse a row
 lock. `searchexec.Run` and `RunPage` run on the executor they get: they do not read the
 context transaction and do not refuse a row lock. The scope is a typed value: a zero scope
 field (also a field that only `From` reads), a query of another spec and a struct literal of

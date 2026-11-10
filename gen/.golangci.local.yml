@@ -27,6 +27,7 @@ linters:
             # A fixture that stands in for a service imports what generated code imports
             # there (internal/layers.Fixtures).
             - "!**/repo/internal/repotest/**"
+            - "!**/repo/internal/torture/**"
           allow:
             - github.com/nanostack-dev/nanostack-framework/pkg/functional$
           deny:
