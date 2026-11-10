@@ -205,19 +205,8 @@ func runErrors(_ *runner, u *unit, overlay map[string][]byte) (output, error) {
 func runRepo(r *runner, u *unit, overlay map[string][]byte) (output, error) {
 	opts := genrepo.Options{Dir: u.dir, Overlay: overlay}
 	if p := r.proj.Postgres; p != nil {
-		opts.Scopes, opts.ScopeNames = p.Scopes, p.ScopeNames
-		for _, cs := range p.ContextScopes {
-			if opts.ContextScopes == nil {
-				opts.ContextScopes = map[string]string{}
-			}
-			opts.ContextScopes[cs.Column] = cs.Func
-			if cs.Stamp != "" {
-				if opts.ContextStamps == nil {
-					opts.ContextStamps = map[string]string{}
-				}
-				opts.ContextStamps[cs.Column] = cs.Stamp
-			}
-		}
+		opts.Scopes, opts.ScopeNames, opts.ScopeImplies = p.Scopes, p.ScopeNames, p.ScopeImplies
+		contextOptions(&opts, p.ContextScopes)
 		opts.DatabaseColumns = p.DatabaseColumns
 	}
 	if api := r.proj.API; api != nil {
@@ -253,4 +242,29 @@ func orDefault(s, def string) string {
 		return def
 	}
 	return s
+}
+
+// contextOptions copies the functions of the context scopes into opts:
+// the filter, the stamp and the present function of each column.
+func contextOptions(opts *genrepo.Options, scopes []project.ContextScope) {
+	set := func(into *map[string]string, col, fn string) {
+		if fn == "" {
+			return
+		}
+		if *into == nil {
+			*into = map[string]string{}
+		}
+		(*into)[col] = fn
+	}
+	for _, cs := range scopes {
+		set(&opts.ContextScopes, cs.Column, cs.Func)
+		set(&opts.ContextStamps, cs.Column, cs.Stamp)
+		set(&opts.ContextPresents, cs.Column, cs.Present)
+		if cs.AllowFailOpenWrites {
+			if opts.ContextFailOpen == nil {
+				opts.ContextFailOpen = map[string]bool{}
+			}
+			opts.ContextFailOpen[cs.Column] = true
+		}
+	}
 }

@@ -46,16 +46,16 @@ Items on *itemsImpl (table items, scope tenant_id)
   FindByTenantIDAndActive             ERROR: not implemented
                                       note: the last result is not error
   FindByIDAndTenantID                 ERROR: not implemented
-                                      note: table items is scoped by tenant_id, and the name does not filter on it first
+                                      note: table items is scoped by tenant_id (Postgres.Scopes), and the name has a column before a scope column: the scope words come first
   ExistsBySku                         ERROR: not implemented
-                                      note: table items is scoped by tenant_id, and the name does not filter on it first
+                                      note: table items is scoped by tenant_id (Postgres.Scopes), and the name does not name tenant_id
   ExistsByTenantIDAndSku              derived: SELECT COUNT(*) FROM (SELECT 1 FROM items WHERE tenant_id = $1 AND sku = $2 LIMIT 1) found
   FindAll                             ERROR: not implemented
-                                      note: table items is scoped by tenant_id, and the name does not filter on it first
+                                      note: table items is scoped by tenant_id (Postgres.Scopes), and the name does not name tenant_id
   DeleteBySku                         ERROR: not implemented
-                                      note: table items is scoped by tenant_id, and the name does not filter on it first
+                                      note: table items is scoped by tenant_id (Postgres.Scopes), and the name does not name tenant_id
   DeleteBySkuInternal                 ERROR: not implemented
-                                      note: table items is scoped by tenant_id, and a derived delete must filter on it first: Internal skips the scope on derived reads only
+                                      note: table items is scoped by tenant_id (Postgres.Scopes), and the name does not name tenant_id: Internal skips the scope on derived reads only
   Ping                                ERROR: not implemented
                                       note: it does not start with FindBy, GetBy, ExistsBy, CountBy, DeleteBy, CreateIn, UpdateBy, UpsertBy, FindAll, Count or Create
 AuditLog on *auditLogImpl (table audit_events)

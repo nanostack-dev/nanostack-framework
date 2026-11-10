@@ -365,3 +365,59 @@ func NewUserCounts(db qrm.DB) UserCounts { return &userCounts{usersBase: newUser
 		}
 	}
 }
+
+// Postgres.ScopeImplies reaches the step: a derived name must give every scope
+// column, and a column it gives stands for the ones that it implies.
+func TestRepoScopeImplies(t *testing.T) {
+	t.Parallel()
+	const users = `package repository
+
+import (
+	"context"
+
+	"github.com/nanostack-dev/nanostack-framework/db/nanorepo"
+	"github.com/nanostack-dev/nanostack-framework/db/qrm"
+
+	"example.com/dbapp/internal/db/gen/app/public/model"
+	"example.com/dbapp/internal/db/gen/app/public/table"
+)
+
+// UserCounts counts users.
+type UserCounts interface {
+	CountByExternalIDAndEmail(ctx context.Context, externalID, email string) (int64, error)
+}
+
+func _() {
+	nanorepo.Implement[UserCounts, userCounts](table.Users, nanorepo.NoMapper[model.Users])
+}
+
+type userCounts struct{ usersBase }
+
+// NewUserCounts returns the counts on db.
+func NewUserCounts(db qrm.DB) UserCounts { return &userCounts{usersBase: newUsersBase(db)} }
+`
+	for _, tc := range []struct {
+		implies  string
+		wantCode int
+		want     string
+	}{
+		// users has no foreign key from external_id to tenant_id: the entry does not apply.
+		{`map[string]string{"external_id": "tenant_id"}`, 1, `Postgres.ScopeImplies says external_id determines tenant_id, but table users has no foreign key`},
+		{`nil`, 1, `table users is scoped by tenant_id, external_id (Postgres.Scopes), and the name does not name tenant_id`},
+	} {
+		dir := copyFixtureOf(t, dbFixture)
+		write(t, dir, "internal/repository/users.go", users)
+		edit(
+			t,
+			dir,
+			"nanogen/project.go",
+			`Postgres: &project.Postgres{Name: "app"}`,
+			`Postgres: &project.Postgres{Name: "app", Scopes: []string{"tenant_id", "external_id"}, ScopeImplies: `+tc.implies+`}`,
+		)
+		_, stderr, code := runDBFixture(t, dir, Options{Skip: []string{"db"}}, noDatabase(t))
+		if code != tc.wantCode || !strings.Contains(stderr, tc.want) {
+			t.Errorf("ScopeImplies %s: exit %d, want %d, stderr:\n%s\nwant it to contain %q", tc.implies, code,
+				tc.wantCode, stderr, tc.want)
+		}
+	}
+}

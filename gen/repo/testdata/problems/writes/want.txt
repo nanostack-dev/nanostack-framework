@@ -1,7 +1,7 @@
-writes.go:33: Items.Create: not implemented: no hand-written method on *itemsImpl, and the name does not derive: table items is scoped by tenant_id, and a derived Create takes TenantID from the name: CreateInTenantID
+writes.go:33: Items.Create: not implemented: no hand-written method on *itemsImpl, and the name does not derive: table items is scoped by tenant_id (Postgres.Scopes), and the name does not name tenant_id: a derived Create takes its scope from the name, never from the value
   fix: write it by hand on *itemsImpl, in a non-generated file of package writes:
          func (r *itemsImpl) Create(ctx context.Context, item Item) (Item, error)
-       or rename it CreateInTenantID
+       or name TenantID first (CreateInTenantID is already declared)
 writes.go:35: Items.CreateInTenantIDAndSku: not implemented: no hand-written method on *itemsImpl, and the name does not derive: CreateIn names scope columns only, and sku is not one
   fix: write it by hand on *itemsImpl, in a non-generated file of package writes:
          func (r *itemsImpl) CreateInTenantIDAndSku(ctx context.Context, tenantID uuid.UUID, item Item) (Item, error)
@@ -10,10 +10,10 @@ writes.go:37: Items.CreateInTenantID: not implemented: no hand-written method on
   fix: write it by hand on *itemsImpl, in a non-generated file of package writes:
          func (r *itemsImpl) CreateInTenantID(ctx context.Context, tenantID uuid.UUID, item *Item) error
        or take Item, or write the method by hand (an input type that is not the domain type)
-writes.go:39: Items.UpdateBySku: not implemented: no hand-written method on *itemsImpl, and the name does not derive: table items is scoped by tenant_id, and the name does not filter on it first
+writes.go:39: Items.UpdateBySku: not implemented: no hand-written method on *itemsImpl, and the name does not derive: table items is scoped by tenant_id (Postgres.Scopes), and the name does not name tenant_id
   fix: write it by hand on *itemsImpl, in a non-generated file of package writes:
          func (r *itemsImpl) UpdateBySku(ctx context.Context, item Item) error
-       or take tenantID first and rename it UpdateByTenantIDAndSku
+       or rename it UpdateByTenantIDAndSku, with tenantID as parameter, scope words first
 writes.go:41: Items.UpdateByTenantIDAndName: not implemented: no hand-written method on *itemsImpl, and the name does not derive: a derived update changes one row, but (tenant_id, name) covers no unique key; the keys of items are items_pkey (id), items_tenant_sku_key (tenant_id, sku)
   fix: name the columns of a key after the scope, such as UpdateByTenantIDAndID, or write the update by hand on r.updateWhere;
        or write it by hand on *itemsImpl, in a non-generated file of package writes:
@@ -26,10 +26,10 @@ writes.go:45: Items.UpdateByTenantIDAndID: not implemented: no hand-written meth
   fix: write it by hand on *itemsImpl, in a non-generated file of package writes:
          func (r *itemsImpl) UpdateByTenantIDAndID(ctx context.Context, tenantID uuid.UUID, item Item) (bool, error)
        or return Item, or bind the mapper that returns bool in nanorepo.Implement
-writes.go:48: Items.UpsertBySku: not implemented: no hand-written method on *itemsImpl, and the name does not derive: table items is scoped by tenant_id, and the name does not filter on it first: a conflict key without the scope could reach the row of another tenant
+writes.go:48: Items.UpsertBySku: not implemented: no hand-written method on *itemsImpl, and the name does not derive: table items is scoped by tenant_id (Postgres.Scopes), and the name does not name tenant_id: a conflict key without the scope could reach the row of another tenant
   fix: write it by hand on *itemsImpl, in a non-generated file of package writes:
          func (r *itemsImpl) UpsertBySku(ctx context.Context, item Item) (Item, error)
-       or filter on TenantID first (UpsertByTenantIDAndSku is already declared)
+       or name TenantID first (UpsertByTenantIDAndSku is already declared)
 writes.go:50: Items.UpsertByTenantID: not implemented: no hand-written method on *itemsImpl, and the name does not derive: a derived upsert conflicts on one unique key that holds a hard scope and every key column of the name, and no key fits (tenant_id); the keys of items are items_pkey (id), items_tenant_sku_key (tenant_id, sku)
   fix: name the columns of one key, the scope first, or write the upsert by hand;
        or write it by hand on *itemsImpl, in a non-generated file of package writes:

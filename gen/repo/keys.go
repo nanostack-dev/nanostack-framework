@@ -51,25 +51,23 @@ func readUniqueKeys(fset *token.FileSet, f *ast.File, src *tableFiles) {
 			return false
 		})
 		src.keys[recv.Name] = keys
-		src.notKeys[recv.Name] = notKeysOf(fd.Doc)
+		src.notKeys[recv.Name] = notKeysOf(fd)
 	}
 }
 
-// notKeysOf reads the names of the unique indexes that the doc comment of
-// UniqueKeys lists as "Not a key: <name>: <reason>.": they reject duplicates
-// as the keys do, so a derived write may map their violation (OnUnique).
-func notKeysOf(doc *ast.CommentGroup) []string {
-	if doc == nil {
+// notKeysOf reads the "Not a key: <index>: <reason>" lines of the doc
+// comment of UniqueKeys: the unique indexes that nanostack gen db leaves out
+// because they do not prove one row, such as a partial index or one on an
+// expression.
+func notKeysOf(fd *ast.FuncDecl) []string {
+	if fd.Doc == nil {
 		return nil
 	}
 	var out []string
-	for line := range strings.SplitSeq(doc.Text(), "\n") {
-		rest, ok := strings.CutPrefix(line, "Not a key: ")
-		if !ok {
-			continue
-		}
-		if name, _, found := strings.Cut(rest, ": "); found && name != "" {
-			out = append(out, name)
+	for _, c := range fd.Doc.List {
+		text := strings.TrimSpace(strings.TrimPrefix(c.Text, "//"))
+		if rest, ok := strings.CutPrefix(text, "Not a key: "); ok {
+			out = append(out, strings.TrimSuffix(rest, "."))
 		}
 	}
 	return out
@@ -135,12 +133,19 @@ func (t *tableBase) provingKey(fields []string) (uniqueKey, bool) {
 
 // keyList renders the keys of t for a message.
 func (t *tableBase) keyList() string {
+	var out string
 	if len(t.keys) == 0 {
-		return t.sqlName + " has no unique key"
+		out = t.sqlName + " has no unique key"
+	} else {
+		s := make([]string, len(t.keys))
+		for i, k := range t.keys {
+			s[i] = k.String()
+		}
+		out = "the keys of " + t.sqlName + " are " + strings.Join(s, ", ")
 	}
-	s := make([]string, len(t.keys))
-	for i, k := range t.keys {
-		s[i] = k.String()
+	if len(t.notKeys) > 0 {
+		out += "; its unique indexes that are not keys, because they do not prove one row, are " +
+			strings.Join(t.notKeys, ", ")
 	}
-	return "the keys of " + t.sqlName + " are " + strings.Join(s, ", ")
+	return out
 }

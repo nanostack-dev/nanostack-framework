@@ -96,9 +96,20 @@ func fixtureScopeFlags() []string {
 		stamps = append(stamps, col+"="+fn)
 	}
 	slices.Sort(stamps)
-	return []string{"-scopes", strings.Join(repotest.Scopes, ","), "-context-scopes", strings.Join(ctx, ","),
-		"-scope-names", strings.Join(names, ","), "-context-stamps", strings.Join(stamps, ","),
-		"-database-columns", strings.Join(repotest.DatabaseColumns, ",")}
+	return []string{
+		"-scopes",
+		strings.Join(repotest.Scopes, ","),
+		"-context-scopes",
+		strings.Join(ctx, ","),
+		"-scope-names",
+		strings.Join(names, ","),
+		"-context-stamps",
+		strings.Join(stamps, ","),
+		"-context-fail-open",
+		"workspace_id",
+		"-database-columns",
+		strings.Join(repotest.DatabaseColumns, ","),
+	}
 }
 
 // -check names a stale derived file and an orphan; a run rewrites the one

@@ -20,11 +20,15 @@ func (r *resolver) badName(fn *types.Func, rest string) *refusal {
 		if _, isCol := r.t.column(seg); isCol || r.short[seg] != "" {
 			continue
 		}
+		if seg == "" {
+			return &refusal{msg: "a property of the name is empty: And joins two columns",
+				alt: "remove the extra And, or name the column after it"}
+		}
 		if fail := r.operatorRefusal(fn, segs, bad); fail != nil {
 			return fail
 		}
 		if a, b, ok := strings.Cut(seg, "Or"); ok && r.isColumn(a) && r.isColumn(b) {
-			return &refusal{msg: "Or is not derived; only And is", body: bodyFor(fn, orCond(fn, segs, bad, a, b))}
+			return &refusal{msg: "Or is not derived; only And is", body: bodyFor(fn, r.orCond(fn, segs, bad, a, b))}
 		}
 		names := r.nameWords()
 		alt := "rename it with columns of " + r.t.sqlName + ": " + strings.Join(names, ", ")
@@ -74,19 +78,17 @@ func (r *resolver) operatorRefusal(fn *types.Func, segs []string, bad int) *refu
 		}
 		fail := &refusal{msg: fmt.Sprintf("operator %s on %s is not derived; only equality (And) is", op, field),
 			alt: "use the search builder"}
-		col, _ := r.t.column(field)
+		base := r.segTerm(field).field // the short name of a scope column is its field on the base
+		col, _ := r.t.column(base)
 		hint, variadic := opPredicate(op)
-		if hint == "" || !hasPredicate(col, field+hint) {
+		if hint == "" || !hasPredicate(col, base+hint) {
 			return fail
 		}
-		cond := condFor(fn, segs, func(i int, s, p string) string {
-			if i == bad {
-				if variadic {
-					p += "..."
-				}
-				return "r.where." + field + hint + "(" + p + ")"
+		cond := r.condSegs(fn, segs, bad, func(p string) string {
+			if variadic {
+				p += "..."
 			}
-			return "r.where." + s + "(" + p + ")"
+			return "r.where." + base + hint + "(" + p + ")"
 		})
 		fail.body = bodyFor(fn, cond)
 		return fail
@@ -192,6 +194,20 @@ func (r *resolver) isDomainResult(t types.Type) bool {
 	return types.Identical(row, r.t.domain)
 }
 
+// uniquePrefixed returns the one of fields that starts with seg, or "".
+func uniquePrefixed(seg string, fields []string) string {
+	var longer []string
+	for _, c := range fields {
+		if strings.HasPrefix(c, seg) {
+			longer = append(longer, c)
+		}
+	}
+	if len(longer) == 1 {
+		return longer[0]
+	}
+	return ""
+}
+
 // suggest returns the column the developer most likely meant, or "".
 func suggest(seg string, fields []string) string {
 	norm := func(s string) string { return strings.ToLower(strings.ReplaceAll(s, "_", "")) }
@@ -204,6 +220,9 @@ func suggest(seg string, fields []string) string {
 		if strings.HasSuffix(c, seg) {
 			return c
 		}
+	}
+	if c := uniquePrefixed(seg, fields); c != "" { // a column that starts with it: Brand -> BrandAndModel
+		return c
 	}
 	sw := words(seg)
 	for _, c := range fields { // an abbreviation: OrgID -> OrganizationID
@@ -266,17 +285,25 @@ func levenshtein(a, b string) int {
 	return prev[len(b)]
 }
 
-// condFor renders the r.where predicates of a name's segments, one
-// parameter each; render gives the predicate of segment i.
-func condFor(fn *types.Func, segs []string, render func(i int, seg, param string) string) string {
+// condOf renders the condition of the terms of a name for a hand-written
+// body: the predicate of each column on the base, with the parameter that the
+// signature of fn has at its place, and for a context scope named by its short
+// name the registered function, which binds no parameter.
+func (r *resolver) condOf(fn *types.Func, terms []term) string {
 	params := signatureOf(fn).Params()
-	parts := make([]string, 0, len(segs))
-	for i, seg := range segs {
-		p := "…"
-		if i+1 < params.Len() {
-			p = nameOr(params.At(i+1).Name(), i)
+	parts := make([]string, 0, len(terms))
+	next := 0
+	for _, t := range terms {
+		if t.ctx != nil {
+			parts = append(parts, funcWord(t.ctx.fn)+"(ctx, r.t."+t.field+")")
+			continue
 		}
-		parts = append(parts, render(i, seg, p))
+		p := "…"
+		if next+1 < params.Len() {
+			p = nameOr(params.At(next+1).Name(), next)
+		}
+		next++
+		parts = append(parts, "r.where."+t.field+"("+p+")")
 	}
 	return andAll(parts)
 }
@@ -296,7 +323,7 @@ func andAll(parts []string) string {
 
 // orCond renders the condition of segs where segment or is "AOrB": one
 // parameter per column, the Or pair taking two.
-func orCond(fn *types.Func, segs []string, or int, a, b string) string {
+func (r *resolver) orCond(fn *types.Func, segs []string, or int, a, b string) string {
 	params := signatureOf(fn).Params()
 	next := 1
 	arg := func() string {
@@ -309,11 +336,49 @@ func orCond(fn *types.Func, segs []string, or int, a, b string) string {
 	}
 	parts := make([]string, len(segs))
 	for i, seg := range segs {
-		if i == or {
-			parts[i] = "r.where." + a + "(" + arg() + ")"
-			parts[i] += ".OR(r.where." + b + "(" + arg() + "))"
+		switch t := r.segTerm(seg); {
+		case i == or:
+			parts[i] = "r.where." + r.segTerm(a).field + "(" + arg() + ")"
+			parts[i] += ".OR(r.where." + r.segTerm(b).field + "(" + arg() + "))"
+		case t.ctx != nil:
+			parts[i] = funcWord(t.ctx.fn) + "(ctx, r.t." + t.field + ")"
+		default:
+			parts[i] = "r.where." + t.field + "(" + arg() + ")"
+		}
+	}
+	return andAll(parts)
+}
+
+// segTerm is the term of a segment of a name: a column by its Go field, or a
+// scope column by its short name.
+func (r *resolver) segTerm(seg string) term {
+	if f, ok := r.short[seg]; ok {
+		return term{field: f, ctx: r.ctxOf(f)}
+	}
+	return term{field: seg}
+}
+
+// condSegs renders the condition of segs for a hand-written body. Segment
+// bad is an operator on a column: render gives its predicate from its parameter.
+func (r *resolver) condSegs(fn *types.Func, segs []string, bad int, render func(param string) string) string {
+	params := signatureOf(fn).Params()
+	parts := make([]string, 0, len(segs))
+	next := 0
+	for i, seg := range segs {
+		t := r.segTerm(seg)
+		if i != bad && t.ctx != nil {
+			parts = append(parts, funcWord(t.ctx.fn)+"(ctx, r.t."+t.field+")")
+			continue
+		}
+		p := "…"
+		if next+1 < params.Len() {
+			p = nameOr(params.At(next+1).Name(), next)
+		}
+		next++
+		if i == bad {
+			parts = append(parts, render(p))
 		} else {
-			parts[i] = "r.where." + seg + "(" + arg() + ")"
+			parts = append(parts, "r.where."+t.field+"("+p+")")
 		}
 	}
 	return andAll(parts)
@@ -372,15 +437,14 @@ func (r *resolver) hintWords(cols []string) []string {
 		}
 	}
 	at := 0
-	for at < len(cols) && slices.Contains(r.scope, cols[at]) && r.ctxOf(cols[at]) == nil {
+	for at < len(cols) && slices.Contains(r.allScope, cols[at]) {
 		at++
 	}
-	for _, c := range r.missingCtx(termsOfFields(cols)) {
-		if c.short == "" {
-			continue
+	for _, f := range r.missingScopes(termsOfFields(cols)) {
+		if c := r.ctxOf(f); c != nil && c.short != "" {
+			words = slices.Insert(words, at, c.short)
+			at++
 		}
-		words = slices.Insert(words, at, c.short)
-		at++
 	}
 	return words
 }

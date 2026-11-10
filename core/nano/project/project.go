@@ -108,6 +108,21 @@ type Postgres struct {
 	// table that has it, or nanostack gen repo refuses the derived Create and
 	// Upsert of that table. Empty: derived writes set every column.
 	DatabaseColumns []string
+	// ScopeImplies maps a tenant column of Scopes to the tenant column that
+	// it determines in the data: {"product_id": "platform_tenant_id"} says
+	// that a product has one platform tenant. A derived read or delete must
+	// name every scope column of its table; a column it names stands for the
+	// columns it implies, transitively. An entry applies on a table only
+	// when the table proves it: a foreign key of the table lists both
+	// columns among its referencing columns, and the referenced table has a
+	// unique key on the column that the first one references, alone, every
+	// referencing column is NOT NULL (or the key is MATCH FULL), and the key
+	// is validated: gen db exports NotValid and MatchFull. A table
+	// without the proof names every column, and the refusal says which
+	// foreign key is missing. A derived write never uses an implication.
+	// Both sides are columns of Scopes, neither is a context column, and the
+	// map has no cycle. Empty: every scope column of a table is named.
+	ScopeImplies map[string]string
 }
 
 // ContextScope registers the function that scopes one context tenant
@@ -129,6 +144,25 @@ type ContextScope struct {
 	// error of Stamp, such as a request without a workspace. Empty: such
 	// writes do not derive, and are written by hand.
 	Stamp string
+	// Present reports whether a context carries a value for Column, in the
+	// form func(context.Context) bool, such as
+	// "example.com/app/internal/db/workspacescope.Present". Func reads TRUE
+	// when the context carries none (an organisation-wide read), and a
+	// derived delete, update, upsert or create with a bare context would
+	// reach every value of Column. When Present is set, each of them first
+	// checks it and returns nanorepo.ErrNoContextScope before any SQL. A
+	// derived read does the same on a table whose only scope is context
+	// scopes (no hard scope): without Present such a read is refused, unless
+	// its name ends in Internal. On a table that has a hard scope a read
+	// keeps Func: an organisation-wide read is intended.
+	Present string
+	// AllowFailOpenWrites records a reviewed choice: a derived delete or
+	// update on a table with Column keeps the fail-open Func when the
+	// context carries no value, and changes every value of Column. Without
+	// Present and without this, nanostack gen repo refuses such a delete or
+	// update. The generated comment says FAIL-OPEN (reviewed), and
+	// nanostack gen repo -inventory lists the method.
+	AllowFailOpenWrites bool
 }
 
 // OpenAPI is the API contract and the Go packages generated from it. nanostack

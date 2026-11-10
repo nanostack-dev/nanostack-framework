@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/nanostack-dev/nanostack-framework/core/nano/project"
+	genrepo "github.com/nanostack-dev/nanostack-framework/gen/repo"
 )
 
 // scopes checks Postgres.Scopes: each entry a column name, none twice.
@@ -44,6 +45,11 @@ func (c *projectCheck) contextScopes(scopes []string, ctx []project.ContextScope
 		case !funcPath(cs.Func):
 			c.add(c.at("Postgres.ContextScopes"), fix, "Postgres.ContextScopes: the function of %q is %q, not "+
 				"an import path, a dot and a function name", cs.Column, cs.Func)
+		case cs.Present != "" && !funcPath(cs.Present):
+			c.add(c.at("Postgres.ContextScopes"),
+				`write the function as "example.com/app/internal/db/workspacescope.Present"`,
+				"Postgres.ContextScopes: the present function of %q is %q, not an import path, a dot and a "+
+					"function name", cs.Column, cs.Present)
 		case cs.Stamp != "" && !funcPath(cs.Stamp):
 			c.add(c.at("Postgres.ContextScopes"),
 				`write the stamp function as "example.com/app/internal/db/workspacescope.Stamp"`,
@@ -98,6 +104,19 @@ func (c *projectCheck) scopeNames(scopes []string, names map[string]string) {
 		default:
 			owner[name] = col
 		}
+	}
+}
+
+// scopeImplies checks Postgres.ScopeImplies: both sides in Scopes, neither a
+// context column, no cycle.
+func (c *projectCheck) scopeImplies(scopes []string, ctx []project.ContextScope, implies map[string]string) {
+	cols := make([]string, len(ctx))
+	for i, cs := range ctx {
+		cols[i] = cs.Column
+	}
+	at := c.at("Postgres.ScopeImplies")
+	for _, pr := range genrepo.CheckScopeImplies("Postgres.ScopeImplies", scopes, cols, implies) {
+		c.add(at, pr.Fix, "%s", pr.Msg)
 	}
 }
 

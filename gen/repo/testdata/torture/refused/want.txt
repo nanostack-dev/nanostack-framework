@@ -1,0 +1,559 @@
+refused.go:29: Users.FindByOrgAndHandle: not implemented: no hand-written method on *usersImpl, and the name does not derive: it returns one row, but (org_id, handle) covers no unique key; the keys of user are user_pkey (id), user_org_id_external_id_key (org_id, external_id), user_org_id_name_name_key_key (org_id, name, name_key); its unique indexes that are not keys, because they do not prove one row, are user_email_lower: expression key, user_handle_live: partial index WHERE (deleted_at IS NULL)
+  fix: return []model.User; or add a unique index on (org_id, handle) in a migration and rerun nanostack gen db (a partial or expression unique index above is not a key: if one covers these columns, drop its WHERE or its expression);
+       or write it by hand on *usersImpl, in a non-generated file of package refused:
+         func (r *usersImpl) FindByOrgAndHandle(ctx context.Context, orgID uuid.UUID, handle string) (functional.Option[model.User], error) {
+             return r.first(ctx, r.where.OrgID(orgID).AND(r.where.Handle(handle)), r.t.ID.ASC())
+         }
+refused.go:30: Users.GetByOrgAndHandle: not implemented: no hand-written method on *usersImpl, and the name does not derive: it returns one row, but (org_id, handle) covers no unique key; the keys of user are user_pkey (id), user_org_id_external_id_key (org_id, external_id), user_org_id_name_name_key_key (org_id, name, name_key); its unique indexes that are not keys, because they do not prove one row, are user_email_lower: expression key, user_handle_live: partial index WHERE (deleted_at IS NULL)
+  fix: return []model.User; or add a unique index on (org_id, handle) in a migration and rerun nanostack gen db (a partial or expression unique index above is not a key: if one covers these columns, drop its WHERE or its expression);
+       or write it by hand on *usersImpl, in a non-generated file of package refused:
+         func (r *usersImpl) GetByOrgAndHandle(ctx context.Context, orgID uuid.UUID, handle string) (model.User, error)
+refused.go:31: Users.FindByOrgAndEmail: not implemented: no hand-written method on *usersImpl, and the name does not derive: it returns one row, but (org_id, email) covers no unique key; the keys of user are user_pkey (id), user_org_id_external_id_key (org_id, external_id), user_org_id_name_name_key_key (org_id, name, name_key); its unique indexes that are not keys, because they do not prove one row, are user_email_lower: expression key, user_handle_live: partial index WHERE (deleted_at IS NULL)
+  fix: return []model.User; or add a unique index on (org_id, email) in a migration and rerun nanostack gen db (a partial or expression unique index above is not a key: if one covers these columns, drop its WHERE or its expression);
+       or write it by hand on *usersImpl, in a non-generated file of package refused:
+         func (r *usersImpl) FindByOrgAndEmail(ctx context.Context, orgID uuid.UUID, email string) (functional.Option[model.User], error) {
+             return r.first(ctx, r.where.OrgID(orgID).AND(r.where.Email(email)), r.t.ID.ASC())
+         }
+refused.go:32: Users.FindByOrgAndName: not implemented: no hand-written method on *usersImpl, and the name does not derive: it returns one row, but (org_id, name) covers no unique key; the keys of user are user_pkey (id), user_org_id_external_id_key (org_id, external_id), user_org_id_name_name_key_key (org_id, name, name_key); its unique indexes that are not keys, because they do not prove one row, are user_email_lower: expression key, user_handle_live: partial index WHERE (deleted_at IS NULL)
+  fix: name NameKey too, which completes user_org_id_name_name_key_key (org_id, name, name_key), or return []model.User;
+       or write it by hand on *usersImpl, in a non-generated file of package refused:
+         func (r *usersImpl) FindByOrgAndName(ctx context.Context, orgID uuid.UUID, name string) (functional.Option[model.User], error) {
+             return r.first(ctx, r.where.OrgID(orgID).AND(r.where.Name(name)), r.t.ID.ASC())
+         }
+refused.go:34: Users.FindByID: not implemented: no hand-written method on *usersImpl, and the name does not derive: table user is scoped by org_id (Postgres.Scopes), and the name does not name org_id
+  fix: write it by hand on *usersImpl, in a non-generated file of package refused:
+         func (r *usersImpl) FindByID(ctx context.Context, id uuid.UUID) (functional.Option[model.User], error)
+       or name Org first (FindByOrgAndID is already declared), or end the name in Internal for a trusted system path
+refused.go:35: Users.FindByNameAndOrg: not implemented: no hand-written method on *usersImpl, and the name does not derive: table user is scoped by org_id (Postgres.Scopes), and the name has a column before a scope column: the scope words come first
+  fix: write it by hand on *usersImpl, in a non-generated file of package refused:
+         func (r *usersImpl) FindByNameAndOrg(ctx context.Context, name string, orgID uuid.UUID) ([]model.User, error)
+       or move the scope words to the front of the name and of the parameters: FindByOrgAndName, or end the name in Internal for a trusted system path
+refused.go:36: Users.FindAll: not implemented: no hand-written method on *usersImpl, and the name does not derive: table user is scoped by org_id (Postgres.Scopes), and the name does not name org_id
+  fix: write it by hand on *usersImpl, in a non-generated file of package refused:
+         func (r *usersImpl) FindAll(ctx context.Context) ([]model.User, error)
+       or name Org first (FindByOrg is already declared), or end the name in Internal for a trusted system path
+refused.go:37: Users.Count: not implemented: no hand-written method on *usersImpl, and the name does not derive: table user is scoped by org_id (Postgres.Scopes), and the name does not name org_id
+  fix: write it by hand on *usersImpl, in a non-generated file of package refused:
+         func (r *usersImpl) Count(ctx context.Context) (int64, error)
+       or name Org first (CountByOrg is already declared), or end the name in Internal for a trusted system path
+refused.go:38: Users.DeleteByNameInternal: not implemented: no hand-written method on *usersImpl, and the name does not derive: table user is scoped by org_id (Postgres.Scopes), and the name does not name org_id: Internal skips the scope on derived reads only
+  fix: write it by hand on *usersImpl, in a non-generated file of package refused:
+         func (r *usersImpl) DeleteByNameInternal(ctx context.Context, name string) (int64, error) {
+             return r.deleteWhere(ctx, r.where.Name(name))
+         }
+       or rename it DeleteByOrgAndName, with orgID as parameter, scope words first; a delete across tenants is written by hand, where review sees it
+refused.go:39: Users.DeleteByID: not implemented: no hand-written method on *usersImpl, and the name does not derive: table user is scoped by org_id (Postgres.Scopes), and the name does not name org_id
+  fix: write it by hand on *usersImpl, in a non-generated file of package refused:
+         func (r *usersImpl) DeleteByID(ctx context.Context, id uuid.UUID) error
+       or rename it DeleteByOrgAndID, with orgID as parameter, scope words first
+refused.go:41: Users.FindByInternal: not implemented: no hand-written method on *usersImpl, and the name does not derive: table user is scoped by org_id (Postgres.Scopes), and the name does not name org_id
+  fix: write it by hand on *usersImpl, in a non-generated file of package refused:
+         func (r *usersImpl) FindByInternal(ctx context.Context, internal bool) ([]model.User, error)
+       or rename it FindByOrgAndInternal, with orgID as parameter, scope words first, or end the name in Internal for a trusted system path
+refused.go:43: Users.FindByOrgAndid: not implemented: no hand-written method on *usersImpl, and the name does not derive: no column "OrgAndid" on table user
+  fix: write it by hand on *usersImpl, in a non-generated file of package refused:
+         func (r *usersImpl) FindByOrgAndid(ctx context.Context, orgID uuid.UUID, id uuid.UUID) (functional.Option[model.User], error)
+       or rename it with columns of user: ID, OrgID, Email, Handle, ExternalID, Name, NameKey, Internal, MixedCase, DeletedAt, Org
+refused.go:44: Users.FindByOrgIdAndName: not implemented: no hand-written method on *usersImpl, and the name does not derive: no column "OrgId" on table user
+  fix: write it by hand on *usersImpl, in a non-generated file of package refused:
+         func (r *usersImpl) FindByOrgIdAndName(ctx context.Context, orgID uuid.UUID, name string) ([]model.User, error)
+       or rename it FindByOrgIDAndName (did you mean OrgID?)
+refused.go:45: Users.FindByOrgAndNmae: not implemented: no hand-written method on *usersImpl, and the name does not derive: no column "Nmae" on table user
+  fix: write it by hand on *usersImpl, in a non-generated file of package refused:
+         func (r *usersImpl) FindByOrgAndNmae(ctx context.Context, orgID uuid.UUID, name string) ([]model.User, error)
+       or rename it with columns of user: ID, OrgID, Email, Handle, ExternalID, Name, NameKey, Internal, MixedCase, DeletedAt, Org
+refused.go:46: Users.FindByOrgAndMixedcase: not implemented: no hand-written method on *usersImpl, and the name does not derive: no column "Mixedcase" on table user
+  fix: write it by hand on *usersImpl, in a non-generated file of package refused:
+         func (r *usersImpl) FindByOrgAndMixedcase(ctx context.Context, orgID uuid.UUID, v string) ([]model.User, error)
+       or rename it FindByOrgAndMixedCase (did you mean MixedCase?)
+refused.go:47: Users.FindByOrgAndNameIgnoreCase: not implemented: no hand-written method on *usersImpl, and the name does not derive: operator IgnoreCase on Name is not derived; only equality (And) is
+  fix: write it by hand on *usersImpl, in a non-generated file of package refused:
+         func (r *usersImpl) FindByOrgAndNameIgnoreCase(ctx context.Context, orgID uuid.UUID, name string) ([]model.User, error) {
+             return r.findAll(ctx, r.where.OrgID(orgID).AND(r.where.NameEqualsIgnoreCase(name)))
+         }
+       or use the search builder
+refused.go:48: Users.FindByOrgAndNameLike: not implemented: no hand-written method on *usersImpl, and the name does not derive: operator Like on Name is not derived; only equality (And) is
+  fix: write it by hand on *usersImpl, in a non-generated file of package refused:
+         func (r *usersImpl) FindByOrgAndNameLike(ctx context.Context, orgID uuid.UUID, name string) ([]model.User, error) {
+             return r.findAll(ctx, r.where.OrgID(orgID).AND(r.where.NameContains(name)))
+         }
+       or use the search builder
+refused.go:49: Users.FindByOrgAndNameGreaterThan: not implemented: no hand-written method on *usersImpl, and the name does not derive: operator GreaterThan on Name is not derived; only equality (And) is
+  fix: write it by hand on *usersImpl, in a non-generated file of package refused:
+         func (r *usersImpl) FindByOrgAndNameGreaterThan(ctx context.Context, orgID uuid.UUID, name string) ([]model.User, error)
+       or use the search builder
+refused.go:50: Users.FindByOrgAndNameIsNull: not implemented: no hand-written method on *usersImpl, and the name does not derive: operator IsNull on Name is not derived; only equality (And) is
+  fix: write it by hand on *usersImpl, in a non-generated file of package refused:
+         func (r *usersImpl) FindByOrgAndNameIsNull(ctx context.Context, orgID uuid.UUID) ([]model.User, error)
+       or use the search builder
+refused.go:51: Users.FindByOrgAndNameNot: not implemented: no hand-written method on *usersImpl, and the name does not derive: operator Not on Name is not derived; only equality (And) is
+  fix: write it by hand on *usersImpl, in a non-generated file of package refused:
+         func (r *usersImpl) FindByOrgAndNameNot(ctx context.Context, orgID uuid.UUID, name string) ([]model.User, error)
+       or use the search builder
+refused.go:52: Users.FindByOrgAndNameOrEmail: not implemented: no hand-written method on *usersImpl, and the name does not derive: Or is not derived; only And is
+  fix: write it by hand on *usersImpl, in a non-generated file of package refused:
+         func (r *usersImpl) FindByOrgAndNameOrEmail(ctx context.Context, orgID uuid.UUID, name string, email string) ([]model.User, error) {
+             return r.findAll(ctx, r.where.OrgID(orgID).AND(r.where.Name(name).OR(r.where.Email(email))))
+         }
+refused.go:53: Users.FindByOrgAndNameOrderByNameDesc: not implemented: no hand-written method on *usersImpl, and the name does not derive: OrderBy is not derived
+  fix: write it by hand on *usersImpl, in a non-generated file of package refused:
+         func (r *usersImpl) FindByOrgAndNameOrderByNameDesc(ctx context.Context, orgID uuid.UUID, name string) ([]model.User, error) {
+             return r.findAll(ctx, r.where.OrgID(orgID).AND(r.where.Name(name)), r.t.Name.DESC())
+         }
+       or use the search builder for a client-chosen order
+refused.go:54: Users.FindByOrgAndNameAnd: not implemented: no hand-written method on *usersImpl, and the name does not derive: no column "NameAnd" on table user
+  fix: write it by hand on *usersImpl, in a non-generated file of package refused:
+         func (r *usersImpl) FindByOrgAndNameAnd(ctx context.Context, orgID uuid.UUID, name string) ([]model.User, error)
+       or rename it with columns of user: ID, OrgID, Email, Handle, ExternalID, Name, NameKey, Internal, MixedCase, DeletedAt, Org
+refused.go:55: Users.FindByOrgAndAndName: not implemented: no hand-written method on *usersImpl, and the name does not derive: a property of the name is empty: And joins two columns
+  fix: write it by hand on *usersImpl, in a non-generated file of package refused:
+         func (r *usersImpl) FindByOrgAndAndName(ctx context.Context, orgID uuid.UUID, name string) ([]model.User, error)
+       or remove the extra And, or name the column after it
+refused.go:56: Users.FindBy: not implemented: no hand-written method on *usersImpl, and the name does not derive: no property after By
+  fix: write it by hand on *usersImpl, in a non-generated file of package refused:
+         func (r *usersImpl) FindBy(ctx context.Context) ([]model.User, error)
+       or name at least one column after By, or use FindAll or Count
+refused.go:57: Users.ListByOrg: not implemented: no hand-written method on *usersImpl, and the name does not derive: it does not start with FindBy, GetBy, ExistsBy, CountBy, DeleteBy, CreateIn, UpdateBy, UpsertBy, FindAll, Count or Create
+  fix: write it by hand on *usersImpl, in a non-generated file of package refused:
+         func (r *usersImpl) ListByOrg(ctx context.Context, orgID uuid.UUID) ([]model.User, error)
+refused.go:59: Users.FindByOrgAndHandleOrName: not implemented: no hand-written method on *usersImpl, and the name does not derive: Or is not derived; only And is
+  fix: write it by hand on *usersImpl, in a non-generated file of package refused:
+         func (r *usersImpl) FindByOrgAndHandleOrName(ctx context.Context, orgID uuid.UUID) ([]model.User, error) {
+             return r.findAll(ctx, r.where.OrgID(orgID).AND(r.where.Handle(…).OR(r.where.Name(…))))
+         }
+refused.go:60: Users.CountByOrgAndName: not implemented: no hand-written method on *usersImpl, and the name does not derive: has 1 value parameter(s), the name has 2 properties
+  fix: write it by hand on *usersImpl, in a non-generated file of package refused:
+         func (r *usersImpl) CountByOrgAndName(ctx context.Context, orgID uuid.UUID) (int64, error)
+       or take one parameter per property, in name order: OrgID, Name
+refused.go:61: Users.CountByOrgAndNameAndEmail: not implemented: no hand-written method on *usersImpl, and the name does not derive: has 2 value parameter(s), the name has 3 properties
+  fix: write it by hand on *usersImpl, in a non-generated file of package refused:
+         func (r *usersImpl) CountByOrgAndNameAndEmail(ctx context.Context, orgID uuid.UUID, name string) (int64, error)
+       or take one parameter per property, in name order: OrgID, Name, Email
+refused.go:62: Users.ExistsByOrgAndName: not implemented: no hand-written method on *usersImpl, and the name does not derive: parameter name is *string; a derived predicate compares with =, which never matches NULL
+  fix: write it by hand on *usersImpl, in a non-generated file of package refused:
+         func (r *usersImpl) ExistsByOrgAndName(ctx context.Context, orgID uuid.UUID, name *string) (bool, error)
+       or take a value type (for NULL, the hand-written body uses r.where.NameIsNull())
+refused.go:63: Users.ExistsByOrgAndEmail: not implemented: no hand-written method on *usersImpl, and the name does not derive: parameter email has type int; column user.email is string
+  fix: write it by hand on *usersImpl, in a non-generated file of package refused:
+         func (r *usersImpl) ExistsByOrgAndEmail(ctx context.Context, orgID uuid.UUID, email int) (bool, error)
+       or declare email as string (or a named type over it)
+refused.go:64: Users.ExistsByOrgAndHandle: not implemented: no hand-written method on *usersImpl, and the name does not derive: parameter orgID has type string; column user.org_id is uuid.UUID
+  fix: write it by hand on *usersImpl, in a non-generated file of package refused:
+         func (r *usersImpl) ExistsByOrgAndHandle(ctx context.Context, orgID string, handle string) (bool, error)
+       or declare orgID as uuid.UUID (or a named type over it)
+refused.go:65: Users.DeleteByOrgAndNameAndEmail: not implemented: no hand-written method on *usersImpl, and the name does not derive: parameter email is bound to name by its position, but its name says email; the name orders the columns org_id, name, email
+  fix: reorder the parameters to follow the name, or rename the method to follow the parameters;
+       or write it by hand on *usersImpl, in a non-generated file of package refused:
+         func (r *usersImpl) DeleteByOrgAndNameAndEmail(ctx context.Context, orgID uuid.UUID, email string, name string) error
+refused.go:66: Users.DeleteByOrgAndInternal: not implemented: no hand-written method on *usersImpl, and the name does not derive: the first parameter is not context.Context
+  fix: write it by hand on *usersImpl, in a non-generated file of package refused:
+         func (r *usersImpl) DeleteByOrgAndInternal(orgID uuid.UUID, internal bool) error
+       or take ctx context.Context as the first parameter
+refused.go:68: Users.FindByOrg: not implemented: no hand-written method on *usersImpl, and the name does not derive: the last result is not error
+  fix: write it by hand on *usersImpl, in a non-generated file of package refused:
+         func (r *usersImpl) FindByOrg(ctx context.Context, orgID uuid.UUID) []model.User
+       or return error as the last result
+refused.go:69: Users.FindByOrgAndNameKey: not implemented: no hand-written method on *usersImpl, and the name does not derive: returns int, but the base returns model.User
+  fix: write it by hand on *usersImpl, in a non-generated file of package refused:
+         func (r *usersImpl) FindByOrgAndNameKey(ctx context.Context, orgID uuid.UUID, nameKey string) (int, error)
+       or return model.User, or bind the mapper that returns int in nanorepo.Implement
+refused.go:70: Users.CountByOrg: not implemented: no hand-written method on *usersImpl, and the name does not derive: a derived count cannot return (bool, error)
+  fix: write it by hand on *usersImpl, in a non-generated file of package refused:
+         func (r *usersImpl) CountByOrg(ctx context.Context, orgID uuid.UUID) (bool, error)
+       or return (int64, error)
+refused.go:71: Users.ExistsByOrg: not implemented: no hand-written method on *usersImpl, and the name does not derive: a derived exists cannot return (int64, error)
+  fix: write it by hand on *usersImpl, in a non-generated file of package refused:
+         func (r *usersImpl) ExistsByOrg(ctx context.Context, orgID uuid.UUID) (int64, error)
+       or return (bool, error)
+refused.go:72: Users.DeleteByOrgAndHandle: not implemented: no hand-written method on *usersImpl, and the name does not derive: a derived delete cannot return (string, error)
+  fix: write it by hand on *usersImpl, in a non-generated file of package refused:
+         func (r *usersImpl) DeleteByOrgAndHandle(ctx context.Context, orgID uuid.UUID, handle string) (string, error)
+       or return error, (bool, error) for "a row was deleted", or (int64, error) for the row count
+refused.go:73: Users.FindByOrgAndID: not implemented: no hand-written method on *usersImpl, and the name does not derive: returns *model.User, but the base returns model.User
+  fix: write it by hand on *usersImpl, in a non-generated file of package refused:
+         func (r *usersImpl) FindByOrgAndID(ctx context.Context, orgID uuid.UUID, id uuid.UUID) (*model.User, error)
+       or return model.User, or bind the mapper that returns *model.User in nanorepo.Implement
+refused.go:81: Orders.FindByOrgAndProductAndName: not implemented: no hand-written method on *ordersImpl, and the name does not derive: table order is scoped by org_id, product_id, workspace_id (Postgres.Scopes), and the name does not name workspace_id
+  fix: write it by hand on *ordersImpl, in a non-generated file of package refused:
+         func (r *ordersImpl) FindByOrgAndProductAndName(ctx context.Context, orgID uuid.UUID, productID uuid.UUID, name string) ([]model.Order, error)
+       or name Workspace first (FindByOrgAndProductAndWorkspaceAndName is already declared); Workspace binds no parameter: it applies workspacescope.Filter to workspace_id, or end the name in Internal for a trusted system path
+refused.go:82: Orders.DeleteByOrgAndProductAndName: not implemented: no hand-written method on *ordersImpl, and the name does not derive: table order is scoped by org_id, product_id, workspace_id (Postgres.Scopes), and the name does not name workspace_id
+  fix: write it by hand on *ordersImpl, in a non-generated file of package refused:
+         func (r *ordersImpl) DeleteByOrgAndProductAndName(ctx context.Context, orgID uuid.UUID, productID uuid.UUID, name string) (int64, error)
+       or rename it DeleteByOrgAndProductAndWorkspaceAndName; Workspace binds no parameter: it applies workspacescope.Filter to workspace_id
+refused.go:83: Orders.DeleteByOrgAndProductAndNameInternal: not implemented: no hand-written method on *ordersImpl, and the name does not derive: table order is scoped by org_id, product_id, workspace_id (Postgres.Scopes), and the name does not name workspace_id: Internal skips the scope on derived reads only
+  fix: write it by hand on *ordersImpl, in a non-generated file of package refused:
+         func (r *ordersImpl) DeleteByOrgAndProductAndNameInternal(ctx context.Context, orgID uuid.UUID, productID uuid.UUID, name string) (int64, error) {
+             return r.deleteWhere(ctx, r.where.OrgID(orgID).AND(r.where.ProductID(productID)).AND(r.where.Name(name)))
+         }
+       or rename it DeleteByOrgAndProductAndWorkspaceAndName; Workspace binds no parameter: it applies workspacescope.Filter to workspace_id; a delete across tenants is written by hand, where review sees it
+refused.go:85: Orders.FindByOrgAndProductAndWorkspaceAndName: not implemented: no hand-written method on *ordersImpl, and the name does not derive: it returns one row, but (org_id, product_id, name) covers no unique key; the keys of order are order_pkey (id), order_org_id_product_id_by_key (org_id, product_id, by), order_org_id_product_id_workspace_id_name_key (org_id, product_id, workspace_id, name); order_org_id_product_id_workspace_id_name_key holds workspace_id, which the short name binds to no parameter: the registered function may keep every workspace, so it does not prove one row
+  fix: rename it FindByOrgAndProductAndWorkspaceIDAndName, which takes the value of workspace_id as a parameter, or return []model.Order;
+       or write it by hand on *ordersImpl, in a non-generated file of package refused:
+         func (r *ordersImpl) FindByOrgAndProductAndWorkspaceAndName(ctx context.Context, orgID uuid.UUID, productID uuid.UUID, name string) (functional.Option[model.Order], error) {
+             return r.first(ctx, r.where.OrgID(orgID).AND(r.where.ProductID(productID)).AND(workspacescope.Filter(ctx, r.t.WorkspaceID)).AND(r.where.Name(name)), r.t.ID.ASC())
+         }
+refused.go:88: Orders.FindByOrgIDAndProductIDAndWorkspaceAndName: not implemented: no hand-written method on *ordersImpl, and the name does not derive: parameter orgID has type ProductID, which says column product_id, but it is bound to org_id
+  fix: write it by hand on *ordersImpl, in a non-generated file of package refused:
+         func (r *ordersImpl) FindByOrgIDAndProductIDAndWorkspaceAndName(ctx context.Context, orgID ProductID, productID uuid.UUID, name string) ([]model.Order, error)
+       or pass the value of org_id, or a named type that does not say another column
+refused.go:91: Orders.FindByOrgAndWorkspaceAndName: not implemented: no hand-written method on *ordersImpl, and the name does not derive: table order is scoped by org_id, product_id, workspace_id (Postgres.Scopes), and the name does not name product_id
+  fix: write it by hand on *ordersImpl, in a non-generated file of package refused:
+         func (r *ordersImpl) FindByOrgAndWorkspaceAndName(ctx context.Context, orgID uuid.UUID, name string) ([]model.Order, error)
+       or rename it FindByOrgAndWorkspaceAndProductAndName, with productID as parameter, scope words first; if a column the name has determines the others in the schema, declare it in Postgres.ScopeImplies, and give the table the foreign key that proves it, or end the name in Internal for a trusted system path
+refused.go:92: Orders.DeleteByOrgAndWorkspaceAndName: not implemented: no hand-written method on *ordersImpl, and the name does not derive: table order is scoped by org_id, product_id, workspace_id (Postgres.Scopes), and the name does not name product_id
+  fix: write it by hand on *ordersImpl, in a non-generated file of package refused:
+         func (r *ordersImpl) DeleteByOrgAndWorkspaceAndName(ctx context.Context, orgID uuid.UUID, name string) (int64, error)
+       or rename it DeleteByOrgAndWorkspaceAndProductAndName, with productID as parameter, scope words first; if a column the name has determines the others in the schema, declare it in Postgres.ScopeImplies, and give the table the foreign key that proves it
+refused.go:93: Orders.FindByWorkspaceIDAndName: not implemented: no hand-written method on *ordersImpl, and the name does not derive: table order is scoped by org_id, product_id, workspace_id (Postgres.Scopes), and the name does not name org_id or product_id
+  fix: write it by hand on *ordersImpl, in a non-generated file of package refused:
+         func (r *ordersImpl) FindByWorkspaceIDAndName(ctx context.Context, workspaceID string, name string) ([]model.Order, error)
+       or rename it FindByWorkspaceIDAndOrgAndProductAndName, with orgID and productID as parameter, scope words first; if a column the name has determines the others in the schema, declare it in Postgres.ScopeImplies, and give the table the foreign key that proves it, or end the name in Internal for a trusted system path
+refused.go:95: Orders.FindByOrgAndProductAndWorkspaceAndIDAndName: not implemented: no hand-written method on *ordersImpl, and the name does not derive: has 4 value parameter(s), the name has 3 properties
+  fix: write it by hand on *ordersImpl, in a non-generated file of package refused:
+         func (r *ordersImpl) FindByOrgAndProductAndWorkspaceAndIDAndName(ctx context.Context, orgID uuid.UUID, productID uuid.UUID, id uuid.UUID, name string) ([]model.Order, error)
+       or take one parameter per property, in name order: OrgID, ProductID, IDAndName
+refused.go:96: Orders.FindByOrgAndProductAndWorkspaceAndBrand: not implemented: no hand-written method on *ordersImpl, and the name does not derive: no column "Brand" on table order
+  fix: write it by hand on *ordersImpl, in a non-generated file of package refused:
+         func (r *ordersImpl) FindByOrgAndProductAndWorkspaceAndBrand(ctx context.Context, orgID uuid.UUID, productID uuid.UUID, brand string) ([]model.Order, error)
+       or rename it FindByOrgAndProductAndWorkspaceAndBrandAndModel (did you mean BrandAndModel?)
+refused.go:97: Orders.FindByOrgAndProductAndWorkspaceAndNameOrderByNameDesc: not implemented: no hand-written method on *ordersImpl, and the name does not derive: OrderBy is not derived
+  fix: write it by hand on *ordersImpl, in a non-generated file of package refused:
+         func (r *ordersImpl) FindByOrgAndProductAndWorkspaceAndNameOrderByNameDesc(ctx context.Context, orgID uuid.UUID, productID uuid.UUID, name string) ([]model.Order, error) {
+             return r.findAll(ctx, r.where.OrgID(orgID).AND(r.where.ProductID(productID)).AND(workspacescope.Filter(ctx, r.t.WorkspaceID)).AND(r.where.Name(name)), r.t.Name.DESC())
+         }
+       or use the search builder for a client-chosen order
+refused.go:99: Orders.FindByOrgAndProductAndWorkspaceAndNameIgnoreCase: not implemented: no hand-written method on *ordersImpl, and the name does not derive: operator IgnoreCase on Name is not derived; only equality (And) is
+  fix: write it by hand on *ordersImpl, in a non-generated file of package refused:
+         func (r *ordersImpl) FindByOrgAndProductAndWorkspaceAndNameIgnoreCase(ctx context.Context, orgID uuid.UUID, productID uuid.UUID, name string) ([]model.Order, error) {
+             return r.findAll(ctx, r.where.OrgID(orgID).AND(r.where.ProductID(productID)).AND(workspacescope.Filter(ctx, r.t.WorkspaceID)).AND(r.where.NameEqualsIgnoreCase(name)))
+         }
+       or use the search builder
+refused.go:100: Orders.FindByOrgAndProductAndWorkspaceAndNameOrBy: not implemented: no hand-written method on *ordersImpl, and the name does not derive: Or is not derived; only And is
+  fix: write it by hand on *ordersImpl, in a non-generated file of package refused:
+         func (r *ordersImpl) FindByOrgAndProductAndWorkspaceAndNameOrBy(ctx context.Context, orgID uuid.UUID, productID uuid.UUID, name string, by string) ([]model.Order, error) {
+             return r.findAll(ctx, r.where.OrgID(orgID).AND(r.where.ProductID(productID)).AND(workspacescope.Filter(ctx, r.t.WorkspaceID)).AND(r.where.Name(name).OR(r.where.By(by))))
+         }
+refused.go:101: Orders.DeleteByWorkspaceAndNameInternal: not implemented: no hand-written method on *ordersImpl, and the name does not derive: table order is scoped by org_id, product_id, workspace_id (Postgres.Scopes), and the name does not name org_id or product_id: Internal skips the scope on derived reads only
+  fix: write it by hand on *ordersImpl, in a non-generated file of package refused:
+         func (r *ordersImpl) DeleteByWorkspaceAndNameInternal(ctx context.Context, name string) (int64, error) {
+             return r.deleteWhere(ctx, workspacescope.Filter(ctx, r.t.WorkspaceID).AND(r.where.Name(name)))
+         }
+       or rename it DeleteByWorkspaceAndOrgAndProductAndName, with orgID and productID as parameter, scope words first; if a column the name has determines the others in the schema, declare it in Postgres.ScopeImplies, and give the table the foreign key that proves it; a delete across tenants is written by hand, where review sees it
+refused.go:103: Orders.FindByNameAndOrgAndProductAndWorkspace: not implemented: no hand-written method on *ordersImpl, and the name does not derive: table order is scoped by org_id, product_id, workspace_id (Postgres.Scopes), and the name has a column before a scope column: the scope words come first
+  fix: write it by hand on *ordersImpl, in a non-generated file of package refused:
+         func (r *ordersImpl) FindByNameAndOrgAndProductAndWorkspace(ctx context.Context, name string, orgID uuid.UUID, productID uuid.UUID) ([]model.Order, error)
+       or move the scope words to the front of the name and of the parameters: FindByOrgAndProductAndWorkspaceAndName, or end the name in Internal for a trusted system path
+refused.go:104: Orders.FindByProductAndWorkspaceAndBy: not implemented: no hand-written method on *ordersImpl, and the name does not derive: table order is scoped by org_id, product_id, workspace_id (Postgres.Scopes), and the name does not name org_id
+  fix: write it by hand on *ordersImpl, in a non-generated file of package refused:
+         func (r *ordersImpl) FindByProductAndWorkspaceAndBy(ctx context.Context, productID uuid.UUID, by string) (functional.Option[model.Order], error)
+       or rename it FindByProductAndWorkspaceAndOrgAndBy, with orgID as parameter, scope words first; Postgres.ScopeImplies says product_id determines org_id, but table order has no foreign key that lists both, is validated, has no nullable referencing column (or is MATCH FULL) and references a table with a unique key on the target of product_id alone, so the implication does not apply here, or end the name in Internal for a trusted system path
+refused.go:110: Ledgers.FindByOrgAndProductAndSiteAndWorkspaceAndSeq: not implemented: no hand-written method on *ledgersImpl, and the name does not derive: it returns one row, but (org_id, product_id, site_id, seq) covers no unique key; the keys of ledger are ledger_pkey (org_id, product_id, site_id, workspace_id, seq); ledger_pkey holds workspace_id, which the short name binds to no parameter: the registered function may keep every workspace, so it does not prove one row
+  fix: rename it FindByOrgAndProductAndSiteAndWorkspaceIDAndSeq, which takes the value of workspace_id as a parameter, or return []model.Ledger;
+       or write it by hand on *ledgersImpl, in a non-generated file of package refused:
+         func (r *ledgersImpl) FindByOrgAndProductAndSiteAndWorkspaceAndSeq(ctx context.Context, orgID uuid.UUID, productID uuid.UUID, siteID uuid.UUID, seq int64) (functional.Option[model.Ledger], error) {
+             return r.first(ctx, r.where.OrgID(orgID).AND(r.where.ProductID(productID)).AND(r.where.SiteID(siteID)).AND(workspacescope.Filter(ctx, r.t.WorkspaceID)).AND(r.where.Seq(seq)), r.t.OrgID.ASC(), r.t.ProductID.ASC(), r.t.SiteID.ASC(), r.t.WorkspaceID.ASC(), r.t.Seq.ASC())
+         }
+refused.go:111: Ledgers.FindByOrgAndProductAndSiteAndSeq: not implemented: no hand-written method on *ledgersImpl, and the name does not derive: table ledger is scoped by org_id, product_id, site_id, workspace_id (Postgres.Scopes), and the name does not name workspace_id
+  fix: write it by hand on *ledgersImpl, in a non-generated file of package refused:
+         func (r *ledgersImpl) FindByOrgAndProductAndSiteAndSeq(ctx context.Context, orgID uuid.UUID, productID uuid.UUID, siteID uuid.UUID, seq int64) ([]model.Ledger, error)
+       or name Workspace first (FindByOrgAndProductAndSiteAndWorkspaceAndSeq is already declared); Workspace binds no parameter: it applies workspacescope.Filter to workspace_id, or end the name in Internal for a trusted system path
+refused.go:112: Ledgers.DeleteByOrgAndProductAndSiteAndSeq: not implemented: no hand-written method on *ledgersImpl, and the name does not derive: table ledger is scoped by org_id, product_id, site_id, workspace_id (Postgres.Scopes), and the name does not name workspace_id
+  fix: write it by hand on *ledgersImpl, in a non-generated file of package refused:
+         func (r *ledgersImpl) DeleteByOrgAndProductAndSiteAndSeq(ctx context.Context, orgID uuid.UUID, productID uuid.UUID, siteID uuid.UUID, seq int64) error
+       or rename it DeleteByOrgAndProductAndSiteAndWorkspaceAndSeq; Workspace binds no parameter: it applies workspacescope.Filter to workspace_id
+refused.go:113: Ledgers.FindByWorkspaceIDAndSeq: not implemented: no hand-written method on *ledgersImpl, and the name does not derive: table ledger is scoped by org_id, product_id, site_id, workspace_id (Postgres.Scopes), and the name does not name org_id or product_id or site_id
+  fix: write it by hand on *ledgersImpl, in a non-generated file of package refused:
+         func (r *ledgersImpl) FindByWorkspaceIDAndSeq(ctx context.Context, workspaceID string, seq int64) ([]model.Ledger, error)
+       or rename it FindByWorkspaceIDAndOrgAndProductAndSiteAndSeq, with orgID and productID and siteID as parameter, scope words first; if a column the name has determines the others in the schema, declare it in Postgres.ScopeImplies, and give the table the foreign key that proves it, or end the name in Internal for a trusted system path
+refused.go:114: Ledgers.DeleteByWorkspaceIDAndSeq: not implemented: no hand-written method on *ledgersImpl, and the name does not derive: a derived delete names the context scope WorkspaceID by its Go field, which binds a parameter and skips the function of Postgres.ContextScopes: a cross-workspace delete is hand-written, where review sees it
+  fix: write it by hand on *ledgersImpl, in a non-generated file of package refused:
+         func (r *ledgersImpl) DeleteByWorkspaceIDAndSeq(ctx context.Context, workspaceID string, seq int64) (int64, error)
+       or name Workspace instead, which applies the function of the context
+refused.go:115: Ledgers.DeleteByOrgAndMemoInternal: not implemented: no hand-written method on *ledgersImpl, and the name does not derive: table ledger is scoped by org_id, product_id, site_id, workspace_id (Postgres.Scopes), and the name does not name product_id or site_id or workspace_id: Internal skips the scope on derived reads only
+  fix: write it by hand on *ledgersImpl, in a non-generated file of package refused:
+         func (r *ledgersImpl) DeleteByOrgAndMemoInternal(ctx context.Context, orgID uuid.UUID, memo string) (int64, error) {
+             return r.deleteWhere(ctx, r.where.OrgID(orgID).AND(r.where.Memo(memo)))
+         }
+       or rename it DeleteByOrgAndProductAndSiteAndWorkspaceAndMemo, with productID and siteID as parameter, scope words first; Workspace binds no parameter: it applies workspacescope.Filter to workspace_id; if a column the name has determines the others in the schema, declare it in Postgres.ScopeImplies, and give the table the foreign key that proves it; a delete across tenants is written by hand, where review sees it
+refused.go:120: Notes.FindByID: not implemented: no hand-written method on *notesImpl, and the name does not derive: table note is scoped by workspace_id (Postgres.Scopes), and the name does not name workspace_id
+  fix: write it by hand on *notesImpl, in a non-generated file of package refused:
+         func (r *notesImpl) FindByID(ctx context.Context, id string) (functional.Option[model.Note], error)
+       or rename it FindByWorkspaceAndID; Workspace binds no parameter: it applies workspacescope.Filter to workspace_id, or end the name in Internal for a trusted system path
+refused.go:121: Notes.DeleteByID: not implemented: no hand-written method on *notesImpl, and the name does not derive: table note is scoped by workspace_id (Postgres.Scopes), and the name does not name workspace_id
+  fix: write it by hand on *notesImpl, in a non-generated file of package refused:
+         func (r *notesImpl) DeleteByID(ctx context.Context, id string) error
+       or rename it DeleteByWorkspaceAndID; Workspace binds no parameter: it applies workspacescope.Filter to workspace_id
+refused.go:122: Notes.DeleteByIDInternal: not implemented: no hand-written method on *notesImpl, and the name does not derive: table note is scoped by workspace_id (Postgres.Scopes), and the name does not name workspace_id: Internal skips the scope on derived reads only
+  fix: write it by hand on *notesImpl, in a non-generated file of package refused:
+         func (r *notesImpl) DeleteByIDInternal(ctx context.Context, id string) error {
+             _, err := r.deleteWhere(ctx, r.where.ID(id))
+             return err
+         }
+       or rename it DeleteByWorkspaceAndID; Workspace binds no parameter: it applies workspacescope.Filter to workspace_id; a delete across tenants is written by hand, where review sees it
+refused.go:123: Notes.FindByWorkspaceAndTitle: not implemented: no hand-written method on *notesImpl, and the name does not derive: it returns one row, but (title) covers no unique key; the keys of note are note_pkey (id)
+  fix: return []model.Note; or add a unique index on (workspace_id, title) in a migration and rerun nanostack gen db, and name workspace_id by its Go field, which takes a parameter, so that the key covers it;
+       or write it by hand on *notesImpl, in a non-generated file of package refused:
+         func (r *notesImpl) FindByWorkspaceAndTitle(ctx context.Context, title string) (functional.Option[model.Note], error) {
+             return r.first(ctx, workspacescope.Filter(ctx, r.t.WorkspaceID).AND(r.where.Title(title)), r.t.ID.ASC())
+         }
+refused.go:124: Notes.FindAll: not implemented: no hand-written method on *notesImpl, and the name does not derive: table note is scoped by workspace_id (Postgres.Scopes), and the name does not name workspace_id
+  fix: write it by hand on *notesImpl, in a non-generated file of package refused:
+         func (r *notesImpl) FindAll(ctx context.Context) ([]model.Note, error)
+       or rename it FindByWorkspace; Workspace binds no parameter: it applies workspacescope.Filter to workspace_id, or end the name in Internal for a trusted system path
+refused.go:129: Drafts.FindByID: not implemented: no hand-written method on *draftsImpl, and the name does not derive: table draft is scoped by workspace_id (Postgres.Scopes), and the name does not name workspace_id
+  fix: write it by hand on *draftsImpl, in a non-generated file of package refused:
+         func (r *draftsImpl) FindByID(ctx context.Context, id string) (functional.Option[model.Draft], error)
+       or rename it FindByWorkspaceAndID; Workspace binds no parameter: it applies workspacescope.Filter to workspace_id, or end the name in Internal for a trusted system path
+refused.go:130: Drafts.DeleteByID: not implemented: no hand-written method on *draftsImpl, and the name does not derive: table draft is scoped by workspace_id (Postgres.Scopes), and the name does not name workspace_id
+  fix: write it by hand on *draftsImpl, in a non-generated file of package refused:
+         func (r *draftsImpl) DeleteByID(ctx context.Context, id string) error
+       or rename it DeleteByWorkspaceAndID; Workspace binds no parameter: it applies workspacescope.Filter to workspace_id
+refused.go:131: Drafts.FindByTitle: not implemented: no hand-written method on *draftsImpl, and the name does not derive: table draft is scoped by workspace_id (Postgres.Scopes), and the name does not name workspace_id
+  fix: write it by hand on *draftsImpl, in a non-generated file of package refused:
+         func (r *draftsImpl) FindByTitle(ctx context.Context, title string) ([]model.Draft, error)
+       or rename it FindByWorkspaceAndTitle; Workspace binds no parameter: it applies workspacescope.Filter to workspace_id, or end the name in Internal for a trusted system path
+refused.go:136: SharedDocs.FindByID: not implemented: no hand-written method on *sharedDocsImpl, and the name does not derive: table shared_doc is scoped by org_id (Postgres.Scopes), and the name does not name org_id
+  fix: write it by hand on *sharedDocsImpl, in a non-generated file of package refused:
+         func (r *sharedDocsImpl) FindByID(ctx context.Context, id string) (functional.Option[model.SharedDoc], error)
+       or rename it FindByOrgAndID, with orgID as parameter, scope words first, or end the name in Internal for a trusted system path
+refused.go:137: SharedDocs.DeleteByID: not implemented: no hand-written method on *sharedDocsImpl, and the name does not derive: table shared_doc is scoped by org_id (Postgres.Scopes), and the name does not name org_id
+  fix: write it by hand on *sharedDocsImpl, in a non-generated file of package refused:
+         func (r *sharedDocsImpl) DeleteByID(ctx context.Context, id string) (bool, error)
+       or rename it DeleteByOrgAndID, with orgID as parameter, scope words first
+refused.go:138: SharedDocs.DeleteByTitleInternal: not implemented: no hand-written method on *sharedDocsImpl, and the name does not derive: table shared_doc is scoped by org_id (Postgres.Scopes), and the name does not name org_id: Internal skips the scope on derived reads only
+  fix: write it by hand on *sharedDocsImpl, in a non-generated file of package refused:
+         func (r *sharedDocsImpl) DeleteByTitleInternal(ctx context.Context, title string) (int64, error) {
+             return r.deleteWhere(ctx, r.where.Title(title))
+         }
+       or rename it DeleteByOrgAndTitle, with orgID as parameter, scope words first; a delete across tenants is written by hand, where review sees it
+refused.go:139: SharedDocs.FindAll: not implemented: no hand-written method on *sharedDocsImpl, and the name does not derive: table shared_doc is scoped by org_id (Postgres.Scopes), and the name does not name org_id
+  fix: write it by hand on *sharedDocsImpl, in a non-generated file of package refused:
+         func (r *sharedDocsImpl) FindAll(ctx context.Context) ([]model.SharedDoc, error)
+       or rename it FindByOrg, with orgID as parameter, scope words first, or end the name in Internal for a trusted system path
+refused.go:144: Zones.FindByOrgAndWorkspaceAndName: not implemented: no hand-written method on *zonesImpl, and the name does not derive: table zone is scoped by org_id, workspace_id, region_id (Postgres.Scopes), and the name does not name region_id
+  fix: write it by hand on *zonesImpl, in a non-generated file of package refused:
+         func (r *zonesImpl) FindByOrgAndWorkspaceAndName(ctx context.Context, orgID uuid.UUID, name string) ([]model.Zone, error)
+       or rename it FindByOrgAndWorkspaceAndRegionAndName; Region binds no parameter: it applies regionscope.Filter to region_id, or end the name in Internal for a trusted system path
+refused.go:145: Zones.DeleteByOrgAndWorkspaceAndName: not implemented: no hand-written method on *zonesImpl, and the name does not derive: table zone is scoped by org_id, workspace_id, region_id (Postgres.Scopes), and the name does not name region_id
+  fix: write it by hand on *zonesImpl, in a non-generated file of package refused:
+         func (r *zonesImpl) DeleteByOrgAndWorkspaceAndName(ctx context.Context, orgID uuid.UUID, name string) (int64, error)
+       or rename it DeleteByOrgAndWorkspaceAndRegionAndName; Region binds no parameter: it applies regionscope.Filter to region_id
+refused.go:146: Zones.FindByOrgAndRegionAndName: not implemented: no hand-written method on *zonesImpl, and the name does not derive: table zone is scoped by org_id, workspace_id, region_id (Postgres.Scopes), and the name does not name workspace_id
+  fix: write it by hand on *zonesImpl, in a non-generated file of package refused:
+         func (r *zonesImpl) FindByOrgAndRegionAndName(ctx context.Context, orgID uuid.UUID, name string) ([]model.Zone, error)
+       or rename it FindByOrgAndRegionAndWorkspaceAndName; Workspace binds no parameter: it applies workspacescope.Filter to workspace_id, or end the name in Internal for a trusted system path
+refused.go:151: Mixeds.FindByOrgAndID: not implemented: no hand-written method on *mixedsImpl, and the name does not derive: table mixed is scoped by org_id, product_id (Postgres.Scopes), and the name does not name product_id
+  fix: write it by hand on *mixedsImpl, in a non-generated file of package refused:
+         func (r *mixedsImpl) FindByOrgAndID(ctx context.Context, orgID uuid.UUID, id string) (functional.Option[model.Mixed], error)
+       or rename it FindByOrgAndProductAndID, with productID as parameter, scope words first; if a column the name has determines the others in the schema, declare it in Postgres.ScopeImplies, and give the table the foreign key that proves it, or end the name in Internal for a trusted system path
+refused.go:152: Mixeds.DeleteByOrgAndName: not implemented: no hand-written method on *mixedsImpl, and the name does not derive: table mixed is scoped by org_id, product_id (Postgres.Scopes), and the name does not name product_id
+  fix: write it by hand on *mixedsImpl, in a non-generated file of package refused:
+         func (r *mixedsImpl) DeleteByOrgAndName(ctx context.Context, orgID uuid.UUID, name string) (int64, error)
+       or rename it DeleteByOrgAndProductAndName, with productID as parameter, scope words first; if a column the name has determines the others in the schema, declare it in Postgres.ScopeImplies, and give the table the foreign key that proves it
+refused.go:153: Mixeds.FindByProductAndName: not implemented: no hand-written method on *mixedsImpl, and the name does not derive: table mixed is scoped by org_id, product_id (Postgres.Scopes), and the name does not name org_id
+  fix: write it by hand on *mixedsImpl, in a non-generated file of package refused:
+         func (r *mixedsImpl) FindByProductAndName(ctx context.Context, productID uuid.UUID, name string) ([]model.Mixed, error)
+       or rename it FindByProductAndOrgAndName, with orgID as parameter, scope words first; Postgres.ScopeImplies says product_id determines org_id, but table mixed has no foreign key that lists both, is validated, has no nullable referencing column (or is MATCH FULL) and references a table with a unique key on the target of product_id alone, so the implication does not apply here, or end the name in Internal for a trusted system path
+refused.go:158: Bins.FindByProductAndID: not implemented: no hand-written method on *binsImpl, and the name does not derive: table bin is scoped by org_id, product_id, site_id (Postgres.Scopes), and the name does not name site_id
+  fix: write it by hand on *binsImpl, in a non-generated file of package refused:
+         func (r *binsImpl) FindByProductAndID(ctx context.Context, productID uuid.UUID, id string) (functional.Option[model.Bin], error)
+       or rename it FindByProductAndSiteAndID, with siteID as parameter, scope words first; if a column the name has determines the others in the schema, declare it in Postgres.ScopeImplies, and give the table the foreign key that proves it, or end the name in Internal for a trusted system path
+refused.go:159: Bins.FindByOrgAndID: not implemented: no hand-written method on *binsImpl, and the name does not derive: table bin is scoped by org_id, product_id, site_id (Postgres.Scopes), and the name does not name product_id or site_id
+  fix: write it by hand on *binsImpl, in a non-generated file of package refused:
+         func (r *binsImpl) FindByOrgAndID(ctx context.Context, orgID uuid.UUID, id string) (functional.Option[model.Bin], error)
+       or rename it FindByOrgAndProductAndSiteAndID, with productID and siteID as parameter, scope words first; if a column the name has determines the others in the schema, declare it in Postgres.ScopeImplies, and give the table the foreign key that proves it, or end the name in Internal for a trusted system path
+refused.go:160: Bins.DeleteByProductAndName: not implemented: no hand-written method on *binsImpl, and the name does not derive: table bin is scoped by org_id, product_id, site_id (Postgres.Scopes), and the name does not name site_id
+  fix: write it by hand on *binsImpl, in a non-generated file of package refused:
+         func (r *binsImpl) DeleteByProductAndName(ctx context.Context, productID uuid.UUID, name string) (int64, error)
+       or rename it DeleteByProductAndSiteAndName, with siteID as parameter, scope words first; if a column the name has determines the others in the schema, declare it in Postgres.ScopeImplies, and give the table the foreign key that proves it
+refused.go:166: Shelves.FindByProductAndID: not implemented: no hand-written method on *shelvesImpl, and the name does not derive: table shelf is scoped by org_id, product_id (Postgres.Scopes), and the name does not name org_id
+  fix: write it by hand on *shelvesImpl, in a non-generated file of package refused:
+         func (r *shelvesImpl) FindByProductAndID(ctx context.Context, productID uuid.UUID, id string) (functional.Option[model.Shelf], error)
+       or rename it FindByProductAndOrgAndID, with orgID as parameter, scope words first; Postgres.ScopeImplies says product_id determines org_id, but table shelf has no foreign key that lists both, is validated, has no nullable referencing column (or is MATCH FULL) and references a table with a unique key on the target of product_id alone, so the implication does not apply here, or end the name in Internal for a trusted system path
+refused.go:167: Shelves.FindByProductAndName: not implemented: no hand-written method on *shelvesImpl, and the name does not derive: table shelf is scoped by org_id, product_id (Postgres.Scopes), and the name does not name org_id
+  fix: write it by hand on *shelvesImpl, in a non-generated file of package refused:
+         func (r *shelvesImpl) FindByProductAndName(ctx context.Context, productID uuid.UUID, name string) ([]model.Shelf, error)
+       or rename it FindByProductAndOrgAndName, with orgID as parameter, scope words first; Postgres.ScopeImplies says product_id determines org_id, but table shelf has no foreign key that lists both, is validated, has no nullable referencing column (or is MATCH FULL) and references a table with a unique key on the target of product_id alone, so the implication does not apply here, or end the name in Internal for a trusted system path
+refused.go:168: Shelves.DeleteByProductAndName: not implemented: no hand-written method on *shelvesImpl, and the name does not derive: table shelf is scoped by org_id, product_id (Postgres.Scopes), and the name does not name org_id
+  fix: write it by hand on *shelvesImpl, in a non-generated file of package refused:
+         func (r *shelvesImpl) DeleteByProductAndName(ctx context.Context, productID uuid.UUID, name string) (int64, error)
+       or rename it DeleteByProductAndOrgAndName, with orgID as parameter, scope words first; Postgres.ScopeImplies says product_id determines org_id, but table shelf has no foreign key that lists both, is validated, has no nullable referencing column (or is MATCH FULL) and references a table with a unique key on the target of product_id alone, so the implication does not apply here
+refused.go:176: BinNulls.FindByProductAndName: not implemented: no hand-written method on *binNullsImpl, and the name does not derive: table bin_null is scoped by org_id, product_id (Postgres.Scopes), and the name does not name org_id
+  fix: write it by hand on *binNullsImpl, in a non-generated file of package refused:
+         func (r *binNullsImpl) FindByProductAndName(ctx context.Context, productID uuid.UUID, name string) ([]model.BinNull, error)
+       or rename it FindByProductAndOrgAndName, with orgID as parameter, scope words first; Postgres.ScopeImplies says product_id determines org_id, but table bin_null has no foreign key that lists both, is validated, has no nullable referencing column (or is MATCH FULL) and references a table with a unique key on the target of product_id alone, so the implication does not apply here, or end the name in Internal for a trusted system path
+refused.go:177: BinNulls.DeleteByProductAndName: not implemented: no hand-written method on *binNullsImpl, and the name does not derive: table bin_null is scoped by org_id, product_id (Postgres.Scopes), and the name does not name org_id
+  fix: write it by hand on *binNullsImpl, in a non-generated file of package refused:
+         func (r *binNullsImpl) DeleteByProductAndName(ctx context.Context, productID uuid.UUID, name string) (int64, error)
+       or rename it DeleteByProductAndOrgAndName, with orgID as parameter, scope words first; Postgres.ScopeImplies says product_id determines org_id, but table bin_null has no foreign key that lists both, is validated, has no nullable referencing column (or is MATCH FULL) and references a table with a unique key on the target of product_id alone, so the implication does not apply here
+refused.go:180: BinNvs.FindByProductAndName: not implemented: no hand-written method on *binNvsImpl, and the name does not derive: table bin_nv is scoped by org_id, product_id (Postgres.Scopes), and the name does not name org_id
+  fix: write it by hand on *binNvsImpl, in a non-generated file of package refused:
+         func (r *binNvsImpl) FindByProductAndName(ctx context.Context, productID uuid.UUID, name string) ([]model.BinNv, error)
+       or rename it FindByProductAndOrgAndName, with orgID as parameter, scope words first; Postgres.ScopeImplies says product_id determines org_id, but table bin_nv has no foreign key that lists both, is validated, has no nullable referencing column (or is MATCH FULL) and references a table with a unique key on the target of product_id alone, so the implication does not apply here, or end the name in Internal for a trusted system path
+refused.go:181: BinNvs.DeleteByProductAndName: not implemented: no hand-written method on *binNvsImpl, and the name does not derive: table bin_nv is scoped by org_id, product_id (Postgres.Scopes), and the name does not name org_id
+  fix: write it by hand on *binNvsImpl, in a non-generated file of package refused:
+         func (r *binNvsImpl) DeleteByProductAndName(ctx context.Context, productID uuid.UUID, name string) (int64, error)
+       or rename it DeleteByProductAndOrgAndName, with orgID as parameter, scope words first; Postgres.ScopeImplies says product_id determines org_id, but table bin_nv has no foreign key that lists both, is validated, has no nullable referencing column (or is MATCH FULL) and references a table with a unique key on the target of product_id alone, so the implication does not apply here
+refused.go:187: InternalWrites.CreateInOrgAndProductAndWorkspaceInternal: not implemented: no hand-written method on *internalWritesImpl, and the name does not derive: a derived write never ends in Internal: it skips no scope
+  fix: write it by hand on *internalWritesImpl, in a non-generated file of package refused:
+         func (r *internalWritesImpl) CreateInOrgAndProductAndWorkspaceInternal(ctx context.Context, orgID uuid.UUID, productID uuid.UUID, wide model.Wide) (model.Wide, error)
+       or rename it CreateInOrgAndProductAndWorkspace, or write it by hand
+refused.go:190: InternalWrites.UpdateByOrgAndProductAndWorkspaceAndIDInternal: not implemented: no hand-written method on *internalWritesImpl, and the name does not derive: a derived write never ends in Internal: it skips no scope
+  fix: write it by hand on *internalWritesImpl, in a non-generated file of package refused:
+         func (r *internalWritesImpl) UpdateByOrgAndProductAndWorkspaceAndIDInternal(ctx context.Context, orgID uuid.UUID, productID uuid.UUID, wide model.Wide) (model.Wide, error)
+       or rename it UpdateByOrgAndProductAndWorkspaceAndID, or write it by hand
+refused.go:193: InternalWrites.UpsertByOrgAndProductAndWorkspaceAndSlugInternal: not implemented: no hand-written method on *internalWritesImpl, and the name does not derive: a derived write never ends in Internal: it skips no scope
+  fix: write it by hand on *internalWritesImpl, in a non-generated file of package refused:
+         func (r *internalWritesImpl) UpsertByOrgAndProductAndWorkspaceAndSlugInternal(ctx context.Context, orgID uuid.UUID, productID uuid.UUID, wide model.Wide) (model.Wide, error)
+       or rename it UpsertByOrgAndProductAndWorkspaceAndSlug, or write it by hand
+refused.go:202: LedgerForms.DeleteByOrgAndProductAndSiteAndWorkspaceIDAndSeq: not implemented: no hand-written method on *ledgerFormsImpl, and the name does not derive: a derived delete names the context scope WorkspaceID by its Go field, which binds a parameter and skips the function of Postgres.ContextScopes: a cross-workspace delete is hand-written, where review sees it
+  fix: write it by hand on *ledgerFormsImpl, in a non-generated file of package refused:
+         func (r *ledgerFormsImpl) DeleteByOrgAndProductAndSiteAndWorkspaceIDAndSeq(ctx context.Context, orgID uuid.UUID, productID uuid.UUID, siteID uuid.UUID, workspaceID string, seq int64) (bool, error)
+       or name Workspace instead, which applies the function of the context
+refused.go:207: NoteForms.DeleteByWorkspaceIDAndID: not implemented: no hand-written method on *noteFormsImpl, and the name does not derive: a derived delete names the context scope WorkspaceID by its Go field, which binds a parameter and skips the function of Postgres.ContextScopes: a cross-workspace delete is hand-written, where review sees it
+  fix: write it by hand on *noteFormsImpl, in a non-generated file of package refused:
+         func (r *noteFormsImpl) DeleteByWorkspaceIDAndID(ctx context.Context, workspaceID string, id string) error
+       or name Workspace instead, which applies the function of the context
+refused.go:210: OrderForms.DeleteByOrgAndProductAndWorkspaceIDAndName: not implemented: no hand-written method on *orderFormsImpl, and the name does not derive: a derived delete names the context scope WorkspaceID by its Go field, which binds a parameter and skips the function of Postgres.ContextScopes: a cross-workspace delete is hand-written, where review sees it
+  fix: write it by hand on *orderFormsImpl, in a non-generated file of package refused:
+         func (r *orderFormsImpl) DeleteByOrgAndProductAndWorkspaceIDAndName(ctx context.Context, orgID uuid.UUID, productID uuid.UUID, workspaceID string, name string) (int64, error)
+       or name Workspace instead, which applies the function of the context
+refused.go:215: WideForms.CreateInOrgAndProductAndWorkspaceID: not implemented: no hand-written method on *wideFormsImpl, and the name does not derive: a derived write names the context scope WorkspaceID by its Go field, which binds a parameter and skips the function of Postgres.ContextScopes: a cross-workspace write is hand-written, where review sees it
+  fix: write it by hand on *wideFormsImpl, in a non-generated file of package refused:
+         func (r *wideFormsImpl) CreateInOrgAndProductAndWorkspaceID(ctx context.Context, orgID uuid.UUID, productID uuid.UUID, workspaceID string, wide model.Wide) (model.Wide, error)
+       or name Workspace instead, which applies the function of the context
+refused.go:218: WideForms.UpdateByOrgAndProductAndWorkspaceIDAndID: not implemented: no hand-written method on *wideFormsImpl, and the name does not derive: a derived write names the context scope WorkspaceID by its Go field, which binds a parameter and skips the function of Postgres.ContextScopes: a cross-workspace write is hand-written, where review sees it
+  fix: write it by hand on *wideFormsImpl, in a non-generated file of package refused:
+         func (r *wideFormsImpl) UpdateByOrgAndProductAndWorkspaceIDAndID(ctx context.Context, orgID uuid.UUID, productID uuid.UUID, workspaceID string, wide model.Wide) (model.Wide, error)
+       or name Workspace instead, which applies the function of the context
+refused.go:221: WideForms.UpsertByOrgAndProductAndWorkspaceIDAndSlug: not implemented: no hand-written method on *wideFormsImpl, and the name does not derive: a derived write names the context scope WorkspaceID by its Go field, which binds a parameter and skips the function of Postgres.ContextScopes: a cross-workspace write is hand-written, where review sees it
+  fix: write it by hand on *wideFormsImpl, in a non-generated file of package refused:
+         func (r *wideFormsImpl) UpsertByOrgAndProductAndWorkspaceIDAndSlug(ctx context.Context, orgID uuid.UUID, productID uuid.UUID, workspaceID string, wide model.Wide) (model.Wide, error)
+       or name Workspace instead, which applies the function of the context
+refused.go:231: BinWrites.CreateInSite: not implemented: no hand-written method on *binWritesImpl, and the name does not derive: table bin is scoped by org_id, product_id, site_id (Postgres.Scopes), and the name does not name org_id or product_id: a derived Create takes its scope from the name, never from the value
+  fix: write it by hand on *binWritesImpl, in a non-generated file of package refused:
+         func (r *binWritesImpl) CreateInSite(ctx context.Context, siteID uuid.UUID, bin model.Bin) (model.Bin, error)
+       or rename it CreateInSiteAndOrgAndProduct, with orgID and productID as parameter, scope words first
+refused.go:232: BinWrites.CreateInProductAndSite: not implemented: no hand-written method on *binWritesImpl, and the name does not derive: table bin is scoped by org_id, product_id, site_id (Postgres.Scopes), and the name does not name org_id: a derived Create takes its scope from the name, never from the value
+  fix: write it by hand on *binWritesImpl, in a non-generated file of package refused:
+         func (r *binWritesImpl) CreateInProductAndSite(ctx context.Context, productID uuid.UUID, siteID uuid.UUID, bin model.Bin) (model.Bin, error)
+       or rename it CreateInProductAndSiteAndOrg, with orgID as parameter, scope words first
+refused.go:233: BinWrites.UpdateBySiteAndID: not implemented: no hand-written method on *binWritesImpl, and the name does not derive: table bin is scoped by org_id, product_id, site_id (Postgres.Scopes), and the name does not name org_id or product_id
+  fix: write it by hand on *binWritesImpl, in a non-generated file of package refused:
+         func (r *binWritesImpl) UpdateBySiteAndID(ctx context.Context, siteID uuid.UUID, bin model.Bin) (model.Bin, error)
+       or rename it UpdateBySiteAndOrgAndProductAndID, with orgID and productID as parameter, scope words first
+refused.go:234: BinWrites.UpdateByProductAndSiteAndID: not implemented: no hand-written method on *binWritesImpl, and the name does not derive: table bin is scoped by org_id, product_id, site_id (Postgres.Scopes), and the name does not name org_id
+  fix: write it by hand on *binWritesImpl, in a non-generated file of package refused:
+         func (r *binWritesImpl) UpdateByProductAndSiteAndID(ctx context.Context, productID uuid.UUID, siteID uuid.UUID, bin model.Bin) (model.Bin, error)
+       or rename it UpdateByProductAndSiteAndOrgAndID, with orgID as parameter, scope words first
+refused.go:240: GlobalWrites.UpsertByOrgAndProductAndSlug: not implemented: no hand-written method on *globalWritesImpl, and the name does not derive: a derived upsert conflicts on one unique key that holds a hard scope and every key column of the name, and no key fits (org_id, product_id, slug); the keys of wglobal are wglobal_pkey (id), wglobal_slug_key (slug)
+  fix: name the columns of one key, the scope first, or write the upsert by hand;
+       or write it by hand on *globalWritesImpl, in a non-generated file of package refused:
+         func (r *globalWritesImpl) UpsertByOrgAndProductAndSlug(ctx context.Context, orgID uuid.UUID, productID uuid.UUID, g model.Wglobal) error
+refused.go:241: GlobalWrites.UpsertByOrgAndProductAndID: not implemented: no hand-written method on *globalWritesImpl, and the name does not derive: a derived upsert conflicts on one unique key that holds a hard scope and every key column of the name, and no key fits (org_id, product_id, id); the keys of wglobal are wglobal_pkey (id), wglobal_slug_key (slug)
+  fix: name the columns of one key, the scope first, or write the upsert by hand;
+       or write it by hand on *globalWritesImpl, in a non-generated file of package refused:
+         func (r *globalWritesImpl) UpsertByOrgAndProductAndID(ctx context.Context, orgID uuid.UUID, productID uuid.UUID, g model.Wglobal) error
+refused.go:246: ViewWrites.CreateInOrgAndProduct: not implemented: no hand-written method on *viewWritesImpl, and the name does not derive: table order_live is a view: nanostack gen db types every view column as nullable, so no tenant column of a view can be trusted as a scope, and a derived delete on an updatable view would reach the rows of every tenant
+  fix: write it by hand on *viewWritesImpl, in a non-generated file of package refused:
+         func (r *viewWritesImpl) CreateInOrgAndProduct(ctx context.Context, orgID uuid.UUID, productID uuid.UUID, v model.OrderLive) (model.OrderLive, error)
+       or write it by hand, with the tenant filter in its condition, or bind the base table of the view
+refused.go:247: ViewWrites.UpdateByOrgAndProductAndID: not implemented: no hand-written method on *viewWritesImpl, and the name does not derive: table order_live is a view: nanostack gen db types every view column as nullable, so no tenant column of a view can be trusted as a scope, and a derived delete on an updatable view would reach the rows of every tenant
+  fix: write it by hand on *viewWritesImpl, in a non-generated file of package refused:
+         func (r *viewWritesImpl) UpdateByOrgAndProductAndID(ctx context.Context, orgID uuid.UUID, productID uuid.UUID, v model.OrderLive) (model.OrderLive, error)
+       or write it by hand, with the tenant filter in its condition, or bind the base table of the view
+refused.go:248: ViewWrites.UpsertByOrgAndProductAndID: not implemented: no hand-written method on *viewWritesImpl, and the name does not derive: table order_live is a view: nanostack gen db types every view column as nullable, so no tenant column of a view can be trusted as a scope, and a derived delete on an updatable view would reach the rows of every tenant
+  fix: write it by hand on *viewWritesImpl, in a non-generated file of package refused:
+         func (r *viewWritesImpl) UpsertByOrgAndProductAndID(ctx context.Context, orgID uuid.UUID, productID uuid.UUID, v model.OrderLive) (model.OrderLive, error)
+       or write it by hand, with the tenant filter in its condition, or bind the base table of the view
+refused.go:254: OrderLives.FindByOrgAndProductAndID: not implemented: no hand-written method on *orderLivesImpl, and the name does not derive: table order_live is a view: nanostack gen db types every view column as nullable, so no tenant column of a view can be trusted as a scope, and a derived delete on an updatable view would reach the rows of every tenant
+  fix: write it by hand on *orderLivesImpl, in a non-generated file of package refused:
+         func (r *orderLivesImpl) FindByOrgAndProductAndID(ctx context.Context, orgID uuid.UUID, productID uuid.UUID, id string) ([]model.OrderLive, error)
+       or write it by hand, with the tenant filter in its condition, or bind the base table of the view
+refused.go:255: OrderLives.FindByID: not implemented: no hand-written method on *orderLivesImpl, and the name does not derive: table order_live is a view: nanostack gen db types every view column as nullable, so no tenant column of a view can be trusted as a scope, and a derived delete on an updatable view would reach the rows of every tenant
+  fix: write it by hand on *orderLivesImpl, in a non-generated file of package refused:
+         func (r *orderLivesImpl) FindByID(ctx context.Context, id string) ([]model.OrderLive, error)
+       or write it by hand, with the tenant filter in its condition, or bind the base table of the view
+refused.go:256: OrderLives.DeleteByID: not implemented: no hand-written method on *orderLivesImpl, and the name does not derive: table order_live is a view: nanostack gen db types every view column as nullable, so no tenant column of a view can be trusted as a scope, and a derived delete on an updatable view would reach the rows of every tenant
+  fix: write it by hand on *orderLivesImpl, in a non-generated file of package refused:
+         func (r *orderLivesImpl) DeleteByID(ctx context.Context, id string) error
+       or write it by hand, with the tenant filter in its condition, or bind the base table of the view
+refused.go:257: OrderLives.FindAll: not implemented: no hand-written method on *orderLivesImpl, and the name does not derive: table order_live is a view: nanostack gen db types every view column as nullable, so no tenant column of a view can be trusted as a scope, and a derived delete on an updatable view would reach the rows of every tenant
+  fix: write it by hand on *orderLivesImpl, in a non-generated file of package refused:
+         func (r *orderLivesImpl) FindAll(ctx context.Context) ([]model.OrderLive, error)
+       or write it by hand, with the tenant filter in its condition, or bind the base table of the view
+refused.go:262: LogLines.FindByOrgAndMsg: not implemented: no hand-written method on *logLinesImpl, and the name does not derive: it returns one row, but (org_id, msg) covers no unique key; log_line has no unique key
+  fix: return []model.LogLine; or add a unique index on (org_id, msg) in a migration and rerun nanostack gen db;
+       or write it by hand on *logLinesImpl, in a non-generated file of package refused:
+         func (r *logLinesImpl) FindByOrgAndMsg(ctx context.Context, orgID uuid.UUID, msg string) (functional.Option[model.LogLine], error) {
+             return r.first(ctx, r.where.OrgID(orgID).AND(r.where.Msg(msg)), r.t.<Column>.ASC())
+         }
+refused.go:263: LogLines.GetByOrgAndMsg: not implemented: no hand-written method on *logLinesImpl, and the name does not derive: it returns one row, but (org_id, msg) covers no unique key; log_line has no unique key
+  fix: return []model.LogLine; or add a unique index on (org_id, msg) in a migration and rerun nanostack gen db;
+       or write it by hand on *logLinesImpl, in a non-generated file of package refused:
+         func (r *logLinesImpl) GetByOrgAndMsg(ctx context.Context, orgID uuid.UUID, msg string) (model.LogLine, error)
+refused.go:268: Kitchens.FindByOrgAndCInet: not implemented: no hand-written method on *kitchensImpl, and the name does not derive: column kitchen.c_inet has no equality predicate on the base: its catalogue type is inet, which does not compare with a text value
+  fix: write it by hand on *kitchensImpl, in a non-generated file of package refused:
+         func (r *kitchensImpl) FindByOrgAndCInet(ctx context.Context, orgID uuid.UUID, v string) ([]model.Kitchen, error)
+refused.go:269: Kitchens.FindByOrgAndCJSON: not implemented: no hand-written method on *kitchensImpl, and the name does not derive: column kitchen.c_json has no equality predicate on the base: its catalogue type is jsonb, which does not compare with a text value
+  fix: write it by hand on *kitchensImpl, in a non-generated file of package refused:
+         func (r *kitchensImpl) FindByOrgAndCJSON(ctx context.Context, orgID uuid.UUID, v string) ([]model.Kitchen, error)
+refused.go:270: Kitchens.FindByOrgAndCBytes: not implemented: no hand-written method on *kitchensImpl, and the name does not derive: column kitchen.c_bytes has no equality predicate on the base: its model type is []byte
+  fix: write it by hand on *kitchensImpl, in a non-generated file of package refused:
+         func (r *kitchensImpl) FindByOrgAndCBytes(ctx context.Context, orgID uuid.UUID, v []byte) ([]model.Kitchen, error)
+refused.go:271: Kitchens.FindByOrgAndCTexts: not implemented: no hand-written method on *kitchensImpl, and the name does not derive: column kitchen.c_texts has no equality predicate on the base: its model type is pq.StringArray
+  fix: write it by hand on *kitchensImpl, in a non-generated file of package refused:
+         func (r *kitchensImpl) FindByOrgAndCTexts(ctx context.Context, orgID uuid.UUID, v pq.StringArray) ([]model.Kitchen, error)
+refused.go:272: Kitchens.FindByOrgAndCInts: not implemented: no hand-written method on *kitchensImpl, and the name does not derive: column kitchen.c_ints has no equality predicate on the base: its model type is pq.Int32Array
+  fix: write it by hand on *kitchensImpl, in a non-generated file of package refused:
+         func (r *kitchensImpl) FindByOrgAndCInts(ctx context.Context, orgID uuid.UUID, v pq.Int32Array) ([]model.Kitchen, error)
+refused.go:273: Kitchens.ExistsByOrgAndNInet: not implemented: no hand-written method on *kitchensImpl, and the name does not derive: column kitchen.n_inet has no equality predicate on the base: its catalogue type is inet, which does not compare with a text value
+  fix: write it by hand on *kitchensImpl, in a non-generated file of package refused:
+         func (r *kitchensImpl) ExistsByOrgAndNInet(ctx context.Context, orgID uuid.UUID, v string) (bool, error)
+refused.go:274: Kitchens.DeleteByOrgAndNJSON: not implemented: no hand-written method on *kitchensImpl, and the name does not derive: column kitchen.n_json has no equality predicate on the base: its catalogue type is jsonb, which does not compare with a text value
+  fix: write it by hand on *kitchensImpl, in a non-generated file of package refused:
+         func (r *kitchensImpl) DeleteByOrgAndNJSON(ctx context.Context, orgID uuid.UUID, v string) (int64, error)
+refused.go:275: Kitchens.DeleteByOrgAndNBytes: not implemented: no hand-written method on *kitchensImpl, and the name does not derive: column kitchen.n_bytes has no equality predicate on the base: its model type is []byte
+  fix: write it by hand on *kitchensImpl, in a non-generated file of package refused:
+         func (r *kitchensImpl) DeleteByOrgAndNBytes(ctx context.Context, orgID uuid.UUID, v []byte) (int64, error)
+refused.go:276: Kitchens.FindByOrgAndNTexts: not implemented: no hand-written method on *kitchensImpl, and the name does not derive: column kitchen.n_texts has no equality predicate on the base: its model type is pq.StringArray
+  fix: write it by hand on *kitchensImpl, in a non-generated file of package refused:
+         func (r *kitchensImpl) FindByOrgAndNTexts(ctx context.Context, orgID uuid.UUID, v pq.StringArray) ([]model.Kitchen, error)
+refused.go:277: Kitchens.FindByOrgAndNInts: not implemented: no hand-written method on *kitchensImpl, and the name does not derive: column kitchen.n_ints has no equality predicate on the base: its model type is pq.Int32Array
+  fix: write it by hand on *kitchensImpl, in a non-generated file of package refused:
+         func (r *kitchensImpl) FindByOrgAndNInts(ctx context.Context, orgID uuid.UUID, v pq.Int32Array) ([]model.Kitchen, error)
+refused.go:278: Kitchens.FindByOrgAndCUUID: not implemented: no hand-written method on *kitchensImpl, and the name does not derive: parameter v has type string; column kitchen.c_uuid is uuid.UUID
+  fix: write it by hand on *kitchensImpl, in a non-generated file of package refused:
+         func (r *kitchensImpl) FindByOrgAndCUUID(ctx context.Context, orgID uuid.UUID, v string) ([]model.Kitchen, error)
+       or declare v as uuid.UUID (or a named type over it)
+refused.go:279: Kitchens.FindByOrgAndCInt: not implemented: no hand-written method on *kitchensImpl, and the name does not derive: parameter v has type int; column kitchen.c_int is int32
+  fix: write it by hand on *kitchensImpl, in a non-generated file of package refused:
+         func (r *kitchensImpl) FindByOrgAndCInt(ctx context.Context, orgID uuid.UUID, v int) ([]model.Kitchen, error)
+       or declare v as int32 (or a named type over it)
+refused.go:280: Kitchens.FindByOrgAndCSmall: not implemented: no hand-written method on *kitchensImpl, and the name does not derive: parameter v has type int32; column kitchen.c_small is int16
+  fix: write it by hand on *kitchensImpl, in a non-generated file of package refused:
+         func (r *kitchensImpl) FindByOrgAndCSmall(ctx context.Context, orgID uuid.UUID, v int32) ([]model.Kitchen, error)
+       or declare v as int16 (or a named type over it)
+refused.go:281: Kitchens.FindByOrgAndCText: not implemented: no hand-written method on *kitchensImpl, and the name does not derive: parameter v is *string; a derived predicate compares with =, which never matches NULL
+  fix: write it by hand on *kitchensImpl, in a non-generated file of package refused:
+         func (r *kitchensImpl) FindByOrgAndCText(ctx context.Context, orgID uuid.UUID, v *string) ([]model.Kitchen, error)
+       or take a value type (for NULL, the hand-written body uses r.where.CTextIsNull())
+refused.go:282: Kitchens.FindByOrgAndCTstz: not implemented: no hand-written method on *kitchensImpl, and the name does not derive: parameter v has type string; column kitchen.c_tstz is time.Time
+  fix: write it by hand on *kitchensImpl, in a non-generated file of package refused:
+         func (r *kitchensImpl) FindByOrgAndCTstz(ctx context.Context, orgID uuid.UUID, v string) ([]model.Kitchen, error)
+       or declare v as time.Time (or a named type over it)
+refused.go:283: Kitchens.FindByOrgAndCMood: not implemented: no hand-written method on *kitchensImpl, and the name does not derive: parameter v has type string; column kitchen.c_mood is model.Mood
+  fix: write it by hand on *kitchensImpl, in a non-generated file of package refused:
+         func (r *kitchensImpl) FindByOrgAndCMood(ctx context.Context, orgID uuid.UUID, v string) ([]model.Kitchen, error)
+       or declare v as model.Mood (or a named type over it)
+refused.go:284: Kitchens.FindByOrgAndCReal: not implemented: no hand-written method on *kitchensImpl, and the name does not derive: parameter v has type float64; column kitchen.c_real is float32
+  fix: write it by hand on *kitchensImpl, in a non-generated file of package refused:
+         func (r *kitchensImpl) FindByOrgAndCReal(ctx context.Context, orgID uuid.UUID, v float64) ([]model.Kitchen, error)
+       or declare v as float32 (or a named type over it)
+refused.go:326: ScopeNames names org_id "Org", which is the Go field of column org of table collide: a derived name could not tell them apart
+  fix: rename the column, or choose another name in Postgres.ScopeNames (nanostack gen repo -scope-names)
+refused.go:327: ScopeNames names workspace_id "Workspace", which is the Go field of column workspace of table collide_ws: a derived name could not tell them apart
+  fix: rename the column, or choose another name in Postgres.ScopeNames (nanostack gen repo -scope-names)
+refused.go:328: ScopeNames names product_id "Product", which is the Go field of column product of table collide_product: a derived name could not tell them apart
+  fix: rename the column, or choose another name in Postgres.ScopeNames (nanostack gen repo -scope-names)

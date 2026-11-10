@@ -107,7 +107,6 @@ import (
 	"flag"
 	"fmt"
 	"go/ast"
-	"go/token"
 	"io"
 	"os"
 	"path/filepath"
@@ -152,9 +151,21 @@ type Options struct {
 	// stamps a new row with it, as its import path, a dot and its name:
 	// ContextScope.Stamp in Postgres.ContextScopes of nanogen/project.go.
 	ContextStamps map[string]string
+	// ContextPresents maps a context tenant column to the function that
+	// reports whether a context carries a value for it: ContextScope.Present.
+	// A derived delete, update, upsert or create checks it first.
+	ContextPresents map[string]string
+	// ContextFailOpen holds the context tenant columns whose derived deletes
+	// and updates may keep a fail-open function without Present:
+	// ContextScope.AllowFailOpenWrites, a reviewed choice.
+	ContextFailOpen map[string]bool
 	// DatabaseColumns are the columns the database writes, which derived
 	// writes never set: Postgres.DatabaseColumns of nanogen/project.go.
 	DatabaseColumns []string
+	// ScopeImplies maps a tenant column to the one it determines:
+	// Postgres.ScopeImplies of nanogen/project.go. A scope column that a
+	// derived name gives stands for the columns it implies.
+	ScopeImplies map[string]string
 	// Spec is the OpenAPI document, API.Spec of nanogen/project.go. A
 	// search that declares nanorepo.API is checked against it both ways,
 	// and gets its API mapper. Empty: such a search is an error (A7).
@@ -177,6 +188,8 @@ type Options struct {
 // of the hand-written scope check, which do not fail the run, and how each
 // method of each bound interface resolved.
 type Result struct {
+	resolutions []*resolution // the bound repositories, for VerifyScopes
+	dir         string        // the package directory
 	// Files are repo_base.gen.go, then one <file>_repo.gen.go per declaring
 	// file with a nanorepo.Implement, by name.
 	Files    []gen.File
@@ -206,7 +219,9 @@ func Generate(opts Options) (*Result, error) {
 		return nil, err
 	}
 	l.scopes, l.contextScopes, l.sortByDirection = opts.Scopes, opts.ContextScopes, opts.SortByDirection
-	l.scopeNames, l.contextStamps, l.databaseColumns = opts.ScopeNames, opts.ContextStamps, opts.DatabaseColumns
+	l.scopeNames, l.scopeImplies = opts.ScopeNames, opts.ScopeImplies
+	l.contextStamps, l.databaseColumns = opts.ContextStamps, opts.DatabaseColumns
+	l.contextPresents, l.contextFailOpen = opts.ContextPresents, opts.ContextFailOpen
 	if opts.Spec != "" {
 		if l.specPath, err = filepath.Abs(opts.Spec); err != nil {
 			return nil, gen.EnvErrorf("pass -spec with a path that exists", "resolve %s: %v", opts.Spec, err)
@@ -217,7 +232,7 @@ func Generate(opts Options) (*Result, error) {
 		return nil, err
 	}
 	res := l.resolve(decls, opts.Scopes)
-	result := &Result{Searches: l.explainSearches(decls)}
+	result := &Result{Searches: l.explainSearches(decls), resolutions: res, dir: l.dir}
 	problems := l.unusedSearches(decls, res)
 	var missing []string
 	failing := false
@@ -251,6 +266,9 @@ func Generate(opts Options) (*Result, error) {
 		return result, errors.Join(sortProblems(problems)...)
 	}
 	result.Files = out.files
+	if err = l.verifyOutput(res, opts, out.files); err != nil {
+		return result, err
+	}
 	result.Exemptions = exemptions(decls)
 	result.Warnings = l.scopeWarnings(pkg, decls, opts.Scopes)
 	return result, nil
@@ -388,51 +406,7 @@ func orphans(opts Options, files []gen.File) ([]string, error) {
 	return deleted, errors.Join(problems...)
 }
 
-// parseScopePairs reads the -context-scopes and -context-stamps pairs,
-// column=importpath.Func, and the -scope-names pairs, column=Name, into opts.
-func parseScopePairs(opts *Options, contextScopes, contextStamps, scopeNames string) error {
-	var err error
-	if opts.ContextScopes, err = funcPairs("-context-scopes", contextScopes, opts.ContextScopes); err != nil {
-		return err
-	}
-	if opts.ContextStamps, err = funcPairs("-context-stamps", contextStamps, opts.ContextStamps); err != nil {
-		return err
-	}
-	for pair := range strings.SplitSeq(scopeNames, ",") {
-		if pair = strings.TrimSpace(pair); pair == "" {
-			continue
-		}
-		col, name, ok := strings.Cut(pair, "=")
-		if !ok || col == "" || !token.IsExported(name) || !token.IsIdentifier(name) {
-			return fmt.Errorf("-scope-names entry %q is not column=ExportedName", pair)
-		}
-		if opts.ScopeNames == nil {
-			opts.ScopeNames = map[string]string{}
-		}
-		opts.ScopeNames[col] = name
-	}
-	return nil
-}
-
-// funcPairs adds the column=importpath.Func pairs of a flag to into.
-func funcPairs(flag, pairs string, into map[string]string) (map[string]string, error) {
-	for pair := range strings.SplitSeq(pairs, ",") {
-		if pair = strings.TrimSpace(pair); pair == "" {
-			continue
-		}
-		col, fn, ok := strings.Cut(pair, "=")
-		if !ok || col == "" || fn == "" {
-			return into, fmt.Errorf("%s entry %q is not column=importpath.Func", flag, pair)
-		}
-		if into == nil {
-			into = map[string]string{}
-		}
-		into[col] = fn
-	}
-	return into, nil
-}
-
-// Main runs `nanostack gen repo [-dir d] [-scopes a,b] [-context-scopes c=pkg.F] [-scope-names c=Name] [-context-stamps c=pkg.F] [-database-columns a,b] [-check] [-explain
+// Main runs `nanostack gen repo [-dir d] [-scopes a,b] [-context-scopes c=pkg.F] [-scope-names c=Name] [-scope-implies c=c] [-context-stamps c=pkg.F] [-database-columns a,b] [-check] [-explain
 // [Iface|Search...]]` and returns the process exit code: 0 on success, also with
 // warnings, 1 on stale output or a declaration error, 2 on bad flags, 3 when
 // the environment fails; -h prints the flags and returns 0. Warnings print to
@@ -443,8 +417,8 @@ func Main(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("nanostack gen repo", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	var opts Options
-	var scopes, contextScopes, scopeNames, contextStamps, databaseColumns string
-	var explain bool
+	var scopes, contextScopes, scopeNames, scopeImplies, contextStamps, contextPresents, contextFailOpen, databaseColumns string
+	var explain, verify, inventory bool
 	fs.StringVar(&opts.Dir, "dir", ".", "package directory holding the nanorepo declarations")
 	fs.StringVar(&scopes, "scopes", "",
 		"comma-separated tenant columns, as Postgres.Scopes in nanogen/project.go (nanostack gen passes them)")
@@ -454,13 +428,25 @@ func Main(args []string, stdout, stderr io.Writer) int {
 		"comma-separated column=Name pairs, as Postgres.ScopeNames in nanogen/project.go")
 	fs.StringVar(&contextStamps, "context-stamps", "",
 		"comma-separated column=importpath.Func pairs, as ContextScope.Stamp in nanogen/project.go")
+	fs.StringVar(&contextPresents, "context-present", "",
+		"comma-separated column=importpath.Func pairs, as ContextScope.Present in nanogen/project.go")
+	fs.StringVar(&contextFailOpen, "context-fail-open", "",
+		"comma-separated context columns that allow fail-open derived deletes and updates, as "+
+			"ContextScope.AllowFailOpenWrites in nanogen/project.go")
 	fs.StringVar(&databaseColumns, "database-columns", "",
 		"comma-separated columns the database writes, as Postgres.DatabaseColumns in nanogen/project.go")
+	fs.StringVar(&scopeImplies, "scope-implies", "",
+		"comma-separated column=column pairs, as Postgres.ScopeImplies in nanogen/project.go")
 	fs.StringVar(&opts.Spec, "spec", "",
 		"the OpenAPI document, as API.Spec in nanogen/project.go (nanostack gen passes it)")
 	fs.StringVar(&opts.SortByDirection, "sort-by-direction", "",
 		"ASC or DESC: the direction of a sort_by sent alone, as API.SortByDirection (nanostack gen passes it)")
 	fs.BoolVar(&opts.Check, "check", false, "write nothing; exit 1 when an output is stale or orphaned")
+	fs.BoolVar(&verify, "verify-scopes", false,
+		"read the derived files on disk and check that every derived method covers every scope column of its "+
+			"table (exit 1 on a violation)")
+	fs.BoolVar(&inventory, "inventory", false,
+		"list every derived method that skips a scope (UNSCOPED) or reads a context scope from a parameter (CROSS-...)")
 	fs.BoolVar(&explain, "explain", false,
 		"print how each method of each bound interface resolves and what each search reads; "+
 			"name interfaces or searches after the flags to filter")
@@ -483,12 +469,23 @@ func Main(args []string, stdout, stderr io.Writer) int {
 			opts.DatabaseColumns = append(opts.DatabaseColumns, s)
 		}
 	}
-	if err := parseScopePairs(&opts, contextScopes, contextStamps, scopeNames); err != nil {
+	if err := parseScopePairs(
+		&opts,
+		contextScopes,
+		contextStamps,
+		contextPresents,
+		scopeNames,
+		scopeImplies,
+	); err != nil {
 		_, _ = fmt.Fprintf(stderr, "nanostack gen repo: %v\n", err)
 		return 2
 	}
-	if explain {
-		return mainExplain(opts, fs.Args(), stdout, stderr)
+	addFailOpen(&opts, contextFailOpen)
+	if !checkImpliesFlag(opts, stderr) {
+		return 2
+	}
+	if code, handled := mainMode(opts, mode{explain, verify, inventory}, fs.Args(), stdout, stderr); handled {
+		return code
 	}
 	written, deleted, warnings, err := run(opts)
 	for _, w := range warnings {
@@ -504,60 +501,6 @@ func Main(args []string, stdout, stderr io.Writer) int {
 		_, _ = fmt.Fprintf(stdout, "nanostack gen repo: deleted %s\n", path)
 	}
 	return 0
-}
-
-// mainExplain prints the resolution of each bound interface and what each
-// search reads, or only those named, and writes nothing.
-func mainExplain(opts Options, names []string, stdout, stderr io.Writer) int {
-	res, err := Generate(opts)
-	if res != nil {
-		var shown []Explanation
-		for _, e := range res.Explain {
-			if len(names) == 0 || slices.Contains(names, e.Iface) {
-				shown = append(shown, e)
-			}
-		}
-		var searches []SearchExplanation
-		for _, e := range res.Searches {
-			if len(names) == 0 || slices.Contains(names, e.Name) {
-				searches = append(searches, e)
-			}
-		}
-		if len(shown) == 0 && len(searches) == 0 && err == nil {
-			_, _ = fmt.Fprintf(stderr, "nanostack gen repo: no nanorepo.Implement binds %s, and no nanorepo.Search "+
-				"has that name\n", strings.Join(names, ", "))
-			return 1
-		}
-		WriteExplain(stdout, shown)
-		WriteSearchExplain(stdout, searches)
-	}
-	if err != nil {
-		return gen.Report(stderr, "repo", err)
-	}
-	return 0
-}
-
-// WriteExplain writes the explanations as nanostack gen repo -explain prints
-// them: per interface a header line, then one line per method with how it
-// resolves, and a note line when there is one.
-func WriteExplain(w io.Writer, explain []Explanation) {
-	for _, e := range explain {
-		scope := ""
-		if e.Scope != "" {
-			scope = ", scope " + e.Scope
-		}
-		_, _ = fmt.Fprintf(w, "%s on *%s (table %s%s)\n", e.Iface, e.Impl, e.Table, scope)
-		width := 0
-		for _, m := range e.Methods {
-			width = max(width, len(m.Name))
-		}
-		for _, m := range e.Methods {
-			_, _ = fmt.Fprintf(w, "  %-*s  %s\n", width, m.Name, m.How)
-			if m.Note != "" {
-				_, _ = fmt.Fprintf(w, "  %-*s  note: %s\n", width, "", m.Note)
-			}
-		}
-	}
 }
 
 // Declares reports whether f, parsed alone, declares a repository: it

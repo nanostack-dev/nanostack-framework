@@ -53,6 +53,9 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"io"
 	"io/fs"
 	"log/slog"
@@ -236,6 +239,14 @@ func generate(l layout, opts Options, inputs []line, reason string) ([]gen.File,
 			"change the schema as the message says, then run nanostack gen again",
 			"render schema %s: %v", l.p.Schema, err)
 	}
+	for _, f := range rendered {
+		if dup := duplicateFields(f.Data); dup != "" {
+			return nil, gen.Errorf(l.rel(l.migrations), 0,
+				"rename one of the two columns in a migration: two columns whose names differ only in case, or in "+
+					"punctuation, give one Go field",
+				"the generated %s declares the field %s twice, and would not compile", f.Path, dup)
+		}
+	}
 	files := make([]gen.File, 0, len(rendered)+1)
 	outputs := make([]line, 0, len(rendered))
 	for _, f := range rendered {
@@ -245,6 +256,34 @@ func generate(l layout, opts Options, inputs []line, reason string) ([]gen.File,
 	slices.SortFunc(outputs, func(a, b line) int { return strings.Compare(a.path, b.path) })
 	sum := sumFile{inputs: inputs, outputs: outputs}
 	return append(files, gen.File{Path: filepath.Join(l.out, SumFile), Data: sum.bytes()}), nil
+}
+
+// duplicateFields returns the first struct field that a generated model
+// declares twice, or "": go-jet names the field of a column from its name,
+// so the columns id and "Id" both give ID.
+func duplicateFields(src []byte) string {
+	f, err := parser.ParseFile(token.NewFileSet(), "", src, parser.SkipObjectResolution)
+	if err != nil {
+		return ""
+	}
+	var dup string
+	ast.Inspect(f, func(n ast.Node) bool {
+		st, ok := n.(*ast.StructType)
+		if !ok || dup != "" {
+			return dup == ""
+		}
+		seen := map[string]bool{}
+		for _, field := range st.Fields.List {
+			for _, name := range field.Names {
+				if seen[name.Name] && dup == "" {
+					dup = name.Name
+				}
+				seen[name.Name] = true
+			}
+		}
+		return true
+	})
+	return dup
 }
 
 // unreachable reports a cache miss with no database to generate from.

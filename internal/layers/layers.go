@@ -69,7 +69,10 @@ var AllowedLegacy = []string{ //nolint:gochecknoglobals // read-only table.
 // import what generated code imports in a service, such as
 // pkg/db/transactor from the base nanostack gen repo writes, so they are not
 // layered. Each is internal to its generator: nothing else imports it.
-var Fixtures = []string{"gen/repo/internal/repotest"} //nolint:gochecknoglobals // read-only table.
+var Fixtures = []string{
+	"gen/repo/internal/repotest",
+	"gen/repo/internal/torture",
+} //nolint:gochecknoglobals // read-only table.
 
 // Layer returns the layer rank of a framework package path, relative to
 // Module: 1 for core, 2 for http, pg, redis and otel, 3 for gen. It

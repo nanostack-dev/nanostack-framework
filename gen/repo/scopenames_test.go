@@ -13,15 +13,24 @@ import (
 // fixtureOptions are the options of a package that declares tables of the
 // fixture: its tenant columns, their context functions and their short names.
 func fixtureOptions(dir string) Options {
-	return scopeNameOptions(dir, repotest.ScopeNames)
+	o := scopeNameOptions(dir, repotest.ScopeNames)
+	o.ContextPresents, o.ContextFailOpen = nil, repotest.ContextFailOpen // the fail-open mode
+	return o
 }
 
 // scopeNameOptions are the options of the packages under testdata/scopenames:
 // the fixture's tenant columns, with the short names an application would
 // declare in Postgres.ScopeNames.
 func scopeNameOptions(dir string, names map[string]string) Options {
-	return Options{Dir: dir, Scopes: repotest.Scopes, ContextScopes: repotest.ContextScopes, ScopeNames: names,
-		ContextStamps: repotest.ContextStamps, DatabaseColumns: repotest.DatabaseColumns}
+	return Options{
+		Dir:             dir,
+		Scopes:          repotest.Scopes,
+		ContextScopes:   repotest.ContextScopes,
+		ScopeNames:      names,
+		ContextStamps:   repotest.ContextStamps,
+		ContextPresents: repotest.ContextPresents,
+		DatabaseColumns: repotest.DatabaseColumns,
+	}
 }
 
 //nolint:gochecknoglobals // fixture
@@ -117,4 +126,47 @@ func TestContextScopeWithoutShortNames(t *testing.T) {
 	gentest.Problems(t, err)
 	golden(t, filepath.Join(dir, "want.txt"), report(nil, err))
 	explainGolden(t, filepath.Join(dir, "want-explain.txt"), res)
+}
+
+// Internal exempts only the scopes the name leaves out. On a table whose only
+// scope is the context scope, a name that gives Workspace and ends in Internal
+// skips nothing: without Present it is refused, with it the read fails closed.
+// FindByIDInternal, which gives no scope, is unscoped and says so.
+func TestInternalReadOfContextOnlyTable(t *testing.T) {
+	t.Parallel()
+	dir := "testdata/scopenames/internalctx"
+	open := scopeNameOptions(dir, shortNames)
+	open.ContextPresents = nil
+	_, err := Generate(open)
+	if err == nil {
+		t.Fatal("a fully named Internal read of a context-only table derives without Present")
+	}
+	gentest.Problems(t, err)
+	golden(t, filepath.Join(dir, "want.txt"), report(nil, err))
+	res, err := Generate(scopeNameOptions(dir, shortNames))
+	if err != nil {
+		gentest.Problems(t, err)
+		t.Fatal(err)
+	}
+	for _, f := range res.Files {
+		if strings.HasSuffix(f.Path, derivedSuffix) {
+			golden(t, filepath.Join(dir, "want-derived.txt"), f.Data)
+			src := string(f.Data)
+			for _, want := range []string{
+				"func (r *boardsImpl) FindByWorkspaceAndIDInternal(ctx context.Context, id string) " +
+					"(functional.Option[Board], error) {\n\tif !workspacescope.Present(ctx) {",
+				"func (r *boardsImpl) CountByWorkspaceInternal(ctx context.Context) (int64, error) {\n\tif !workspacescope.Present(ctx) {",
+			} {
+				if !strings.Contains(src, want) {
+					t.Errorf("the derived file has no %q", want)
+				}
+			}
+			if strings.Contains(
+				src,
+				"FindByIDInternal(ctx context.Context, id string) (functional.Option[Board], error) {\n\tif !",
+			) {
+				t.Error("FindByIDInternal skips the scope and checks Present")
+			}
+		}
+	}
 }

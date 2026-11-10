@@ -2,7 +2,26 @@
 
 One section per module and version, newest first. Each section uses Added, Changed, Deprecated, Removed and Fixed. [RELEASING.md](RELEASING.md) gives the release steps and the upgrade notes.
 
-## gen (unreleased)
+## gen and root (unreleased)
+
+Root: `Postgres.ScopeImplies`, `ContextScope.Present`, `ContextScope.AllowFailOpenWrites` in `core/nano/project`. `db`: `ForeignKey.NotValid`, `MatchFull`, `nanorepo.ErrNoContextScope`. `gen`: requires them.
+
+### Added
+- `Postgres.ScopeImplies` in `core/nano/project`, and `-scope-implies column=column,...` on `nanostack gen repo`: a scope column that a derived read or delete gives stands for the columns it determines, transitively, **on a table that proves it**: a foreign key that lists both columns and references a table with a unique key on the first one's target alone. A write never uses it. The pipeline and the flag check, with one function, that both sides are in `Scopes`, neither is a context column, and there is no cycle.
+- `ContextScope.Present` in `core/nano/project`, `-context-present column=importpath.Func`, and `nanorepo.ErrNoContextScope` in `db/nanorepo`: with `Present` set, every derived delete, update, upsert and create on a table with that context column fails closed on a context without it, before any SQL, and so does a derived read of a table whose only scopes are context scopes. `ContextScope.AllowFailOpenWrites` (`-context-fail-open`) records a reviewed fail-open delete or update (comment `FAIL-OPEN (reviewed)`). **Breaking, in generation:** without either, a derived delete or update on such a table is refused, and so is a derived read of a context-only table (unless `Internal`). Echopoint: `Present` (wrap `workspacescope.From`), or `AllowFailOpenWrites` to keep today's behaviour for org-level API keys that act without a workspace header.
+- `nanostack gen db` exports `NotValid` and `MatchFull` on `ForeignKeys()`; `nanostack gen repo` applies a `ScopeImplies` entry only through a validated key whose referencing columns are NOT NULL (or MATCH FULL).
+- Every `nanostack gen` and `-check` run now verifies the scope coverage of the derived code (a predicate counts only as a conjunct of the condition; the `Present` call is matched by import path). `-inventory` also lists `ORG-WIDE (ctx scope fail-open read)`, `FAIL-OPEN (reviewed)` and `HAND-WRITTEN (derivable)` methods. `Internal` on a read of a context-only table exempts only the scopes the name skips: a fully named one still needs `Present`.
+- `nanostack gen repo -verify-scopes` (the mechanical scope-coverage check of the derived files on disk) and `-inventory` (every `UNSCOPED` and `CROSS-` method).
+- A derived read that names a context scope by its Go field says `CROSS-WORKSPACE` (or the column's name) in its generated comment: the value is a parameter, not `ctx`. A derived delete or write that names it is refused (breaking, in generation).
+- `nanostack gen db` refuses two columns that give one Go model field (`id` and `"Id"`); it wrote a model that did not compile.
+
+### Changed
+- **Breaking, in generation:** a derived name gives **every** column of `Postgres.Scopes` of its table (hard or context, nullable or not), scope words first. Before, one scope column first was enough, so `FindByOrgAndName` read every product of the org. A nullable `Scopes` column is a scope too. A read may end in `Internal`; a delete has no escape. Upgrade: run `go tool nanostack gen`; each refused method names the rename and the parameters to add; where a column determines another in the schema, add `Postgres.ScopeImplies` and give the table the composite foreign key that proves it (anchor: `{"product_id": "platform_tenant_id"}`; `organization_id -> product_id` only where a composite key `(organization_id, product_id)` exists); otherwise rename the method to name every scope column or hand-write it. A method that derived across tenants is now refused: check its callers.
+- **Breaking, in generation:** no derived method on a view.
+- A parameter whose named type says another column of the table is refused. The key refusal says which column completes a key, and lists the unique indexes that are not keys. A suggested hand-written body keeps the context scope and every scope column.
+
+### Fixed
+- A column `order_by` could not be named in a derived name. A short scope name in a hint was used as a predicate (`r.where.Org`). A composite key hint ordered by one column.
 
 ### Fixed
 - `nanostack gen repo` no longer imports `database/sql` into a generated file whose only derived write is a create, such as `CreateInOrgAndWorkspace`. Before the fix, the file did not compile ("imported and not used").

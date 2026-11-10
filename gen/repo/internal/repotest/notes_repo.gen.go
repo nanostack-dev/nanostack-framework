@@ -41,6 +41,8 @@ func (r *noteRepositoryImpl) CreateInTenantAndWorkspace(ctx context.Context, ten
 // UpdateByTenantAndWorkspaceAndID is derived from its name:
 //
 //	UPDATE notes SET slug, body, pinned WHERE tenant_id = $1 AND workspacescope.Filter(ctx, workspace_id) AND id = <value>.ID RETURNING *
+//
+// FAIL-OPEN (reviewed): a context without workspace_id reaches every value of it (ContextScope.AllowFailOpenWrites).
 func (r *noteRepositoryImpl) UpdateByTenantAndWorkspaceAndID(ctx context.Context, tenantID uuid.UUID, note Note) (Note, error) {
 	row := noteToRow(note)
 	stmt := r.t.UPDATE(r.t.Slug, r.t.Body, r.t.Pinned).
@@ -56,6 +58,8 @@ func (r *noteRepositoryImpl) UpdateByTenantAndWorkspaceAndID(ctx context.Context
 // UpdateByTenantAndWorkspaceAndSlug is derived from its name:
 //
 //	UPDATE notes SET body, pinned WHERE tenant_id = $1 AND workspacescope.Filter(ctx, workspace_id) AND slug = <value>.Slug RETURNING *
+//
+// FAIL-OPEN (reviewed): a context without workspace_id reaches every value of it (ContextScope.AllowFailOpenWrites).
 func (r *noteRepositoryImpl) UpdateByTenantAndWorkspaceAndSlug(ctx context.Context, tenantID uuid.UUID, note Note) (functional.Option[Note], error) {
 	row := noteToRow(note)
 	stmt := r.t.UPDATE(r.t.Body, r.t.Pinned).
@@ -125,6 +129,8 @@ func (r *noteWriterImpl) CreateInTenantAndWorkspace(ctx context.Context, tenantI
 // UpdateByTenantAndWorkspaceAndID is derived from its name:
 //
 //	UPDATE notes SET slug, body, pinned WHERE tenant_id = $1 AND workspacescope.Filter(ctx, workspace_id) AND id = <value>.ID
+//
+// FAIL-OPEN (reviewed): a context without workspace_id reaches every value of it (ContextScope.AllowFailOpenWrites).
 func (r *noteWriterImpl) UpdateByTenantAndWorkspaceAndID(ctx context.Context, tenantID uuid.UUID, note Note) error {
 	row := noteToRow(note)
 	stmt := r.t.UPDATE(r.t.Slug, r.t.Body, r.t.Pinned).

@@ -35,4 +35,9 @@ type ForeignKey struct {
 	ReferencedTable string
 	// ReferencedColumns are the referenced columns, in the order of Columns.
 	ReferencedColumns []string
+	// NotValid is set for a PostgreSQL constraint that is NOT VALID
+	// (convalidated is false).
+	NotValid bool
+	// MatchFull is set for a PostgreSQL constraint that is MATCH FULL.
+	MatchFull bool
 }

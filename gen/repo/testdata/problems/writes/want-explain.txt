@@ -1,12 +1,12 @@
 Items on *itemsImpl (table items, scope tenant_id)
   Create                         ERROR: not implemented
-                                 note: table items is scoped by tenant_id, and a derived Create takes TenantID from the name: CreateInTenantID
+                                 note: table items is scoped by tenant_id (Postgres.Scopes), and the name does not name tenant_id: a derived Create takes its scope from the name, never from the value
   CreateInTenantIDAndSku         ERROR: not implemented
                                  note: CreateIn names scope columns only, and sku is not one
   CreateInTenantID               ERROR: not implemented
                                  note: its last parameter item is *Item; a derived create takes the domain type Item, which the mapper returns
   UpdateBySku                    ERROR: not implemented
-                                 note: table items is scoped by tenant_id, and the name does not filter on it first
+                                 note: table items is scoped by tenant_id (Postgres.Scopes), and the name does not name tenant_id
   UpdateByTenantIDAndName        ERROR: not implemented
                                  note: a derived update changes one row, but (tenant_id, name) covers no unique key; the keys of items are items_pkey (id), items_tenant_sku_key (tenant_id, sku)
   UpdateByTenantIDAndIDInternal  ERROR: not implemented
@@ -14,7 +14,7 @@ Items on *itemsImpl (table items, scope tenant_id)
   UpdateByTenantIDAndID          ERROR: not implemented
                                  note: returns bool, but the mapper returns Item
   UpsertBySku                    ERROR: not implemented
-                                 note: table items is scoped by tenant_id, and the name does not filter on it first: a conflict key without the scope could reach the row of another tenant
+                                 note: table items is scoped by tenant_id (Postgres.Scopes), and the name does not name tenant_id: a conflict key without the scope could reach the row of another tenant
   UpsertByTenantID               ERROR: not implemented
                                  note: a derived upsert conflicts on one unique key that holds a hard scope and every key column of the name, and no key fits (tenant_id); the keys of items are items_pkey (id), items_tenant_sku_key (tenant_id, sku)
   UpsertByTenantIDAndSku         derived: INSERT INTO items (id, tenant_id, sku, name, status, stock, sold, rank, price, weight, active, released_on, local_at, opens_at, deleted_at, external_id, tags) VALUES (...) ON CONFLICT (tenant_id, sku) DO UPDATE SET name = EXCLUDED.name, status = EXCLUDED.status, stock = EXCLUDED.stock, sold = EXCLUDED.sold, rank = EXCLUDED.rank, price = EXCLUDED.price, weight = EXCLUDED.weight, active = EXCLUDED.active, released_on = EXCLUDED.released_on, local_at = EXCLUDED.local_at, opens_at = EXCLUDED.opens_at, deleted_at = EXCLUDED.deleted_at, external_id = EXCLUDED.external_id, tags = EXCLUDED.tags RETURNING *

@@ -40,6 +40,8 @@ func (r *shelfRepositoryImpl) CreateInTenantAndStoreIDAndWorkspace(ctx context.C
 // UpdateByTenantAndStoreIDAndWorkspaceAndID is derived from its name:
 //
 //	UPDATE shelves SET name, capacity WHERE tenant_id = $1 AND store_id = $2 AND workspacescope.Filter(ctx, workspace_id) AND id = <value>.ID RETURNING *
+//
+// FAIL-OPEN (reviewed): a context without workspace_id reaches every value of it (ContextScope.AllowFailOpenWrites).
 func (r *shelfRepositoryImpl) UpdateByTenantAndStoreIDAndWorkspaceAndID(ctx context.Context, tenantID uuid.UUID, storeID string, shelf model.Shelves) (model.Shelves, error) {
 	row := shelf
 	stmt := r.t.UPDATE(r.t.Name, r.t.Capacity).

@@ -1,6 +1,2 @@
-clash.go:20: Projects.Count: not implemented: no hand-written method on *projectsImpl, and the name does not derive: table projects is scoped by tenant_id, and the name does not filter on it first
-  fix: write it by hand on *projectsImpl, in a non-generated file of package clash:
-         func (r *projectsImpl) Count(ctx context.Context) (int64, error)
-       or take tenantID first and rename it CountByTenantAndWorkspaceID; WorkspaceID takes a parameter, and a short name from Postgres.ScopeNames binds none, or end the name in Internal for a trusted system path
 clash.go:24: ScopeNames names workspace_id "ID", which is the Go field of column id of table projects: a derived name could not tell them apart
   fix: rename the column, or choose another name in Postgres.ScopeNames (nanostack gen repo -scope-names)

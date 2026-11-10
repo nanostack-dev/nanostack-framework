@@ -17,6 +17,11 @@ type ctxScope struct {
 	col   string // SQL column
 	fn    string // import path, a dot and the function name
 	short string // the short name, "" when ScopeNames gives none
+	// present is the function that reports whether ctx carries the column
+	// (ContextScope.Present), "" when none is registered.
+	present string
+	// failOpenOK is ContextScope.AllowFailOpenWrites: a reviewed choice.
+	failOpenOK bool
 }
 
 // term is one property of a derived name. A term of a context scope named by
@@ -35,7 +40,7 @@ type word struct{ text, field string }
 // setupScopes reads the scope columns of the table of r: every scope column
 // (nullable or not), the context ones, and the short names.
 func (r *resolver) setupScopes(scopes []string) {
-	r.short, r.shortOf = map[string]string{}, map[string]string{}
+	r.short, r.shortOf, r.implied = map[string]string{}, map[string]string{}, map[string][]string{}
 	var cols []column
 	for _, c := range r.t.columns {
 		if slices.Contains(scopes, c.sqlName) {
@@ -60,9 +65,13 @@ func (r *resolver) setupScopes(scopes []string) {
 		}
 		r.short[short], r.shortOf[c.field] = c.field, short
 	}
+	for _, f := range r.allScope {
+		r.implied[f] = r.impliedOf(f)
+	}
 	for _, c := range cols {
 		if fn, ok := r.l.contextScopes[c.sqlName]; ok {
-			r.ctx = append(r.ctx, ctxScope{field: c.field, col: c.sqlName, fn: fn, short: r.shortOf[c.field]})
+			r.ctx = append(r.ctx, ctxScope{field: c.field, col: c.sqlName, fn: fn, short: r.shortOf[c.field],
+				present: r.l.contextPresents[c.sqlName], failOpenOK: r.l.contextFailOpen[c.sqlName]})
 		}
 	}
 }
@@ -119,24 +128,176 @@ func (r *resolver) ctxOf(field string) *ctxScope {
 	return nil
 }
 
-// isHardScope reports whether t satisfies the rule that a name starts with a
-// scope column. A context term does so only when its column is the table's
-// one scope: a context scope can return TRUE, so it never stands for a
-// tenant that the caller passes.
-func (r *resolver) isHardScope(t term) bool {
-	return slices.Contains(r.scope, t.field) && (t.ctx == nil || len(r.allScope) == 1)
-}
-
-// missingCtx returns the context scope columns of the table that the terms
-// do not name, by either form.
-func (r *resolver) missingCtx(terms []term) []ctxScope {
-	var out []ctxScope
-	for _, c := range r.ctx {
-		if !slices.ContainsFunc(terms, func(t term) bool { return t.field == c.field }) {
-			out = append(out, c)
+// covered returns the scope fields that the terms of a name stand for: each
+// scope column it names, in either form, and the columns that these imply.
+func (r *resolver) covered(terms []term, implied bool) map[string]bool {
+	out := map[string]bool{}
+	for _, t := range terms {
+		if !slices.Contains(r.allScope, t.field) {
+			continue
+		}
+		out[t.field] = true
+		if !implied {
+			continue
+		}
+		for _, f := range r.implied[t.field] {
+			out[f] = true
 		}
 	}
 	return out
+}
+
+// missingScopes returns the scope columns of the table that the terms do
+// not stand for, in the table's column order: every scope column must be
+// named, hard or context, nullable or not, unless a named column implies it
+// (Postgres.ScopeImplies).
+func (r *resolver) missingScopes(terms []term) []string { return r.missingOf(terms, true) }
+
+// missingFor is missingScopes for the method m: a write never relaxes the
+// rule with Postgres.ScopeImplies, so its name gives every scope column
+// itself and none comes from the value.
+func (r *resolver) missingFor(m *derivedMethod) []string {
+	return r.missingOf(m.terms, !m.op.isWrite())
+}
+
+func (r *resolver) missingOf(terms []term, implied bool) []string {
+	have := r.covered(terms, implied)
+	var out []string
+	for _, f := range r.allScope {
+		if !have[f] {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+// misordered reports whether a column that is no scope column comes before a
+// scope column: the scope words come first, so that the parameters of the
+// tenant lead.
+func (r *resolver) misordered(terms []term) bool {
+	other := false
+	for _, t := range terms {
+		if !slices.Contains(r.allScope, t.field) {
+			other = true
+		} else if other {
+			return true
+		}
+	}
+	return false
+}
+
+// impliedOf returns the scope fields that field implies, transitively: each
+// step is an entry of Postgres.ScopeImplies that this table proves with a
+// foreign key (see proves). An entry that the table does not prove implies
+// nothing here.
+func (r *resolver) impliedOf(field string) []string {
+	var out []string
+	seen := map[string]bool{field: true}
+	col := r.sqlName(field)
+	for {
+		next, ok := r.l.scopeImplies[col]
+		if !ok || seen[next] {
+			return out
+		}
+		if !r.t.proves(col, next) {
+			return out
+		}
+		seen[next] = true
+		col = next
+		for _, f := range r.allScope {
+			if r.sqlName(f) == next {
+				out = append(out, f)
+			}
+		}
+	}
+}
+
+// proves reports whether the table proves that column a determines column
+// b, and a foreign key of the table lists
+// both among its referencing columns, and the referenced table has a unique
+// key (not partial) on the column that a references, alone. A row with a
+// given a then has one b, because the referenced row has one.
+func (t *tableBase) proves(a, b string) bool {
+	if t.src == nil {
+		return false
+	}
+	for _, k := range t.foreignKeys {
+		ia, ib := slices.Index(k.columns, a), slices.Index(k.columns, b)
+		if ia < 0 || ib < 0 || len(k.refColumns) != len(k.columns) || !t.enforces(k) {
+			continue
+		}
+		for name, names := range t.src.tables {
+			if names.table != k.references || (k.refSchema != "" && names.schema != k.refSchema) {
+				continue
+			}
+			for _, key := range t.src.keys[name+"Table"] {
+				if len(key.sqlCols) == 1 && key.sqlCols[0] == k.refColumns[ia] && key.pred == "" {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// enforces reports whether the foreign key k checks every row of the table:
+// it is validated, and either MATCH FULL or every referencing column is NOT
+// NULL. PostgreSQL's default MATCH SIMPLE skips the check when any referencing
+// column is NULL, and a NOT VALID key leaves the rows that predate it unchecked.
+func (t *tableBase) enforces(k foreignKey) bool {
+	if k.notValid {
+		return false
+	}
+	if k.matchFull {
+		return true
+	}
+	for _, name := range k.columns {
+		col, ok := t.columnBySQL(name)
+		if !ok || col.nullable {
+			return false
+		}
+	}
+	return true
+}
+
+// columnBySQL returns the column of the table with the SQL name.
+func (t *tableBase) columnBySQL(name string) (column, bool) {
+	for _, c := range t.columns {
+		if c.sqlName == name {
+			return c, true
+		}
+	}
+	return column{}, false
+}
+
+// unprovenImplication explains an entry of Postgres.ScopeImplies that would
+// cover the missing columns for the named ones, and that this table does not
+// prove. It returns "" when no entry applies.
+func (r *resolver) unprovenImplication(terms []term, missing []string) string {
+	for _, t := range terms {
+		if !slices.Contains(r.allScope, t.field) {
+			continue
+		}
+		col := r.sqlName(t.field)
+		seen := map[string]bool{col: true}
+		for {
+			next, ok := r.l.scopeImplies[col]
+			if !ok || seen[next] {
+				break
+			}
+			seen[next] = true
+			if !r.t.proves(col, next) {
+				if slices.ContainsFunc(missing, func(f string) bool { return r.sqlName(f) == next }) {
+					return fmt.Sprintf("Postgres.ScopeImplies says %s determines %s, but table %s has no foreign key "+
+						"that lists both, is validated, has no nullable referencing column (or is MATCH FULL) and references a table with a unique key on the target of %s alone, "+
+						"so the implication does not apply here", col, next, r.t.sqlName, col)
+				}
+				break
+			}
+			col = next
+		}
+	}
+	return ""
 }
 
 // display is the name of a column in a suggested method name: its short
@@ -160,49 +321,32 @@ func (r *resolver) displayTerm(t term) string {
 	return r.display(t.field)
 }
 
-// scopeOrder puts the terms of a name in the order the scope rules ask for:
-// the hard scope first, then the context scopes, then the rest. A context
-// scope the name lacks joins by its short name when it has one, else by its
-// field, which takes a parameter.
-func (r *resolver) scopeOrder(terms []term) []string {
+// scopeOrder is the words of a suggested name: the scope columns the name
+// has, then each one it lacks, hard ones before context ones, then the other
+// columns. A context scope the name lacks joins by its short name when it has
+// one, else by its field, which takes a parameter.
+func (r *resolver) scopeOrder(terms []term, missing []string) []string {
 	var out []string
-	used := map[string]bool{}
-	add := func(field, word string) {
-		if !used[field] {
-			used[field] = true
-			out = append(out, word)
-		}
-	}
-	hard := ""
 	for _, t := range terms {
-		if slices.Contains(r.scope, t.field) && r.ctxOf(t.field) == nil {
-			hard = t.field
-			break
+		if slices.Contains(r.allScope, t.field) {
+			out = append(out, r.displayTerm(t))
 		}
 	}
-	if hard == "" {
-		for _, f := range r.scope {
-			if r.ctxOf(f) == nil {
-				hard = f
-				break
+	for _, ctx := range []bool{false, true} {
+		for _, f := range missing {
+			switch c := r.ctxOf(f); {
+			case (c != nil) != ctx:
+			case c != nil && c.short != "":
+				out = append(out, c.short)
+			default:
+				out = append(out, r.display(f))
 			}
 		}
 	}
-	if hard != "" {
-		add(hard, r.display(hard))
-	}
-	for _, c := range r.ctx {
-		switch at := slices.IndexFunc(terms, func(t term) bool { return t.field == c.field }); {
-		case at >= 0:
-			add(c.field, r.displayTerm(terms[at]))
-		case c.short != "":
-			add(c.field, c.short)
-		default:
-			add(c.field, c.field)
-		}
-	}
 	for _, t := range terms {
-		add(t.field, r.displayTerm(t))
+		if !slices.Contains(r.allScope, t.field) {
+			out = append(out, r.displayTerm(t))
+		}
 	}
 	return out
 }

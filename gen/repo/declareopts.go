@@ -119,7 +119,11 @@ func (c *collector) onUnique(opt *ast.CallExpr, b *binding, seen map[string]bool
 			t.sqlName)
 		return false
 	}
-	known := slices.Clone(t.notKeys)
+	var known []string
+	for _, nk := range t.notKeys {
+		name, _, _ := strings.Cut(nk, ": ")
+		known = append(known, name)
+	}
 	for _, k := range t.keys {
 		known = append(known, k.name)
 	}

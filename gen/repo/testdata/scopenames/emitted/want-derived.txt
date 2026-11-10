@@ -6,6 +6,7 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+	"github.com/nanostack-dev/nanostack-framework/db/nanorepo"
 	"github.com/nanostack-dev/nanostack-framework/gen/repo/internal/repotest/workspacescope"
 	"github.com/nanostack-dev/nanostack-framework/pkg/functional"
 )
@@ -41,7 +42,12 @@ func (r *projectsImpl) CountByTenantAndWorkspaceAndName(ctx context.Context, ten
 // DeleteByTenantAndWorkspaceAndID is derived from its name:
 //
 //	DELETE FROM projects WHERE tenant_id = $1 AND workspacescope.Filter(ctx, workspace_id) AND id = $2
+//
+// FAIL-CLOSED: a context without the scope fails with nanorepo.ErrNoContextScope, before any SQL.
 func (r *projectsImpl) DeleteByTenantAndWorkspaceAndID(ctx context.Context, tenantID uuid.UUID, id string) error {
+	if !workspacescope.Present(ctx) {
+		return nanorepo.ErrNoContextScope
+	}
 	_, err := r.deleteWhere(ctx, r.where.TenantID(tenantID).AND(workspacescope.Filter(ctx, r.t.WorkspaceID)).AND(r.where.ID(id)))
 	return err
 }
@@ -56,6 +62,8 @@ func (r *projectsImpl) FindByTenantIDAndWorkspaceAndName(ctx context.Context, te
 // FindByTenantAndWorkspaceIDAndName is derived from its name:
 //
 //	SELECT * FROM projects WHERE tenant_id = $1 AND workspace_id = $2 AND name = $3
+//
+// CROSS-WORKSPACE: workspace from a parameter, not from ctx: the registered function is not applied.
 func (r *projectsImpl) FindByTenantAndWorkspaceIDAndName(ctx context.Context, tenantID uuid.UUID, workspaceID string, name string) ([]Project, error) {
 	return r.findAll(ctx, r.where.TenantID(tenantID).AND(r.where.WorkspaceID(workspaceID)).AND(r.where.Name(name)))
 }
@@ -79,13 +87,20 @@ var _ Boards = (*boardsImpl)(nil)
 // FindByWorkspaceAndID is derived from its name:
 //
 //	SELECT * FROM boards WHERE workspacescope.Filter(ctx, workspace_id) AND id = $1 LIMIT 2 -- at most one row: boards_pkey (id); a second row is ErrMoreThanOneRow
+//
+// FAIL-CLOSED: a context without the scope fails with nanorepo.ErrNoContextScope, before any SQL.
 func (r *boardsImpl) FindByWorkspaceAndID(ctx context.Context, id string) (functional.Option[Board], error) {
+	if !workspacescope.Present(ctx) {
+		return functional.None[Board](), nanorepo.ErrNoContextScope
+	}
 	return r.findOne(ctx, workspacescope.Filter(ctx, r.t.WorkspaceID).AND(r.where.ID(id)))
 }
 
 // FindByWorkspaceIDAndID is derived from its name:
 //
 //	SELECT * FROM boards WHERE workspace_id = $1 AND id = $2 LIMIT 2 -- at most one row: boards_pkey (id); a second row is ErrMoreThanOneRow
+//
+// CROSS-WORKSPACE: workspace from a parameter, not from ctx: the registered function is not applied.
 func (r *boardsImpl) FindByWorkspaceIDAndID(ctx context.Context, workspaceID string, id string) (functional.Option[Board], error) {
 	return r.findOne(ctx, r.where.WorkspaceID(workspaceID).AND(r.where.ID(id)))
 }
@@ -93,6 +108,11 @@ func (r *boardsImpl) FindByWorkspaceIDAndID(ctx context.Context, workspaceID str
 // CountByWorkspace is derived from its name:
 //
 //	SELECT COUNT(*) FROM boards WHERE workspacescope.Filter(ctx, workspace_id)
+//
+// FAIL-CLOSED: a context without the scope fails with nanorepo.ErrNoContextScope, before any SQL.
 func (r *boardsImpl) CountByWorkspace(ctx context.Context) (int64, error) {
+	if !workspacescope.Present(ctx) {
+		return 0, nanorepo.ErrNoContextScope
+	}
 	return r.count(ctx, workspacescope.Filter(ctx, r.t.WorkspaceID))
 }

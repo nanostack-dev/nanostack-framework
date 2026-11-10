@@ -3,6 +3,7 @@ package genrepo
 import (
 	"fmt"
 	"go/types"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -75,6 +76,16 @@ func (r *resolver) checkParam(v *types.Var, i int, pred string, preds []string) 
 		}
 		return param{}, &refusal{msg: fmt.Sprintf("column %s.%s has no equality predicate on the base: %s",
 			r.t.sqlName, col.sqlName, why)}
+	}
+	if named, isNamed := types.Unalias(v.Type()).(*types.Named); isNamed {
+		// A named type that spells another column of the table, such as ProductID for org_id, is a mix-up
+		// that the conversion would hide.
+		if other := columnNamed(named.Obj().Name(), r.t.fields()); other != "" && other != pred {
+			return param{}, &refusal{
+				msg: fmt.Sprintf("parameter %s has type %s, which says column %s, but it is bound to %s",
+					name, r.qualified(v.Type()), r.sqlName(other), col.sqlName),
+				alt: fmt.Sprintf("pass the value of %s, or a named type that does not say another column", col.sqlName)}
+		}
 	}
 	conv, ok := convertible(v.Type(), col.value)
 	if !ok {
@@ -215,27 +226,152 @@ func (r *resolver) checkUnique(fn *types.Func, m *derivedMethod) *refusal {
 		m.key = &k
 		return nil
 	}
-	fail := &refusal{altFirst: true,
-		msg: fmt.Sprintf("it returns one row, but (%s) covers no unique key; %s", strings.Join(cols, ", "),
-			r.t.keyList()),
-		alt: fmt.Sprintf("return []%s; or add a unique index on (%s) in a migration and rerun nanostack gen db",
-			r.qualified(r.t.domain), strings.Join(cols, ", "))}
-	if m.shape == shapeOption {
+	fail := r.keyRefusal(fn, m, cols)
+	named := func(f string) bool { return slices.ContainsFunc(m.terms, func(t term) bool { return t.field == f }) }
+	// A body that leaves out a scope column that the name only implies would read across it: no body.
+	if m.shape == shapeOption && !slices.ContainsFunc(r.allScope, func(f string) bool { return !named(f) }) {
 		// By hand, the row is chosen by an order, never by chance.
-		order := "r.t.<Column>.ASC()"
+		// It ends on every column of the primary key: one column of a composite key is not unique.
+		var pk []string
 		for _, c := range r.t.columns {
 			if c.primary {
-				order = "r.t." + c.field + ".ASC()"
-				break
+				pk = append(pk, "r.t."+c.field+".ASC()")
 			}
 		}
-		if _, ok := r.t.column("CreatedAt"); ok && order != "r.t.<Column>.ASC()" {
-			order = "r.t.CreatedAt.ASC(), " + order
+		order := "r.t.<Column>.ASC()"
+		if len(pk) > 0 {
+			order = strings.Join(pk, ", ")
+			if _, ok := r.t.column("CreatedAt"); ok {
+				order = "r.t.CreatedAt.ASC(), " + order
+			}
 		}
-		cond := condFor(fn, m.preds, func(_ int, seg, p string) string { return "r.where." + seg + "(" + p + ")" })
-		fail.body = bodyFor(fn, cond, order)
+		fail.body = bodyFor(fn, r.condOf(fn, m.terms), order)
 	}
 	return fail
+}
+
+// keyRefusal is the refusal of a single-row find that no key proves. The
+// fix names what the keys of the table ask for: a context scope in its short
+// form binds no parameter, so it is not part of the columns that the name
+// compares, even though it filters; a key that holds more columns than the name
+// is completed by naming them; only when no key is close is a new unique index
+// suggested, on every column that the name filters on.
+func (r *resolver) keyRefusal(fn *types.Func, m *derivedMethod, cols []string) *refusal {
+	dom := r.qualified(r.t.domain)
+	fail := &refusal{
+		altFirst: true,
+		msg: fmt.Sprintf(
+			"it returns one row, but (%s) covers no unique key; %s",
+			strings.Join(cols, ", "),
+			r.t.keyList(),
+		),
+	}
+	// The columns that the name filters on, a context scope by its short name included.
+	var all, shortCtx []string
+	for _, t := range m.terms {
+		all = append(all, t.field)
+		if t.ctx != nil {
+			shortCtx = append(shortCtx, t.field)
+		}
+	}
+	if k, ok := r.t.provingKey(all); ok && len(shortCtx) > 0 {
+		return r.shortContextRefusal(fn, m, fail, k, shortCtx)
+	}
+	var compared []string // the columns the name compares, which a key must hold: the tenant columns only narrow
+	for _, f := range all {
+		if !slices.Contains(r.allScope, f) {
+			compared = append(compared, f)
+		}
+	}
+	if k, missing, ok := r.completingKey(all, compared); ok {
+		names := make([]string, len(missing))
+		for i, f := range missing {
+			names[i] = r.display(f)
+			if r.ctxOf(f) != nil {
+				names[i] = f // the short name of a context scope binds no parameter, so it proves nothing
+			}
+		}
+		fail.alt = fmt.Sprintf("name %s too, which completes %s (%s), or return []%s", strings.Join(names, " and "),
+			k.name, strings.Join(k.sqlCols, ", "), dom)
+		return fail
+	}
+	fail.alt = fmt.Sprintf("return []%s; or add a unique index on (%s) in a migration and rerun nanostack gen db",
+		dom, strings.Join(r.columnsOf(all), ", "))
+	if len(r.t.notKeys) > 0 {
+		fail.alt += " (a partial or expression unique index above is not a key: if one covers these columns, " +
+			"drop its WHERE or its expression)"
+	}
+	if len(shortCtx) > 0 {
+		fail.alt += ", and name " + strings.Join(r.columnsOf(shortCtx), " and ") +
+			" by its Go field, which takes a parameter, so that the key covers it"
+	}
+	return fail
+}
+
+// shortContextRefusal is keyRefusal where the key holds a context scope that
+// the name gives by its short name.
+func (r *resolver) shortContextRefusal(fn *types.Func, m *derivedMethod, fail *refusal, k uniqueKey,
+	shortCtx []string) *refusal {
+	var held []string
+	for _, f := range shortCtx {
+		if slices.Contains(k.fields, f) {
+			held = append(held, r.sqlName(f))
+		}
+	}
+	fail.msg += fmt.Sprintf("; %s holds %s, which the short name binds to no parameter: the registered function "+
+		"may keep every workspace, so it does not prove one row", k.name, strings.Join(held, " and "))
+	fail.alt = fmt.Sprintf("rename it %s, which takes the value of %s as a parameter, or return []%s",
+		r.fieldName(fn, m, shortCtx), strings.Join(held, " and "), r.qualified(r.t.domain))
+	return fail
+}
+
+// completingKey returns the key that holds every one of compared and needs
+// the fewest columns more than fields, and those columns.
+func (r *resolver) completingKey(fields, compared []string) (uniqueKey, []string, bool) {
+	var best uniqueKey
+	var bestMissing []string
+	found := false
+	for _, k := range r.t.keys {
+		if slices.Contains(k.fields, "") || len(compared) == 0 ||
+			slices.ContainsFunc(compared, func(f string) bool { return !slices.Contains(k.fields, f) }) {
+			continue
+		}
+		var missing []string
+		for _, f := range k.fields {
+			if !slices.Contains(fields, f) {
+				missing = append(missing, f)
+			}
+		}
+		if len(missing) > 0 && (!found || len(missing) < len(bestMissing)) {
+			best, bestMissing, found = k, missing, true
+		}
+	}
+	return best, bestMissing, found
+}
+
+func (r *resolver) columnsOf(fields []string) []string {
+	out := make([]string, len(fields))
+	for i, f := range fields {
+		out[i] = r.sqlName(f)
+	}
+	return out
+}
+
+// fieldName is fn's name with each short context term of fields spelled as
+// its Go field.
+func (r *resolver) fieldName(fn *types.Func, m *derivedMethod, fields []string) string {
+	words := make([]string, len(m.terms))
+	for i, t := range m.terms {
+		words[i] = r.displayTerm(t)
+		if t.ctx != nil && slices.Contains(fields, t.field) {
+			words[i] = t.field
+		}
+	}
+	prefix := suggestNamed(fn.Name(), nil)
+	if m.internal {
+		return prefix + strings.Join(words, "And") + "Internal"
+	}
+	return prefix + strings.Join(words, "And")
 }
 
 // methodSQL is the statement a derived method runs, for its comment and

@@ -46,6 +46,8 @@ func TestFixtureBaseIsCurrent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The fixture sets no Present function and records the reviewed fail-open
+	// choice (ContextFailOpen): its clean repositories get no warning.
 	if len(res.Warnings) > 0 {
 		t.Errorf("warnings on the fixture: %v", res.Warnings)
 	}
@@ -214,8 +216,14 @@ func TestProblems(t *testing.T) {
 	for _, dir := range dirs {
 		t.Run(filepath.Base(dir), func(t *testing.T) {
 			t.Parallel()
-			opts := Options{Dir: dir, Scopes: repotest.Scopes, ContextScopes: repotest.ContextScopes,
-				ContextStamps: repotest.ContextStamps, DatabaseColumns: repotest.DatabaseColumns}
+			opts := Options{
+				Dir:             dir,
+				Scopes:          repotest.Scopes,
+				ContextScopes:   repotest.ContextScopes,
+				ContextStamps:   repotest.ContextStamps,
+				ContextFailOpen: repotest.ContextFailOpen,
+				DatabaseColumns: repotest.DatabaseColumns,
+			}
 			if _, statErr := os.Stat(filepath.Join(dir, "openapi.yaml")); statErr == nil {
 				opts = apiOptions(dir)
 			}

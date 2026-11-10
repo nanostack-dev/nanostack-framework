@@ -72,6 +72,7 @@ type resolver struct {
 	ctx      []ctxScope
 	short    map[string]string
 	shortOf  map[string]string
+	implied  map[string][]string // scope field -> the scope fields it implies, Postgres.ScopeImplies
 	clashes  []string
 	old      map[string]bool // where-type methods of the base on disk, "itemsWhere.Email"
 	nested   bool            // inside a rename check: no nested suggestions
@@ -95,8 +96,8 @@ func (l *loaded) resolve(d *declarations, scopes []string) []*resolution {
 // run resolves each method of the interface, in source order, then checks
 // that the implementation embeds the base its derived methods run on.
 func (r *resolver) run(d *declarations) {
-	cols := make([]string, len(r.scope))
-	for i, f := range r.scope {
+	cols := make([]string, len(r.allScope))
+	for i, f := range r.allScope {
 		cols[i] = r.sqlName(f)
 		if s := r.shortOf[f]; s != "" {
 			cols[i] += " (" + s + ")"
@@ -107,6 +108,15 @@ func (r *resolver) run(d *declarations) {
 		Scope: strings.Join(cols, ", ")}
 	hand, ptr, val := r.handWritten()
 	r.res.recvPtr = ptr || !val
+	if len(r.clashes) > 0 {
+		// A name could not tell the short name from the column: no method of
+		// the table resolves until the clash is fixed.
+		for _, fn := range r.methods() {
+			r.res.missing = append(r.res.missing, fn.Name())
+			r.line(fn, "ERROR: not resolved", "a short scope name of the table is also the Go field of a column")
+		}
+		return
+	}
 	for _, fn := range r.methods() {
 		r.resolveMethod(d, fn, hand)
 	}
