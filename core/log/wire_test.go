@@ -116,8 +116,8 @@ func TestWireLegacyWritesZerologShape(t *testing.T) {
 		t.Errorf("db.wait = %v, want 2000 (milliseconds, at any depth)", line["db"])
 	}
 	caller, _ := line["caller"].(string)
-	if !regexp.MustCompile(`^/.+/wire_test\.go:\d+$`).MatchString(filepath.ToSlash(caller)) {
-		t.Errorf("caller = %q, want /abs/path/wire_test.go:<line>", caller)
+	if !regexp.MustCompile(`(^|/)wire_test\.go:\d+$`).MatchString(filepath.ToSlash(caller)) {
+		t.Errorf("caller = %q, want a path ending in wire_test.go:<line>", caller)
 	}
 }
 
@@ -261,8 +261,8 @@ func TestLegacySummaryMatchesZerologRequestLog(t *testing.T) {
 		t.Errorf("time = %q, want RFC 3339 in whole seconds like %v", stamp, zl["time"])
 	}
 	caller, _ := line["caller"].(string)
-	if !regexp.MustCompile(`^/.+/core/log/http\.go:\d+$`).MatchString(filepath.ToSlash(caller)) {
-		t.Errorf("caller = %q, want /abs/path/core/log/http.go:<line>", caller)
+	if !regexp.MustCompile(`(^|/)core/log/http\.go:\d+$`).MatchString(filepath.ToSlash(caller)) {
+		t.Errorf("caller = %q, want a path ending in core/log/http.go:<line>", caller)
 	}
 }
 

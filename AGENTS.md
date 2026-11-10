@@ -20,7 +20,7 @@ This repository contains reusable Go service primitives and lifecycle wiring. It
 - Database query execution uses `pkg/db/transactor`; `pkg/jetx` owns expression/filter helpers. Keep constraint names application-supplied and transport errors out of the data layer. Use generated Nanostack DB model scan destinations, or alias every column for a custom destination; enable strict scanning in affected integration suites.
 - Tenant scopes are declared once per project by column name (`Postgres.Scopes`, `Postgres.ContextScopes`). A search covers every tenant column it reads: `Scope` for a hard column (the caller passes the value, taken from the authenticated principal, never the request body), the registered `ScopeFunc` for a context column, or `Unscoped(column, "why")` only while another hard column of that table stays covered. Never silence a scope error another way; a search is never unscoped as a whole. Hand-written queries count only NOT NULL scope columns; a derived method must also name each context scope column, nullable or not, by its `Postgres.ScopeNames` short name (no parameter) or its Go field.
 - Durable product work belongs in a database-backed queue or persisted state, with cancellation and joined shutdown for worker lifecycles. Framework code does not invent product scheduling semantics.
-- Generated functional families come from `go generate ./pkg/functional`; app OpenAPI and database generation remain owned by the consuming application.
+- Generated functional families come from `go -C pkg/functional generate ./...` (a nested module); app OpenAPI and database generation remain owned by the consuming application.
 
 ## Delivery and documentation
 

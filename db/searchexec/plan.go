@@ -81,7 +81,7 @@ func (p Plan[T, S]) Page() search.Pagination {
 //
 // It runs on db as given: it does not read the context transaction and does not refuse a
 // row lock. Repository code runs searches through the transactor forwarders
-// (transactor.Search, SearchPage, RunPlan and RunPlanPage, in a later release), which use
+// (transactor.Search, SearchPage, RunPlan and RunPlanPage), which use
 // the context transaction and refuse a row lock.
 func (p Plan[T, S]) Run[R any](
 	ctx context.Context, db query.Executor, order keyset.Order[T], toDomain func(T) R,
@@ -102,7 +102,7 @@ func (p Plan[T, S]) Run[R any](
 //
 // It runs on db as given: it does not read the context transaction and does not refuse a
 // row lock. Repository code runs searches through the transactor forwarders
-// (transactor.Search, SearchPage, RunPlan and RunPlanPage, in a later release), which use
+// (transactor.Search, SearchPage, RunPlan and RunPlanPage), which use
 // the context transaction and refuse a row lock.
 func (p Plan[T, S]) RunPage[R any](
 	ctx context.Context, db query.Executor, order keyset.Order[T], toDomain func(context.Context, []T) ([]R, error),
@@ -218,7 +218,7 @@ func Resolve[T any, Q Builder[T, Q, S, P], S ~string, P comparable](
 //
 // It runs on db as given: it does not read the context transaction and does not refuse a
 // row lock. Repository code runs searches through the transactor forwarders
-// (transactor.Search, SearchPage, RunPlan and RunPlanPage, in a later release), which use
+// (transactor.Search, SearchPage, RunPlan and RunPlanPage), which use
 // the context transaction and refuse a row lock.
 func Run[T any, Q Builder[T, Q, S, P], S ~string, P comparable, R any](
 	ctx context.Context, db query.Executor, spec *Spec[T, S, P], q Query[T, Q, S, P], toDomain func(T) R,
@@ -238,7 +238,7 @@ func Run[T any, Q Builder[T, Q, S, P], S ~string, P comparable, R any](
 //
 // It runs on db as given: it does not read the context transaction and does not refuse a
 // row lock. Repository code runs searches through the transactor forwarders
-// (transactor.Search, SearchPage, RunPlan and RunPlanPage, in a later release), which use
+// (transactor.Search, SearchPage, RunPlan and RunPlanPage), which use
 // the context transaction and refuse a row lock.
 func RunPage[T any, Q Builder[T, Q, S, P], S ~string, P comparable, R any](
 	ctx context.Context,

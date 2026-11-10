@@ -18,7 +18,7 @@ API: &project.OpenAPI{
 
 Framework home:
 
-- `gen/api` is `nanostack gen api`, the api step: oapi-codegen v2.8.2 in-process ([decision log](decision-log.md#2026-11-08-nanostack-gen-runs-oapi-codegen-in-process))
+- `gen/api` is `nanostack gen api`, the api step: oapi-codegen v2.8.2 in-process ([decision log](decision-log.md#2026-11-08-nano-gen-runs-oapi-codegen-in-process))
 - `gen/validate` is `nanostack gen validate`, which writes the request validators
 - `http/nanohttp/oapitemplates` holds the server's template overrides
 

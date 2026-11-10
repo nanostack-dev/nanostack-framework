@@ -17,11 +17,11 @@
 //     fields must be named. A zero scope field refuses the search, also a field that only
 //     From reads.
 //   - The repository method runs the builder through the transactor forwarders
-//     (transactor.Search and SearchPage, in a later release), which use the context
+//     (transactor.Search and SearchPage), which use the context
 //     transaction and refuse a row lock. A hand-written method starts from Resolve, which
 //     returns an opaque Plan: the method can narrow it with Plan.And, add the keys of its
 //     hand-written sorts with Plan.Order, and run it through transactor.RunPlan or
-//     RunPlanPage (in the same release).
+//     RunPlanPage.
 //
 // Run, RunPage, Plan.Run and Plan.RunPage run on the executor they get. They do not read
 // the context transaction and do not refuse a row lock, so repository code does not call

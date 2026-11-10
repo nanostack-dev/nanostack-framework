@@ -19,7 +19,7 @@ import (
 // every option.
 //
 // The run names no tenant column: the tenant check has fixtures of its own
-// (testdata/tenant and testdata/problems/tenant).
+// (testdata/problems/tenant).
 func TestSearchExplain(t *testing.T) {
 	t.Parallel()
 	res, err := Generate(Options{Dir: "testdata/search"})

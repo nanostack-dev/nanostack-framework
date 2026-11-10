@@ -232,7 +232,7 @@ Go has no higher-kinded types, so there is no `Functor`/`Monad` interface to imp
 `Tuple2`…`Tuple9` and the `ZipOption`/`ZipResult`/`ZipValidation` families are **generated** — Go has no variadic generics, so each arity is a separate declaration differing only mechanically. `tuple_gen.go`, `zip_gen.go` and `validation_gen.go` are generated; do not edit them.
 
 ```
-go generate ./pkg/functional/...
+go -C pkg/functional generate ./...
 ```
 
 The generator is `internal/gen`. Change the template there, re-run, commit the result. Output is deterministic and gofmt-formatted, so a re-run on an unchanged generator produces no diff. Arity stops at 9: past that, a named struct communicates far more than a positional `Ninth` ever will.

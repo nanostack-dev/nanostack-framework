@@ -205,7 +205,8 @@ func IsProduction(environment string) bool {
 // optional offsets) or a zerolog level name. zerolog's trace maps to debug,
 // fatal and panic map to error, and disabled maps to LevelOff.
 func ParseLevel(s string) (slog.Level, error) {
-	switch strings.ToLower(strings.TrimSpace(s)) {
+	s = strings.TrimSpace(s)
+	switch strings.ToLower(s) {
 	case "trace":
 		return slog.LevelDebug, nil
 	case "warning":
