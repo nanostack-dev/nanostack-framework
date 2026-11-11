@@ -32,6 +32,7 @@ jobs:
   # A known advisory that the code reaches fails the pull request (see ci.yml).
   vulncheck:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       matrix:
         dir: [db, db/tests]
@@ -39,8 +40,8 @@ jobs:
       run:
         working-directory: ${{ matrix.dir }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
         with:
           go-version-file: ${{ matrix.dir }}/go.mod
       # The db/tests suites import the pinned jet-test-data, fetched before they compile.
@@ -51,12 +52,13 @@ jobs:
 
   unit:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: db
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
         with:
           go-version-file: db/go.mod
           cache-dependency-path: |
@@ -87,14 +89,15 @@ jobs:
   # (db/.golangci.local.yml says which files and why).
   lint:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     # The ruleguard rules in gorules/ import go-ruleguard/dsl, which only the root module
     # requires, and db must not depend on it: lint in a workspace of the repository's
     # modules, as development does (go.work is git-ignored, so the job creates it).
     env:
       GOWORK: ""
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
         with:
           go-version-file: db/go.mod
           cache-dependency-path: |
@@ -157,8 +160,8 @@ jobs:
     env:
       NANODB_DIALECTS: ${{ matrix.dialect }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
         with:
           go-version-file: db/tests/go.mod
           cache-dependency-path: db/tests/go.sum
@@ -200,8 +203,8 @@ jobs:
     env:
       NANODB_DIALECTS: ${{ matrix.dialect }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
         with:
           go-version-file: db/tests/go.mod
           cache-dependency-path: db/tests/go.sum
