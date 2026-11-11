@@ -140,7 +140,7 @@ jobs:
   # CockroachDB is the slowest suite, so its two runs (statement cache off and on) are two
   # jobs that run in parallel. The other databases run both in one job.
   integration:
-    name: integration (${{ matrix.dialect }}${{ matrix.stmt_cache && format(', statement cache {0}', matrix.stmt_cache) || '' }})
+    name: integration (${{ matrix.dialect }}${{ matrix.stmt_cache && format(', statement cache {0}', matrix.stmt_cache) || '' }}${{ matrix.pg_driver && format(', {0}', matrix.pg_driver) || '' }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -149,12 +149,20 @@ jobs:
         include:
           # Each dialect runs twice, in parallel jobs: the race suite and the
           # statement-cache suite. One job ran both in sequence (about 6 min).
-          - { dialect: postgres14, package: ./postgres, stmt_cache: "off" }
-          - { dialect: postgres14, package: ./postgres, stmt_cache: "on" }
-          - { dialect: postgres18, package: ./postgres, stmt_cache: "off" }
-          - { dialect: postgres18, package: ./postgres, stmt_cache: "on" }
-          - { dialect: cockroach, package: ./postgres, stmt_cache: "off" }
-          - { dialect: cockroach, package: ./postgres, stmt_cache: "on" }
+          # The postgres suite also runs once per driver (pq and pgx), so each
+          # driver gets its own job too (NANODB_PG_DRIVERS).
+          - { dialect: postgres14, package: ./postgres, stmt_cache: "off", pg_driver: postgres }
+          - { dialect: postgres14, package: ./postgres, stmt_cache: "off", pg_driver: pgx }
+          - { dialect: postgres14, package: ./postgres, stmt_cache: "on", pg_driver: postgres }
+          - { dialect: postgres14, package: ./postgres, stmt_cache: "on", pg_driver: pgx }
+          - { dialect: postgres18, package: ./postgres, stmt_cache: "off", pg_driver: postgres }
+          - { dialect: postgres18, package: ./postgres, stmt_cache: "off", pg_driver: pgx }
+          - { dialect: postgres18, package: ./postgres, stmt_cache: "on", pg_driver: postgres }
+          - { dialect: postgres18, package: ./postgres, stmt_cache: "on", pg_driver: pgx }
+          - { dialect: cockroach, package: ./postgres, stmt_cache: "off", pg_driver: postgres }
+          - { dialect: cockroach, package: ./postgres, stmt_cache: "off", pg_driver: pgx }
+          - { dialect: cockroach, package: ./postgres, stmt_cache: "on", pg_driver: postgres }
+          - { dialect: cockroach, package: ./postgres, stmt_cache: "on", pg_driver: pgx }
           - { dialect: mysql, package: ./mysql, stmt_cache: "off" }
           - { dialect: mysql, package: ./mysql, stmt_cache: "on" }
           - { dialect: mariadb, package: ./mysql, stmt_cache: "off" }
@@ -166,6 +174,7 @@ jobs:
         working-directory: db/tests
     env:
       NANODB_DIALECTS: ${{ matrix.dialect }}
+      NANODB_PG_DRIVERS: ${{ matrix.pg_driver }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
