@@ -195,6 +195,14 @@ func retry(count int, f func() error) error {
 	return err
 }
 
+// A test database is thrown away with its container, so MySQL and MariaDB trade
+// crash durability for speed: InnoDB does not flush its log at each commit
+// (mysqlNoFlush) and the data directory is in memory (mysqlTmpfs). The
+// testcontainers postgres module already runs with fsync off.
+const mysqlNoFlush = "--innodb-flush-log-at-trx-commit=0"
+
+var mysqlTmpfs = testcontainers.WithTmpfs(map[string]string{"/var/lib/mysql": "rw"})
+
 func mysqlScripts(dataDir string) []string {
 	scripts := []string{filepath.Join(dataDir, "init", "mysql", "00-settings.sql")}
 	for _, name := range mysqlDatabases {
@@ -214,7 +222,8 @@ func startMySQL(ctx context.Context, dataDir string) (testcontainers.Container, 
 		// The image sets no locale, so the entrypoint's mysql client would read the
 		// dumps as latin1 and double-encode their UTF-8 comments.
 		testcontainers.WithEnv(map[string]string{"LANG": "C.UTF-8"}),
-		testcontainers.WithCmdArgs("--log_bin_trust_function_creators=1"),
+		testcontainers.WithCmdArgs("--log_bin_trust_function_creators=1", mysqlNoFlush, "--skip-log-bin"),
+		mysqlTmpfs,
 		testcontainers.WithWaitStrategyAndDeadline(startupTimeout,
 			wait.ForLog("port: 3306  MySQL Community Server"),
 			wait.ForListeningPort("3306/tcp"),
@@ -228,7 +237,8 @@ func startMariaDB(ctx context.Context, dataDir string) (testcontainers.Container
 		mariadb.WithPassword(password),
 		mariadb.WithDatabase(""),
 		mariadb.WithScripts(mysqlScripts(dataDir)...),
-		testcontainers.WithCmdArgs("--log_bin_trust_function_creators=1"),
+		testcontainers.WithCmdArgs("--log_bin_trust_function_creators=1", mysqlNoFlush),
+		mysqlTmpfs,
 		testcontainers.WithWaitStrategyAndDeadline(startupTimeout,
 			wait.ForLog("port: 3306  mariadb.org binary distribution"),
 			wait.ForListeningPort("3306/tcp"),
