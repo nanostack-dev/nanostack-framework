@@ -212,24 +212,19 @@ func TestIntegrationKeysetWalkMatchesOrderedQuery(t *testing.T) {
 		gen.insert(t, conn, "t2") // other tenant, must never appear
 	}
 
-	// The walks only read, so each ordering runs as a parallel subtest (the
-	// table is dropped after all of them, by setupKeysetSchema's cleanup).
 	for _, sorts := range ksOrderings() {
 		order := ksOrder(t, sorts, ksKeys(), ksTiebreak())
-		t.Run(order.Signature(), func(t *testing.T) {
-			t.Parallel()
-			want := ksOrdered(t, conn, order)
-			limits := []int32{7, 50, 500}
-			if len(sorts) < 2 {
-				limits = append(limits, 1) // every row is a page boundary
+		want := ksOrdered(t, conn, order)
+		limits := []int32{7, 50, 500}
+		if len(sorts) < 2 {
+			limits = append(limits, 1) // every row is a page boundary
+		}
+		for _, limit := range limits {
+			if got := ksWalk(t, conn, order, limit, nil); !slices.Equal(got, want) {
+				t.Fatalf("%s limit %d: cursor walk returned %d rows that differ from the ordered query's %d",
+					order.Signature(), limit, len(got), len(want))
 			}
-			for _, limit := range limits {
-				if got := ksWalk(t, conn, order, limit, nil); !slices.Equal(got, want) {
-					t.Fatalf("limit %d: cursor walk returned %d rows that differ from the ordered query's %d",
-						limit, len(got), len(want))
-				}
-			}
-		})
+		}
 	}
 }
 
