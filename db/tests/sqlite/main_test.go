@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"sync"
 	"testing"
 
 	"github.com/nanostack-dev/nanostack-framework/db/internal/utils/throw"
@@ -95,6 +96,10 @@ func runCount(stmtCaching bool) int {
 	return 1
 }
 
+// loggerMu guards the logged values below: parallel subtests (the keyset
+// walks) run queries at the same time. Nanostack-only, see db/UPSTREAM.md.
+var loggerMu sync.Mutex
+
 var loggedSQL string
 var loggedSQLArgs []interface{}
 var loggedDebugSQL string
@@ -106,11 +111,15 @@ var callerFunction string
 
 func init() {
 	sqlite.SetLogger(func(ctx context.Context, statement sqlite.PrintableStatement) {
+		loggerMu.Lock()
+		defer loggerMu.Unlock()
 		loggedSQL, loggedSQLArgs = statement.Sql()
 		loggedDebugSQL = statement.DebugSql()
 	})
 
 	sqlite.SetQueryLogger(func(ctx context.Context, info sqlite.QueryInfo) {
+		loggerMu.Lock()
+		defer loggerMu.Unlock()
 		queryInfo = info
 		callerFile, callerLine, callerFunction = info.Caller()
 	})

@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/nanostack-dev/nanostack-framework/db/qrm"
@@ -174,6 +175,10 @@ func useJsonUnmarshalFunc(unmarshalJson func(data []byte, v any) error, f func()
 	f()
 }
 
+// loggerMu guards the logged values below: parallel subtests (the keyset
+// walks) run queries at the same time. Nanostack-only, see db/UPSTREAM.md.
+var loggerMu sync.Mutex
+
 var loggedSQL string
 var loggedSQLArgs []interface{}
 var loggedDebugSQL string
@@ -185,11 +190,15 @@ var callerFunction string
 
 func init() {
 	postgres.SetLogger(func(ctx context.Context, statement postgres.PrintableStatement) {
+		loggerMu.Lock()
+		defer loggerMu.Unlock()
 		loggedSQL, loggedSQLArgs = statement.Sql()
 		loggedDebugSQL = statement.DebugSql()
 	})
 
 	postgres.SetQueryLogger(func(ctx context.Context, info postgres.QueryInfo) {
+		loggerMu.Lock()
+		defer loggerMu.Unlock()
 		queryInfo = info
 		callerFile, callerLine, callerFunction = info.Caller()
 	})

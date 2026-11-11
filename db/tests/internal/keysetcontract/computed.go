@@ -291,6 +291,7 @@ func (c *contract) checkComputed(t *testing.T) {
 	}
 	for i, s := range computedSearches() {
 		t.Run(fmt.Sprintf("%02d %s", i, s), func(t *testing.T) {
+			t.Parallel() // the walks only read kc_rows and kc_children
 			order, want := c.computedOrder(t, keys, rows, s)
 			var wantTokens []string
 			for end := int(s.limit); end < len(want); end += int(s.limit) {
