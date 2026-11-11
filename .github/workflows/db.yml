@@ -187,7 +187,7 @@ jobs:
         run: go test -race -count=1 -tags postgres -v ${{ matrix.package }}
       - name: Test with statement caching
         if: matrix.stmt_cache != 'off'
-        run: go test -count=1 -tags postgres ${{ matrix.package }}
+        run: go test -count=1 -tags postgres -v ${{ matrix.package }}
         env:
           NANODB_STMT_CACHE: "true"
 
