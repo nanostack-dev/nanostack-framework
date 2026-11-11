@@ -147,13 +147,20 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { dialect: postgres14, package: ./postgres }
-          - { dialect: postgres18, package: ./postgres }
+          # Each dialect runs twice, in parallel jobs: the race suite and the
+          # statement-cache suite. One job ran both in sequence (about 6 min).
+          - { dialect: postgres14, package: ./postgres, stmt_cache: "off" }
+          - { dialect: postgres14, package: ./postgres, stmt_cache: "on" }
+          - { dialect: postgres18, package: ./postgres, stmt_cache: "off" }
+          - { dialect: postgres18, package: ./postgres, stmt_cache: "on" }
           - { dialect: cockroach, package: ./postgres, stmt_cache: "off" }
           - { dialect: cockroach, package: ./postgres, stmt_cache: "on" }
-          - { dialect: mysql, package: ./mysql }
-          - { dialect: mariadb, package: ./mysql }
-          - { dialect: sqlite, package: ./sqlite }
+          - { dialect: mysql, package: ./mysql, stmt_cache: "off" }
+          - { dialect: mysql, package: ./mysql, stmt_cache: "on" }
+          - { dialect: mariadb, package: ./mysql, stmt_cache: "off" }
+          - { dialect: mariadb, package: ./mysql, stmt_cache: "on" }
+          - { dialect: sqlite, package: ./sqlite, stmt_cache: "off" }
+          - { dialect: sqlite, package: ./sqlite, stmt_cache: "on" }
     defaults:
       run:
         working-directory: db/tests
