@@ -137,8 +137,9 @@ jobs:
 
   # One job per database. The testenv harness in db/tests starts the containers, loads
   # the pinned jet-test-data and runs the suite; Docker is preinstalled on the runner.
-  # CockroachDB is the slowest suite, so its two runs (statement cache off and on) are two
-  # jobs that run in parallel. The other databases run both in one job.
+  # CockroachDB is not tested: framework ADR 0015 drops it (decided 2026-11-11; its two
+  # jobs were the longest of the workflow, 270-340 s). The testenv harness still knows the
+  # cockroach source, for a local NANODB_DIALECTS=cockroach run.
   integration:
     name: integration (${{ matrix.dialect }}${{ matrix.stmt_cache && format(', statement cache {0}', matrix.stmt_cache) || '' }}${{ matrix.pg_driver && format(', {0}', matrix.pg_driver) || '' }})
     runs-on: ubuntu-latest
@@ -159,10 +160,6 @@ jobs:
           - { dialect: postgres18, package: ./postgres, stmt_cache: "off", pg_driver: pgx }
           - { dialect: postgres18, package: ./postgres, stmt_cache: "on", pg_driver: postgres }
           - { dialect: postgres18, package: ./postgres, stmt_cache: "on", pg_driver: pgx }
-          - { dialect: cockroach, package: ./postgres, stmt_cache: "off", pg_driver: postgres }
-          - { dialect: cockroach, package: ./postgres, stmt_cache: "off", pg_driver: pgx }
-          - { dialect: cockroach, package: ./postgres, stmt_cache: "on", pg_driver: postgres }
-          - { dialect: cockroach, package: ./postgres, stmt_cache: "on", pg_driver: pgx }
           - { dialect: mysql, package: ./mysql, stmt_cache: "off" }
           - { dialect: mysql, package: ./mysql, stmt_cache: "on" }
           - { dialect: mariadb, package: ./mysql, stmt_cache: "off" }
@@ -184,8 +181,7 @@ jobs:
       - name: Fetch the test data
         run: go run ./tools/fetchtestdata
       # -count=1: the restored build cache must never replay a result without the database.
-      # -tags postgres compiles the PostgreSQL-only range tests, as upstream CI did. The
-      # CockroachDB run is compiled again against CockroachDB's own models, without the tag.
+      # -tags postgres compiles the PostgreSQL-only range tests, as upstream CI did.
       - name: Test
         if: matrix.stmt_cache != 'on'
         run: go test -race -count=1 -tags postgres -v ${{ matrix.package }}
@@ -209,7 +205,6 @@ jobs:
         include:
           - { dialect: postgres14, package: ./postgres }
           - { dialect: postgres18, package: ./postgres }
-          - { dialect: cockroach, package: ./postgres }
           - { dialect: mysql, package: ./mysql }
           - { dialect: mariadb, package: ./mysql }
           - { dialect: sqlite, package: ./sqlite }
