@@ -170,6 +170,15 @@ func (c *contract) insertChildren(t *testing.T, children []child) {
 			"INSERT INTO kc_children (row_id, size, amount, label) VALUES "+strings.Join(tuples, ", "), args...)
 		require.NoError(t, err)
 	}
+	if c.cfg.Flavor == MySQL || c.cfg.Flavor == MariaDB {
+		// Fresh statistics for the just-filled tables: without them MariaDB plans
+		// the correlated subqueries badly and the walks take 4 times longer
+		// (46 s against 11 s for the whole contract, measured 2026-11-11).
+		for _, table := range []string{"kc_rows", "kc_children"} {
+			_, err := c.cfg.DB.ExecContext(t.Context(), "ANALYZE TABLE "+table)
+			require.NoError(t, err)
+		}
+	}
 }
 
 // computedKeys are the computed keys over the children of each row, in the dialect's own
