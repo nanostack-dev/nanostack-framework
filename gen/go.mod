@@ -2,7 +2,7 @@ module github.com/nanostack-dev/nanostack-framework/gen
 
 go 1.27
 
-toolchain go1.27.3
+toolchain go1.27.4
 
 // The repo step reads the files of a service upgrading from the nano CLI as
 // hand-written and reports each method twice. Use v0.23.0-beta.8.

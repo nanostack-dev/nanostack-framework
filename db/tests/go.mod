@@ -2,7 +2,7 @@ module github.com/nanostack-dev/nanostack-framework/db/tests
 
 go 1.27
 
-toolchain go1.27.3
+toolchain go1.27.4
 
 require (
 	github.com/bytedance/sonic v1.15.3
