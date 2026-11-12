@@ -15,6 +15,7 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/stretchr/testify/require"
 	"runtime"
+	"sync"
 
 	"os"
 	"testing"
@@ -90,6 +91,10 @@ func runCount(stmtCaching bool) int {
 	return 1
 }
 
+// loggerMu guards the logged values below: parallel subtests (the keyset
+// walks) run queries at the same time. Nanostack-only, see db/UPSTREAM.md.
+var loggerMu sync.Mutex
+
 var loggedSQL string
 var loggedSQLArgs []interface{}
 var loggedDebugSQL string
@@ -101,11 +106,15 @@ var callerFunction string
 
 func init() {
 	jetmysql.SetLogger(func(ctx context.Context, statement jetmysql.PrintableStatement) {
+		loggerMu.Lock()
+		defer loggerMu.Unlock()
 		loggedSQL, loggedSQLArgs = statement.Sql()
 		loggedDebugSQL = statement.DebugSql()
 	})
 
 	jetmysql.SetQueryLogger(func(ctx context.Context, info jetmysql.QueryInfo) {
+		loggerMu.Lock()
+		defer loggerMu.Unlock()
 		queryInfo = info
 		callerFile, callerLine, callerFunction = info.Caller()
 	})

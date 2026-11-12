@@ -10,6 +10,9 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"slices"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/nanostack-dev/nanostack-framework/db/qrm"
@@ -82,7 +85,7 @@ func runSuite(env *testenv.Env) int {
 	// Nanostack: every driver runs, and the first failure is returned at the end, so a
 	// failure with pq never hides the pgx results.
 	code := 0
-	for _, driverName := range []string{"postgres", "pgx"} {
+	for _, driverName := range pgDrivers() {
 
 		fmt.Printf("\nRunning postgres tests for driver: %s, caching enabled: %t \n", driverName, withStatementCaching)
 
@@ -115,6 +118,25 @@ func runSuite(env *testenv.Env) int {
 	}
 
 	return code
+}
+
+// pgDrivers returns the drivers to run: NANODB_PG_DRIVERS (a comma-separated
+// subset of postgres and pgx, so CI runs each driver in its own job) or both.
+func pgDrivers() []string {
+	all := []string{"postgres", "pgx"}
+	value := strings.TrimSpace(os.Getenv("NANODB_PG_DRIVERS"))
+	if value == "" {
+		return all
+	}
+	var drivers []string
+	for _, name := range strings.Split(value, ",") {
+		name = strings.TrimSpace(name)
+		if !slices.Contains(all, name) {
+			panic(fmt.Sprintf("NANODB_PG_DRIVERS: unknown driver %q (want postgres, pgx)", name))
+		}
+		drivers = append(drivers, name)
+	}
+	return drivers
 }
 
 func runCount(stmtCaching bool) int {
@@ -153,6 +175,10 @@ func useJsonUnmarshalFunc(unmarshalJson func(data []byte, v any) error, f func()
 	f()
 }
 
+// loggerMu guards the logged values below: parallel subtests (the keyset
+// walks) run queries at the same time. Nanostack-only, see db/UPSTREAM.md.
+var loggerMu sync.Mutex
+
 var loggedSQL string
 var loggedSQLArgs []interface{}
 var loggedDebugSQL string
@@ -164,11 +190,15 @@ var callerFunction string
 
 func init() {
 	postgres.SetLogger(func(ctx context.Context, statement postgres.PrintableStatement) {
+		loggerMu.Lock()
+		defer loggerMu.Unlock()
 		loggedSQL, loggedSQLArgs = statement.Sql()
 		loggedDebugSQL = statement.DebugSql()
 	})
 
 	postgres.SetQueryLogger(func(ctx context.Context, info postgres.QueryInfo) {
+		loggerMu.Lock()
+		defer loggerMu.Unlock()
 		queryInfo = info
 		callerFile, callerLine, callerFunction = info.Caller()
 	})

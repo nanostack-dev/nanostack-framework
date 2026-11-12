@@ -2,7 +2,7 @@ module github.com/nanostack-dev/nanostack-framework/db
 
 go 1.27
 
-toolchain go1.27.3
+toolchain go1.27.4
 
 // used by jet generator
 require (

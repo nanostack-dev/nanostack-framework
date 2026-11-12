@@ -32,6 +32,7 @@ jobs:
   # A known advisory that the code reaches fails the pull request (see ci.yml).
   vulncheck:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       matrix:
         dir: [db, db/tests]
@@ -39,8 +40,8 @@ jobs:
       run:
         working-directory: ${{ matrix.dir }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
         with:
           go-version-file: ${{ matrix.dir }}/go.mod
       # The db/tests suites import the pinned jet-test-data, fetched before they compile.
@@ -51,12 +52,13 @@ jobs:
 
   unit:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: db
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
         with:
           go-version-file: db/go.mod
           cache-dependency-path: |
@@ -87,14 +89,15 @@ jobs:
   # (db/.golangci.local.yml says which files and why).
   lint:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     # The ruleguard rules in gorules/ import go-ruleguard/dsl, which only the root module
     # requires, and db must not depend on it: lint in a workspace of the repository's
     # modules, as development does (go.work is git-ignored, so the job creates it).
     env:
       GOWORK: ""
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
         with:
           go-version-file: db/go.mod
           cache-dependency-path: |
@@ -134,45 +137,71 @@ jobs:
 
   # One job per database. The testenv harness in db/tests starts the containers, loads
   # the pinned jet-test-data and runs the suite; Docker is preinstalled on the runner.
-  # CockroachDB is the slowest suite, so its two runs (statement cache off and on) are two
-  # jobs that run in parallel. The other databases run both in one job.
+  # CockroachDB is not tested: framework ADR 0015 drops it (decided 2026-11-11; its two
+  # jobs were the longest of the workflow, 270-340 s). The testenv harness still knows the
+  # cockroach source, for a local NANODB_DIALECTS=cockroach run.
   integration:
-    name: integration (${{ matrix.dialect }}${{ matrix.stmt_cache && format(', statement cache {0}', matrix.stmt_cache) || '' }})
+    name: integration (${{ matrix.dialect }}${{ matrix.stmt_cache && format(', statement cache {0}', matrix.stmt_cache) || '' }}${{ matrix.pg_driver && format(', {0}', matrix.pg_driver) || '' }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { dialect: postgres14, package: ./postgres }
-          - { dialect: postgres18, package: ./postgres }
-          - { dialect: cockroach, package: ./postgres, stmt_cache: "off" }
-          - { dialect: cockroach, package: ./postgres, stmt_cache: "on" }
-          - { dialect: mysql, package: ./mysql }
-          - { dialect: mariadb, package: ./mysql }
-          - { dialect: sqlite, package: ./sqlite }
+          # Each dialect runs twice, in parallel jobs: the race suite and the
+          # statement-cache suite. One job ran both in sequence (about 6 min).
+          # The postgres suite also runs once per driver (pq and pgx), so each
+          # driver gets its own job too (NANODB_PG_DRIVERS).
+          - { dialect: postgres14, package: ./postgres, stmt_cache: "off", pg_driver: postgres }
+          - { dialect: postgres14, package: ./postgres, stmt_cache: "off", pg_driver: pgx }
+          - { dialect: postgres14, package: ./postgres, stmt_cache: "on", pg_driver: postgres }
+          - { dialect: postgres14, package: ./postgres, stmt_cache: "on", pg_driver: pgx }
+          - { dialect: postgres18, package: ./postgres, stmt_cache: "off", pg_driver: postgres }
+          - { dialect: postgres18, package: ./postgres, stmt_cache: "off", pg_driver: pgx }
+          - { dialect: postgres18, package: ./postgres, stmt_cache: "on", pg_driver: postgres }
+          - { dialect: postgres18, package: ./postgres, stmt_cache: "on", pg_driver: pgx }
+          - { dialect: mysql, package: ./mysql, stmt_cache: "off" }
+          - { dialect: mysql, package: ./mysql, stmt_cache: "on" }
+          - { dialect: mariadb, package: ./mysql, stmt_cache: "off" }
+          - { dialect: mariadb, package: ./mysql, stmt_cache: "on" }
+          - { dialect: sqlite, package: ./sqlite, stmt_cache: "off" }
+          - { dialect: sqlite, package: ./sqlite, stmt_cache: "on" }
     defaults:
       run:
         working-directory: db/tests
     env:
       NANODB_DIALECTS: ${{ matrix.dialect }}
+      NANODB_PG_DRIVERS: ${{ matrix.pg_driver }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        id: go
         with:
           go-version-file: db/tests/go.mod
-          cache-dependency-path: db/tests/go.sum
+          cache: false
+      # One build cache per package and race flag. setup-go keys its cache on
+      # go.sum alone, so all 16 jobs shared one, saved by whichever job ended
+      # first (often SQLite): the postgres race builds then compiled from
+      # scratch, 95 s of a 189 s step. The sources hash makes every commit save
+      # a fresh cache; restore-keys start from the newest one.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: db-it-${{ runner.os }}-${{ steps.go.outputs.go-version }}-${{ matrix.package }}-${{ matrix.stmt_cache == 'off' && 'race' || 'norace' }}-${{ hashFiles('db/**/*.go', 'db/**/go.sum') }}
+          restore-keys: |
+            db-it-${{ runner.os }}-${{ steps.go.outputs.go-version }}-${{ matrix.package }}-${{ matrix.stmt_cache == 'off' && 'race' || 'norace' }}-
       - name: Fetch the test data
         run: go run ./tools/fetchtestdata
       # -count=1: the restored build cache must never replay a result without the database.
-      # -tags postgres compiles the PostgreSQL-only range tests, as upstream CI did. The
-      # CockroachDB run is compiled again against CockroachDB's own models, without the tag.
+      # -tags postgres compiles the PostgreSQL-only range tests, as upstream CI did.
       - name: Test
         if: matrix.stmt_cache != 'on'
         run: go test -race -count=1 -tags postgres -v ${{ matrix.package }}
       - name: Test with statement caching
         if: matrix.stmt_cache != 'off'
-        run: go test -count=1 -tags postgres ${{ matrix.package }}
+        run: go test -count=1 -tags postgres -v ${{ matrix.package }}
         env:
           NANODB_STMT_CACHE: "true"
 
@@ -190,7 +219,6 @@ jobs:
         include:
           - { dialect: postgres14, package: ./postgres }
           - { dialect: postgres18, package: ./postgres }
-          - { dialect: cockroach, package: ./postgres }
           - { dialect: mysql, package: ./mysql }
           - { dialect: mariadb, package: ./mysql }
           - { dialect: sqlite, package: ./sqlite }
@@ -200,8 +228,8 @@ jobs:
     env:
       NANODB_DIALECTS: ${{ matrix.dialect }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
         with:
           go-version-file: db/tests/go.mod
           cache-dependency-path: db/tests/go.sum
