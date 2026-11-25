@@ -9,29 +9,38 @@ import (
 	"github.com/lib/pq"
 )
 
-func TestIsDeadlock(t *testing.T) {
+func TestIsDeadlockVictim(t *testing.T) {
 	deadlock := &pq.Error{Code: "40P01", Message: "deadlock detected"}
 	cases := map[string]struct {
 		err  error
 		want bool
 	}{
-		"golang-migrate failure over a deadlock": {
-			err:  fmt.Errorf("nanomigrate: migrate: %w", database.Error{OrigErr: deadlock, Err: "migration failed"}),
+		"migration body aborted": {
+			err: fmt.Errorf("nanomigrate: migrate: %w",
+				database.Error{OrigErr: deadlock, Err: "migration failed: deadlock detected"}),
 			want: true,
 		},
-		"bare driver deadlock": {err: fmt.Errorf("wrap: %w", deadlock), want: true},
-		"golang-migrate failure, other code": {
+		// golang-migrate's SetVersion: the body already committed.
+		"version write aborted": {
+			err:  &database.Error{OrigErr: deadlock, Query: []byte("INSERT")},
+			want: false,
+		},
+		"version commit aborted": {
+			err:  &database.Error{OrigErr: deadlock, Err: "transaction commit failed"},
+			want: false,
+		},
+		"bare driver deadlock": {err: fmt.Errorf("wrap: %w", deadlock), want: false},
+		"migration failed, other code": {
 			err:  database.Error{OrigErr: &pq.Error{Code: "42P07"}, Err: "migration failed"},
 			want: false,
 		},
-		"lock timeout":    {err: &pq.Error{Code: "55P03"}, want: false},
 		"not a pg error":  {err: errors.New("boom"), want: false},
 		"no error at all": {err: nil, want: false},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			if got := isDeadlock(tc.err); got != tc.want {
-				t.Fatalf("isDeadlock(%v) = %t, want %t", tc.err, got, tc.want)
+			if got := isDeadlockVictim(tc.err); got != tc.want {
+				t.Fatalf("isDeadlockVictim(%v) = %t, want %t", tc.err, got, tc.want)
 			}
 		})
 	}

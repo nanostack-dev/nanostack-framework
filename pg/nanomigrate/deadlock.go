@@ -10,14 +10,15 @@ import (
 	"math"
 	"os"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database"
 	"github.com/golang-migrate/migrate/v4/source"
-	"github.com/lib/pq"
 
 	"github.com/nanostack-dev/nanostack-framework/core/log"
+	"github.com/nanostack-dev/nanostack-framework/pkg/db/pgerr"
 )
 
 // A migration that Postgres aborts to break a deadlock is run again, up to
@@ -34,6 +35,8 @@ import (
 const (
 	deadlockRetries = 3
 	deadlockPause   = 500 * time.Millisecond
+	// resetTimeout bounds each catalog read and index drop of the reset.
+	resetTimeout = time.Minute
 )
 
 // sqlStateDeadlock is the SQLSTATE of deadlock_detected.
@@ -47,40 +50,34 @@ var transactionControl = regexp.MustCompile(
 	`(?im)^\s*(BEGIN|COMMIT|END|ROLLBACK|START\s+TRANSACTION)\s*(TRANSACTION|WORK)?\s*;`,
 )
 
-// isDeadlock reports whether err is a migration that Postgres aborted as a
-// deadlock victim. golang-migrate returns a database.Error, which has no
-// Unwrap: the driver error is its OrigErr.
-func isDeadlock(err error) bool {
-	if hasSQLState(err, sqlStateDeadlock) {
-		return true
-	}
-	if dbErr, ok := errors.AsType[database.Error](err); ok {
-		return hasSQLState(dbErr.OrigErr, sqlStateDeadlock)
-	}
-	return false
+// isDeadlockVictim reports whether err is a migration body that Postgres
+// aborted as a deadlock victim. It matches only the error of golang-migrate's
+// runMigration (a database.Error value whose Err starts with "migration
+// failed"; database.Error has no Unwrap, so the driver error is its OrigErr).
+// A deadlock while golang-migrate records the version comes as a
+// *database.Error after the body committed: running the body again would
+// apply it twice.
+func isDeadlockVictim(err error) bool {
+	dbErr, ok := errors.AsType[database.Error](err)
+	return ok && strings.HasPrefix(dbErr.Err, "migration failed") && pgerr.Is(dbErr.OrigErr, sqlStateDeadlock)
 }
 
-func hasSQLState(err error, code string) bool {
-	if pqErr, ok := errors.AsType[*pq.Error](err); ok {
-		return string(pqErr.Code) == code
-	}
-	stated, ok := errors.AsType[interface {
-		error
-		SQLState() string
-	}](err)
-	return ok && stated.SQLState() == code
-}
-
-// invalidIndexes returns the OIDs of the indexes that Postgres marks invalid.
-// A CREATE INDEX CONCURRENTLY that fails after its first phase leaves its
-// index in the catalog, invalid.
+// invalidIndexes returns the OIDs of the plain indexes that Postgres marks
+// invalid. A CREATE INDEX CONCURRENTLY that fails after its first phase
+// leaves its index in the catalog, invalid. A partitioned index (relkind I)
+// created ON ONLY its table is invalid on purpose, so it is left out.
+//
+// It runs without the cancellation of ctx, as the migration does: a stop
+// must not cancel a query on the migration connection.
 func invalidIndexes(ctx context.Context, conn *sql.Conn) (map[uint32]string, error) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), resetTimeout)
+	defer cancel()
 	rows, err := conn.QueryContext(ctx, `
 		SELECT c.oid, format('%I.%I', n.nspname, c.relname)
 		FROM pg_index i
 		JOIN pg_class c ON c.oid = i.indexrelid
 		JOIN pg_namespace n ON n.oid = c.relnamespace
-		WHERE NOT i.indisvalid`)
+		WHERE NOT i.indisvalid AND c.relkind = 'i'`)
 	if err != nil {
 		return nil, fmt.Errorf("nanomigrate: list invalid indexes: %w", err)
 	}
@@ -111,7 +108,7 @@ func (m *Migrator) upRetryingDeadlocks(
 			return err
 		}
 		err = m.up(ctx, migrator, fresh)
-		if err == nil || !isDeadlock(err) || ctx.Err() != nil || attempt > deadlockRetries {
+		if err == nil || !isDeadlockVictim(err) || ctx.Err() != nil || attempt > deadlockRetries {
 			return err
 		}
 		version, retry, why := m.retryable(migrator)
@@ -127,8 +124,9 @@ func (m *Migrator) upRetryingDeadlocks(
 		timer := time.NewTimer(time.Duration(attempt) * deadlockPause)
 		select {
 		case <-ctx.Done():
+			// The reset left the version before the migration, clean.
 			timer.Stop()
-			return err
+			return stoppedError{cause: context.Cause(ctx)}
 		case <-timer.C:
 		}
 	}
@@ -173,7 +171,8 @@ func (m *Migrator) upBody(version uint) ([]byte, error) {
 
 // resetDeadlockVictim undoes what the aborted migration left: it drops each
 // index that became invalid during the attempt, then records the version
-// before the migration, clean. The abort rolled back the rest.
+// before the migration, clean. The abort rolled back the rest. Like the
+// migration, it does not stop when ctx ends.
 func (m *Migrator) resetDeadlockVictim(
 	ctx context.Context, conn *sql.Conn, migrator *migrate.Migrate, version uint, before map[uint32]string,
 ) error {
@@ -181,6 +180,8 @@ func (m *Migrator) resetDeadlockVictim(
 	if err != nil {
 		return err
 	}
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), resetTimeout)
+	defer cancel()
 	for oid, name := range after {
 		if _, existed := before[oid]; existed {
 			continue
