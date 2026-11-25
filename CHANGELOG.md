@@ -2,6 +2,11 @@
 
 One section per module and version, newest first. Each section uses Added, Changed, Deprecated, Removed and Fixed. [RELEASING.md](RELEASING.md) gives the release steps and the upgrade notes.
 
+## Unreleased
+
+### Added
+- `redis/nanolimit`: a nano module with limits shared by every replica through Redis. `RateLimiter` admits events per key at a `Rate` (spacing plus burst, `Decision` with `Remaining`, `RetryAfter`, `ResetAfter`); `Semaphore` leases permits per key (`Acquire`, `Release`, `Extend`, `Available`), and a permit that is not released ends with its lease. Each call is one atomic script on the server clock. A call that Redis does not answer returns the `FailOpen` (default) or `FailClosed` answer with an error wrapping `ErrUnavailable`, within a per-call deadline (`WithTimeout`, default 100ms). [README](redis/nanolimit/README.md).
+
 ## gen/v0.23.0-beta.11, v0.23.0-beta.8 and db/v0.23.0-beta.6
 
 Upgrade with [RELEASING.md](RELEASING.md#upgrade-from-v0230-beta7). Root: `Postgres.ScopeImplies`, `ContextScope.Present`, `ContextScope.AllowFailOpenWrites` in `core/nano/project`. `db`: `ForeignKey.NotValid`, `MatchFull`, `nanorepo.ErrNoContextScope`. `gen`: requires them.
