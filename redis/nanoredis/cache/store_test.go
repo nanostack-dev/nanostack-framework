@@ -1,17 +1,17 @@
-package nanocache_test
+package cache_test
 
 import (
 	"log/slog"
 	"testing"
 
 	"github.com/nanostack-dev/nanostack-framework/core/nano"
-	"github.com/nanostack-dev/nanostack-framework/redis/nanocache"
+	"github.com/nanostack-dev/nanostack-framework/redis/nanoredis/cache"
 )
 
 func discard() *slog.Logger { return slog.New(slog.DiscardHandler) }
 
 func TestNewStoreWithoutAnAddressIsTheNoOpStore(t *testing.T) {
-	store := nanocache.NewStore(t.Context(), nanocache.Config{}, discard())
+	store := cache.NewStore(t.Context(), cache.Config{}, discard())
 	if store.RedisClient() != nil {
 		t.Fatal("NewStore without an address returned a Redis store")
 	}
@@ -22,14 +22,14 @@ func TestNewStoreWithoutAnAddressIsTheNoOpStore(t *testing.T) {
 
 func TestNewStoreFallsBackWhenRedisIsUnreachable(t *testing.T) {
 	// Port 1 refuses the connection at once.
-	store := nanocache.NewStore(t.Context(), nanocache.Config{Address: "127.0.0.1:1"}, discard())
+	store := cache.NewStore(t.Context(), cache.Config{Address: "127.0.0.1:1"}, discard())
 	if store.RedisClient() != nil {
 		t.Fatal("NewStore returned a Redis store for an unreachable server")
 	}
 }
 
 func TestNoOpStoreRunsTheFallbackEveryTime(t *testing.T) {
-	store := nanocache.NoOp()
+	store := cache.NoOp()
 	calls := 0
 	for range 2 {
 		got, err := store.GetOrElse(t.Context(), "k", func() (string, error) { calls++; return "fresh", nil }, 0)

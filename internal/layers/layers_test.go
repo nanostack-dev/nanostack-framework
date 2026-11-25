@@ -13,7 +13,7 @@ import (
 
 func TestLayer(t *testing.T) {
 	for rel, want := range map[string]int{
-		"core/nano": 1, "core": 1, "http/problem": 2, "pg/nanopg": 2, "redis/nanocache": 2, "otel/nanotrace": 2,
+		"core/nano": 1, "core": 1, "http/problem": 2, "pg/nanopg": 2, "redis/nanocache": 2, "redis/nanoredis/cache": 2, "otel/nanotrace": 2,
 		"gen": 3, "gen/wire": 3, "gen/cmd/nanostack": 3, "gen/repo": 3,
 		"gen/repo/internal/repotest": 0, "gen/repo/internal/repotest/db/shop/public/table": 0,
 		"cmd/nano": 0, "pkg/log": 0, "modules/cache": 0, "internal/layers": 0, "coreutil": 0, "pgx": 0, "pkg/functional": 0,
@@ -47,7 +47,7 @@ func TestMayImport(t *testing.T) {
 		{"pg/nanopg", "core/nano", true},
 		{"http/nanoserver", "pg/nanopg", true},
 		{"pg/nanomigrate", "modules/migrations", false},
-		{"redis/nanocache", "pkg/redisx", false},
+		{"redis/nanoredis/cache", "pkg/redisx", false},
 		{"otel/nanotrace", "pkg/log", false},
 		{"pg/nanopg", "app", false},
 		{"pg/nanopg", "gen/wire", false},
@@ -66,7 +66,7 @@ func TestMayImport(t *testing.T) {
 		{"core/nano", "pkg/functionalx", false},
 		{"core/log", "pg/nanopg", false},
 		{"core/log", "otel/nanotrace", false},
-		{"core/log", "redis/nanocache", false},
+		{"core/log", "redis/nanoredis/cache", false},
 		{"gen/wire", "pkg/tracing", false},
 		{"modules/nanofx", "core/nano", true},
 	} {

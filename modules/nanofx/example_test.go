@@ -10,7 +10,7 @@ import (
 
 	"github.com/nanostack-dev/nanostack-framework/http/nanopprof"
 	"github.com/nanostack-dev/nanostack-framework/modules/nanofx"
-	"github.com/nanostack-dev/nanostack-framework/redis/nanocache"
+	"github.com/nanostack-dev/nanostack-framework/redis/nanoredis/cache"
 )
 
 // A service still on fx replaces modules/pprof with the nano module: it
@@ -34,16 +34,16 @@ func ExampleLifecycle() {
 
 // The dialing constructors take a context.Context first. Context provides
 // it; in production it is the context that SIGTERM cancels. An empty
-// nanocache.Config gives the no-op store, so this example needs no Redis.
+// cache.Config gives the no-op store, so this example needs no Redis.
 func ExampleContext() {
-	var store nanocache.Store
+	var store cache.Store
 	app := fx.New(
 		fx.NopLogger,
 		nanofx.Context(context.Background()),
-		fx.Supply(nanocache.Config{}),
+		fx.Supply(cache.Config{}),
 		fx.Supply(slog.New(slog.DiscardHandler)),
-		fx.Provide(nanocache.NewStore),
-		nanofx.Lifecycle[nanocache.Store]("redis"),
+		fx.Provide(cache.NewStore),
+		nanofx.Lifecycle[cache.Store]("redis"),
 		fx.Populate(&store),
 	)
 	if err := app.Err(); err != nil {

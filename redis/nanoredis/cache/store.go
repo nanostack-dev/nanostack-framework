@@ -1,4 +1,4 @@
-package nanocache
+package cache
 
 import (
 	"context"
@@ -85,7 +85,7 @@ func dial(ctx context.Context, cfg Config) (*RedisStore, error) {
 	defer cancel()
 	if err := client.Ping(pingCtx).Err(); err != nil {
 		_ = client.Close()
-		return nil, fmt.Errorf("nanocache: connect to %q: %w", cfg.Address, err)
+		return nil, fmt.Errorf("cache: connect to %q: %w", cfg.Address, err)
 	}
 	return &RedisStore{client: client}, nil
 }

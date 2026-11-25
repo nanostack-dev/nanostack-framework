@@ -2,6 +2,22 @@
 
 One section per module and version, newest first. Each section uses Added, Changed, Deprecated, Removed and Fixed. [RELEASING.md](RELEASING.md) gives the release steps and the upgrade notes.
 
+## v0.23.0-beta.9
+
+Root only. Upgrade with [RELEASING.md](RELEASING.md#upgrade-from-v0230-beta8). `db`, `pkg/functional` and `gen` keep `db/v0.23.0-beta.6`, `pkg/functional/v0.23.0-beta.1` and `gen/v0.23.0-beta.11`.
+
+### Added
+- `redis/nanoredis`, the tree of the Redis integrations ([README](redis/nanoredis/README.md)):
+  - `redis/nanoredis/throttle`: a per-key rate limiter shared by every replica. `throttle.New(store, name, Rate)` returns a `Limiter` whose `Allow`/`AllowN` return a `Decision` (`Allowed`, `Remaining`, `RetryAfter`, `ResetAfter`). A `Rate` spaces events `Period/Limit` apart with a `Burst`.
+  - `redis/nanoredis/semaphore`: up to N leased permits per key. `semaphore.New(store, name, permits)` returns a `Pool` (`Acquire`, `Release`, `Extend`, `Available`); a permit that is not released ends with its lease, and a late or double release returns `ErrPermitNotHeld`.
+  - Both run one atomic script per call on the server clock. A call that Redis does not answer returns the `nanoredis.FailOpen` (default) or `FailClosed` answer with an error wrapping `nanoredis.ErrUnavailable`, within a per-call deadline (`nanoredis.WithTimeout`, default 100ms) that holds even for a client that ignores context deadlines.
+
+### Changed
+- `redis/nanocache` moved to `redis/nanoredis/cache` (package `cache`). `ErrInvalidPrefix` and the connection error now start with `cache:`. Upgrade: [RELEASING.md](RELEASING.md#upgrade-from-v0230-beta8).
+
+### Deprecated
+- `redis/nanocache` forwards every name to `redis/nanoredis/cache` as an alias, and keeps its own `Module`, for one release.
+
 ## gen/v0.23.0-beta.11, v0.23.0-beta.8 and db/v0.23.0-beta.6
 
 Upgrade with [RELEASING.md](RELEASING.md#upgrade-from-v0230-beta7). Root: `Postgres.ScopeImplies`, `ContextScope.Present`, `ContextScope.AllowFailOpenWrites` in `core/nano/project`. `db`: `ForeignKey.NotValid`, `MatchFull`, `nanorepo.ErrNoContextScope`. `gen`: requires them.

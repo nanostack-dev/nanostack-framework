@@ -46,10 +46,10 @@ Wait until PostgreSQL accepts connections before running tests. See [transactor 
 
 ## Redis and Valkey integration
 
-`pkg/redisx` and `pkg/testkit/redistest` use the `integration` tag too. They need no setup: `redistest` starts a Valkey container through Docker on first use and removes it when the test binary exits. Set `REDIS_TEST_ADDR` to use a server you run, or `REDIS_TEST_IMAGE` to test another server version.
+`pkg/redisx`, `pkg/testkit/redistest` and the `redis/` packages (`redis/nanoredis/cache`, `throttle`, `semaphore`, and the `redis/nanocache` forwarder) use the `integration` tag too. They need no setup: `redistest` starts a Valkey container through Docker on first use and removes it when the test binary exits. Set `REDIS_TEST_ADDR` to use a server you run, or `REDIS_TEST_IMAGE` to test another server version.
 
 ```sh
-go test -tags=integration -race -count=1 ./pkg/redisx ./pkg/testkit/redistest
+go test -tags=integration -race -count=1 ./pkg/redisx ./pkg/testkit/redistest ./redis/...
 REDIS_TEST_IMAGE=redis:7-alpine go test -tags=integration -race -count=1 ./pkg/redisx
 ```
 

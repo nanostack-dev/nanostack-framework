@@ -192,6 +192,14 @@ go tool nanostack gen
 
 - A consumer goes back to the last good version with `go get <module>@<version>`, then `go mod tidy`.
 
+## Upgrade from v0.23.0-beta.8
+
+Root `v0.23.0-beta.9` adds `redis/nanoredis` (`cache`, `throttle`, `semaphore`) and moves `redis/nanocache` to `redis/nanoredis/cache` ([CHANGELOG.md](CHANGELOG.md#v0230-beta9)). `db`, `pkg/functional` and `gen` keep `db/v0.23.0-beta.6`, `pkg/functional/v0.23.0-beta.1` and `gen/v0.23.0-beta.11`.
+
+1. Bump the root: `go get github.com/nanostack-dev/nanostack-framework@v0.23.0-beta.9 && go mod tidy`, then `go tool lintconfig` where the service generates its lint config.
+2. Nothing else is required: `redis/nanocache` forwards every name to `redis/nanoredis/cache` for this release.
+3. To move now: replace the import `redis/nanocache` with `redis/nanoredis/cache` and `nanocache.` with `cache.` (`grep -rln 'redis/nanocache' --include='*.go' .`), then run `go tool nanostack gen`, which rewrites `wire.gen.go`. Check `errors.Is` on `ErrInvalidPrefix` rather than its text, which now starts with `cache:`.
+
 ## Upgrade from v0.23.0-beta.7
 
 Root `v0.23.0-beta.8`, `db/v0.23.0-beta.6` and `gen/v0.23.0-beta.11` tighten the scope rule of derived methods ([CHANGELOG.md](CHANGELOG.md#genv0230-beta11-v0230-beta8-and-dbv0230-beta6)). `pkg/functional` keeps `v0.23.0-beta.1`.

@@ -1,6 +1,6 @@
 //go:build integration
 
-package nanocache_test
+package cache_test
 
 import (
 	"errors"
@@ -10,18 +10,18 @@ import (
 
 	"github.com/nanostack-dev/nanostack-framework/core/nano"
 	"github.com/nanostack-dev/nanostack-framework/redis/internal/redistest"
-	"github.com/nanostack-dev/nanostack-framework/redis/nanocache"
+	"github.com/nanostack-dev/nanostack-framework/redis/nanoredis/cache"
 )
 
 // Only a real server shows that NewStore connects, that EvictPattern finds
 // keys with SCAN and that Stop closes the client. The server is the shared
 // one of redis/internal/redistest:
 //
-//	go test -tags=integration ./redis/nanocache/
+//	go test -tags=integration ./redis/nanoredis/cache/
 
 func TestNewStoreUsesRedisAndStops(t *testing.T) {
 	namespace := redistest.Namespace(t)
-	store := nanocache.NewStore(t.Context(), nanocache.Config{Address: redistest.Addr(t)}, discard())
+	store := cache.NewStore(t.Context(), cache.Config{Address: redistest.Addr(t)}, discard())
 	if store.RedisClient() == nil {
 		t.Fatal("NewStore returned the no-op store for a reachable server")
 	}
@@ -43,7 +43,7 @@ func TestNewStoreUsesRedisAndStops(t *testing.T) {
 	if err := products.EvictPrefix(t.Context(), "tenant"); err != nil {
 		t.Fatalf("EvictPrefix: %v", err)
 	}
-	if _, err := products.Key("tenant", "a").Get(t.Context()); !errors.Is(err, nanocache.ErrCacheKeyNotFound) {
+	if _, err := products.Key("tenant", "a").Get(t.Context()); !errors.Is(err, cache.ErrCacheKeyNotFound) {
 		t.Fatalf("Get after EvictPrefix = %v, want ErrCacheKeyNotFound", err)
 	}
 
@@ -62,7 +62,7 @@ func TestNewStoreUsesRedisAndStops(t *testing.T) {
 // EvictPrefix must remove exactly its own scope, whatever the parts hold.
 func TestEvictPrefixRemovesExactlyItsScope(t *testing.T) {
 	namespace := redistest.Namespace(t)
-	store := nanocache.NewStore(t.Context(), nanocache.Config{Address: redistest.Addr(t)}, discard())
+	store := cache.NewStore(t.Context(), cache.Config{Address: redistest.Addr(t)}, discard())
 	t.Cleanup(func() { _ = store.Close() })
 	perms := mustNew[string](store, namespace+":perms", time.Minute)
 	scopes := []string{"team[ops]", "teamo", "*", "b", `a\b`, "a:b", "a"}
@@ -98,7 +98,7 @@ func TestEvictPrefixRemovesExactlyItsScope(t *testing.T) {
 // removed.
 func TestEvictPrefixRemovesMoreThanOnePage(t *testing.T) {
 	namespace := redistest.Namespace(t)
-	store := nanocache.NewStore(t.Context(), nanocache.Config{Address: redistest.Addr(t)}, discard())
+	store := cache.NewStore(t.Context(), cache.Config{Address: redistest.Addr(t)}, discard())
 	t.Cleanup(func() { _ = store.Close() })
 	items := mustNew[string](store, namespace+":items", time.Minute)
 	const n = 1200

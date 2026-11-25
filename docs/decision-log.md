@@ -588,3 +588,14 @@ Amends [ADR 0026](adr/0026-nano-gen-repo.md#amendment-2026-11-09-derived-writes)
 - **The tenant of a write comes from a parameter, never from the value.** The value is often a request body. A write names every scope column of its table, and a table without a NOT NULL hard scope, or with a nullable scope, gets no derived write.
 - **An upsert conflicts on a key that holds a hard scope.** Its `DO UPDATE` also requires every other scope column to match, so it never changes a row of another workspace.
 - **Columns the database owns (`Postgres.DatabaseColumns`) are never written.**
+
+## 2026-11-25: Redis Integrations Live Under nanoredis
+
+`redis/nanoredis` holds the Redis packages: `cache` (moved from `redis/nanocache`), `throttle` and `semaphore`. `internal/guard` holds what the limits share: the client of a store, name and key validation, the failure policy, the per-call deadline and the throttled warning.
+
+- **One tree, not one package per integration.** The limits reuse the cache's connection and share their guard code; a parent package lets them share it through an internal package without exporting it. Rejected: a separate `redis/nanolimit` package beside `redis/nanocache`, which would have exported its shared code or copied it.
+- **`throttle` and `semaphore` are packages, not nano modules.** A limiter has a name and a rate that only the service knows, so the service builds it in its own constructor from the `cache.Store` that `cache.Module` provides.
+- **A limit returns its policy's answer and an error together.** `FailOpen` (default) or `FailClosed` decides the answer when Redis does not answer, and the error (wrapping `nanoredis.ErrUnavailable`) tells the caller it happened. Rejected: an error alone, which makes every caller rewrite the policy.
+- **The rate limiter stores a time per key; the semaphore a sorted set of lease ends.** Both keys expire when they hold nothing, both scripts read the server clock, and a semaphore permit that is not released ends with its lease. Rejected: a fixed window, which admits two bursts across a window edge.
+- **`redis/nanocache` forwards for one release** with aliases and its own `Module`, so atelier and echopoint build unchanged.
+

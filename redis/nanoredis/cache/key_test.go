@@ -1,4 +1,4 @@
-package nanocache_test
+package cache_test
 
 import (
 	"context"

@@ -1,4 +1,4 @@
-// Package nanocache is the nano module for the shared cache: a Redis store
+// Package cache is the nano module for the shared cache: a Redis store
 // when an address is configured, a no-op store otherwise, and the typed
 // Cache[T] that services use on top of it.
 //
@@ -8,11 +8,11 @@
 // and REDIS_DB:
 //
 //	type Config struct {
-//		Redis nanocache.Config `config:"redis"`
+//		Redis cache.Config `config:"redis"`
 //	}
 //
 // A cache is an optimization, never a dependency: when Redis is not
 // configured or not reachable at start, NewStore returns the no-op store and
 // every read goes to the source of truth. A per-instance fallback cache would
 // keep stale entries that no other instance can evict.
-package nanocache
+package cache

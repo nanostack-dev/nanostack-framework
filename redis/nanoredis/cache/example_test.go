@@ -1,4 +1,4 @@
-package nanocache_test
+package cache_test
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/nanostack-dev/nanostack-framework/redis/nanocache"
+	"github.com/nanostack-dev/nanostack-framework/redis/nanoredis/cache"
 )
 
 type plan struct {
@@ -18,8 +18,8 @@ type plan struct {
 func ExampleNew() {
 	ctx := context.Background()
 	logger := slog.New(slog.DiscardHandler)
-	store := nanocache.NewStore(ctx, nanocache.Config{}, logger)
-	plans, err := nanocache.New[plan](store, "plan", 10*time.Minute, logger)
+	store := cache.NewStore(ctx, cache.Config{}, logger)
+	plans, err := cache.New[plan](store, "plan", 10*time.Minute, logger)
 	if err != nil {
 		panic(err)
 	}
