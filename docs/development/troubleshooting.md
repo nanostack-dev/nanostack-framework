@@ -24,4 +24,12 @@ An SSE or other streaming response delivers events for the server's `WriteTimeou
 
 `lib/pq` reports a canceled query context as SQLSTATE `57014` "canceling statement due to user request". The error does not wrap `context.Canceled`. Log through `log.Error(ctx, err)` or `log.Event`: `log.LevelFor` uses [`pgerr.IsQueryCanceled`](../../pkg/db/pgerr/README.md) and picks warn level. A direct `.Error().Err(err)` call bypasses that rule. Verify with `go test ./pkg/log`.
 
+## A migration fails with deadlock detected
+
+A service exits at startup with `nanomigrate: migrate: migration failed: deadlock detected, Process A waits for ShareLock on virtual transaction ...; blocked by process B. Process B waits for AccessExclusiveLock on relation ...; blocked by process A`, usually on a `CREATE INDEX CONCURRENTLY` migration. Session B is not a migration. The index build waits for every transaction with an older snapshot to end; B holds one and then asks for an AccessExclusiveLock on the table. Postgres aborts whichever session's `deadlock_timeout` ends first, so the failure is a rare flake.
+
+Verified cause (Anchor, 2026-11-25): a TimescaleDB retention policy job takes an AccessExclusiveLock on every table that its hypertable references with a foreign key, even with no chunk to drop (TimescaleDB 2.23 and 2.32). Anchor's migration 000030 adds the policy, the TimescaleDB scheduler starts it at once in the same run, and 000043 then builds an index on `organizations`, which `usage_observations` references. Find B with `log_lock_waits = on`: the log line names the background worker (`Retention Policy [1006]`).
+
+`nanomigrate` reruns a deadlock victim (see [pg/nanomigrate](../../pg/nanomigrate/README.md)). A service on an older release fails instead; with `auto_fix_dirty` on, the next start forces the version clean and leaves the index invalid, because `IF NOT EXISTS` then skips it. Check with `SELECT indexrelid::regclass FROM pg_index WHERE NOT indisvalid`, drop each listed index with `DROP INDEX CONCURRENTLY`, force the version before the failed migration, and restart. Verify with `go test -tags=integration -run DeadlockVictim ./pg/nanomigrate/`, which plays the other session and fails without the rerun.
+
 Add only observed, verified repairs; unresolved causes belong in research or the issue.

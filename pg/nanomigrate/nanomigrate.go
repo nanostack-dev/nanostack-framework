@@ -144,7 +144,7 @@ func (m *Migrator) Migrate(ctx context.Context) error {
 	if m.config.ForceVersion > 0 {
 		return force(migrator, m.config.ForceVersion)
 	}
-	return m.up(ctx, migrator, errors.Is(err, migrate.ErrNilVersion))
+	return m.upRetryingDeadlocks(ctx, conn, migrator, errors.Is(err, migrate.ErrNilVersion))
 }
 
 // open returns the golang-migrate instance on conn, or nil when the directory

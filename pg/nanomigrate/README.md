@@ -14,6 +14,8 @@ Every constructor of the App runs before `Run`. A constructor that reads the ser
 
 While another instance migrates, `Migrate` waits for the migration advisory lock (the one golang-migrate takes), polling with a backoff up to 2s. A stop during that wait returns `ErrStopped` at once; golang-migrate alone would wait for the other migration to end. A connection whose lock release cannot be confirmed is discarded, so a session that holds the lock never returns to the pool.
 
+When Postgres aborts a migration to break a deadlock (SQLSTATE `40P01`), `Migrate` runs it again, up to 3 times, after a short pause. Before each rerun it drops every index that became invalid during the attempt (a failed `CREATE INDEX CONCURRENTLY` leaves one, and `IF NOT EXISTS` would then skip it) and forces the version before the migration, clean. The other side of the deadlock is a session outside the migration, such as a TimescaleDB policy job. A migration file that holds transaction control (`BEGIN`, `COMMIT`, `END`, `ROLLBACK`, `START TRANSACTION` as a statement) is not rerun, because it can commit part of its work before it fails. See [troubleshooting](../../docs/development/troubleshooting.md#a-migration-fails-with-deadlock-detected).
+
 `Validate` logs a warning for each `<base>/<module>/migrations/*.up.sql` file without its down file. `Config.Validate: false` turns it off.
 
 Run the integration tests with Docker: `go test -tags=integration ./pg/nanomigrate/`. See [docs/modules.md](../../docs/modules.md) for the migration from fx.
