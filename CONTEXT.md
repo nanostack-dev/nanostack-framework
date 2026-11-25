@@ -20,6 +20,12 @@ The framework owns reusable service infrastructure shared by Nanostack applicati
 
 **Leaves first:** The release order of the released modules: a module is tagged only after every module of this repository that it requires: `pkg/functional`, then `db`, then the root, then `gen`.
 
+**Rate limiter:** `redis/nanolimit.RateLimiter`: at most Rate permits per sliding Interval, shared by every replica through Redis (Redisson's `RRateLimiter`). Not a semaphore: a permit comes back after the interval, not on release.
+
+**Permit-expirable semaphore:** `redis/nanolimit.Semaphore`: a counting semaphore in Redis whose permits each have an ID and, optionally, a lease after which the permit comes back by itself (Redisson's `RPermitExpirableSemaphore`).
+
+**Stand-in permit:** The permit ID that a semaphore returns under `FailOpen` while Redis is unavailable. Its release is a no-op; `nanolimit.IsStandIn` recognizes it.
+
 **Service assembly:** The composition of framework modules and application-owned dependencies into one service.
 
 **Application adapter:** Product-owned behavior supplied to a framework integration, such as credential verification or transport error handling.

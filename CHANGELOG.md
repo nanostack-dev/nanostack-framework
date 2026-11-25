@@ -2,6 +2,11 @@
 
 One section per module and version, newest first. Each section uses Added, Changed, Deprecated, Removed and Fixed. [RELEASING.md](RELEASING.md) gives the release steps and the upgrade notes.
 
+## Unreleased
+
+### Added
+- `redis/nanolimit`: the nano module for distributed limits in Redis. `Limits.RateLimiter(name)` is a sliding-window rate limiter (`Overall` or `PerClient`, keep-alive, keep-state updates); `Limits.Semaphore(name)` is a permit-expirable semaphore whose leased permits come back by themselves. Both are ports of Redisson's `RRateLimiter` and `RPermitExpirableSemaphore` at commit `b019f0e` with the Lua scripts unchanged (Apache 2.0, attribution in `redis/nanolimit/NOTICE`), with Redisson's tests ported. Without Redis an acquire fails open by default (stand-in permits, one warning per minute); `WithFailurePolicy(FailClosed)` returns `ErrUnavailable` instead.
+
 ## gen/v0.23.0-beta.11, v0.23.0-beta.8 and db/v0.23.0-beta.6
 
 Upgrade with [RELEASING.md](RELEASING.md#upgrade-from-v0230-beta7). Root: `Postgres.ScopeImplies`, `ContextScope.Present`, `ContextScope.AllowFailOpenWrites` in `core/nano/project`. `db`: `ForeignKey.NotValid`, `MatchFull`, `nanorepo.ErrNoContextScope`. `gen`: requires them.

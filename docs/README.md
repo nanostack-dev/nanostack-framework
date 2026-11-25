@@ -14,7 +14,7 @@ Start with [agent rules](../AGENTS.md) and [canonical vocabulary](../CONTEXT.md)
 - [Repositories](generation.md#repositories-nanostack-gen-repo): `nanorepo.Implement`, the generated base per table, derived methods, `findOne` and `ErrMoreThanOneRow`, scope columns, `-explain` ([ADR 0026](adr/0026-nano-gen-repo.md)).
 - [Generated wiring: manifests, lifecycle, Overrides and `nanostack gen wire`](generation.md#wiring-nanostack-gen-wire), and the [generator contract](../gen/README.md).
 - [Reviewing generated code](generated-code.md): what each generator writes, what to read in a generated diff and what to trust to `-check`.
-- [Nano modules](modules.md): the generated-wiring replacements of the fx modules, their contract, and how a service moves one module at a time.
+- [Nano modules](modules.md): the generated-wiring replacements of the fx modules, their contract, and how a service moves one module at a time. [Distributed rate limiter and semaphore](../redis/nanolimit/README.md) (`redis/nanolimit`, ported from Redisson).
 - [Workflow bridge](../pkg/workflow/README.md) and [contract-test harness](../pkg/testkit/ct/README.md).
 - [Real Redis or Valkey for tests](../pkg/redisx/README.md#testing).
 

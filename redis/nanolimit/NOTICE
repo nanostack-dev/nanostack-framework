@@ -1,0 +1,19 @@
+Nanostack nanolimit
+Copyright 2026 Nanostack
+
+This package contains a modified port of Redisson (https://github.com/redisson/redisson),
+Copyright (c) 2013-2026 Nikita Koksharov, licensed under the Apache License, Version 2.0
+(LICENSE in this directory).
+
+Ported from upstream commit b019f0eb75d149a37711352db9db06f9973ca1eb (master, 2026-11-24):
+- redisson/src/main/java/org/redisson/RedissonRateLimiter.java -> ratelimiter.go
+- redisson/src/main/java/org/redisson/RedissonPermitExpirableSemaphore.java -> semaphore.go
+- redisson/src/main/java/org/redisson/RedissonRateLimiter.java (Lua scripts) -> ratelimiter_scripts.go
+- redisson/src/main/java/org/redisson/RedissonPermitExpirableSemaphore.java (Lua scripts) -> semaphore_scripts.go
+- redisson/src/test/java/org/redisson/RedissonRateLimiterTest.java -> ratelimiter_redisson_integration_test.go,
+  ratelimiter_redisson_rate_integration_test.go
+- redisson/src/test/java/org/redisson/RedissonPermitExpirableSemaphoreTest.java -> semaphore_redisson_integration_test.go,
+  semaphore_redisson_release_integration_test.go
+
+Nanostack changed it. doc.go lists the changes; each ported file says so in its header.
+Redisson ships no NOTICE file.
