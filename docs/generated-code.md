@@ -1070,7 +1070,7 @@ var App = nano.Manifest("anchor",
 	nanotrace.Module,
 	nanopg.Module,
 	nanomigrate.Module,
-	nanocache.Module,
+	cache.Module,
 	mapper.Module,
 	repository.Module,
 	// … 14 more modules of the same shape

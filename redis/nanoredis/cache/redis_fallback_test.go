@@ -1,4 +1,4 @@
-package nanocache_test
+package cache_test
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
-	"github.com/nanostack-dev/nanostack-framework/redis/nanocache"
+	"github.com/nanostack-dev/nanostack-framework/redis/nanoredis/cache"
 )
 
 type redisCommandHook struct {
@@ -80,7 +80,7 @@ func TestRedisFallbackPolicy(t *testing.T) {
 						return nil
 					}
 				}})
-				store := nanocache.NewRedisStore(client)
+				store := cache.NewRedisStore(client)
 				loads := 0
 				load := func() (string, error) {
 					loads++

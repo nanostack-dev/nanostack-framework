@@ -1,4 +1,19 @@
-package nanolimit
+// Package throttle is a per-key rate limiter shared by every replica of a
+// service through Redis.
+//
+// A Limiter admits Rate.Limit events per Rate.Period for each key, of which
+// up to Rate.Burst may come at once:
+//
+//	calls, err := throttle.New(store, "mcp:calls", throttle.PerMinute(120))
+//	decision, err := calls.Allow(ctx, userID)
+//	if !decision.Allowed {
+//		// 429, Retry-After: decision.RetryAfter
+//	}
+//
+// Each call is one atomic script on one key that reads the clock of the
+// Redis server. Without Redis, a call returns the answer of the
+// nanoredis.FailurePolicy with an error that wraps nanoredis.ErrUnavailable.
+package throttle
 
 import (
 	"context"
@@ -6,6 +21,10 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+
+	"github.com/nanostack-dev/nanostack-framework/redis/nanoredis"
+	"github.com/nanostack-dev/nanostack-framework/redis/nanoredis/cache"
+	"github.com/nanostack-dev/nanostack-framework/redis/nanoredis/internal/guard"
 )
 
 // Rate is Limit events per Period, of which up to Burst may come at once.
@@ -52,19 +71,19 @@ func (r Rate) spacing() int64 { return r.Period.Microseconds() / int64(r.Limit) 
 func (r Rate) validate() error {
 	switch {
 	case r.Limit < 1:
-		return fmt.Errorf("%w: rate limit %d, want at least 1", ErrInvalidArgument, r.Limit)
+		return fmt.Errorf("%w: rate limit %d, want at least 1", nanoredis.ErrInvalidArgument, r.Limit)
 	case r.Period <= 0:
-		return fmt.Errorf("%w: rate period %s, want more than zero", ErrInvalidArgument, r.Period)
+		return fmt.Errorf("%w: rate period %s, want more than zero", nanoredis.ErrInvalidArgument, r.Period)
 	case r.Burst < 0:
-		return fmt.Errorf("%w: rate burst %d, want zero or more", ErrInvalidArgument, r.Burst)
+		return fmt.Errorf("%w: rate burst %d, want zero or more", nanoredis.ErrInvalidArgument, r.Burst)
 	case r.spacing() < 1:
 		return fmt.Errorf("%w: rate %d per %s is more than one event per microsecond",
-			ErrInvalidArgument, r.Limit, r.Period)
+			nanoredis.ErrInvalidArgument, r.Limit, r.Period)
 	}
 	return nil
 }
 
-// Decision is the answer of a RateLimiter.
+// Decision is the answer of a Limiter.
 type Decision struct {
 	// Allowed reports whether the events are admitted. Admitted events are
 	// counted; refused events are not.
@@ -81,42 +100,61 @@ type Decision struct {
 	ResetAfter time.Duration
 }
 
-// RateLimiter admits events of each key at a Rate shared by every replica.
-type RateLimiter interface {
+// Limiter admits events of each key at a Rate shared by every replica.
+type Limiter interface {
 	// Allow is AllowN of one event.
 	Allow(ctx context.Context, key string) (Decision, error)
 	// AllowN admits n events of key at once, or none of them. When Redis does
 	// not answer, it returns the answer of the FailurePolicy and an error
-	// that wraps ErrUnavailable. An invalid key or n, including n above the
-	// Burst, returns a refusal and an error that wraps ErrInvalidArgument.
+	// that wraps nanoredis.ErrUnavailable. An invalid key or n, including n
+	// above the Burst, returns a refusal and an error that wraps
+	// nanoredis.ErrInvalidArgument.
 	AllowN(ctx context.Context, key string, n int) (Decision, error)
 }
 
-type rateLimiter struct {
-	base
-
-	rate Rate
+// New returns the limiter of rate for the keys under name, over the Redis
+// client of store. The no-op store has no client: every call then returns
+// the answer of the FailurePolicy. Two limiters with the same name share
+// their counts, so give each limit its own name. A name is non-empty,
+// without a glob character or a trailing ':'.
+func New(store cache.Store, name string, rate Rate, opts ...nanoredis.Option) (Limiter, error) {
+	return NewWithClient(guard.ClientOf(store), name, rate, opts...)
 }
 
-func (l *rateLimiter) Allow(ctx context.Context, key string) (Decision, error) {
+// NewWithClient is New over a client that the service owns. A nil client
+// means no Redis.
+func NewWithClient(client *redis.Client, name string, rate Rate, opts ...nanoredis.Option) (Limiter, error) {
+	if err := rate.validate(); err != nil {
+		return nil, err
+	}
+	runner, err := guard.NewRunner(client, name, opts)
+	if err != nil {
+		return nil, err
+	}
+	return &limiter{runner: runner, rate: rate}, nil
+}
+
+type limiter struct {
+	runner *guard.Runner
+	rate   Rate
+}
+
+func (l *limiter) Allow(ctx context.Context, key string) (Decision, error) {
 	return l.AllowN(ctx, key, 1)
 }
 
-func (l *rateLimiter) AllowN(ctx context.Context, key string, n int) (Decision, error) {
-	redisKey, err := l.redisKey(key)
+func (l *limiter) AllowN(ctx context.Context, key string, n int) (Decision, error) {
+	redisKey, err := l.runner.Key(key)
 	if err != nil {
 		return Decision{}, err
 	}
 	if n < 1 || n > l.rate.burst() {
 		return Decision{}, fmt.Errorf("%w: %d events, want 1 to the burst of %d",
-			ErrInvalidArgument, n, l.rate.burst())
+			nanoredis.ErrInvalidArgument, n, l.rate.burst())
 	}
-	reply, err := l.eval(ctx, rateScript, redisKey, l.rate.spacing(), l.rate.burst(), n)
-	if err == nil && len(reply) != rateReplyLen {
-		err = fmt.Errorf("rate script returned %d values, want %d", len(reply), rateReplyLen)
-	}
+	reply, err := l.runner.Eval(ctx, script, redisKey, replyLen, l.rate.spacing(), l.rate.burst(), n)
 	if err != nil {
-		return Decision{Allowed: l.opts.policy == FailOpen}, l.unavailable(ctx, err)
+		return Decision{Allowed: l.runner.FailOpen()}, l.runner.Unavailable(ctx, err)
 	}
 	return Decision{
 		Allowed:    reply[0] == 1,
@@ -126,14 +164,14 @@ func (l *rateLimiter) AllowN(ctx context.Context, key string, n int) (Decision, 
 	}, nil
 }
 
-const rateReplyLen = 4
+const replyLen = 4
 
-// rateScript keeps, for each key, the time at which the key will have its
-// full burst again (its "full" time), in microseconds of the server clock.
-// Each admitted event moves it one spacing later; it never lags the clock.
-// Events are admitted while the full time stays within burst spacings of
-// now. The key expires when it reaches its full time, so an idle key holds
-// nothing in Redis.
+// script keeps, for each key, the time at which the key will have its full
+// burst again (its "full" time), in microseconds of the server clock. Each
+// admitted event moves it one spacing later; it never lags the clock. Events
+// are admitted while the full time stays within burst spacings of now. The
+// key expires when it reaches its full time, so an idle key holds nothing in
+// Redis.
 //
 // KEYS[1] the key. ARGV[1] spacing in microseconds, ARGV[2] burst, ARGV[3]
 // events. Returns {admitted 0|1, remaining, retry after µs, reset after µs}.
@@ -141,7 +179,7 @@ const rateReplyLen = 4
 // Redis in exponent form and lose its last digits.
 //
 //nolint:gochecknoglobals // A script is loaded once per server and shared.
-var rateScript = redis.NewScript(replicateEffects + `
+var script = redis.NewScript(guard.ReplicateEffects + `
 local spacing = tonumber(ARGV[1])
 local burst = tonumber(ARGV[2])
 local events = tonumber(ARGV[3])

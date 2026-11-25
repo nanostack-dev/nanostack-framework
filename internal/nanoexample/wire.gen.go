@@ -25,7 +25,7 @@ import (
 	"github.com/nanostack-dev/nanostack-framework/pg/nanopg"
 	"github.com/nanostack-dev/nanostack-framework/pkg/apisec"
 	"github.com/nanostack-dev/nanostack-framework/pkg/db/transactor"
-	"github.com/nanostack-dev/nanostack-framework/redis/nanocache"
+	"github.com/nanostack-dev/nanostack-framework/redis/nanoredis/cache"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -46,7 +46,7 @@ type Overrides struct {
 	Migrator         *nanomigrate.Migrator
 	Transactor       transactor.Transactor
 	Client           *pglock.Client
-	Store            nanocache.Store
+	Store            cache.Store
 	Document         nanoapisec.Document
 	Resolver         *apisec.Resolver
 	Service          *Service
@@ -70,7 +70,7 @@ type Components struct {
 	Migrator         *nanomigrate.Migrator
 	Transactor       transactor.Transactor
 	Client           *pglock.Client
-	Store            nanocache.Store
+	Store            cache.Store
 	Document         nanoapisec.Document
 	Resolver         *apisec.Resolver
 	Service          *Service
@@ -234,14 +234,14 @@ func BuildComponents(ctx context.Context, cfg Config, ov Overrides) (_ *nano.App
 		}
 	}
 
-	var store nanocache.Store
+	var store cache.Store
 	if needStore {
 		if ov.Store != nil {
 			store = ov.Store
 		} else {
-			store = nanocache.NewStore(ctx, cfg.Redis, logger)
+			store = cache.NewStore(ctx, cfg.Redis, logger)
 		}
-		app.Manage("nanocache.Store", store) // interface: lifecycle by dynamic type
+		app.Manage("cache.Store", store) // interface: lifecycle by dynamic type
 	}
 
 	var document nanoapisec.Document

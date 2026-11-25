@@ -1,6 +1,6 @@
 //go:build integration
 
-package nanolimit_test
+package semaphore_test
 
 import (
 	"errors"
@@ -9,13 +9,17 @@ import (
 	"testing"
 	"time"
 
+	"github.com/redis/go-redis/v9"
+
 	"github.com/nanostack-dev/nanostack-framework/redis/internal/redistest"
-	"github.com/nanostack-dev/nanostack-framework/redis/nanolimit"
+	"github.com/nanostack-dev/nanostack-framework/redis/nanoredis"
+	"github.com/nanostack-dev/nanostack-framework/redis/nanoredis/cache"
+	"github.com/nanostack-dev/nanostack-framework/redis/nanoredis/semaphore"
 )
 
 func TestSemaphoreLeasesUpToItsPermits(t *testing.T) {
 	t.Parallel()
-	slots := mustSemaphore(t, redisLimits(t), redistest.Namespace(t)+":slots", 2)
+	slots := redisPool(t, redistest.Namespace(t)+":slots", 2)
 	first := mustAcquire(t, slots, "user", time.Minute)
 	second := mustAcquire(t, slots, "user", time.Minute)
 	if !first.Acquired || first.Available != 1 || !second.Acquired || second.Available != 0 {
@@ -49,7 +53,7 @@ func TestSemaphoreLeasesUpToItsPermits(t *testing.T) {
 // ends, and its late release must not free the permit of the next holder.
 func TestSemaphoreReclaimsAnEndedLease(t *testing.T) {
 	t.Parallel()
-	slots := mustSemaphore(t, redisLimits(t), redistest.Namespace(t)+":slots", 1)
+	slots := redisPool(t, redistest.Namespace(t)+":slots", 1)
 	crashed := mustAcquire(t, slots, "user", 100*time.Millisecond)
 	if blocked := mustAcquire(t, slots, "user", time.Minute); blocked.Acquired {
 		t.Fatal("a second permit was leased while the only one is held")
@@ -59,7 +63,7 @@ func TestSemaphoreReclaimsAnEndedLease(t *testing.T) {
 	if !next.Acquired {
 		t.Fatalf("the permit of an ended lease was not reclaimed: %+v", next)
 	}
-	if err := slots.Release(t.Context(), "user", crashed.ID); !errors.Is(err, nanolimit.ErrPermitNotHeld) {
+	if err := slots.Release(t.Context(), "user", crashed.ID); !errors.Is(err, semaphore.ErrPermitNotHeld) {
 		t.Fatalf("late Release = %v, want ErrPermitNotHeld", err)
 	}
 	if n, err := slots.Available(t.Context(), "user"); err != nil || n != 0 {
@@ -69,13 +73,13 @@ func TestSemaphoreReclaimsAnEndedLease(t *testing.T) {
 
 func TestSemaphoreDoubleReleaseIsRefused(t *testing.T) {
 	t.Parallel()
-	slots := mustSemaphore(t, redisLimits(t), redistest.Namespace(t)+":slots", 2)
+	slots := redisPool(t, redistest.Namespace(t)+":slots", 2)
 	permit := mustAcquire(t, slots, "user", time.Minute)
 	held := mustAcquire(t, slots, "user", time.Minute)
 	if err := slots.Release(t.Context(), "user", permit.ID); err != nil {
 		t.Fatalf("Release: %v", err)
 	}
-	if err := slots.Release(t.Context(), "user", permit.ID); !errors.Is(err, nanolimit.ErrPermitNotHeld) {
+	if err := slots.Release(t.Context(), "user", permit.ID); !errors.Is(err, semaphore.ErrPermitNotHeld) {
 		t.Fatalf("second Release = %v, want ErrPermitNotHeld", err)
 	}
 	if n, err := slots.Available(t.Context(), "user"); err != nil || n != 1 {
@@ -85,7 +89,7 @@ func TestSemaphoreDoubleReleaseIsRefused(t *testing.T) {
 
 func TestSemaphoreExtendKeepsThePermit(t *testing.T) {
 	t.Parallel()
-	slots := mustSemaphore(t, redisLimits(t), redistest.Namespace(t)+":slots", 1)
+	slots := redisPool(t, redistest.Namespace(t)+":slots", 1)
 	permit := mustAcquire(t, slots, "user", 150*time.Millisecond)
 	time.Sleep(100 * time.Millisecond)
 	if err := slots.Extend(t.Context(), "user", permit.ID, time.Minute); err != nil {
@@ -98,7 +102,7 @@ func TestSemaphoreExtendKeepsThePermit(t *testing.T) {
 	if err := slots.Release(t.Context(), "user", permit.ID); err != nil {
 		t.Fatalf("Release after Extend: %v", err)
 	}
-	if err := slots.Extend(t.Context(), "user", permit.ID, time.Minute); !errors.Is(err, nanolimit.ErrPermitNotHeld) {
+	if err := slots.Extend(t.Context(), "user", permit.ID, time.Minute); !errors.Is(err, semaphore.ErrPermitNotHeld) {
 		t.Errorf("Extend of a released permit = %v, want ErrPermitNotHeld", err)
 	}
 }
@@ -112,7 +116,7 @@ func TestSemaphoreIsSharedByConcurrentClients(t *testing.T) {
 	var holding, most atomic.Int64
 	var wg sync.WaitGroup
 	for range replicas {
-		slots := mustSemaphore(t, redisLimits(t), name, permits)
+		slots := redisPool(t, name, permits)
 		wg.Go(func() {
 			for range rounds {
 				permit, err := slots.Acquire(t.Context(), "shared", time.Minute)
@@ -152,7 +156,7 @@ func TestSemaphoreIsSharedByConcurrentClients(t *testing.T) {
 func TestSemaphoreKeyExpiresWithItsLeases(t *testing.T) {
 	t.Parallel()
 	name := redistest.Namespace(t) + ":slots"
-	slots := mustSemaphore(t, redisLimits(t), name, 2)
+	slots := redisPool(t, name, 2)
 	client := rawClient(t)
 	short := mustAcquire(t, slots, "user", 100*time.Millisecond)
 	ttl, err := client.PTTL(t.Context(), name+":user").Result()
@@ -172,12 +176,30 @@ func TestSemaphoreKeyExpiresWithItsLeases(t *testing.T) {
 	}
 }
 
-func newSlots(t *testing.T, name string, permits int) nanolimit.Semaphore {
+func newSlots(t *testing.T, name string, permits int) semaphore.Pool {
 	t.Helper()
-	return mustSemaphore(t, redisLimits(t), name, permits)
+	return redisPool(t, name, permits)
 }
 
-func mustAcquire(t *testing.T, slots nanolimit.Semaphore, key string, lease time.Duration) nanolimit.Permit {
+func redisPool(t *testing.T, name string, permits int) semaphore.Pool {
+	t.Helper()
+	store := cache.NewRedisStore(redis.NewClient(&redis.Options{Addr: redistest.Addr(t)}))
+	t.Cleanup(func() { _ = store.Close() })
+	pool, err := semaphore.New(store, name, permits, nanoredis.WithTimeout(time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return pool
+}
+
+func rawClient(t *testing.T) *redis.Client {
+	t.Helper()
+	client := redis.NewClient(&redis.Options{Addr: redistest.Addr(t)})
+	t.Cleanup(func() { _ = client.Close() })
+	return client
+}
+
+func mustAcquire(t *testing.T, slots semaphore.Pool, key string, lease time.Duration) semaphore.Permit {
 	t.Helper()
 	permit, err := slots.Acquire(t.Context(), key, lease)
 	if err != nil {

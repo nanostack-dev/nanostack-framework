@@ -16,7 +16,7 @@ import (
 	"github.com/nanostack-dev/nanostack-framework/pg/nanopg"
 	"github.com/nanostack-dev/nanostack-framework/pkg/apisec"
 	"github.com/nanostack-dev/nanostack-framework/pkg/db/transactor"
-	"github.com/nanostack-dev/nanostack-framework/redis/nanocache"
+	"github.com/nanostack-dev/nanostack-framework/redis/nanoredis/cache"
 )
 
 type Config struct {
@@ -26,7 +26,7 @@ type Config struct {
 	Postgres   nanopg.Config      `config:"postgres"`
 	Migrations nanomigrate.Config `config:"migrations"`
 	PGLock     nanolock.Config    `config:"pglock"`
-	Redis      nanocache.Config   `config:"redis"`
+	Redis      cache.Config       `config:"redis"`
 	HTTP       nanoserver.Config  `config:"http"`
 	Pprof      nanopprof.Config   `config:"pprof"`
 }
@@ -34,7 +34,7 @@ type Config struct {
 // Service stands for the service's own code that takes the module values.
 type Service struct{}
 
-func NewService(_ transactor.Transactor, _ *pglock.Client, _ nanocache.Store, _ *apisec.Resolver) *Service {
+func NewService(_ transactor.Transactor, _ *pglock.Client, _ cache.Store, _ *apisec.Resolver) *Service {
 	return &Service{}
 }
 

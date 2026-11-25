@@ -1,6 +1,6 @@
 //go:build integration
 
-package nanolimit_test
+package throttle_test
 
 import (
 	"sync"
@@ -11,17 +11,18 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/nanostack-dev/nanostack-framework/redis/internal/redistest"
-	"github.com/nanostack-dev/nanostack-framework/redis/nanocache"
-	"github.com/nanostack-dev/nanostack-framework/redis/nanolimit"
+	"github.com/nanostack-dev/nanostack-framework/redis/nanoredis"
+	"github.com/nanostack-dev/nanostack-framework/redis/nanoredis/cache"
+	"github.com/nanostack-dev/nanostack-framework/redis/nanoredis/throttle"
 )
 
-// The rate limiter against the shared server of redis/internal/redistest:
+// The limiter against the shared server of redis/internal/redistest:
 //
-//	go test -tags=integration ./redis/nanolimit/
+//	go test -tags=integration ./redis/nanoredis/throttle/
 
 func TestRateAdmitsTheBurstThenRefusesWithRetryAfter(t *testing.T) {
 	t.Parallel()
-	limiter := mustRate(t, redisLimits(t), redistest.Namespace(t)+":calls", nanolimit.PerMinute(60).WithBurst(3))
+	limiter := redisLimiter(t, redistest.Namespace(t)+":calls", throttle.PerMinute(60).WithBurst(3))
 	for i := range 3 {
 		decision := mustAllow(t, limiter, "user")
 		if !decision.Allowed || decision.Remaining != 2-i {
@@ -46,7 +47,7 @@ func TestRateAdmitsTheBurstThenRefusesWithRetryAfter(t *testing.T) {
 
 func TestRateAdmitsAgainAfterRetryAfter(t *testing.T) {
 	t.Parallel()
-	limiter := mustRate(t, redisLimits(t), redistest.Namespace(t)+":calls", nanolimit.PerSecond(10).WithBurst(1))
+	limiter := redisLimiter(t, redistest.Namespace(t)+":calls", throttle.PerSecond(10).WithBurst(1))
 	if first := mustAllow(t, limiter, "k"); !first.Allowed {
 		t.Fatalf("first event refused: %+v", first)
 	}
@@ -62,7 +63,7 @@ func TestRateAdmitsAgainAfterRetryAfter(t *testing.T) {
 
 func TestAllowNTakesAllOrNothing(t *testing.T) {
 	t.Parallel()
-	limiter := mustRate(t, redisLimits(t), redistest.Namespace(t)+":calls", nanolimit.PerHour(5))
+	limiter := redisLimiter(t, redistest.Namespace(t)+":calls", throttle.PerHour(5))
 	decision, err := limiter.AllowN(t.Context(), "k", 3)
 	if err != nil || !decision.Allowed || decision.Remaining != 2 {
 		t.Fatalf("AllowN 3 of 5 = %+v, %v; want admitted with 2 remaining", decision, err)
@@ -80,7 +81,7 @@ func TestAllowNTakesAllOrNothing(t *testing.T) {
 // one event per spacing, not a new burst per period.
 func TestRateHoldsOverTime(t *testing.T) {
 	t.Parallel()
-	limiter := mustRate(t, redisLimits(t), redistest.Namespace(t)+":calls", nanolimit.PerSecond(20).WithBurst(5))
+	limiter := redisLimiter(t, redistest.Namespace(t)+":calls", throttle.PerSecond(20).WithBurst(5))
 	var admitted int
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
@@ -103,7 +104,7 @@ func TestRateIsSharedByConcurrentClients(t *testing.T) {
 	var admitted atomic.Int64
 	var wg sync.WaitGroup
 	for range replicas {
-		limiter := mustRate(t, redisLimits(t), name, nanolimit.PerHour(burst))
+		limiter := redisLimiter(t, name, throttle.PerHour(burst))
 		wg.Go(func() {
 			for range perReplica {
 				decision, err := limiter.Allow(t.Context(), "shared")
@@ -128,7 +129,7 @@ func TestRateIsSharedByConcurrentClients(t *testing.T) {
 func TestRateKeyExpiresWhenIdle(t *testing.T) {
 	t.Parallel()
 	name := redistest.Namespace(t) + ":calls"
-	limiter := mustRate(t, redisLimits(t), name, nanolimit.PerSecond(10).WithBurst(2))
+	limiter := redisLimiter(t, name, throttle.PerSecond(10).WithBurst(2))
 	mustAllow(t, limiter, "k")
 	client := rawClient(t)
 	ttl, err := client.PTTL(t.Context(), name+":k").Result()
@@ -141,11 +142,15 @@ func TestRateKeyExpiresWhenIdle(t *testing.T) {
 	}
 }
 
-func redisLimits(t *testing.T) *nanolimit.Limits {
+func redisLimiter(t *testing.T, name string, rate throttle.Rate) throttle.Limiter {
 	t.Helper()
-	store := nanocache.NewRedisStore(redis.NewClient(&redis.Options{Addr: redistest.Addr(t)}))
+	store := cache.NewRedisStore(redis.NewClient(&redis.Options{Addr: redistest.Addr(t)}))
 	t.Cleanup(func() { _ = store.Close() })
-	return nanolimit.FromStore(store, nanolimit.WithTimeout(time.Second))
+	limiter, err := throttle.New(store, name, rate, nanoredis.WithTimeout(time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return limiter
 }
 
 func rawClient(t *testing.T) *redis.Client {
@@ -155,7 +160,7 @@ func rawClient(t *testing.T) *redis.Client {
 	return client
 }
 
-func mustAllow(t *testing.T, limiter nanolimit.RateLimiter, key string) nanolimit.Decision {
+func mustAllow(t *testing.T, limiter throttle.Limiter, key string) throttle.Decision {
 	t.Helper()
 	decision, err := limiter.Allow(t.Context(), key)
 	if err != nil {

@@ -1,4 +1,4 @@
-package nanocache_test
+package cache_test
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nanostack-dev/nanostack-framework/redis/nanocache"
+	"github.com/nanostack-dev/nanostack-framework/redis/nanoredis/cache"
 )
 
 type product struct {
@@ -20,7 +20,7 @@ type product struct {
 // Embedding the no-op store supplies the parts of Store that Cache never
 // touches.
 type fakeStore struct {
-	nanocache.Store
+	cache.Store
 
 	data        map[string]string
 	ttls        map[string]time.Duration
@@ -32,7 +32,7 @@ type fakeStore struct {
 
 func newFakeStore() *fakeStore {
 	return &fakeStore{
-		Store: nanocache.NoOp(),
+		Store: cache.NoOp(),
 		data:  map[string]string{},
 		ttls:  map[string]time.Duration{},
 	}
@@ -44,7 +44,7 @@ func (f *fakeStore) Get(_ context.Context, key string) (string, error) {
 	}
 	raw, ok := f.data[key]
 	if !ok {
-		return "", nanocache.ErrCacheKeyNotFound
+		return "", cache.ErrCacheKeyNotFound
 	}
 	return raw, nil
 }
@@ -63,7 +63,7 @@ func (f *fakeStore) GetOrElse(
 ) (string, error) {
 	if raw, err := f.Get(ctx, key); err == nil {
 		return raw, nil
-	} else if !errors.Is(err, nanocache.ErrCacheKeyNotFound) {
+	} else if !errors.Is(err, cache.ErrCacheKeyNotFound) {
 		return "", err
 	}
 	value, err := fallback()
@@ -92,13 +92,13 @@ func (f *fakeStore) Exists(_ context.Context, key string) (bool, error) {
 	return ok, nil
 }
 
-func newProductCache(s nanocache.Store) nanocache.Cache[product] {
+func newProductCache(s cache.Store) cache.Cache[product] {
 	return mustNew[product](s, "product", 30*time.Minute)
 }
 
 // mustNew is New for a prefix that a test knows is valid.
-func mustNew[T any](s nanocache.Store, prefix string, ttl time.Duration) nanocache.Cache[T] {
-	c, err := nanocache.New[T](s, prefix, ttl, slog.New(slog.DiscardHandler))
+func mustNew[T any](s cache.Store, prefix string, ttl time.Duration) cache.Cache[T] {
+	c, err := cache.New[T](s, prefix, ttl, slog.New(slog.DiscardHandler))
 	if err != nil {
 		panic(err)
 	}
@@ -132,7 +132,7 @@ func TestCacheGetAndSet(t *testing.T) {
 
 	t.Run("miss reports ErrCacheKeyNotFound", func(t *testing.T) {
 		got, err := entry.Get(context.Background())
-		if !errors.Is(err, nanocache.ErrCacheKeyNotFound) {
+		if !errors.Is(err, cache.ErrCacheKeyNotFound) {
 			t.Fatalf("Get() err = %v, want ErrCacheKeyNotFound", err)
 		}
 		if got != nil {
@@ -287,7 +287,7 @@ func TestCacheSetRejectsNil(t *testing.T) {
 	store := newFakeStore()
 	entry := newProductCache(store).Key("tenant1", "prod9")
 
-	if err := entry.Set(context.Background(), nil); !errors.Is(err, nanocache.ErrNilValue) {
+	if err := entry.Set(context.Background(), nil); !errors.Is(err, cache.ErrNilValue) {
 		t.Fatalf("Set(nil) err = %v, want ErrNilValue", err)
 	}
 	if len(store.data) != 0 {
@@ -343,7 +343,7 @@ func TestCacheNamespacesAreIndependent(t *testing.T) {
 		t.Fatalf("Set() err = %v", err)
 	}
 	got, err := apiKeys.Key("same").Get(context.Background())
-	if !errors.Is(err, nanocache.ErrCacheKeyNotFound) {
+	if !errors.Is(err, cache.ErrCacheKeyNotFound) {
 		t.Fatalf("apiKeys Get() = (%v, %v), want ErrCacheKeyNotFound — namespaces must not collide", got, err)
 	}
 

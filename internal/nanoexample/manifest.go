@@ -12,7 +12,7 @@ import (
 	"github.com/nanostack-dev/nanostack-framework/pg/nanolock"
 	"github.com/nanostack-dev/nanostack-framework/pg/nanomigrate"
 	"github.com/nanostack-dev/nanostack-framework/pg/nanopg"
-	"github.com/nanostack-dev/nanostack-framework/redis/nanocache"
+	"github.com/nanostack-dev/nanostack-framework/redis/nanoredis/cache"
 )
 
 var App = nano.Manifest("nanoexample",
@@ -21,7 +21,7 @@ var App = nano.Manifest("nanoexample",
 	nanopg.Module,
 	nanomigrate.Module,
 	nanolock.Module,
-	nanocache.Module,
+	cache.Module,
 	nanoserver.Module,
 	nanopprof.Module,
 	nanoapisec.Module,

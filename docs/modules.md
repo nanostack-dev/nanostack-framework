@@ -11,12 +11,13 @@ A nano module is the generated-wiring replacement of an fx module in `modules/`.
 | [`pg/nanopg`](../pg/nanopg/README.md) | `modules/postgres`, `modules/transactor` | `NewDB(ctx, Config, *slog.Logger, trace.TracerProvider) (*DB, error)`, `SQL(*DB) *sql.DB`, `NewTransactor(*sql.DB) transactor.Transactor` | `*DB`: `Stopper` (close), `HealthChecker` (ping) | `postgres`: `host`, `port` (5432), `user`, `password` (secret), `db`, `sslmode`, `max_open_conns` (25), `max_idle_conns` (25), `conn_max_lifetime` (5m) |
 | [`pg/nanomigrate`](../pg/nanomigrate/README.md) | `modules/migrations` | `NewMigrator(Config, *sql.DB, *slog.Logger) *Migrator`; `nano.Invoke(Run)` | none: `Run` is an Invoke | `migrations`: `enabled` (true), `base_path` (migrations), `validate` (true), `auto_fix_dirty` (false), `force_version` |
 | [`pg/nanolock`](../pg/nanolock/README.md) | `modules/pglock` | `NewClient(ctx, Config, *sql.DB, *slog.Logger) (*pglock.Client, error)` | none | `pglock`: `table_name` (pglock_locks), `auto_create_table` (true), `lease_duration` (10s), `heartbeat_frequency` (1s), `test_on_startup` (true) |
-| [`redis/nanocache`](../redis/nanocache/README.md) | `modules/cache` | `NewStore(ctx, Config, *slog.Logger) Store`; `New[T](Store, prefix, ttl, *slog.Logger) (Cache[T], error)` | Redis store: `Stopper` (close), `HealthChecker` (ping) | `redis` for echopoint: `address`, `password` (secret), `db` |
-| [`redis/nanolimit`](../redis/nanolimit/README.md) | none (new) | `NewLimits(ctx, nanocache.Store, *slog.Logger) *Limits`; `Limits.RateLimiter(name, Rate)`, `Limits.Semaphore(name, permits)` | none (the client belongs to `nanocache`) | none: uses the `nanocache` connection |
+| [`redis/nanoredis/cache`](../redis/nanoredis/cache/README.md) (was `redis/nanocache`) | `modules/cache` | `NewStore(ctx, Config, *slog.Logger) Store`; `New[T](Store, prefix, ttl, *slog.Logger) (Cache[T], error)` | Redis store: `Stopper` (close), `HealthChecker` (ping) | `redis` for echopoint: `address`, `password` (secret), `db` |
 | [`http/nanoserver`](../http/nanoserver/README.md) | server part of `modules/httpserver` | `NewServer(Config, http.Handler, *slog.Logger) *Server`; `NewReadiness(*nano.App) Readiness` or `ReadinessMiddleware(*nano.App)` for `/health` | `Runner` (listen, then drain) | `http`: `host`, `port` (8080), `read_header_timeout` (30s), `read_timeout` (60s), `write_timeout` (60s), `idle_timeout` (120s), `shutdown_timeout` (5s) |
 | [`http/nanoapisec`](../http/nanoapisec/README.md) | `modules/apisec`: list `ChiModule` | `ChiModule`: `NewChiResolver(Document) (*apisec.Resolver, error)`, matched as chi, as `modules/apisec` did. `Module`: `NewResolver(Document)`, matched as `http.ServeMux` and `nanohttp.NewRouter`. The service provides `Document` (its embedded spec) | none | none |
 | [`http/nanopprof`](../http/nanopprof/README.md) | `modules/pprof` | `NewServer(Config, *slog.Logger) *Server` | `Runner` (serves only when enabled) | `pprof`: `enabled` (env `ENABLE_PPROF`, false), `addr` (127.0.0.1:6060), the timeouts of `nanoserver` |
 | [`modules/nanofx`](../modules/nanofx) | none: the bridge | `Lifecycle[T](name) fx.Option` | registers the nano lifecycle of `T` in fx | none |
+
+[`redis/nanoredis/throttle`](../redis/nanoredis/README.md#throttle) (per-key rate limiter) and [`redis/nanoredis/semaphore`](../redis/nanoredis/README.md#semaphore) (leased permits per key) are framework packages, not nano modules: a service builds them in its own constructors from the `cache.Store` that `cache.Module` provides.
 
 No nano module replaces these fx modules:
 
@@ -42,7 +43,7 @@ Every nano module has the same shape, so a service migrates each one the same wa
    	App      nano.AppConfig `config:"app"`
    	Log      log.Settings   `config:"log"`
    	Postgres nanopg.Config  `config:"postgres"`
-   	Redis    nanocache.Config `config:"redis"`
+   	Redis    cache.Config   `config:"redis"`
    }
    ```
 
@@ -55,7 +56,7 @@ Every nano module has the same shape, so a service migrates each one the same wa
    nanofx.Lifecycle[*nanopg.DB]("postgres"),
    ```
 
-   The constructors that dial a server (`nanopg.NewDB`, `nanocache.NewStore`, `nanolock.NewClient`) take a `context.Context` first, and an fx graph has none: `nanofx.Context` provides it once. Pass the context that SIGTERM cancels. The nano constructors take a `*slog.Logger` and a `trace.TracerProvider` from the graph. Provide them once (`fx.Provide(func() *slog.Logger { ... })`), or move logging and tracing first.
+   The constructors that dial a server (`nanopg.NewDB`, `cache.NewStore`, `nanolock.NewClient`) take a `context.Context` first, and an fx graph has none: `nanofx.Context` provides it once. Pass the context that SIGTERM cancels. The nano constructors take a `*slog.Logger` and a `trace.TracerProvider` from the graph. Provide them once (`fx.Provide(func() *slog.Logger { ... })`), or move logging and tracing first.
 
    For tracing, provide `nanotrace.NewInstaller` too and register both `nanofx.Lifecycle[*nanotrace.Provider]` (flush) and `nanofx.Lifecycle[*nanotrace.Installer]` (installs the global provider). Without the Installer, nothing installs the provider and no error says so.
 
@@ -129,9 +130,9 @@ Each service migration PR lists the rows that apply to it.
 | `nanomigrate` | A stop during migrations comes from the context of `nano.Main`, not from a signal handler of the migrator | One owner for the signals. The migration in progress still finishes. |
 | `nanomigrate` | A stop while another instance holds the migration lock returns `ErrStopped` at once | golang-migrate waits for the lock with `context.Background`, so the stop waited for the other migration, or for SIGKILL. |
 | `nanomigrate` | A directory without migration files on a database without a version succeeds | The fx module failed with `first .: file does not exist`, against its own intent. |
-| `nanocache` | `EvictPattern` walks keys with `SCAN` and unlinks each page | `KEYS` blocks Redis on a large keyspace, and one `DEL` of every match is unbounded. |
-| `nanocache` | A key part's `:` and `\` are escaped (`a:b` is stored as `a\:b`), and `EvictPrefix` escapes the glob characters | A free-text part could collide with another key or evict another scope. Keys of fixed-format parts (UUIDs, hashes) do not change; other keys start cold after the deploy. |
-| `nanocache` | `nanocache.ErrCacheKeyNotFound` is a different value from `cache.ErrCacheKeyNotFound` | The fx package cannot alias the nano one in the beta. Do not mix the stores of the two packages. |
+| `cache` | `EvictPattern` walks keys with `SCAN` and unlinks each page | `KEYS` blocks Redis on a large keyspace, and one `DEL` of every match is unbounded. |
+| `cache` | A key part's `:` and `\` are escaped (`a:b` is stored as `a\:b`), and `EvictPrefix` escapes the glob characters | A free-text part could collide with another key or evict another scope. Keys of fixed-format parts (UUIDs, hashes) do not change; other keys start cold after the deploy. |
+| `cache` | `nanoredis/cache.ErrCacheKeyNotFound` is a different value from `modules/cache.ErrCacheKeyNotFound` | The fx package cannot alias the nano one in the beta. Do not mix the stores of the two packages. |
 | `nanoapisec` | `Module` matches a request as `http.ServeMux` does. `modules/apisec` matched as chi, so its drop-in replacement is `ChiModule` | The two routers disagree on an escaped path (`/files/%61dmin`) and on sibling precedence. A resolver that disagrees with the router checks the wrong operation's security. |
 | `nanoserver` | A listen failure stops the App | The fx module logged the failure and kept a process that took no traffic. |
 | `nanoserver` | The process lines change: `http server started` carries `addr`, not `port`. The drain logs `http server draining` at Info, and `http server drain timed out; connections closed` at Warn when it cuts connections. `net/http`'s own errors (a TLS handshake, a broken header) are Warn lines through slog, not plain text on stderr | The lines go through the service's logger. Check the alerts and dashboards that read the old lines. |

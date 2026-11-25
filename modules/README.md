@@ -11,7 +11,7 @@ Every fx module in this tree is deprecated and is removed with fx (ADR 0013). Ea
 | `modules/postgres`, `modules/transactor` | `pg/nanopg` |
 | `modules/migrations` | `pg/nanomigrate` |
 | `modules/pglock` | `pg/nanolock` |
-| `modules/cache` | `redis/nanocache` |
+| `modules/cache` | `redis/nanoredis/cache` |
 | `modules/httpserver` | `http/nanoserver` |
 | `modules/pprof` | `http/nanopprof` |
 | `modules/config` | `core/config` and `nanostack gen config` |

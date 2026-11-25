@@ -1,4 +1,4 @@
-package nanocache
+package cache
 
 import (
 	"context"
@@ -20,7 +20,7 @@ import (
 // part never acts as a separator. Callers address one entry through Key and
 // chain from there:
 //
-//	products, err := nanocache.New[product.Product](store, "product", 30*time.Minute, logger)
+//	products, err := cache.New[product.Product](store, "product", 30*time.Minute, logger)
 //
 //	prod, err := products.Key(tenantID, productID).GetOrElse(ctx, loadFromDB)
 //	err = products.Key(tenantID, productID).Evict(ctx)
@@ -40,7 +40,7 @@ type Cache[T any] struct {
 }
 
 // ErrInvalidPrefix is the error New returns for a prefix it cannot use.
-var ErrInvalidPrefix = errors.New("nanocache: invalid prefix")
+var ErrInvalidPrefix = errors.New("cache: invalid prefix")
 
 // New builds a Cache over store. Keys are namespaced under prefix, and writes
 // expire after ttl. The prefix is a constant of the service and is used as
