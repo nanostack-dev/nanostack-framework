@@ -6,8 +6,8 @@ go 1.27
 
 require (
 	github.com/nanostack-dev/nanostack-framework v0.0.0
-	github.com/nanostack-dev/nanostack-framework/db v0.0.0
-	github.com/nanostack-dev/nanostack-framework/pkg/functional v0.0.0
+	github.com/nanostack-dev/nanostack-framework/db v0.23.0-beta.6
+	github.com/nanostack-dev/nanostack-framework/pkg/functional v0.23.0-beta.1
 )
 
 require (
