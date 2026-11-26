@@ -2,6 +2,13 @@
 
 One section per module and version, newest first. Each section uses Added, Changed, Deprecated, Removed and Fixed. [RELEASING.md](RELEASING.md) gives the release steps and the upgrade notes.
 
+## v0.23.0-beta.10
+
+Root only. Upgrade with [RELEASING.md](RELEASING.md#upgrade-from-v0230-beta9). `db`, `pkg/functional` and `gen` keep `db/v0.23.0-beta.6`, `pkg/functional/v0.23.0-beta.1` and `gen/v0.23.0-beta.11`.
+
+### Fixed
+- `pg/nanomigrate` reruns a migration that Postgres aborted as a deadlock victim (SQLSTATE `40P01`), up to 3 times. It first drops the invalid index that a failed `CREATE INDEX CONCURRENTLY` left and forces the previous version. A file with its own transaction control is not rerun. Anchor's startup failed on migration 000043 when a TimescaleDB retention job locked `organizations` ([troubleshooting](docs/development/troubleshooting.md#a-migration-fails-with-deadlock-detected)).
+
 ## v0.23.0-beta.9
 
 Root only. Upgrade with [RELEASING.md](RELEASING.md#upgrade-from-v0230-beta8). `db`, `pkg/functional` and `gen` keep `db/v0.23.0-beta.6`, `pkg/functional/v0.23.0-beta.1` and `gen/v0.23.0-beta.11`.
