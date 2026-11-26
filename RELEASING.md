@@ -192,6 +192,13 @@ go tool nanostack gen
 
 - A consumer goes back to the last good version with `go get <module>@<version>`, then `go mod tidy`.
 
+## Upgrade from v0.23.0-beta.9
+
+Root `v0.23.0-beta.10` makes `pg/nanomigrate` rerun a migration that Postgres aborted as a deadlock victim ([CHANGELOG.md](CHANGELOG.md#v0230-beta10)). `db`, `pkg/functional` and `gen` keep `db/v0.23.0-beta.6`, `pkg/functional/v0.23.0-beta.1` and `gen/v0.23.0-beta.11`.
+
+1. Bump the root: `go get github.com/nanostack-dev/nanostack-framework@v0.23.0-beta.10 && go mod tidy`, then `go tool lintconfig` where the service generates its lint config.
+2. Nothing else is required. A database that an older release left with an invalid index needs the manual repair in [troubleshooting](docs/development/troubleshooting.md#a-migration-fails-with-deadlock-detected).
+
 ## Upgrade from v0.23.0-beta.8
 
 Root `v0.23.0-beta.9` adds `redis/nanoredis` (`cache`, `throttle`, `semaphore`) and moves `redis/nanocache` to `redis/nanoredis/cache` ([CHANGELOG.md](CHANGELOG.md#v0230-beta9)). `db`, `pkg/functional` and `gen` keep `db/v0.23.0-beta.6`, `pkg/functional/v0.23.0-beta.1` and `gen/v0.23.0-beta.11`.
